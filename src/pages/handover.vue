@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
+import { Button } from '@/components/ui/button/index'
+import { Badge } from '@/components/ui/badge/index'
 import { Camera, FileDown, CheckCircle2, AlertCircle, Plus } from 'lucide-vue-next'
 </script>
 

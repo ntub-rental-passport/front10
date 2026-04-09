@@ -9,15 +9,16 @@ export interface NavItem {
 
 export function useNavigation() {
   const navItems: NavItem[] = [
-    { icon: Home, label: '總覽', path: '/' },
-    { icon: FileText, label: '契約分析', path: '/contract' },
-    { icon: PiggyBank, label: '租金補貼', path: '/subsidy' },
-    { icon: Trash2, label: '垃圾清運', path: '/garbage' },
-    { icon: CheckSquare, label: '點交清單', path: '/handover' },
-    { icon: Zap, label: '停水停電', path: '/outage' },
-    { icon: ClipboardList, label: '記事板', path: '/notes' },
-    { icon: User, label: '我的帳戶', path: '/account' },
+    { icon: Home, label: '總覽', path: '/app' },
+    { icon: FileText, label: '契約分析', path: '/app/contract' },
+    { icon: PiggyBank, label: '租金補貼', path: '/app/subsidy' },
+    { icon: Trash2, label: '垃圾清運', path: '/app/garbage' },
+    { icon: CheckSquare, label: '點交清單', path: '/app/handover' },
+    { icon: Zap, label: '停水停電', path: '/app/outage' },
+    { icon: ClipboardList, label: '記事板', path: '/app/notes' },
   ]
 
-  return { navItems }
+  const accountItem: NavItem = { icon: User, label: '我的帳戶', path: '/app/account' }
+
+  return { navItems, accountItem }
 }

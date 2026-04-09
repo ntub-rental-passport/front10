@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Trash2, Calendar, Clock, User } from 'lucide-vue-next'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button/index'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/index'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+} from '@/components/ui/dialog/index'
+import { Input } from '@/components/ui/input/index'
+import { Label } from '@/components/ui/label/index'
+import { Textarea } from '@/components/ui/textarea/index'
 
 type PersonalTag = '匯款' | '提醒' | '維護' | '生活' | '其他'
 type RoommateTag = '輪值' | '提醒' | '公告'

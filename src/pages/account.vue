@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Separator } from '@/components/ui/separator'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
+import { Button } from '@/components/ui/button/index'
+import { Input } from '@/components/ui/input/index'
+import { Label } from '@/components/ui/label/index'
+import { Switch } from '@/components/ui/switch/index'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar/index'
+import { Separator } from '@/components/ui/separator/index'
 import { Moon, Bell, Shield, HelpCircle, FileText, LogOut } from 'lucide-vue-next'
 
 const name = ref('王小明')

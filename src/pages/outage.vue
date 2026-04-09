@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
+import { Button } from '@/components/ui/button/index'
+import { Input } from '@/components/ui/input/index'
+import { Badge } from '@/components/ui/badge/index'
+import { Switch } from '@/components/ui/switch/index'
+import { Label } from '@/components/ui/label/index'
 import { Zap, Droplets, Search, BellRing } from 'lucide-vue-next'
 
 const searchAddress = ref('台北市大安區')

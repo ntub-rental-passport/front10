@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox/index'
+import { Button } from '@/components/ui/button/index'
+import { Label } from '@/components/ui/label/index'
 
 const emit = defineEmits<{ next: [] }>()
 

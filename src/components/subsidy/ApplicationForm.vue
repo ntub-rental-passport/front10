@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button/index'
+import { Input } from '@/components/ui/input/index'
+import { Label } from '@/components/ui/label/index'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
+} from '@/components/ui/select/index'
 
 const emit = defineEmits<{ back: [] }>()
 
