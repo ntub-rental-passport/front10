@@ -16,5 +16,6 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["src/components/auth-shell.vue"]
 }

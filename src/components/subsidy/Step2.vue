@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge/index'
+import { Button } from '@/components/ui/button/index'
 import { FileText } from 'lucide-vue-next'
 
 const emit = defineEmits<{ next: []; back: [] }>()

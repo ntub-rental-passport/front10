@@ -5,6 +5,7 @@ import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  const apiTarget = env.VITE_OCR_API_URL || 'http://localhost:8787';
   return {
     plugins: [vue(), tailwindcss()],
     define: {
@@ -17,6 +18,12 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
+      proxy: {
+        '/api': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
+      },
     },
   };
 });

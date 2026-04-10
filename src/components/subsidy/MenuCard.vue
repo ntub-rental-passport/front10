@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card/index'
 
 const props = withDefaults(defineProps<{
   icon: Component

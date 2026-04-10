@@ -6,7 +6,7 @@ import StepIndicator from '@/src/components/subsidy/StepIndicator.vue'
 import Step1 from '@/src/components/subsidy/Step1.vue'
 import Step2 from '@/src/components/subsidy/Step2.vue'
 import ApplicationForm from '@/src/components/subsidy/ApplicationForm.vue'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card/index'
 
 const step = ref(1)
 </script>
