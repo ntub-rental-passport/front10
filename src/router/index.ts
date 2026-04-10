@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/src/components/layout.vue'
 import AdminLayout from '@/src/components/admin-layout.vue'
-import { getAuthSession, resolveRoleHome, type AuthRole } from '@/src/composables/useAuth'
+import { getAuthSession, getPendingRegistration, needsNicknameSetup, resolveRoleHome, type AuthRole } from '@/src/composables/useAuth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -9,6 +9,8 @@ const router = createRouter({
     { path: '/', component: () => import('@/src/pages/home.vue') },
     { path: '/login', component: () => import('@/src/pages/login.vue') },
     { path: '/register', component: () => import('@/src/pages/register.vue') },
+    { path: '/verify-email', component: () => import('@/src/pages/verify-code.vue') },
+    { path: '/welcome', component: () => import('@/src/pages/welcome.vue'), meta: { requiresAuth: true, role: 'user' as AuthRole } },
     {
       path: '/admin',
       component: AdminLayout,
@@ -44,6 +46,11 @@ const router = createRouter({
 router.beforeEach((to) => {
   const session = getAuthSession()
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth)
+  const pendingRegistration = getPendingRegistration()
+
+  if (to.path === '/verify-email' && !pendingRegistration) {
+    return '/register'
+  }
 
   if (!requiresAuth) return true
 
@@ -58,6 +65,14 @@ router.beforeEach((to) => {
   const requiredRole = protectedRecord?.meta.role as AuthRole | undefined
 
   if (requiredRole && session.role !== requiredRole) {
+    return resolveRoleHome(session.role)
+  }
+
+  if (to.path !== '/welcome' && needsNicknameSetup(session)) {
+    return '/welcome'
+  }
+
+  if (to.path === '/welcome' && !needsNicknameSetup(session)) {
     return resolveRoleHome(session.role)
   }
 

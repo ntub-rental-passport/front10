@@ -48,7 +48,7 @@ const featureCards = [
 </script>
 
 <template>
-  <div class="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(217,215,255,0.55),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(254,182,61,0.16),_transparent_24%),linear-gradient(180deg,_#fdfcff,_#f6f7fb)]">
+  <div class="min-h-screen flex flex-col bg-[radial-gradient(circle_at_top_left,_rgba(217,215,255,0.55),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(254,182,61,0.16),_transparent_24%),linear-gradient(180deg,_#fdfcff,_#f6f7fb)]">
     <header class="border-b border-border/60 bg-background/80 backdrop-blur">
       <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-10">
         <RouterLink to="/" class="flex items-center gap-3 font-bold text-primary">
@@ -69,20 +69,32 @@ const featureCards = [
       </div>
     </header>
 
-    <main class="mx-auto max-w-7xl px-6 py-12 lg:px-10 lg:py-20">
+    <main class="flex-1 mx-auto max-w-7xl px-6 pt-6 pb-12 lg:px-10 lg:pt-8 lg:pb-20">
       <section class="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-center">
         <div class="space-y-8">
-          <div class="space-y-5">
+          <div class="relative space-y-5">
+            <div class="pointer-events-none absolute -right-4 -top-4 hidden h-28 w-28 sm:block">
+              <svg viewBox="0 0 120 120" class="h-full w-full text-primary/20" fill="none" aria-hidden="true">
+                <rect x="24" y="12" width="56" height="96" rx="16" stroke="currentColor" stroke-width="4" opacity="0.35" />
+                <rect x="30" y="20" width="44" height="74" rx="10" fill="currentColor" opacity="0.08" />
+                <path d="M38 36h28M38 52h28M38 68h18" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity="0.65" />
+                <circle cx="52" cy="96" r="3" fill="currentColor" opacity="0.65" />
+                <path d="M28 87l-3 5 3 5" stroke="currentColor" stroke-width="3" opacity="0.5" />
+                <path d="M92 87l3 5-3 5" stroke="currentColor" stroke-width="3" opacity="0.5" />
+                <path d="M75 24l14-8" stroke="currentColor" stroke-width="3" opacity="0.4" stroke-linecap="round" />
+                <path d="M32 26l-12-6" stroke="currentColor" stroke-width="3" opacity="0.4" stroke-linecap="round" />
+              </svg>
+            </div>
             <Badge variant="outline" class="rounded-full border-primary/20 bg-primary/5 px-4 py-1.5 text-primary">
               租客權益導向的 AI 租屋助手
             </Badge>
             <div class="space-y-4">
               <h1 class="max-w-3xl text-5xl font-black leading-tight tracking-tight text-foreground lg:text-6xl">
-                讓租屋不只是找房，而是
-                <span class="block text-primary">更安心地住下來。</span>
+                租屋不靠運氣，
+                <span class="block text-primary">用 AI 把關你的居住權益</span>
               </h1>
               <p class="max-w-2xl text-lg leading-8 text-muted-foreground">
-                RentMate 把契約辨識、風險提醒、租屋知識庫與日常待辦整理在一起，幫租客在簽約前、入住後、點交時都更有準備。
+                合約太長看不懂？RentMate 一秒掃描揪出高風險條款。從簽約避雷、日常待辦到順利退租，讓你每次租屋都充滿底氣。
               </p>
             </div>
           </div>
@@ -140,7 +152,7 @@ const featureCards = [
         </Card>
       </section>
 
-      <section class="mt-16 space-y-6 lg:mt-24">
+      <section class="mt-16 space-y-6 lg:mt-16">
         <div class="space-y-3">
           <p class="text-sm font-semibold uppercase tracking-[0.24em] text-primary/70">Core Features</p>
           <h2 class="text-3xl font-bold tracking-tight">一個平台，串起租客真正會用到的事情。</h2>
@@ -188,5 +200,20 @@ const featureCards = [
         </div>
       </section>
     </main>
+
+    <footer class="relative left-1/2 w-screen -translate-x-1/2 border-t border-border/60 bg-background/90 text-muted-foreground">
+      <div class="mx-auto flex max-w-7xl flex-col items-center gap-2 px-6 py-6 text-center sm:flex-row sm:justify-between sm:text-left">
+        <p class="text-sm">
+          臺北商業大學畢業專題｜AI 租屋資訊整合與契約輔助平台展示頁
+        </p>
+        <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80 sm:justify-end">
+          <span>聯絡資訊：rentmate.project@example.com</span>
+          <span class="hidden sm:inline">|</span>
+          <span>展示版本 v0.0.0</span>
+          <span class="hidden sm:inline">|</span>
+          <span>2026 Graduation Project Showcase</span>
+        </div>
+      </div>
+    </footer>
   </div>
 </template>
