@@ -134,7 +134,7 @@ async function handleVerification(): Promise<void> {
             inputmode="numeric"
             maxlength="1"
             autocomplete="one-time-code"
-            class="h-14 w-12 rounded-2xl border border-border/80 bg-background text-center text-xl font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 sm:h-16 sm:w-14"
+            class="h-14 w-12 rounded-x0.5 border border-border/80 bg-background text-center text-xl font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 sm:h-16 sm:w-14"
             @input="handleDigitInput($event, index)"
             @keydown="handleKeydown($event, index)"
           />
@@ -144,10 +144,10 @@ async function handleVerification(): Promise<void> {
       </div>
 
       <div class="flex flex-col gap-3 pt-2">
-        <Button type="submit" size="lg" class="h-12 w-full rounded-xl text-base">
+        <Button type="submit" size="lg" class="h-12 w-full rounded-x0.5 text-base">
           驗證並繼續
         </Button>
-        <Button as-child size="lg" variant="outline" class="h-12 w-full rounded-xl text-base">
+        <Button as-child size="lg" variant="outline" class="h-12 w-full rounded-x0.5 text-base">
           <RouterLink to="/register">返回註冊</RouterLink>
         </Button>
       </div>

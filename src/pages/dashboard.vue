@@ -1,246 +1,778 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog/index'
-import {
-  Building2,
-  CheckSquare,
-  ChevronRight,
   ArrowRight,
   BookOpen,
-  FileText,
-  ShieldAlert,
-  PiggyBank,
-  User,
+  Building2,
+  CalendarClock,
+  Check,
+  CheckSquare,
+  ChevronRight,
   MapPin,
-  Zap,
+  PiggyBank,
+  RotateCcw,
+  ShieldAlert,
+  User,
 } from 'lucide-vue-next'
+import {
+  type AccentKey,
+  type CycleStatus,
+  type CycleView,
+  type PaymentMethod,
+  type RentalContract,
+  createSeedContracts,
+  paymentMethodLabel,
+} from '@/src/mocks/dashboard-seed'
+import {
+  describeDaysLeft,
+  daysUntil,
+  formatCurrency,
+  formatDate,
+  formatOptionalAmount,
+  parseIso,
+  startOfToday,
+} from '@/src/utils/rent-format'
+import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
+import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
 
-const showContractDialog = ref(false)
-
-const rentalInfo = {
-  totalProperties: 2,
-  activeContracts: 1,
-  note: '目前 1 筆租約進行中',
+interface ContractView extends Omit<RentalContract, 'cycles'> {
+  cycles: CycleView[]
+  paidCount: number
+  remainingCount: number
+  progressPercent: number
+  currentCycle: CycleView | null
 }
 
-const monthlyRent = {
-  amount: '$12,000',
-  dueDate: '5/10',
-  note: '含網路費與管理費',
+const accentStyles: Record<
+  AccentKey,
+  { badge: string; dot: string; progress: string; border: string; soft: string; selected: string }
+> = {
+  sky: {
+    badge: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+    dot: 'bg-indigo-500',
+    progress: 'bg-indigo-500',
+    border: 'border-indigo-200',
+    soft: 'bg-indigo-50/80',
+    selected: 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-200',
+  },
+  emerald: {
+    badge: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+    dot: 'bg-cyan-500',
+    progress: 'bg-cyan-500',
+    border: 'border-cyan-200',
+    soft: 'bg-cyan-50/80',
+    selected: 'border-cyan-300 bg-cyan-50 ring-2 ring-cyan-200',
+  },
+  amber: {
+    badge: 'border-violet-200 bg-violet-50 text-violet-700',
+    dot: 'bg-violet-500',
+    progress: 'bg-violet-500',
+    border: 'border-violet-200',
+    soft: 'bg-violet-50/80',
+    selected: 'border-violet-300 bg-violet-50 ring-2 ring-violet-200',
+  },
 }
 
-const contractStatus = {
-  status: '有效',
-  remainingMonths: '剩餘 8 個月',
-  address: '台北市中正區杭州南路一段 88 號 6 樓',
-  landlord: '陳小姐',
-  electricityRate: '台電一期計費',
-}
+const contracts = ref<RentalContract[]>(createSeedContracts())
+const selectedContractId = ref(contracts.value[0]?.id ?? '')
+const selectedCycleId = ref<string | null>(null)
+const filterTab = ref<'all' | 'paid' | 'pending'>('all')
+const paymentDialogOpen = ref(false)
+const paymentTargetCycleId = ref<string | null>(null)
+const confirmDialogOpen = ref(false)
+const confirmTargetCycleId = ref<string | null>(null)
 
-const todoOverview = {
-  total: 3,
-  nextDeadline: '最晚 4/15 前完成補件',
-  note: '未來將與記事板自動同步',
-}
+const contractViews = computed<ContractView[]>(() =>
+  contracts.value.map((contract) => {
+    const today = startOfToday()
+    const paidCount = contract.cycles.filter((c) => c.paidAt).length
+    const firstUnpaidIndex = contract.cycles.findIndex((c) => !c.paidAt)
+
+    const cycles = contract.cycles.map((cycle, index) => {
+      const utilityReady = cycle.electricityAmount != null && cycle.waterAmount != null
+      const partialAmount = cycle.rentAmount + (cycle.electricityAmount ?? 0) + (cycle.waterAmount ?? 0)
+      const totalAmount = utilityReady ? partialAmount : null
+
+      let status: CycleStatus = 'upcoming'
+      if (cycle.paidAt) {
+        status = 'paid'
+      } else if (index === firstUnpaidIndex) {
+        status = parseIso(cycle.dueDate) < today ? 'overdue' : 'current'
+      }
+
+      return {
+        contractId: contract.id,
+        contractTitle: contract.title,
+        cycle,
+        status,
+        totalAmount,
+        partialAmount,
+        daysLeft: daysUntil(cycle.dueDate),
+        utilityReady,
+      } satisfies CycleView
+    })
+
+    return {
+      ...contract,
+      cycles,
+      paidCount,
+      remainingCount: contract.cycles.length - paidCount,
+      progressPercent: Math.round((paidCount / contract.cycles.length) * 100),
+      currentCycle: firstUnpaidIndex === -1 ? null : cycles[firstUnpaidIndex] ?? null,
+    }
+  }),
+)
+
+const activeContractView = computed(
+  () => contractViews.value.find((c) => c.id === selectedContractId.value) ?? contractViews.value[0] ?? null,
+)
+
+watch(
+  activeContractView,
+  (contract) => {
+    if (!contract) {
+      selectedCycleId.value = null
+      return
+    }
+
+    const exists = contract.cycles.some((cycle) => cycle.cycle.id === selectedCycleId.value)
+    if (!exists) {
+      selectedCycleId.value = contract.currentCycle?.cycle.id ?? contract.cycles[0]?.cycle.id ?? null
+    }
+  },
+  { immediate: true },
+)
+
+watch(paymentDialogOpen, (isOpen) => {
+  if (!isOpen) paymentTargetCycleId.value = null
+})
+
+const filteredCycles = computed(() => {
+  if (!activeContractView.value) return []
+  if (filterTab.value === 'paid') return activeContractView.value.cycles.filter((cycle) => cycle.status === 'paid')
+  if (filterTab.value === 'pending') return activeContractView.value.cycles.filter((cycle) => cycle.status !== 'paid')
+  return activeContractView.value.cycles
+})
+
+const activeCurrentCycle = computed(() => activeContractView.value?.currentCycle ?? null)
+
+const paymentTargetCycle = computed(() => {
+  if (!paymentTargetCycleId.value) return null
+  return contractViews.value.flatMap((contract) => contract.cycles).find((cycle) => cycle.cycle.id === paymentTargetCycleId.value) ?? null
+})
+
+const globalStats = computed(() => {
+  const allCurrentCycles = contractViews.value.map((contract) => contract.currentCycle).filter((cycle): cycle is CycleView => cycle !== null)
+  const totalMonthlyRent = contractViews.value.reduce((sum, contract) => sum + (contract.cycles[0]?.cycle.rentAmount ?? 0), 0)
+  const totalPending = allCurrentCycles.reduce((sum, cycle) => sum + cycle.partialAmount, 0)
+  const nearestDue = allCurrentCycles.map((cycle) => cycle.cycle.dueDate).sort()[0] ?? null
+  const overdueCount = contractViews.value.flatMap((contract) => contract.cycles).filter((cycle) => cycle.status === 'overdue').length
+  const totalPaid = contractViews.value.reduce((sum, contract) => sum + contract.paidCount, 0)
+  const totalCycles = contractViews.value.reduce((sum, contract) => sum + contract.cycles.length, 0)
+  const pendingUtilityCount = contractViews.value.reduce(
+    (sum, contract) => sum + contract.cycles.filter((cycle) => !cycle.utilityReady).length,
+    0,
+  )
+
+  return { totalMonthlyRent, totalPending, nearestDue, overdueCount, totalPaid, totalCycles, pendingUtilityCount }
+})
+
+const reminderTitle = computed(() => {
+  if (!activeCurrentCycle.value) return '目前沒有待處理帳單'
+  return activeCurrentCycle.value.status === 'overdue'
+    ? `本期帳單已逾期 ${Math.abs(activeCurrentCycle.value.daysLeft)} 天`
+    : '本期帳單提醒'
+})
+
+const reminderAmountLine = computed(() => {
+  if (!activeCurrentCycle.value) return '本租約目前已全數繳清。'
+  if (activeCurrentCycle.value.totalAmount == null) {
+    return `目前已知金額：${formatCurrency(activeCurrentCycle.value.cycle.rentAmount)}，水電待匯入`
+  }
+  return `應繳金額：${formatCurrency(activeCurrentCycle.value.totalAmount)}`
+})
+
+const reminderActionLine = computed(() => {
+  if (!activeCurrentCycle.value) return '可以切換其他租約，檢查是否有新的待處理期數。'
+  return activeCurrentCycle.value.status === 'overdue'
+    ? '建議：優先完成繳費，並保留轉帳或收據證明。'
+    : '建議：確認付款資訊與金額後，再進行標記已繳。'
+})
 
 const defenseReminder = {
   eyebrow: 'AI 租客防禦提醒',
-  title: '簽約前注意！',
-  summary: '若房東於合約中加註「不得報稅」或「不得申請租金補貼」，該條款依法無效，您仍可依法主張自身權益。',
-  source: '根據租屋法規重點整理，協助您快速看懂高風險條款。',
-  actionLabel: '查看完整使用說明',
+  title: '租屋風險先看懂',
+  summary: '把違約金、設備修繕、押金退還等常見爭議整理成更好理解的重點，幫你在簽約和付款前先避開地雷。',
+  source: '內容整理自租賃實務常見情境與平台內部教學資料。',
+  actionLabel: '查看完整指南',
   actionTo: '/app/contract',
 }
 
 const riskTags = [
-  { label: '提前解約', count: 12, className: 'border-red-200 bg-red-50 text-red-600' },
-  { label: '修繕責任', count: 8, className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  { label: '押金扣抵', count: 15, className: 'border-blue-200 bg-blue-50 text-blue-600' },
-  { label: '點交糾紛', count: 10, className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  { label: '租金補貼', count: 22, className: 'border-slate-200 bg-slate-100 text-slate-600' },
+  { label: '違約金', count: 12, className: 'border-red-200 bg-red-50 text-red-600' },
+  { label: '設備修繕', count: 8, className: 'border-amber-200 bg-amber-50 text-amber-700' },
+  { label: '押金退還', count: 15, className: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
+  { label: '租約續約', count: 10, className: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
+  { label: '水電費用', count: 22, className: 'border-slate-200 bg-slate-100 text-slate-600' },
 ]
 
 const featuredArticles = [
-  {
-    title: '提前解約要賠多少？租賃專法違約金上限解析',
-    category: '違約金',
-    publishedAt: '2026-04-05',
-    to: '/app/contract',
-  },
-  {
-    title: '冷氣壞了誰修？圖解「修繕責任」與存證信函寫法',
-    category: '設備修繕',
-    publishedAt: '2026-03-28',
-    to: '/app/contract',
-  },
-  {
-    title: '退租時被扣押金？這 3 種「自然損耗」房東不能扣',
-    category: '押金退還',
-    publishedAt: '2026-03-15',
-    to: '/app/contract',
-  },
+  { title: '提前解約要賠多少？租賃專法違約金上限解析', category: '違約金', publishedAt: '2026-04-05', to: '/app/contract' },
+  { title: '冷氣壞了誰修？圖解修繕責任與存證信函寫法', category: '設備修繕', publishedAt: '2026-03-28', to: '/app/contract' },
+  { title: '退租時被扣押金？這 3 種自然損耗房東不能扣', category: '押金退還', publishedAt: '2026-03-15', to: '/app/contract' },
 ]
+
+function findContractIndexByCycle(cycleId: string): [number, number] | null {
+  for (let contractIndex = 0; contractIndex < contracts.value.length; contractIndex += 1) {
+    const cycleIndex = contracts.value[contractIndex].cycles.findIndex((cycle) => cycle.id === cycleId)
+    if (cycleIndex >= 0) return [contractIndex, cycleIndex]
+  }
+  return null
+}
+
+function scrollToCycle(cycleId: string) {
+  document.getElementById(`cycle-${cycleId}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+
+function focusCycle(cycleId: string) {
+  const target = findContractIndexByCycle(cycleId)
+  if (!target) return
+  selectedContractId.value = contracts.value[target[0]].id
+  selectedCycleId.value = cycleId
+}
+
+function selectContract(contractId: string) {
+  selectedContractId.value = contractId
+  filterTab.value = 'all'
+  const contract = contractViews.value.find((item) => item.id === contractId)
+  selectedCycleId.value = contract?.currentCycle?.cycle.id ?? contract?.cycles[0]?.cycle.id ?? null
+}
+
+function openPaymentDialog(cycleId: string) {
+  const target = contractViews.value.flatMap((contract) => contract.cycles).find((cycle) => cycle.cycle.id === cycleId)
+  if (!target || target.cycle.paidAt) return
+  paymentTargetCycleId.value = cycleId
+  paymentDialogOpen.value = true
+}
+
+function submitPaymentRecord(form: { paidAt: string; method: PaymentMethod; note: string; proofName: string }) {
+  if (!paymentTargetCycleId.value) return
+  const target = findContractIndexByCycle(paymentTargetCycleId.value)
+  if (!target) return
+
+  const [contractIndex, cycleIndex] = target
+  const contract = contracts.value[contractIndex]
+  const cycle = contract.cycles[cycleIndex]
+  if (cycle.paidAt) return
+
+  cycle.paidAt = form.paidAt
+  cycle.paymentMethod = form.method
+  cycle.paymentNote = form.note.trim()
+  cycle.paymentProofName = form.proofName || null
+
+  const nextUnpaid = contract.cycles.find((item) => !item.paidAt)
+  selectedContractId.value = contract.id
+  selectedCycleId.value = nextUnpaid?.id ?? cycle.id
+  paymentDialogOpen.value = false
+  paymentTargetCycleId.value = null
+
+  if (selectedCycleId.value) nextTick(() => scrollToCycle(selectedCycleId.value!))
+}
+
+function requestUndoCyclePaid(cycleId: string) {
+  confirmTargetCycleId.value = cycleId
+  confirmDialogOpen.value = true
+}
+
+function confirmUndoCyclePaid() {
+  if (!confirmTargetCycleId.value) return
+  const target = findContractIndexByCycle(confirmTargetCycleId.value)
+  if (!target) return
+
+  const [contractIndex, cycleIndex] = target
+  const contract = contracts.value[contractIndex]
+  const cycle = contract.cycles[cycleIndex]
+  cycle.paidAt = null
+  cycle.paymentMethod = null
+  cycle.paymentNote = ''
+  cycle.paymentProofName = null
+
+  selectedContractId.value = contract.id
+  selectedCycleId.value = cycle.id
+  confirmDialogOpen.value = false
+  confirmTargetCycleId.value = null
+  nextTick(() => scrollToCycle(cycle.id))
+}
+
+function statusBadgeClass(status: CycleStatus): string {
+  if (status === 'paid') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (status === 'current') return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (status === 'overdue') return 'border-red-200 bg-red-50 text-red-600'
+  return 'border-slate-200 bg-slate-50 text-slate-600'
+}
+
+function statusLabel(status: CycleStatus): string {
+  if (status === 'paid') return '已繳費'
+  if (status === 'current') return '處理中'
+  if (status === 'overdue') return '已逾期'
+  return '待匯入'
+}
+
+function totalAmountLabel(cycle: CycleView): string {
+  return cycle.totalAmount == null ? '待匯入' : formatCurrency(cycle.totalAmount)
+}
+
+function leaseTermLabel(months: number): string {
+  if (months === 24) return '兩年租約'
+  if (months === 12) return '一年租約'
+  if (months === 6) return '半年租約'
+  return `${months} 個月租約`
+}
+
+function cycleRowClass(status: CycleStatus): string {
+  if (status === 'overdue') return 'bg-red-50/70 hover:bg-red-50'
+  if (status === 'current') return 'bg-amber-50/70 hover:bg-amber-50'
+  if (status === 'paid') return 'bg-white hover:bg-slate-50'
+  return 'bg-slate-50/80 hover:bg-slate-100/70'
+}
 </script>
 
 <template>
-  <div class="flex min-h-full flex-col gap-6">
-    <div>
-      <h1 class="text-3xl font-bold tracking-tight">租屋總覽</h1>
-      <p class="text-muted-foreground">歡迎回來，這是您目前的租屋狀態與待辦事項。</p>
-    </div>
+  <div class="flex min-h-full min-w-0 flex-col gap-5 pb-6">
+    <header class="space-y-1">
+      <h1 class="text-3xl font-bold tracking-tight text-slate-900">租屋總覽</h1>
+      <p class="text-sm text-slate-500">
+        {{ activeContractView ? `${activeContractView.title} · ${activeContractView.city}` : '尚未選擇租約' }}
+      </p>
+    </header>
 
-    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <Card>
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle class="text-sm font-medium">租屋資訊</CardTitle>
-          <Building2 class="h-4 w-4 text-muted-foreground" />
+    <section class="grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4">
+      <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
+        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+          <div class="min-w-0">
+            <CardTitle class="text-xs font-semibold text-slate-500">月租金合計</CardTitle>
+            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {{ globalStats.totalMonthlyRent === 0 ? '--' : formatCurrency(globalStats.totalMonthlyRent) }}
+            </div>
+            <p class="mt-0.5 text-xs text-slate-500">所有租約合計</p>
+          </div>
+          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <Building2 class="h-4 w-4" />
+          </div>
         </CardHeader>
-        <CardContent class="space-y-1">
-          <div class="text-2xl font-bold">{{ rentalInfo.totalProperties }} 筆</div>
-          <p class="text-xs text-muted-foreground">{{ rentalInfo.note }}</p>
-        </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle class="text-sm font-medium">本月租金</CardTitle>
-          <PiggyBank class="h-4 w-4 text-muted-foreground" />
+      <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
+        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+          <div class="min-w-0">
+            <CardTitle class="text-xs font-semibold text-slate-500">本期待繳合計</CardTitle>
+            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {{ globalStats.totalPending === 0 ? '已清繳' : formatCurrency(globalStats.totalPending) }}
+            </div>
+            <p class="mt-0.5 text-xs text-slate-500">所有租約本期已知待繳金額</p>
+          </div>
+          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <PiggyBank class="h-4 w-4" />
+          </div>
         </CardHeader>
-        <CardContent class="space-y-1">
-          <div class="text-2xl font-bold">{{ monthlyRent.amount }}</div>
-          <p class="text-xs text-muted-foreground">繳款期限：{{ monthlyRent.dueDate }}</p>
-          <p class="text-[11px] text-muted-foreground/80">{{ monthlyRent.note }}</p>
-        </CardContent>
       </Card>
 
-      <Dialog v-model:open="showContractDialog">
-        <DialogTrigger as-child>
-          <button type="button" class="w-full text-left">
-            <Card class="h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-              <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle class="text-sm font-medium">契約狀態</CardTitle>
-                <FileText class="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <div>
-                  <div class="text-2xl font-bold">{{ contractStatus.status }}</div>
-                  <p class="text-xs text-muted-foreground">{{ contractStatus.remainingMonths }}</p>
-                </div>
-                <div class="flex items-center justify-between text-xs text-primary">
-                  <span>點擊查看住址、房東與電價資訊</span>
-                  <ChevronRight class="h-4 w-4" />
-                </div>
-              </CardContent>
-            </Card>
-          </button>
-        </DialogTrigger>
-
-        <DialogContent class="rounded-2xl sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>目前契約資訊</DialogTitle>
-            <DialogDescription>快速查看本租約的重要內容。</DialogDescription>
-          </DialogHeader>
-
-          <div class="space-y-3">
-            <div class="rounded-xl border bg-muted/30 p-4">
-              <p class="text-sm text-muted-foreground">契約狀態</p>
-              <p class="mt-1 text-xl font-semibold">{{ contractStatus.status }}</p>
-              <p class="mt-1 text-sm text-muted-foreground">{{ contractStatus.remainingMonths }}</p>
+      <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
+        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+          <div class="min-w-0">
+            <CardTitle class="text-xs font-semibold text-slate-500">最近應繳日</CardTitle>
+            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {{ globalStats.nearestDue ? formatDate(globalStats.nearestDue, true) : '已清繳' }}
             </div>
+            <p
+              class="mt-0.5 text-xs"
+              :class="globalStats.overdueCount > 0 ? 'font-medium text-red-500' : 'text-slate-500'"
+            >
+              {{ globalStats.overdueCount > 0 ? `有 ${globalStats.overdueCount} 筆逾期帳單` : '最近待繳期限' }}
+            </p>
+          </div>
+          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <CalendarClock class="h-4 w-4" />
+          </div>
+        </CardHeader>
+      </Card>
 
-            <div class="rounded-xl border p-4">
-              <div class="flex items-start gap-3">
-                <MapPin class="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p class="text-sm text-muted-foreground">租屋地址</p>
-                  <p class="text-sm font-medium">{{ contractStatus.address }}</p>
-                </div>
-              </div>
+      <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
+        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+          <div class="min-w-0">
+            <CardTitle class="text-xs font-semibold text-slate-500">整體租約進度</CardTitle>
+            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {{ globalStats.totalPaid }} / {{ globalStats.totalCycles }}
             </div>
+            <p class="mt-0.5 text-xs text-slate-500">已繳期數 / 全部期數</p>
+            <p v-if="globalStats.pendingUtilityCount > 0" class="text-xs text-slate-500">
+              另有 {{ globalStats.pendingUtilityCount }} 期水電資料待匯入
+            </p>
+          </div>
+          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <CheckSquare class="h-4 w-4" />
+          </div>
+        </CardHeader>
+      </Card>
+    </section>
 
-            <div class="rounded-xl border p-4">
-              <div class="flex items-start gap-3">
-                <User class="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p class="text-sm text-muted-foreground">房東姓名</p>
-                  <p class="text-sm font-medium">{{ contractStatus.landlord }}</p>
+    <section class="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <aside class="space-y-3">
+        <div>
+          <h2 class="text-lg font-bold tracking-tight text-slate-900">我的租約</h2>
+          <p class="text-xs text-slate-500">選擇租約查看完整帳單</p>
+        </div>
+
+        <div class="max-h-[44rem] space-y-2.5 overflow-y-auto pr-1">
+          <div
+            v-for="contract in contractViews"
+            :key="contract.id"
+            role="button"
+            tabindex="0"
+            :class="[
+              'cursor-pointer rounded-2xl border p-3.5 shadow-sm transition-all duration-200',
+              selectedContractId === contract.id
+                ? accentStyles[contract.accent].selected
+                : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md',
+            ]"
+            @click="selectContract(contract.id)"
+            @keydown.enter.space.prevent="selectContract(contract.id)"
+          >
+            <div class="flex items-start gap-2.5">
+              <span :class="['mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full', accentStyles[contract.accent].dot]" />
+              <div class="min-w-0 flex-1 space-y-2.5">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-bold text-slate-900">{{ contract.title }}</p>
+                    <p class="truncate text-xs text-slate-500">{{ contract.city }} · {{ contract.landlord }}</p>
+                  </div>
+                  <RouterLink
+                    to="/app/contract"
+                    class="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                    @click.stop
+                  >
+                    完整租約
+                  </RouterLink>
                 </div>
-              </div>
-            </div>
 
-            <div class="rounded-xl border p-4">
-              <div class="flex items-start gap-3">
-                <Zap class="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p class="text-sm text-muted-foreground">電價資訊</p>
-                  <p class="text-sm font-medium">{{ contractStatus.electricityRate }}</p>
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between text-xs text-slate-600">
+                    <span>已繳 {{ contract.paidCount }}/{{ contract.cycles.length }} 期</span>
+                    <span class="font-semibold">{{ contract.progressPercent }}%</span>
+                  </div>
+                  <div class="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      :class="['h-full rounded-full transition-all', accentStyles[contract.accent].progress]"
+                      :style="{ width: `${contract.progressPercent}%` }"
+                    />
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                  <Badge
+                    variant="outline"
+                    :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', accentStyles[contract.accent].badge]"
+                  >
+                    {{ leaseTermLabel(contract.leaseMonths) }}
+                  </Badge>
+                  <span>{{ contract.leaseMonths }} 期繳款</span>
+                  <span>每月 {{ contract.dueDay }} 號繳費</span>
                 </div>
               </div>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </aside>
 
-      <Card>
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle class="text-sm font-medium">待辦總覽</CardTitle>
-          <CheckSquare class="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent class="space-y-1">
-          <div class="text-2xl font-bold">{{ todoOverview.total }} 項</div>
-          <p class="text-xs text-muted-foreground">{{ todoOverview.nextDeadline }}</p>
-          <p class="text-[11px] text-muted-foreground/80">{{ todoOverview.note }}</p>
-        </CardContent>
-      </Card>
-    </div>
+      <div v-if="activeContractView" class="min-w-0 space-y-3">
+        <Card class="overflow-hidden rounded-2xl border border-slate-200/80 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.92),_transparent_30%),linear-gradient(180deg,_rgba(248,251,255,0.98),_rgba(241,246,255,0.94))] shadow-sm">
+          <CardContent class="p-5">
+            <div class="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div class="min-w-0 space-y-2">
+                <Badge
+                  variant="outline"
+                  :class="['rounded-full px-3 py-1 text-xs font-semibold', accentStyles[activeContractView.accent].badge]"
+                >
+                  {{ leaseTermLabel(activeContractView.leaseMonths) }}
+                </Badge>
+                <h3 class="text-xl font-bold tracking-tight text-slate-900">
+                  {{ activeContractView.title }}
+                </h3>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
+                  <span class="flex items-center gap-1.5">
+                    <MapPin class="h-3.5 w-3.5 shrink-0" />
+                    {{ activeContractView.city }} · {{ activeContractView.address }}
+                  </span>
+                  <span class="flex items-center gap-1.5">
+                    <User class="h-3.5 w-3.5 shrink-0" />
+                    房東 {{ activeContractView.landlord }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex shrink-0 items-center gap-3">
+                <div class="min-w-0 rounded-xl border border-white/80 bg-white/90 px-4 py-2.5 text-center shadow-sm">
+                  <p class="text-xs font-medium text-slate-500">月租金</p>
+                  <p class="mt-0.5 text-lg font-bold tracking-tight text-slate-900">
+                    {{ formatCurrency(activeContractView.cycles[0]?.cycle.rentAmount ?? 0) }}
+                  </p>
+                </div>
+                <div class="min-w-0 rounded-xl border border-white/80 bg-white/90 px-4 py-2.5 text-center shadow-sm">
+                  <p class="text-xs font-medium text-slate-500">租約進度</p>
+                  <p class="mt-0.5 text-lg font-bold tracking-tight text-slate-900">
+                    {{ activeContractView.paidCount }}/{{ activeContractView.cycles.length }}
+                  </p>
+                </div>
+                <div class="min-w-0 rounded-xl border border-white/80 bg-white/90 px-4 py-2.5 text-center shadow-sm">
+                  <p class="text-xs font-medium text-slate-500">每月繳款日</p>
+                  <p class="mt-0.5 text-lg font-bold tracking-tight text-slate-900">{{ activeContractView.dueDay }} 號</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card
+          :class="[
+            'rounded-2xl border shadow-sm',
+            activeCurrentCycle?.status === 'overdue'
+              ? 'border-red-100 bg-[linear-gradient(180deg,_rgba(255,251,251,0.98),_rgba(255,247,247,0.95))]'
+              : 'border-slate-200 bg-white',
+          ]"
+        >
+          <CardContent class="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+            <div class="space-y-1">
+              <p class="text-xl font-bold tracking-tight text-slate-900">
+                {{ reminderTitle }}
+              </p>
+              <p class="text-sm text-slate-600">
+                應繳日：{{ activeCurrentCycle ? formatDate(activeCurrentCycle.cycle.dueDate) : '無' }}
+              </p>
+              <p
+                :class="[
+                  'text-sm font-medium',
+                  activeCurrentCycle?.status === 'overdue' ? 'text-red-500' : 'text-slate-600',
+                ]"
+              >
+                {{ reminderAmountLine }}
+              </p>
+              <p
+                :class="[
+                  'text-xs',
+                  activeCurrentCycle?.status === 'overdue' ? 'text-red-400' : 'text-slate-500',
+                ]"
+              >
+                {{ reminderActionLine }}
+              </p>
+            </div>
+
+            <div class="flex shrink-0 items-start">
+              <span class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
+                本期提醒
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card class="overflow-hidden rounded-2xl border border-slate-200/80 shadow-sm">
+          <CardContent class="p-0">
+            <div class="border-b border-slate-100 bg-white px-4 pt-2">
+              <div class="overflow-x-auto">
+                <div class="flex min-w-max items-center gap-5">
+                  <button
+                    type="button"
+                    :class="[
+                      'flex h-11 items-center gap-1.5 border-b-2 px-1 text-sm font-semibold transition-colors',
+                      filterTab === 'all' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700',
+                    ]"
+                    @click="filterTab = 'all'"
+                  >
+                    所有帳單
+                    <span :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', filterTab === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600']">
+                      {{ activeContractView.cycles.length }}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    :class="[
+                      'flex h-11 items-center gap-1.5 border-b-2 px-1 text-sm font-semibold transition-colors',
+                      filterTab === 'paid' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700',
+                    ]"
+                    @click="filterTab = 'paid'"
+                  >
+                    已繳費
+                    <span :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', filterTab === 'paid' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600']">
+                      {{ activeContractView.paidCount }}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    :class="[
+                      'flex h-11 items-center gap-1.5 border-b-2 px-1 text-sm font-semibold transition-colors',
+                      filterTab === 'pending' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700',
+                    ]"
+                    @click="filterTab = 'pending'"
+                  >
+                    待繳費
+                    <span :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', filterTab === 'pending' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600']">
+                      {{ activeContractView.remainingCount }}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="max-h-[34rem] overflow-auto bg-slate-50/70">
+              <table class="w-full min-w-[700px] border-collapse text-left">
+                <colgroup>
+                  <col style="width: 52px" />
+                  <col style="width: 88px" />
+                  <col style="width: 96px" />
+                  <col style="width: 84px" />
+                  <col style="width: 76px" />
+                  <col style="width: 68px" />
+                  <col style="width: 96px" />
+                  <col />
+                </colgroup>
+                <thead class="sticky top-0 z-10 bg-white/95 shadow-[0_1px_0_rgba(226,232,240,1)] backdrop-blur">
+                  <tr class="text-xs font-semibold text-slate-500">
+                    <th class="px-3 py-2.5">期數</th>
+                    <th class="px-3 py-2.5">狀態</th>
+                    <th class="px-3 py-2.5">應繳日</th>
+                    <th class="px-3 py-2.5">租金</th>
+                    <th class="px-3 py-2.5">電費</th>
+                    <th class="px-3 py-2.5">水費</th>
+                    <th class="px-3 py-2.5 text-right">合計</th>
+                    <th class="px-3 py-2.5 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
+                  <tr
+                    v-for="cycleItem in filteredCycles"
+                    :id="`cycle-${cycleItem.cycle.id}`"
+                    :key="cycleItem.cycle.id"
+                    :class="[
+                      'cursor-pointer transition-colors',
+                      cycleRowClass(cycleItem.status),
+                      cycleItem.cycle.id === selectedCycleId ? 'outline outline-2 outline-offset-[-2px] outline-slate-300' : '',
+                    ]"
+                    @click="focusCycle(cycleItem.cycle.id)"
+                  >
+                    <td class="px-3 py-3 align-middle">
+                      <span
+                        :class="[
+                          'flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold',
+                          cycleItem.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : '',
+                          cycleItem.status === 'current' ? 'bg-amber-100 text-amber-700' : '',
+                          cycleItem.status === 'overdue' ? 'bg-red-100 text-red-600' : '',
+                          cycleItem.status === 'upcoming' ? 'bg-slate-100 text-slate-500' : '',
+                        ]"
+                      >
+                        {{ cycleItem.cycle.periodIndex }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-3 align-middle">
+                      <Badge
+                        variant="outline"
+                        :class="['rounded-full px-2.5 py-0.5 text-[11px] font-semibold', statusBadgeClass(cycleItem.status)]"
+                      >
+                        {{ statusLabel(cycleItem.status) }}
+                      </Badge>
+                      <p v-if="cycleItem.status === 'overdue'" class="mt-0.5 text-[11px] font-medium text-red-500">
+                        已逾期 {{ Math.abs(cycleItem.daysLeft) }} 天
+                      </p>
+                      <p v-else-if="cycleItem.status === 'current'" class="mt-0.5 text-[11px] font-medium text-amber-600">
+                        {{ describeDaysLeft(cycleItem.daysLeft) }}
+                      </p>
+                      <p v-else-if="cycleItem.cycle.paidAt" class="mt-0.5 text-[11px] text-slate-400">
+                        {{ formatDate(cycleItem.cycle.paidAt) }} · {{ paymentMethodLabel(cycleItem.cycle.paymentMethod) }}
+                      </p>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatDate(cycleItem.cycle.dueDate) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatCurrency(cycleItem.cycle.rentAmount) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatOptionalAmount(cycleItem.cycle.electricityAmount) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatOptionalAmount(cycleItem.cycle.waterAmount) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 text-right align-middle">
+                      <p :class="['text-sm font-bold tracking-tight', cycleItem.status === 'paid' ? 'text-emerald-700' : 'text-slate-900']">
+                        {{ totalAmountLabel(cycleItem) }}
+                      </p>
+                      <p v-if="cycleItem.totalAmount == null" class="text-[11px] text-slate-400">
+                        已知 {{ formatCurrency(cycleItem.partialAmount) }}
+                      </p>
+                    </td>
+                    <td class="px-3 py-3 text-right align-middle">
+                      <Button
+                        v-if="!cycleItem.cycle.paidAt && cycleItem.status !== 'upcoming'"
+                        size="sm"
+                        class="h-7 rounded-lg bg-slate-900 px-2.5 text-[11px] font-semibold text-white hover:bg-slate-800"
+                        @click.stop="openPaymentDialog(cycleItem.cycle.id)"
+                      >
+                        <Check class="mr-1 h-3 w-3" aria-hidden="true" />
+                        標記已繳
+                      </Button>
+                      <Button
+                        v-else-if="cycleItem.cycle.paidAt"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 rounded-lg border-slate-300 px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                        @click.stop="requestUndoCyclePaid(cycleItem.cycle.id)"
+                      >
+                        <RotateCcw class="mr-1 h-3 w-3" aria-hidden="true" />
+                        撤銷已繳
+                      </Button>
+                      <span v-else class="text-[11px] font-medium text-slate-400">待匯入</span>
+                    </td>
+                  </tr>
+
+                  <tr v-if="filteredCycles.length === 0">
+                    <td colspan="8" class="px-3 py-12 text-center text-sm text-slate-500">
+                      目前沒有符合篩選條件的帳單。
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div v-else class="flex items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 py-20">
+        <p class="text-sm text-slate-500">請先從左側選擇租約</p>
+      </div>
+    </section>
 
     <section class="space-y-4">
       <div>
         <h2 class="text-lg font-semibold tracking-tight">租客防禦指南</h2>
-        <p class="text-sm text-muted-foreground">用重點提醒與延伸閱讀，幫您先看見租屋風險。</p>
+        <p class="text-sm text-muted-foreground">快速補齊租屋常見爭議與判斷基礎。</p>
       </div>
 
       <div class="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
-        <Card class="overflow-hidden border-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.22),_transparent_24%),linear-gradient(145deg,_rgba(56,59,149,0.98),_rgba(74,84,188,0.96)_55%,_rgba(102,121,224,0.94))] text-white shadow-lg">
+        <Card class="overflow-hidden border-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.18),_transparent_24%),linear-gradient(145deg,_rgba(49,46,129,0.98),_rgba(67,56,202,0.96)_55%,_rgba(99,102,241,0.94))] text-white shadow-lg">
           <CardContent class="relative flex h-full min-h-[320px] flex-col p-6">
             <div class="pointer-events-none absolute right-0 top-0 h-44 w-44 translate-x-10 -translate-y-10 rounded-full border border-white/12 bg-white/8 blur-2xl" />
             <div class="pointer-events-none absolute bottom-6 right-6 text-white/12">
               <ShieldAlert class="h-28 w-28" />
             </div>
-
             <div class="relative space-y-5">
               <Badge class="w-fit border-white/20 bg-white/14 text-white hover:bg-white/14">
                 {{ defenseReminder.eyebrow }}
               </Badge>
               <div class="space-y-3">
                 <h3 class="text-3xl font-bold tracking-tight">{{ defenseReminder.title }}</h3>
-                <p class="max-w-sm text-base leading-8 text-white/90">
-                  {{ defenseReminder.summary }}
-                </p>
-                <p class="max-w-sm text-sm leading-6 text-white/72">
-                  {{ defenseReminder.source }}
-                </p>
+                <p class="max-w-sm text-base leading-8 text-white/90">{{ defenseReminder.summary }}</p>
+                <p class="max-w-sm text-sm leading-6 text-white/72">{{ defenseReminder.source }}</p>
               </div>
             </div>
-
             <Button
               as-child
               class="relative z-10 mt-auto h-12 rounded-full border border-white/15 bg-white/12 text-base font-semibold text-white hover:bg-white/20"
             >
-              <RouterLink :to="defenseReminder.actionTo">
-                {{ defenseReminder.actionLabel }}
-              </RouterLink>
+              <RouterLink :to="defenseReminder.actionTo">{{ defenseReminder.actionLabel }}</RouterLink>
             </Button>
           </CardContent>
         </Card>
@@ -253,11 +785,10 @@ const featuredArticles = [
                   <div class="rounded-2xl bg-primary/10 p-2 text-primary">
                     <BookOpen class="h-5 w-5" />
                   </div>
-                  <CardTitle class="text-2xl">精選租屋重點</CardTitle>
+                  <CardTitle class="text-2xl">精選文章</CardTitle>
                 </div>
-                <CardDescription>熱門風險關鍵字與精選文章，快速補齊租屋判斷力。</CardDescription>
+                <CardDescription>從熱門風險關鍵字快速延伸到對應教學與案例。</CardDescription>
               </div>
-
               <Button as-child variant="ghost" class="h-auto rounded-full px-0 text-sm font-semibold text-primary hover:bg-transparent hover:text-primary/80">
                 <RouterLink to="/app/contract">
                   文章總目錄
@@ -286,9 +817,7 @@ const featuredArticles = [
               class="group flex items-start justify-between gap-4 rounded-2xl border border-transparent px-3 py-4 transition-colors hover:border-border hover:bg-muted/30"
             >
               <div class="space-y-2">
-                <p class="text-lg font-semibold leading-7 text-foreground">
-                  {{ article.title }}
-                </p>
+                <p class="text-lg font-semibold leading-7 text-foreground">{{ article.title }}</p>
                 <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <Badge variant="outline" class="rounded-full border-primary/20 bg-primary/5 text-primary">
                     {{ article.category }}
@@ -296,7 +825,6 @@ const featuredArticles = [
                   <span>{{ article.publishedAt }}</span>
                 </div>
               </div>
-
               <div class="pt-1 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary">
                 <ArrowRight class="h-4 w-4" />
               </div>
@@ -306,18 +834,19 @@ const featuredArticles = [
       </div>
     </section>
 
-    <footer class="relative left-1/2 mt-auto mb-[-1rem] w-screen -translate-x-1/2 border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300 md:mb-[-1.5rem]">
-      <div class="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 py-4 text-center">
-        <p class="text-sm text-slate-300/90">臺北商業大學畢業專題｜AI 租屋資訊整合與契約輔助平台展示頁</p>
+    <PaymentDialog
+      :open="paymentDialogOpen"
+      :target-cycle="paymentTargetCycle"
+      @update:open="(v: boolean) => { paymentDialogOpen = v }"
+      @submit="submitPaymentRecord"
+    />
 
-        <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-400">
-          <span>聯絡資訊：rentmate.project@example.com</span>
-          <span class="hidden text-slate-600 sm:inline">|</span>
-          <span>展示版本 v0.0.0</span>
-          <span class="hidden text-slate-600 sm:inline">|</span>
-          <span>2026 Graduation Project Showcase</span>
-        </div>
-      </div>
-    </footer>
+    <ConfirmDialog
+      :open="confirmDialogOpen"
+      title="撤銷已繳紀錄"
+      message="要撤銷這筆已繳紀錄嗎？撤銷後將重新標示為未繳費。"
+      @update:open="(v: boolean) => { confirmDialogOpen = v }"
+      @confirm="confirmUndoCyclePaid"
+    />
   </div>
 </template>

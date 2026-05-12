@@ -100,9 +100,21 @@ watch(isSidebarPinned, (value) => {
 
     <!-- Main Content -->
     <main class="flex-1 overflow-y-auto pb-16 sm:pb-0">
-      <div class="container mx-auto min-h-full max-w-5xl p-4 md:p-6">
+      <div class="mx-auto min-h-full max-w-[1400px] p-4 md:p-6">
         <RouterView />
       </div>
+      <footer class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300">
+        <div class="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 py-4 text-center">
+          <p class="text-sm text-slate-300/90">臺北商業大學畢業專題｜AI 租屋資訊整合與契約輔助平台展示頁</p>
+          <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-400">
+            <span>聯絡資訊：rentmate.project@example.com</span>
+            <span class="hidden text-slate-600 sm:inline">|</span>
+            <span>展示版本 v0.0.0</span>
+            <span class="hidden text-slate-600 sm:inline">|</span>
+            <span>2026 Graduation Project Showcase</span>
+          </div>
+        </div>
+      </footer>
     </main>
 
     <!-- Mobile Bottom Nav -->
