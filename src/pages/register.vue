@@ -64,7 +64,7 @@ async function handleGoogleRegister(): Promise<void> {
       </div>
     </div>
 
-    <form class="mt-8 space-y-6" @submit.prevent="handleRegister">
+    <form class="mt-6 space-y-6" @submit.prevent="handleRegister">
       <div class="space-y-1.5">
         <Label for="register-email" class="font-semibold text-foreground">電子信箱</Label>
         <div class="relative">

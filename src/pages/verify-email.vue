@@ -63,7 +63,7 @@ async function handleVerification(): Promise<void> {
             inputmode="numeric"
             maxlength="6"
             placeholder="請輸入 6 碼驗證碼"
-            class="h-12 rounded-x0.5 pl-11 tracking-[0.35em]"
+            class="h-12 rounded-x0 pl-11 tracking-[0.35em]"
           />
         </div>
         <p v-if="errorMessage" class="text-sm text-destructive">{{ errorMessage }}</p>
