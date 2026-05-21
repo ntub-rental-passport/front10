@@ -11,8 +11,10 @@
 
 ## 目錄結構
 
+> **注意：** `font/` 是此專案的 repo root 與 Vue 前端根目錄，名稱源自初始建立時的資料夾命名，並非字型資料夾。
+
 ```
-font/                              ← repo root（Vue 前端）
+font/                              ← repo root（Vue 前端根目錄，非字型資料夾）
 ├── backend/                       ← FastAPI 後端（新建）
 │   ├── main.py                    ← FastAPI app 進入點，掛載 routes
 │   ├── requirements.txt
@@ -38,7 +40,7 @@ font/                              ← repo root（Vue 前端）
 │
 ├── key/                           ← 舊金鑰目錄，可保留
 ├── .env                           ← 前端只保留 VITE_API_BASE_URL
-└── server/index.js                ← 刪除（由 FastAPI 取代）
+└── server/index.js                ← 暫時保留，等 FastAPI /api/ocr 跑通後再移除
 ```
 
 ---
@@ -85,7 +87,14 @@ font/                              ← repo root（Vue 前端）
       "legalBasis": ["民法第421條之1"],
       "analysis": "白話解析...",
       "suggestion": "修改建議...",
-      "negotiationScript": "談判話術..."
+      "negotiationScript": "談判話術...",
+      "matchedReferences": [
+        {
+          "title": "住宅租賃定型化契約應記載及不得記載事項",
+          "content": "相關條文內容...",
+          "score": 0.82
+        }
+      ]
     }
   ],
   "summary": {
@@ -117,8 +126,14 @@ font/                              ← repo root（Vue 前端）
 ### `rag_service.py`
 - 啟動時從 `data/legal_docs/` 載入文件，embed 後存入 ChromaDB
 - 若 ChromaDB 已有資料則直接讀取，不重複 embed（持久化）
-- 每條條文查詢最相近的 3 筆法律依據
+- 每條條文查詢最相近的 3 筆法律依據，回傳 `title`、`content`、`score`
 - Embedding 模型：Gemini `text-embedding-004`
+- 每份法律文件開頭須包含 metadata header：
+  ```
+  來源：
+  更新日期：
+  適用範圍：
+  ```
 
 ### `ai_analysis_service.py`
 - 接收單一條文 + RAG 找到的法律依據
@@ -179,8 +194,7 @@ backend/vector_db/
 
 ## 取代 Express 的步驟
 
-1. 刪除 `server/index.js`
-2. 移除 `package.json` 的 `dev:api` / `start:api` scripts
-3. `vite.config.ts` proxy target 改為 `http://127.0.0.1:8000`（或讀取 `VITE_API_BASE_URL`）
-4. 將 `key/vision-key.json` 複製到 `backend/secrets/vision-key.json`
-5. 啟動指令從 `backend/` 目錄執行：`cd backend && uvicorn main:app --reload --port 8000`（確保 `./secrets/` 等相對路徑正確解析）
+1. 將 `key/vision-key.json` 複製到 `backend/secrets/vision-key.json`
+2. `vite.config.ts` proxy target 改為讀取 `VITE_API_BASE_URL`（預設 `http://127.0.0.1:8000`）
+3. 啟動 FastAPI：`cd backend && uvicorn main:app --reload --port 8000`（確保 `./secrets/` 等相對路徑正確解析）
+4. 確認 FastAPI `POST /api/ocr` 跑通後，再移除 `server/index.js` 並刪除 `package.json` 的 `dev:api` / `start:api` scripts
