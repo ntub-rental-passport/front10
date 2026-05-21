@@ -100,6 +100,15 @@ export function signIn(role: AuthRole, email: string): AuthSession {
   return createSession(role, profile)
 }
 
+export function registerWithGoogle(email: string): AuthSession {
+  const profile = upsertUserProfile(email, {
+    emailVerified: true,
+    nickname: null,
+  })
+
+  return createSession('user', profile)
+}
+
 export function signOut(): void {
   if (!canUseStorage()) return
   window.localStorage.removeItem(AUTH_STORAGE_KEY)
@@ -143,7 +152,7 @@ export function completeEmailVerification(code: string): AuthSession | null {
 
   const profile = upsertUserProfile(pendingRegistration.email, {
     emailVerified: true,
-    nickname: getUserProfiles()[pendingRegistration.email]?.nickname ?? null,
+    nickname: null,
   })
 
   clearPendingRegistration()

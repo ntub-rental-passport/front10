@@ -19,10 +19,10 @@ withDefaults(
 </script>
 
 <template>
-  <div class="min-h-screen bg-[linear-gradient(135deg,_#f6f1ea,_#fcfaf7_45%,_#f4f5fb)]">
+  <div class="min-h-screen [background:var(--auth-background)]">
     <div class="grid min-h-screen lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
       <section
-        class="hidden flex-col justify-between border-r border-white/10 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_24%),linear-gradient(180deg,_rgba(78,73,173,0.98),_rgba(76,72,167,0.97)_56%,_rgba(69,66,153,0.96))] p-10 text-white lg:flex"
+        class="hidden flex-col justify-between border-r border-white/10 p-10 text-white lg:flex [background:var(--auth-panel-background)]"
       >
         <RouterLink to="/" class="flex items-center gap-3 font-bold text-white/92">
           <div class="rounded-2xl bg-white/12 p-2">
