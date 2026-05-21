@@ -7,3 +7,4 @@ node_modules/
 tsconfig.tsbuildinfo
 .env*
 !.env.example
+key/
