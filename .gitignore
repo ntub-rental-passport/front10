@@ -8,3 +8,6 @@ tsconfig.tsbuildinfo
 .env*
 !.env.example
 key/
+!key/
+key/*.json
+!key/vision-key.example.json
