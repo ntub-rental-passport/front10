@@ -40,6 +40,13 @@ const router = createRouter({
     { path: '/notes', redirect: '/app/notes' },
     { path: '/account', redirect: '/app/account' },
     { path: '/:pathMatch(.*)*', redirect: '/' },
+    {
+    path: '/contract-analysis',
+    name: 'ContractAnalysis',
+    // 這裡使用動態載入 (Lazy Loading) 的方式
+    component: () => import('../pages/contract-analysis.vue'),
+    meta: { title: '契約分析報告' }
+  },
   ],
 })
 
