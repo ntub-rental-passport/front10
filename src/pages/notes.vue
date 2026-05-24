@@ -9,6 +9,7 @@ import {
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Textarea } from '@/components/ui/textarea/index'
+import SectionTabs from '@/src/components/section-tabs.vue'
 
 type PersonalTag = '匯款' | '提醒' | '維護' | '生活' | '其他'
 type RoommateTag = '輪值' | '提醒' | '公告'
@@ -186,6 +187,8 @@ function deleteRoommate(id: number) {
         <Button size="sm" variant="outline" class="rounded-full text-xs h-7">+ AI 就緒</Button>
       </div>
     </div>
+
+    <SectionTabs group="notes" />
 
     <div class="flex flex-col lg:flex-row gap-4">
       <!-- ── 左側主內容 ─────────────────────────────────── -->

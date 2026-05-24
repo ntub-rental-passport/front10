@@ -39,6 +39,7 @@ import {
 import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
 import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
 
+// ─── 型別定義 ─────────────────────────────────────────────────────────────────
 interface ContractView extends Omit<RentalContract, 'cycles'> {
   cycles: CycleView[]
   paidCount: number
@@ -47,36 +48,82 @@ interface ContractView extends Omit<RentalContract, 'cycles'> {
   currentCycle: CycleView | null
 }
 
+// ─── 主題色對應表（每個租約的 accent 色系） ──────────────────────────────────
 const accentStyles: Record<
   AccentKey,
-  { badge: string; dot: string; progress: string; border: string; soft: string; selected: string }
+  {
+    badge: string; dot: string; progress: string; border: string; soft: string
+    selected: string; selectedText: string; selectedSubText: string; selectedTrack: string; selectedDot: string
+    hoverBg: string; hoverBorder: string; hoverText: string; hoverSubText: string; hoverTrack: string; hoverDot: string
+    headerBadge: string; headerText: string; headerSubText: string
+  }
 > = {
   sky: {
-    badge: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-    dot: 'bg-indigo-500',
-    progress: 'bg-indigo-500',
-    border: 'border-indigo-200',
+    badge: 'border-indigo-200 bg-indigo-50 text-[#005CAF]',
+    dot: 'bg-[#005CAF]',        //圓點 005CAF 藍色
+    progress: 'bg-[#005CAF]',   //進度條 005CAF 藍色
+    border: 'border-[#005CAF]',
     soft: 'bg-indigo-50/80',
-    selected: 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-200',
+    selected: 'border-[#005CAF]/50 bg-[#005CAF]/80',
+    selectedText: 'text-white',
+    selectedSubText: 'text-white/95',
+    selectedTrack: 'bg-white/30',
+    selectedDot: 'bg-white',
+    hoverBg: 'hover:bg-[#005CAF]/80',       // hover: 套在卡片自身
+    hoverBorder: 'hover:border-[#005CAF]',
+    hoverText: 'group-hover:text-white',     // group-hover: 套在子元素
+    hoverSubText: 'group-hover:text-white/95',
+    hoverTrack: 'group-hover:bg-white/30',
+    hoverDot: 'group-hover:bg-white',
+    headerBadge: 'border-white/30 bg-white/20 text-white',
+    headerText: 'text-white',
+    headerSubText: 'text-white/80',
   },
   emerald: {
-    badge: 'border-cyan-200 bg-cyan-50 text-cyan-700',
-    dot: 'bg-cyan-500',
-    progress: 'bg-cyan-500',
-    border: 'border-cyan-200',
-    soft: 'bg-cyan-50/80',
-    selected: 'border-cyan-300 bg-cyan-50 ring-2 ring-cyan-200',
+    badge: 'border-indigo-200 bg-indigo-50 text-[#113285]',
+    dot: 'bg-[#113285]',        //圓點 113285 藍色
+    progress: 'bg-[#113285]',   //進度條 113285 藍色
+    border: 'border-[#113285]',
+    soft: 'bg-indigo-50/80',
+    selected: 'border-[#113285]/50 bg-[#113285]/80',
+    selectedText: 'text-white',
+    selectedSubText: 'text-white/95',
+    selectedTrack: 'bg-white/30',
+    selectedDot: 'bg-white',
+    hoverBg: 'hover:bg-[#113285]/80',       // hover: 套在卡片自身
+    hoverBorder: 'hover:border-[#113285]',
+    hoverText: 'group-hover:text-white',     // group-hover: 套在子元素
+    hoverSubText: 'group-hover:text-white/95',
+    hoverTrack: 'group-hover:bg-white/30',
+    hoverDot: 'group-hover:bg-white',
+    headerBadge: 'border-white/30 bg-white/20 text-white',
+    headerText: 'text-white',
+    headerSubText: 'text-white/80',
   },
   amber: {
-    badge: 'border-violet-200 bg-violet-50 text-violet-700',
-    dot: 'bg-violet-500',
-    progress: 'bg-violet-500',
-    border: 'border-violet-200',
-    soft: 'bg-violet-50/80',
-    selected: 'border-violet-300 bg-violet-50 ring-2 ring-violet-200',
+    badge: 'border-indigo-200 bg-indigo-50 text-[#5F2677]',
+    dot: 'bg-[#5F2677]',        //圓點 6451D0 紫色
+    progress: 'bg-[#5F2677]',   //進度條 6451D0 紫色
+    border: 'border-[#5F2677]',
+    soft: 'bg-indigo-50/80',
+    selected: 'border-[#5F2677]/50 bg-[#5F2677]/80',
+    selectedText: 'text-white',
+    selectedSubText: 'text-white/95',
+    selectedTrack: 'bg-white/30',
+    selectedDot: 'bg-white',
+    hoverBg: 'hover:bg-[#5F2677]/80',       // hover: 套在卡片自身
+    hoverBorder: 'hover:border-[#5F2677]',
+    hoverText: 'group-hover:text-white',     // group-hover: 套在子元素
+    hoverSubText: 'group-hover:text-white/95',
+    hoverTrack: 'group-hover:bg-white/30',
+    hoverDot: 'group-hover:bg-white',
+    headerBadge: 'border-white/30 bg-white/20 text-white',
+    headerText: 'text-white',
+    headerSubText: 'text-white/80',
   },
 }
 
+// ─── 狀態（Refs） ─────────────────────────────────────────────────────────────
 const contracts = ref<RentalContract[]>(createSeedContracts())
 const selectedContractId = ref(contracts.value[0]?.id ?? '')
 const selectedCycleId = ref<string | null>(null)
@@ -86,6 +133,7 @@ const paymentTargetCycleId = ref<string | null>(null)
 const confirmDialogOpen = ref(false)
 const confirmTargetCycleId = ref<string | null>(null)
 
+// ─── 計算屬性 ─────────────────────────────────────────────────────────────────
 const contractViews = computed<ContractView[]>(() =>
   contracts.value.map((contract) => {
     const today = startOfToday()
@@ -203,6 +251,7 @@ const reminderActionLine = computed(() => {
     : '建議：確認付款資訊與金額後，再進行標記已繳。'
 })
 
+// ─── 靜態內容（租客防禦指南、精選文章） ──────────────────────────────────────
 const defenseReminder = {
   eyebrow: 'AI 租客防禦提醒',
   title: '租屋風險先看懂',
@@ -226,6 +275,7 @@ const featuredArticles = [
   { title: '退租時被扣押金？這 3 種自然損耗房東不能扣', category: '押金退還', publishedAt: '2026-03-15', to: '/app/contract' },
 ]
 
+// ─── 工具函式 ─────────────────────────────────────────────────────────────────
 function findContractIndexByCycle(cycleId: string): [number, number] | null {
   for (let contractIndex = 0; contractIndex < contracts.value.length; contractIndex += 1) {
     const cycleIndex = contracts.value[contractIndex].cycles.findIndex((cycle) => cycle.id === cycleId)
@@ -252,6 +302,7 @@ function selectContract(contractId: string) {
   selectedCycleId.value = contract?.currentCycle?.cycle.id ?? contract?.cycles[0]?.cycle.id ?? null
 }
 
+// ─── 繳費 Dialog ──────────────────────────────────────────────────────────────
 function openPaymentDialog(cycleId: string) {
   const target = contractViews.value.flatMap((contract) => contract.cycles).find((cycle) => cycle.cycle.id === cycleId)
   if (!target || target.cycle.paidAt) return
@@ -283,6 +334,7 @@ function submitPaymentRecord(form: { paidAt: string; method: PaymentMethod; note
   if (selectedCycleId.value) nextTick(() => scrollToCycle(selectedCycleId.value!))
 }
 
+// ─── 撤銷 Dialog ──────────────────────────────────────────────────────────────
 function requestUndoCyclePaid(cycleId: string) {
   confirmTargetCycleId.value = cycleId
   confirmDialogOpen.value = true
@@ -308,6 +360,7 @@ function confirmUndoCyclePaid() {
   nextTick(() => scrollToCycle(cycle.id))
 }
 
+// ─── 樣式輔助函式 ─────────────────────────────────────────────────────────────
 function statusBadgeClass(status: CycleStatus): string {
   if (status === 'paid') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
   if (status === 'current') return 'border-amber-200 bg-amber-50 text-amber-700'
@@ -343,6 +396,7 @@ function cycleRowClass(status: CycleStatus): string {
 
 <template>
   <div class="flex min-h-full min-w-0 flex-col gap-5 pb-6">
+    <!-- ── 頁面標題 ─────────────────────────────────────────────────────────── -->
     <header class="space-y-1">
       <h1 class="text-3xl font-bold tracking-tight text-slate-900">租屋總覽</h1>
       <p class="text-sm text-slate-500">
@@ -350,6 +404,7 @@ function cycleRowClass(status: CycleStatus): string {
       </p>
     </header>
 
+    <!-- ── 四格統計卡片（月租金 / 待繳合計 / 最近應繳日 / 整體進度） ────────── -->
     <section class="grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4">
       <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
         <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
@@ -420,13 +475,16 @@ function cycleRowClass(status: CycleStatus): string {
       </Card>
     </section>
 
-    <section class="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-      <aside class="space-y-3">
-        <div>
-          <h2 class="text-lg font-bold tracking-tight text-slate-900">我的租約</h2>
-          <p class="text-xs text-slate-500">選擇租約查看完整帳單</p>
-        </div>
+    <!-- ── 主要內容區：左側租約列表 + 右側帳單詳情 ─────────────────────────── -->
+    <section class="grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 lg:grid-cols-[240px_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
+      <!-- 左側標題：row 1, col 1 -->
+      <div class="lg:col-start-1 lg:row-start-1">
+        <h2 class="text-lg font-bold tracking-tight text-slate-900">我的租約</h2>
+        <p class="text-xs text-slate-500">選擇租約查看完整帳單</p>
+      </div>
 
+      <!-- 左側：我的租約清單 row 2, col 1 -->
+      <aside class="lg:col-start-1 lg:row-start-2">
         <div class="max-h-[44rem] space-y-2.5 overflow-y-auto pr-1">
           <div
             v-for="contract in contractViews"
@@ -434,25 +492,25 @@ function cycleRowClass(status: CycleStatus): string {
             role="button"
             tabindex="0"
             :class="[
-              'cursor-pointer rounded-2xl border p-3.5 shadow-sm transition-all duration-200',
+              'group cursor-pointer rounded-2xl border p-3.5 shadow-sm transition-all duration-200',
               selectedContractId === contract.id
                 ? accentStyles[contract.accent].selected
-                : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md',
+                : ['border-slate-200 bg-[#FFFFFF] hover:shadow-md', accentStyles[contract.accent].hoverBg, accentStyles[contract.accent].hoverBorder],
             ]"
             @click="selectContract(contract.id)"
             @keydown.enter.space.prevent="selectContract(contract.id)"
           >
             <div class="flex items-start gap-2.5">
-              <span :class="['mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full', accentStyles[contract.accent].dot]" />
+              <span :class="['mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedDot : [accentStyles[contract.accent].dot, accentStyles[contract.accent].hoverDot]]" />
               <div class="min-w-0 flex-1 space-y-2.5">
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
-                    <p class="truncate text-sm font-bold text-slate-900">{{ contract.title }}</p>
-                    <p class="truncate text-xs text-slate-500">{{ contract.city }} · {{ contract.landlord }}</p>
+                    <p :class="['truncate text-sm font-bold transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedText : ['text-slate-900', accentStyles[contract.accent].hoverText]]">{{ contract.title }}</p>
+                    <p :class="['truncate text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-500', accentStyles[contract.accent].hoverSubText]]">{{ contract.city }} · {{ contract.landlord }}</p>
                   </div>
                   <RouterLink
                     to="/app/contract"
-                    class="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                    :class="['shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors', selectedContractId === contract.id ? 'border-white/50 bg-white/20 text-white hover:bg-white/30' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700']"
                     @click.stop
                   >
                     完整租約
@@ -460,11 +518,11 @@ function cycleRowClass(status: CycleStatus): string {
                 </div>
 
                 <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs text-slate-600">
+                  <div :class="['flex items-center justify-between text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-600', accentStyles[contract.accent].hoverSubText]]">
                     <span>已繳 {{ contract.paidCount }}/{{ contract.cycles.length }} 期</span>
                     <span class="font-semibold">{{ contract.progressPercent }}%</span>
                   </div>
-                  <div class="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div :class="['h-1.5 overflow-hidden rounded-full transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedTrack : ['bg-slate-100', accentStyles[contract.accent].hoverTrack]]">
                     <div
                       :class="['h-full rounded-full transition-all', accentStyles[contract.accent].progress]"
                       :style="{ width: `${contract.progressPercent}%` }"
@@ -472,7 +530,7 @@ function cycleRowClass(status: CycleStatus): string {
                   </div>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                <div :class="['flex flex-wrap items-center gap-1.5 text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-500', accentStyles[contract.accent].hoverSubText]]">
                   <Badge
                     variant="outline"
                     :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', accentStyles[contract.accent].badge]"
@@ -488,21 +546,23 @@ function cycleRowClass(status: CycleStatus): string {
         </div>
       </aside>
 
-      <div v-if="activeContractView" class="min-w-0 space-y-3">
-        <Card class="overflow-hidden rounded-2xl border border-slate-200/80 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.92),_transparent_30%),linear-gradient(180deg,_rgba(248,251,255,0.98),_rgba(241,246,255,0.94))] shadow-sm">
+      <!-- 右側：選中租約詳情 row 2, col 2 -->
+      <div v-if="activeContractView" class="min-w-0 space-y-3 lg:col-start-2 lg:row-start-2">
+        <!-- 租約資訊 Header Card -->
+        <Card :class="['overflow-hidden rounded-2xl border shadow-sm', accentStyles[activeContractView.accent].selected]">
           <CardContent class="p-5">
             <div class="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div class="min-w-0 space-y-2">
                 <Badge
                   variant="outline"
-                  :class="['rounded-full px-3 py-1 text-xs font-semibold', accentStyles[activeContractView.accent].badge]"
+                  :class="['rounded-full px-3 py-1 text-xs font-semibold', accentStyles[activeContractView.accent].headerBadge]"
                 >
                   {{ leaseTermLabel(activeContractView.leaseMonths) }}
                 </Badge>
-                <h3 class="text-xl font-bold tracking-tight text-slate-900">
+                <h3 :class="['text-xl font-bold tracking-tight', accentStyles[activeContractView.accent].headerText]">
                   {{ activeContractView.title }}
                 </h3>
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
+                <div :class="['flex flex-wrap items-center gap-x-4 gap-y-1 text-sm', accentStyles[activeContractView.accent].headerSubText]">
                   <span class="flex items-center gap-1.5">
                     <MapPin class="h-3.5 w-3.5 shrink-0" />
                     {{ activeContractView.city }} · {{ activeContractView.address }}
@@ -536,6 +596,7 @@ function cycleRowClass(status: CycleStatus): string {
           </CardContent>
         </Card>
 
+        <!-- 本期帳單提醒 Card -->
         <Card
           :class="[
             'rounded-2xl border shadow-sm',
@@ -578,6 +639,7 @@ function cycleRowClass(status: CycleStatus): string {
           </CardContent>
         </Card>
 
+        <!-- 帳單明細表格 Card -->
         <Card class="overflow-hidden rounded-2xl border border-slate-200/80 shadow-sm">
           <CardContent class="p-0">
             <div class="border-b border-slate-100 bg-white px-4 pt-2">
@@ -717,8 +779,7 @@ function cycleRowClass(status: CycleStatus): string {
                       <Button
                         v-else-if="cycleItem.cycle.paidAt"
                         size="sm"
-                        variant="outline"
-                        class="h-7 rounded-lg border-slate-300 px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                        class="h-7 rounded-lg border border-amber-400 bg-amber-50 px-2.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 hover:border-amber-500"
                         @click.stop="requestUndoCyclePaid(cycleItem.cycle.id)"
                       >
                         <RotateCcw class="mr-1 h-3 w-3" aria-hidden="true" />
@@ -745,6 +806,7 @@ function cycleRowClass(status: CycleStatus): string {
       </div>
     </section>
 
+    <!-- ── 租客防禦指南區塊（AI 防禦卡 + 精選文章） ──────────────────────────── -->
     <section class="space-y-4">
       <div>
         <h2 class="text-lg font-semibold tracking-tight">租客防禦指南</h2>
@@ -834,6 +896,7 @@ function cycleRowClass(status: CycleStatus): string {
       </div>
     </section>
 
+    <!-- ── Dialogs ────────────────────────────────────────────────────────────── -->
     <PaymentDialog
       :open="paymentDialogOpen"
       :target-cycle="paymentTargetCycle"

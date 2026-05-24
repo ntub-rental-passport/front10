@@ -37,7 +37,7 @@ watch(isSidebarPinned, (value) => {
   <div class="flex h-screen w-full bg-muted/20">
     <!-- Desktop Sidebar -->
     <aside
-      class="relative hidden flex-col border-r bg-background transition-[width] duration-300 ease-out sm:flex"
+      class="relative hidden flex-col border-r bg-sidebar-background transition-[width] duration-300 ease-out sm:flex"
       :class="isSidebarExpanded ? 'w-64' : 'w-20'"
       @mouseenter="isSidebarHovered = true"
       @mouseleave="isSidebarHovered = false"

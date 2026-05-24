@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { LockKeyhole, Mail, UserRoundPlus } from 'lucide-vue-next'
-import { signIn, startEmailRegistration } from '@/src/composables/useAuth'
+import { registerWithGoogle, startEmailRegistration } from '@/src/composables/useAuth'
 
 const router = useRouter()
 const form = ref({
@@ -27,7 +27,7 @@ async function handleRegister(): Promise<void> {
 }
 
 async function handleGoogleRegister(): Promise<void> {
-  signIn('user', form.value.email || 'google-user@rentmate.tw')
+  registerWithGoogle(form.value.email || 'google-user@rentmate.tw')
   await router.push('/welcome')
 }
 </script>

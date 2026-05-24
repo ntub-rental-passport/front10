@@ -65,8 +65,8 @@ function statusLabel(status: CycleStatus): string {
 
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
-    <DialogContent class="max-w-lg rounded-[1.75rem] border-slate-200 p-0">
-      <div class="border-b border-slate-100 bg-slate-50/80 px-6 py-5">
+    <DialogContent class="max-w-lg rounded-[1.75rem] border-slate-200 bg-white p-0">
+      <div class="border-b border-slate-100 bg-[#F8FAFC] px-6 py-5">
         <DialogHeader>
           <DialogTitle class="text-xl font-semibold text-slate-900">記錄本期繳費</DialogTitle>
         </DialogHeader>

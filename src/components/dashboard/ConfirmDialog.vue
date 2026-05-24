@@ -16,8 +16,8 @@ const emit = defineEmits<{
 
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
-    <DialogContent class="max-w-sm rounded-2xl border-slate-200 p-0">
-      <div class="border-b border-slate-100 bg-slate-50/80 px-6 py-5">
+    <DialogContent class="max-w-sm rounded-2xl border-slate-200 bg-[#ffffff] p-0">
+      <div class="border-b border-slate-100 bg-slate-50 px-6 py-5">
         <DialogHeader>
           <DialogTitle class="text-lg font-semibold text-slate-900">{{ title }}</DialogTitle>
         </DialogHeader>
