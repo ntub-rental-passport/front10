@@ -474,6 +474,11 @@ function restartMainMap() {
   nextTick(() => startMap('main'))
 }
 
+function centerMainMapOnUser() {
+  if (!mainMap || !userLocation.value) return
+  mainMap.flyTo({ center: [userLocation.value.lng, userLocation.value.lat], zoom: 15, duration: 800 })
+}
+
 // ─── MapLibre GL 地圖 ────────────────────────────────────────────────────────
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/bright'
 const DEFAULT_CENTER_LNGLAT: [number, number] = [121.46, 25.014] // MapLibre 座標順序：[lng, lat]
@@ -573,7 +578,7 @@ function startMap(which: 'main' | 'nearby' | 'manual') {
 
   let map: maplibregl.Map
   try {
-    map = new maplibregl.Map({ container: containerEl, style: STYLE_URL, center, zoom: 15 })
+    map = new maplibregl.Map({ container: containerEl, style: STYLE_URL, center, zoom: 15, attributionControl: false })
   }
   catch (err: any) {
     mapError.value = err?.message ?? '地圖初始化失敗'
@@ -927,6 +932,16 @@ const manualNearbyStations = computed(() => {
                 @click="restartMainMap"
               >重新載入</button>
             </div>
+
+            <!-- 回到目前位置按鈕 -->
+            <button
+              v-if="userLocation && !mapError"
+              class="absolute bottom-3 right-3 z-[1001] flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-md transition-all hover:shadow-lg hover:scale-105 active:scale-95"
+              title="回到目前位置"
+              @click="centerMainMapOnUser"
+            >
+              <Navigation class="h-5 w-5 text-primary" />
+            </button>
 
             <!-- 地圖上的彈出資訊卡：z-[1001] 確保高於 MapLibre 的 tile/control 層 -->
             <div v-if="selectedStation && !mapError" class="absolute right-3 top-3 z-[1001] w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
