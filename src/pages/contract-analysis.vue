@@ -62,46 +62,46 @@ function copyToClipboard() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground p-6 md:p-10 font-sans">
-    <div class="max-w-7xl mx-auto space-y-8">
+  <div class="min-h-screen bg-background text-foreground p-4 sm:p-6 md:p-10 font-sans">
+    <div class="max-w-7xl mx-auto space-y-6 sm:space-y-8">
 
-      <header class="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border pb-6">
+      <header class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-border pb-4 sm:pb-6">
         <div>
-          <h1 class="text-4xl font-bold tracking-tight text-primary">契約診斷分析</h1>
-          <p class="text-muted-foreground mt-2 flex items-center gap-2">
-            <Sparkles class="w-4 h-4 text-accent" /> 法律人工智慧已根據最新租賃法規完成比對
+          <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-primary">契約診斷分析</h1>
+          <p class="text-muted-foreground mt-1.5 sm:mt-2 flex items-center gap-2 text-sm sm:text-base">
+            <Sparkles class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-accent flex-shrink-0" /> 法律人工智慧已根據最新租賃法規完成比對
           </p>
         </div>
         <div class="flex gap-3">
-          <Button variant="outline" @click="$router.push('/contract')">
+          <Button variant="outline" size="sm" class="sm:size-default" @click="$router.push('/contract')">
             <Undo2 class="w-4 h-4 mr-2" /> 重新上傳
           </Button>
         </div>
       </header>
 
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8 items-start">
 
-        <section class="lg:col-span-5 space-y-4">
+        <section class="lg:col-span-5 space-y-3 sm:space-y-4">
           <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold flex items-center gap-2">
-              <FileText class="w-5 h-5 text-primary" /> 原始契約預覽
+            <h2 class="text-base sm:text-lg font-semibold flex items-center gap-2">
+              <FileText class="w-4 h-4 sm:w-5 sm:h-5 text-primary" /> 原始契約預覽
             </h2>
           </div>
           <Card class="border-border shadow-sm bg-card/50 backdrop-blur">
             <CardContent class="p-0">
-              <div class="h-[650px] overflow-y-auto p-6 text-sm leading-relaxed whitespace-pre-wrap font-mono scrollbar-thin scrollbar-thumb-muted">
+              <div class="h-[280px] sm:h-[420px] lg:h-[650px] overflow-y-auto p-4 sm:p-6 text-sm leading-relaxed whitespace-pre-wrap font-mono scrollbar-thin scrollbar-thumb-muted">
                 {{ fullText }}
               </div>
             </CardContent>
           </Card>
         </section>
 
-        <section class="lg:col-span-7 space-y-6">
-          <h2 class="text-lg font-semibold flex items-center gap-2">
-            <AlertTriangle class="w-5 h-5 text-destructive" /> 偵測到的風險項次
+        <section class="lg:col-span-7 space-y-4 sm:space-y-6">
+          <h2 class="text-base sm:text-lg font-semibold flex items-center gap-2">
+            <AlertTriangle class="w-4 h-4 sm:w-5 sm:h-5 text-destructive" /> 偵測到的風險項次
           </h2>
 
-          <div class="space-y-4">
+          <div class="space-y-3 sm:space-y-4">
             <Card
               v-for="risk in risks"
               :key="risk.id"
@@ -110,30 +110,32 @@ function copyToClipboard() {
                 activeRiskId === risk.id ? 'border-primary ring-2 ring-primary/10 shadow-md' : 'border-destructive'
               ]"
             >
-              <CardHeader class="pb-2">
-                <div class="flex justify-between items-start">
-                  <div>
-                    <CardTitle class="text-xl font-bold">{{ risk.title }}</CardTitle>
-                    <Badge variant="secondary" class="mt-1 bg-secondary text-secondary-foreground">
+              <CardHeader class="pb-2 px-4 pt-4 sm:px-6 sm:pt-6">
+                <div class="flex justify-between items-start gap-2">
+                  <div class="min-w-0">
+                    <CardTitle class="text-base sm:text-xl font-bold leading-snug">{{ risk.title }}</CardTitle>
+                    <Badge variant="secondary" class="mt-1 bg-secondary text-secondary-foreground text-xs">
                       {{ risk.law }}
                     </Badge>
                   </div>
                   <Badge
+                    class="flex-shrink-0 text-xs"
                     :class="risk.severity === 'high' ? 'bg-destructive text-destructive-foreground' : 'bg-accent text-accent-foreground'"
                   >
                     {{ risk.severity === 'high' ? '高風險' : '中風險' }}
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent>
-                <p class="text-muted-foreground">{{ risk.description }}</p>
+              <CardContent class="px-4 sm:px-6">
+                <p class="text-muted-foreground text-sm sm:text-base">{{ risk.description }}</p>
               </CardContent>
-              <CardFooter class="pt-0">
+              <CardFooter class="pt-0 px-4 pb-4 sm:px-6 sm:pb-6">
                 <Button
+                  size="sm"
                   @click="handleAIAssist(risk)"
-                  class="bg-accent hover:bg-accent/90 text-accent-foreground font-semibold shadow-sm transition-transform active:scale-95"
+                  class="bg-accent hover:bg-accent/90 text-accent-foreground font-semibold shadow-sm transition-transform active:scale-95 text-xs sm:text-sm"
                 >
-                  <Sparkles class="w-4 h-4 mr-2" /> AI 談判輔助
+                  <Sparkles class="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> AI 談判輔助
                 </Button>
               </CardFooter>
             </Card>
@@ -145,35 +147,35 @@ function copyToClipboard() {
             enter-to-class="opacity-100 translate-y-0"
           >
             <Card v-if="activeRiskId" class="bg-primary/5 border-primary/20 shadow-xl overflow-hidden animate-in fade-in zoom-in duration-300">
-              <div class="bg-primary px-6 py-3 flex items-center justify-between">
-                <div class="flex items-center gap-2 text-primary-foreground font-medium">
-                  <Sparkles class="w-4 h-4" /> 談判建議草稿
+              <div class="bg-primary px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
+                <div class="flex items-center gap-2 text-primary-foreground font-medium text-sm sm:text-base">
+                  <Sparkles class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 談判建議草稿
                 </div>
-                <div class="text-[10px] uppercase tracking-widest text-primary-foreground/70 font-bold">
-                  Editable Content
+                <div class="text-[9px] sm:text-[10px] uppercase tracking-widest text-primary-foreground/70 font-bold">
+                  Editable
                 </div>
               </div>
-              <CardContent class="p-6">
-                <div v-if="isGenerating" class="flex items-center justify-center py-10 space-x-2">
+              <CardContent class="p-4 sm:p-6">
+                <div v-if="isGenerating" class="flex items-center justify-center py-8 sm:py-10 space-x-2">
                   <div class="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
                   <div class="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                   <div class="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                 </div>
-                <div v-else class="space-y-4">
+                <div v-else class="space-y-3 sm:space-y-4">
                   <p class="text-xs text-primary/60 font-medium italic">您可以直接點擊下方區域進行手動編修：</p>
                   <Textarea
                     v-model="negotiationScript"
-                    rows="6"
-                    class="bg-background border-primary/20 focus:border-primary focus:ring-primary text-foreground text-md p-4 leading-relaxed resize-none"
+                    :rows="4"
+                    class="bg-background border-primary/20 focus:border-primary focus:ring-primary text-foreground text-sm sm:text-md p-3 sm:p-4 leading-relaxed resize-none"
                   />
                 </div>
               </CardContent>
-              <CardFooter class="flex justify-between border-t border-primary/10 bg-primary/5 p-4">
+              <CardFooter class="flex justify-between border-t border-primary/10 bg-primary/5 p-3 sm:p-4">
                 <Button variant="ghost" size="sm" @click="activeRiskId = null">
                   取消
                 </Button>
-                <Button @click="copyToClipboard" class="bg-primary text-primary-foreground">
-                  <Copy class="w-4 h-4 mr-2" /> 複製建議文字
+                <Button size="sm" @click="copyToClipboard" class="bg-primary text-primary-foreground text-xs sm:text-sm">
+                  <Copy class="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> 複製建議文字
                 </Button>
               </CardFooter>
             </Card>
