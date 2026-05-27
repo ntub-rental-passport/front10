@@ -12,11 +12,13 @@ import {
   Check,
   CheckSquare,
   ChevronRight,
+  Droplets,
   MapPin,
   PiggyBank,
   RotateCcw,
   ShieldAlert,
   User,
+  Zap,
 } from 'lucide-vue-next'
 import {
   type AccentKey,
@@ -803,6 +805,89 @@ function cycleRowClass(status: CycleStatus): string {
 
       <div v-else class="flex items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 py-20">
         <p class="text-sm text-slate-500">請先從左側選擇租約</p>
+      </div>
+    </section>
+
+    <!-- ── 停水停電通報 ──────────────────────────────────────────────────────── -->
+    <section>
+      <!-- 手機版：簡單橫幅連結（sm 以下顯示） -->
+      <RouterLink to="/app/outage" class="block sm:hidden">
+        <Card class="group cursor-pointer overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm transition-all hover:border-amber-300 hover:shadow-md">
+          <CardContent class="p-5">
+            <div class="flex items-center gap-4">
+              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 transition-colors group-hover:bg-amber-200">
+                <Zap class="h-6 w-6" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-base font-bold text-slate-900">停水停電通報</p>
+                <p class="mt-0.5 text-sm text-slate-500">查詢或回報住家附近的停水停電資訊，掌握即時狀況。</p>
+              </div>
+              <ArrowRight class="h-5 w-5 shrink-0 text-amber-500 transition-transform group-hover:translate-x-1" />
+            </div>
+          </CardContent>
+        </Card>
+      </RouterLink>
+
+      <!-- 桌面版：直接顯示資訊卡（sm 以上顯示） -->
+      <div class="hidden sm:block space-y-3">
+        <!-- 標題列 -->
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-bold tracking-tight text-slate-900">停水停電通報</h2>
+            <p class="text-sm text-slate-500">住家附近最新停水停電資訊</p>
+          </div>
+          <RouterLink
+            to="/app/outage"
+            class="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+          >
+            前往完整頁面 <ArrowRight class="h-3.5 w-3.5" />
+          </RouterLink>
+        </div>
+
+        <!-- 兩欄資訊卡 -->
+        <div class="grid gap-4 md:grid-cols-2">
+          <!-- 停電資訊 -->
+          <Card class="rounded-2xl border-amber-200 bg-amber-50 shadow-sm">
+            <CardHeader class="pb-2 pt-4 px-5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Zap class="h-4 w-4 text-amber-500" />
+                  <CardTitle class="text-base font-bold text-slate-900">停電資訊</CardTitle>
+                </div>
+                <Badge variant="outline" class="rounded-full border-amber-300 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                  明日
+                </Badge>
+              </div>
+              <CardDescription class="mt-1 text-amber-700">台北市大安區</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-1.5 px-5 pb-4 text-sm text-slate-700">
+              <p><span class="font-semibold text-slate-900">計畫性工作停電</span></p>
+              <p class="text-xs text-slate-600">🕐 2026/04/09　14:00 – 16:00</p>
+              <p class="text-xs text-slate-600">📍 和平東路二段 80 巷至 120 巷</p>
+              <p class="text-xs text-slate-500">原因：變壓器更換工程</p>
+            </CardContent>
+          </Card>
+
+          <!-- 停水資訊 -->
+          <Card class="rounded-2xl border-slate-200 bg-white shadow-sm">
+            <CardHeader class="pb-2 pt-4 px-5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Droplets class="h-4 w-4 text-blue-500" />
+                  <CardTitle class="text-base font-bold text-slate-900">停水資訊</CardTitle>
+                </div>
+                <Badge variant="outline" class="rounded-full border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                  正常
+                </Badge>
+              </div>
+              <CardDescription class="mt-1 text-slate-500">台北市大安區</CardDescription>
+            </CardHeader>
+            <CardContent class="px-5 pb-4">
+              <p class="text-sm font-semibold text-slate-500">目前供水正常</p>
+              <p class="mt-1 text-xs text-slate-400">台北市大安區目前無停水計畫。</p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </section>
 
