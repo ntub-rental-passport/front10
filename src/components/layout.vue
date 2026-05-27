@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { useNavigation } from '@/src/composables/useNavigation'
 
 const route = useRoute()
-const { navItems, accountItem } = useNavigation()
+const { navItems, accountItem, mobileNavItems } = useNavigation()
 const SIDEBAR_PIN_KEY = 'rentmate-sidebar-pinned'
 
 const isSidebarPinned = ref(false)
@@ -120,11 +120,11 @@ watch(isSidebarPinned, (value) => {
     <!-- Mobile Bottom Nav -->
     <nav class="fixed bottom-0 left-0 right-0 z-50 flex h-16 border-t bg-background sm:hidden">
       <RouterLink
-        v-for="item in navItems.slice(0, 5)"
+        v-for="item in mobileNavItems"
         :key="item.path"
         :to="item.path"
         :class="cn(
-          'flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors',
+          'flex flex-1 flex-col items-center justify-center gap-0.5 text-[9px] font-medium transition-colors',
           isActive(item.path) ? 'text-primary' : 'text-muted-foreground'
         )"
       >
