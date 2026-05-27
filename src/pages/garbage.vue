@@ -474,6 +474,14 @@ function restartMainMap() {
   nextTick(() => startMap('main'))
 }
 
+function scrollToSection(i: number) {
+  guideActiveIndex.value = i
+  nextTick(() => {
+    const el = document.getElementById(`guide-section-${i}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
 function centerMainMapOnUser() {
   if (!mainMap || !userLocation.value) return
   mainMap.flyTo({ center: [userLocation.value.lng, userLocation.value.lat], zoom: 15, duration: 800 })
@@ -1501,11 +1509,11 @@ const manualNearbyStations = computed(() => {
       <Card class="h-fit rounded-2xl lg:sticky lg:top-6">
         <CardContent class="space-y-1 p-4">
           <p class="mb-2 text-xs font-semibold text-slate-500">目錄</p>
-          <button v-for="(section, i) in GUIDE_SECTIONS" :key="i" :class="['w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors', guideActiveIndex === i ? 'bg-primary/[0.06] text-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700']" @click="guideActiveIndex = i">{{ section.title }}</button>
+          <button v-for="(section, i) in GUIDE_SECTIONS" :key="i" :class="['w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors', guideActiveIndex === i ? 'bg-primary/[0.06] text-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700']" @click="scrollToSection(i)">{{ section.title }}</button>
         </CardContent>
       </Card>
       <div class="space-y-6">
-        <Card v-for="(section, i) in GUIDE_SECTIONS" :key="i" class="rounded-2xl">
+        <Card v-for="(section, i) in GUIDE_SECTIONS" :key="i" :id="`guide-section-${i}`" class="rounded-2xl scroll-mt-4">
           <CardContent class="p-6">
             <h3 class="mb-3 text-lg font-bold text-slate-900">{{ section.title }}</h3>
             <p class="text-sm leading-7 text-slate-600">{{ section.desc }}</p>
