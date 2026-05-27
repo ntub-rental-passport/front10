@@ -79,15 +79,60 @@ function submitAddItem() {
   showAddItemDialog.value = false
 }
 
-// ---------- 拍照（mock，正式接 SmartCaptureCamera）---------- //
+// ---------- 拍照 / 上傳 ---------- //
 
-function mockCapture(itemId: string) {
-  const seed = `${itemId}-baseline-${Date.now()}`
-  addEvidence(itemId, 'baseline', {
-    url: `https://picsum.photos/seed/${seed}/400/300`,
-    aiLabel: 'clear',
-    aiConfidence: 0.85 + Math.random() * 0.13,
+/** 將選取的圖片壓縮至最大寬度後回傳 dataURL */
+function resizeImage(file: File, maxWidth = 1024): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = reject
+    reader.onload = (ev) => {
+      const img = new Image()
+      img.onerror = reject
+      img.onload = () => {
+        let w = img.naturalWidth
+        let h = img.naturalHeight
+        if (w > maxWidth) {
+          h = Math.round((h * maxWidth) / w)
+          w = maxWidth
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', 0.82))
+      }
+      img.src = ev.target!.result as string
+    }
+    reader.readAsDataURL(file)
   })
+}
+
+/** 開啟相機 / 相簿選取，壓縮後存入存證 */
+async function capturePhoto(itemId: string) {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*'      // 手機上會彈出「相機 / 相簿」選單
+  input.style.display = 'none'
+  document.body.appendChild(input)
+
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    document.body.removeChild(input)
+    if (!file) return
+    try {
+      const dataUrl = await resizeImage(file)
+      addEvidence(itemId, 'baseline', {
+        url: dataUrl,
+        aiLabel: 'clear',
+        aiConfidence: 0.9,
+      })
+    } catch (err) {
+      console.error('圖片處理失敗', err)
+    }
+  }
+
+  input.click()
 }
 
 // ---------- 搜尋 / 篩選 ---------- //
@@ -375,7 +420,7 @@ function fmtDate(iso: string) {
                 <button
                   v-else
                   class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
-                  @click="mockCapture(it.id)"
+                  @click="capturePhoto(it.id)"
                 >
                   <Camera class="h-8 w-8 mb-2" />
                   <span class="text-sm font-medium">點擊拍攝或上傳</span>
