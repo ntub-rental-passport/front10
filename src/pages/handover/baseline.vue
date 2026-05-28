@@ -53,6 +53,12 @@ import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 
 import { useHandover, type HandoverItem } from '@/src/composables/useHandover'
+import {
+  firstEvidenceOfPhase,
+  formatHandoverTimestamp,
+  groupItemsByRoom,
+  hasEvidenceInPhase,
+} from '@/src/utils/handover'
 
 const router = useRouter()
 const {
@@ -79,40 +85,49 @@ function submitAddItem() {
   showAddItemDialog.value = false
 }
 
-// ---------- 拍照 / 上傳 ---------- //
+// ---------- 拍照（mock，正式接 SmartCaptureCamera）---------- //
 
-/** 將選取的圖片壓縮至最大寬度後回傳 dataURL */
 function resizeImage(file: File, maxWidth = 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = reject
-    reader.onload = (ev) => {
+    reader.onerror = () => reject(reader.error ?? new Error('image read failed'))
+    reader.onload = (event) => {
       const img = new Image()
-      img.onerror = reject
+      img.onerror = () => reject(new Error('image decode failed'))
       img.onload = () => {
-        let w = img.naturalWidth
-        let h = img.naturalHeight
-        if (w > maxWidth) {
-          h = Math.round((h * maxWidth) / w)
-          w = maxWidth
+        let width = img.naturalWidth
+        let height = img.naturalHeight
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width)
+          width = maxWidth
         }
+
         const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        canvas.width = width
+        canvas.height = height
+
+        const context = canvas.getContext('2d')
+        if (!context) {
+          reject(new Error('canvas context unavailable'))
+          return
+        }
+
+        context.drawImage(img, 0, 0, width, height)
         resolve(canvas.toDataURL('image/jpeg', 0.82))
       }
-      img.src = ev.target!.result as string
+
+      img.src = event.target?.result as string
     }
+
     reader.readAsDataURL(file)
   })
 }
 
-/** 開啟相機 / 相簿選取，壓縮後存入存證 */
 async function capturePhoto(itemId: string) {
   const input = document.createElement('input')
   input.type = 'file'
-  input.accept = 'image/*'      // 手機上會彈出「相機 / 相簿」選單
+  input.accept = 'image/*'
   input.style.display = 'none'
   document.body.appendChild(input)
 
@@ -120,6 +135,7 @@ async function capturePhoto(itemId: string) {
     const file = input.files?.[0]
     document.body.removeChild(input)
     if (!file) return
+
     try {
       const dataUrl = await resizeImage(file)
       addEvidence(itemId, 'baseline', {
@@ -127,8 +143,8 @@ async function capturePhoto(itemId: string) {
         aiLabel: 'clear',
         aiConfidence: 0.9,
       })
-    } catch (err) {
-      console.error('圖片處理失敗', err)
+    } catch (error) {
+      console.error('圖片處理失敗', error)
     }
   }
 
@@ -143,7 +159,7 @@ const onlyDone = ref(false)
 const filteredItems = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return itemsOfCurrentProperty.value.filter((it) => {
-    const baselineEv = it.evidences.find((e) => e.phase === 'baseline')
+    const baselineEv = firstEvidenceOfPhase(it, 'baseline')
     if (onlyDone.value && !baselineEv) return false
     if (!kw) return true
     return (
@@ -157,30 +173,10 @@ const filteredItems = computed(() => {
 // ---------- 依房間分組（用於主畫面 + 完整匯出） ---------- //
 
 type Grouped = { room: string; items: HandoverItem[] }
-const groupedByRoom = computed<Grouped[]>(() => {
-  const map = new Map<string, HandoverItem[]>()
-  filteredItems.value.forEach((it) => {
-    const arr = map.get(it.room) ?? []
-    arr.push(it)
-    map.set(it.room, arr)
-  })
-  return Array.from(map.entries())
-    .sort(([, a], [, b]) => (a[0].createdAt < b[0].createdAt ? -1 : 1))
-    .map(([room, items]) => ({ room, items }))
-})
+const groupedByRoom = computed<Grouped[]>(() => groupItemsByRoom(filteredItems.value))
 
 /** 條列清單匯出：用「所有項目」而不是 filteredItems，避免使用者忘記重置篩選 */
-const allGroupedByRoom = computed<Grouped[]>(() => {
-  const map = new Map<string, HandoverItem[]>()
-  itemsOfCurrentProperty.value.forEach((it) => {
-    const arr = map.get(it.room) ?? []
-    arr.push(it)
-    map.set(it.room, arr)
-  })
-  return Array.from(map.entries())
-    .sort(([, a], [, b]) => (a[0].createdAt < b[0].createdAt ? -1 : 1))
-    .map(([room, items]) => ({ room, items }))
-})
+const allGroupedByRoom = computed<Grouped[]>(() => groupItemsByRoom(itemsOfCurrentProperty.value))
 
 // ---------- 統計 ---------- //
 
@@ -188,7 +184,7 @@ const stats = computed(() => {
   const all = itemsOfCurrentProperty.value
   return {
     total: all.length,
-    done: all.filter((it) => it.evidences.some((e) => e.phase === 'baseline')).length,
+    done: all.filter((it) => hasEvidenceInPhase(it, 'baseline')).length,
     rooms: new Set(all.map((it) => it.room)).size,
   }
 })
@@ -222,12 +218,11 @@ onBeforeUnmount(() => {
 // ---------- 工具 ---------- //
 
 function firstBaseline(it: HandoverItem) {
-  return it.evidences.find((e) => e.phase === 'baseline') ?? null
+  return firstEvidenceOfPhase(it, 'baseline')
 }
 
 function fmtDate(iso: string) {
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return formatHandoverTimestamp(iso)
 }
 </script>
 

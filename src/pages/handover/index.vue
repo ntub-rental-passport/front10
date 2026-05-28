@@ -39,6 +39,7 @@ import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 
 import { useHandover } from '@/src/composables/useHandover'
+import { countItemsWithEvidence } from '@/src/utils/handover'
 
 const router = useRouter()
 const {
@@ -80,8 +81,8 @@ const stats = computed(() => {
   const items = itemsOfCurrentProperty.value
   return {
     total: items.length,
-    baselineDone: items.filter((it) => it.evidences.some((e) => e.phase === 'baseline')).length,
-    checkoutDone: items.filter((it) => it.evidences.some((e) => e.phase === 'checkout')).length,
+    baselineDone: countItemsWithEvidence(items, 'baseline'),
+    checkoutDone: countItemsWithEvidence(items, 'checkout'),
     diffDone: items.filter((it) => it.diff).length,
   }
 })

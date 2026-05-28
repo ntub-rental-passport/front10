@@ -39,6 +39,11 @@ import {
 import { Label } from '@/components/ui/label/index'
 
 import { useHandover, type HandoverDiff } from '@/src/composables/useHandover'
+import {
+  firstEvidenceOfPhase,
+  formatHandoverTimestamp,
+  hasEvidenceInPhase,
+} from '@/src/utils/handover'
 
 const router = useRouter()
 const {
@@ -51,40 +56,49 @@ const {
   runAutoDiff,
 } = useHandover()
 
-// ---------- 拍照 / 上傳 ---------- //
+// ---------- 拍照（mock）---------- //
 
-/** 將選取的圖片壓縮至最大寬度後回傳 dataURL */
 function resizeImage(file: File, maxWidth = 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = reject
-    reader.onload = (ev) => {
+    reader.onerror = () => reject(reader.error ?? new Error('image read failed'))
+    reader.onload = (event) => {
       const img = new Image()
-      img.onerror = reject
+      img.onerror = () => reject(new Error('image decode failed'))
       img.onload = () => {
-        let w = img.naturalWidth
-        let h = img.naturalHeight
-        if (w > maxWidth) {
-          h = Math.round((h * maxWidth) / w)
-          w = maxWidth
+        let width = img.naturalWidth
+        let height = img.naturalHeight
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width)
+          width = maxWidth
         }
+
         const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        canvas.width = width
+        canvas.height = height
+
+        const context = canvas.getContext('2d')
+        if (!context) {
+          reject(new Error('canvas context unavailable'))
+          return
+        }
+
+        context.drawImage(img, 0, 0, width, height)
         resolve(canvas.toDataURL('image/jpeg', 0.82))
       }
-      img.src = ev.target!.result as string
+
+      img.src = event.target?.result as string
     }
+
     reader.readAsDataURL(file)
   })
 }
 
-/** 開啟相機 / 相簿選取，壓縮後存入存證 */
 async function capturePhoto(itemId: string) {
   const input = document.createElement('input')
   input.type = 'file'
-  input.accept = 'image/*'      // 手機上會彈出「相機 / 相簿」選單
+  input.accept = 'image/*'
   input.style.display = 'none'
   document.body.appendChild(input)
 
@@ -92,6 +106,7 @@ async function capturePhoto(itemId: string) {
     const file = input.files?.[0]
     document.body.removeChild(input)
     if (!file) return
+
     try {
       const dataUrl = await resizeImage(file)
       addEvidence(itemId, 'checkout', {
@@ -99,8 +114,8 @@ async function capturePhoto(itemId: string) {
         aiLabel: 'clear',
         aiConfidence: 0.9,
       })
-    } catch (err) {
-      console.error('圖片處理失敗', err)
+    } catch (error) {
+      console.error('圖片處理失敗', error)
     }
   }
 
@@ -110,20 +125,19 @@ async function capturePhoto(itemId: string) {
 // ---------- 過濾：只顯示「搬入已存證」的項目 ---------- //
 // 沒拍搬入照的項目在退租階段不參與比對，避免誤導使用者。
 const itemsWithBaseline = computed(() =>
-  itemsOfCurrentProperty.value.filter((it) => it.evidences.some((e) => e.phase === 'baseline'))
+  itemsOfCurrentProperty.value.filter((it) => hasEvidenceInPhase(it, 'baseline'))
 )
 
 const itemsWithoutBaseline = computed(() =>
-  itemsOfCurrentProperty.value.filter((it) => !it.evidences.some((e) => e.phase === 'baseline'))
+  itemsOfCurrentProperty.value.filter((it) => !hasEvidenceInPhase(it, 'baseline'))
 )
 
 // ---------- 統計 ---------- //
 
 const stats = computed(() => {
   const total = itemsWithBaseline.value.length
-  const checkoutDone = itemsWithBaseline.value.filter((it) =>
-    it.evidences.some((e) => e.phase === 'checkout')
-  ).length
+  const checkoutDone = itemsWithBaseline.value.filter((it) => hasEvidenceInPhase(it, 'checkout'))
+    .length
   const diffDone = itemsWithBaseline.value.filter((it) => it.diff).length
   return { total, checkoutDone, diffDone }
 })
@@ -134,7 +148,7 @@ function firstEvidence(
   item: (typeof itemsOfCurrentProperty.value)[number],
   phase: 'baseline' | 'checkout'
 ) {
-  return item.evidences.find((e) => e.phase === phase) ?? null
+  return firstEvidenceOfPhase(item, phase)
 }
 
 const diffLabels: Record<HandoverDiff['type'], { text: string; cls: string }> = {
@@ -145,8 +159,7 @@ const diffLabels: Record<HandoverDiff['type'], { text: string; cls: string }> = 
 }
 
 function fmtDate(iso: string) {
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return formatHandoverTimestamp(iso)
 }
 
 // ---------- 匯出 PDF ---------- //

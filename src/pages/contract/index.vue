@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card/index'
 import { Progress } from '@/components/ui/progress/index'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
+import { useRouter } from 'vue-router'
 import {
   AlertTriangle,
+  ArrowRight,
   Bot,
   CheckCircle2,
   FileSearch,
@@ -14,10 +16,11 @@ import {
   Globe,
   ImageIcon,
   PenLine,
-  ScanText,
   RefreshCcw,
   Upload,
 } from 'lucide-vue-next'
+
+const router = useRouter()
 
 type OcrResult = {
   engine: string
@@ -156,15 +159,15 @@ function onDragLeave(): void {
       <p class="text-muted-foreground">上傳租賃契約圖片或 PDF，先由 Google Cloud Vision OCR 轉成可分析文字，再作為後續條文切段與 AI 解析的基礎。</p>
     </div>
 
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
       <Card>
         <CardContent class="flex min-h-32 flex-col items-center justify-center gap-3 p-4 text-center sm:min-h-40 sm:gap-4 sm:p-5 xl:min-h-48 xl:p-6">
           <div class="rounded-full bg-primary/10 p-2.5 text-primary sm:p-3 xl:p-4">
             <ImageIcon class="h-4 w-4 sm:h-5 sm:w-5 xl:h-6 xl:w-6" />
           </div>
           <div>
-            <p class="text-base font-semibold sm:text-lg xl:text-xl">圖片辨識</p>
-            <p class="mt-1 text-xs text-muted-foreground sm:mt-2 sm:text-sm xl:text-base">PNG / JPG / WEBP</p>
+            <p class="text-lg font-semibold xl:text-xl">圖片辨識</p>
+            <p class="mt-2 text-sm text-muted-foreground xl:text-base">PNG / JPG / WEBP</p>
           </div>
         </CardContent>
       </Card>
@@ -175,8 +178,8 @@ function onDragLeave(): void {
             <FileText class="h-4 w-4 sm:h-5 sm:w-5 xl:h-6 xl:w-6" />
           </div>
           <div>
-            <p class="text-base font-semibold sm:text-lg xl:text-xl">PDF 支援</p>
-            <p class="mt-1 text-xs text-muted-foreground sm:mt-2 sm:text-sm xl:text-base">多頁自動處理</p>
+            <p class="text-lg font-semibold xl:text-xl">PDF 支援</p>
+            <p class="mt-2 text-sm text-muted-foreground xl:text-base">多頁自動處理</p>
           </div>
         </CardContent>
       </Card>
@@ -187,8 +190,8 @@ function onDragLeave(): void {
             <Globe class="h-4 w-4 sm:h-5 sm:w-5 xl:h-6 xl:w-6" />
           </div>
           <div>
-            <p class="text-base font-semibold sm:text-lg xl:text-xl">多語言</p>
-            <p class="mt-1 text-xs text-muted-foreground sm:mt-2 sm:text-sm xl:text-base">繁中 / 簡中 / 英文</p>
+            <p class="text-lg font-semibold xl:text-xl">多語言</p>
+            <p class="mt-2 text-sm text-muted-foreground xl:text-base">繁中 / 簡中 / 日文 / 英文</p>
           </div>
         </CardContent>
       </Card>
@@ -199,8 +202,8 @@ function onDragLeave(): void {
             <PenLine class="h-4 w-4 sm:h-5 sm:w-5 xl:h-6 xl:w-6" />
           </div>
           <div>
-            <p class="text-base font-semibold sm:text-lg xl:text-xl">手寫辨識支援</p>
-            <p class="mt-1 text-xs text-muted-foreground sm:mt-2 sm:text-sm xl:text-base">支援掃描手寫辨識</p>
+            <p class="text-lg font-semibold xl:text-xl">手寫辨識支援</p>
+            <p class="mt-2 text-sm text-muted-foreground xl:text-base">支援掃描手寫文字辨識</p>
           </div>
         </CardContent>
       </Card>
@@ -226,19 +229,19 @@ function onDragLeave(): void {
         >
 
         <div
-          class="rounded-[2rem] border-2 border-dashed p-5 text-center transition-colors sm:p-8"
+          class="rounded-[2rem] border-2 border-dashed p-8 text-center transition-colors"
           :class="isDragOver ? 'border-primary bg-primary/5' : 'border-primary/30 bg-muted/20'"
           @drop="onDrop"
           @dragover="onDragOver"
           @dragleave="onDragLeave"
         >
-          <div class="mx-auto flex max-w-xl flex-col items-center gap-3 sm:gap-4">
-            <div class="rounded-full bg-primary/10 p-3 sm:p-4">
-              <Upload class="h-6 w-6 text-primary sm:h-8 sm:w-8" />
+          <div class="mx-auto flex max-w-xl flex-col items-center gap-4">
+            <div class="rounded-full bg-primary/10 p-4">
+              <Upload class="h-8 w-8 text-primary" />
             </div>
-            <div class="space-y-1 sm:space-y-2">
-              <h3 class="text-base font-semibold sm:text-xl">拖放檔案到這裡，或點擊選擇檔案</h3>
-              <p class="text-xs text-muted-foreground sm:text-sm">支援 PDF、PNG、JPG、WEBP、BMP、TIFF。</p>
+            <div class="space-y-2">
+              <h3 class="text-xl font-semibold">拖放檔案到這裡，或點擊選擇檔案</h3>
+              <p class="text-sm text-muted-foreground">支援 PDF、PNG、JPG、WEBP、BMP、TIFF。PDF 同步辨識建議先以 5 頁內文件為主。</p>
             </div>
             <div class="flex flex-wrap items-center justify-center gap-3">
               <Button :disabled="isUploading" @click="openFilePicker">
@@ -268,7 +271,7 @@ function onDragLeave(): void {
 
               <div class="rounded-2xl bg-muted/40 p-4">
                 <p class="text-sm text-muted-foreground">目前檔案</p>
-                <p class="mt-1 font-semibold">{{ selectedFile?.name || '尚未選擇檔案' }}</p>
+                <p class="mt-1 break-all font-semibold">{{ selectedFile?.name || '尚未選擇檔案' }}</p>
                 <p v-if="selectedFile" class="mt-1 text-sm text-muted-foreground">
                   {{ selectedFile.type || '未知格式' }} ・ {{ formatFileSize(selectedFile.size) }}
                 </p>
@@ -323,7 +326,7 @@ function onDragLeave(): void {
     </Card>
 
     <Tabs v-if="canAnalyze" v-model="activeTab" class="w-full">
-      <TabsList class="grid w-full grid-cols-3 h-auto text-xs sm:text-sm">
+      <TabsList class="grid w-full grid-cols-3">
         <TabsTrigger value="preview">契約預覽</TabsTrigger>
         <TabsTrigger value="analysis">分析準備</TabsTrigger>
         <TabsTrigger value="negotiation">AI 談判輔助</TabsTrigger>
@@ -339,7 +342,7 @@ function onDragLeave(): void {
             <CardDescription>這裡顯示 Vision API 回傳的原始文字，可作為後續切段與風險分析輸入。</CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div class="grid gap-3 md:grid-cols-4">
               <div class="rounded-2xl border bg-muted/30 p-4">
                 <p class="text-sm text-muted-foreground">檔案名稱</p>
                 <p class="mt-1 font-semibold">{{ ocrResult?.fileName }}</p>
@@ -358,17 +361,23 @@ function onDragLeave(): void {
               </div>
             </div>
 
-            <div class="rounded-2xl bg-muted p-4 font-mono text-sm whitespace-pre-wrap">
-              <div class="max-h-[32rem] overflow-y-auto">
+            <div class="rounded-2xl bg-muted p-4">
+              <div class="max-h-[32rem] overflow-y-auto overflow-x-hidden font-mono text-sm whitespace-pre-wrap break-words">
                 {{ ocrResult?.text }}
               </div>
             </div>
           </CardContent>
           <CardFooter class="justify-between">
             <Button variant="outline" @click="openFilePicker">重新選擇檔案</Button>
-            <Button @click="copyRecognizedText">
-              {{ copySuccess ? '已複製文字' : '複製辨識結果' }}
-            </Button>
+            <div class="flex items-center gap-2">
+              <Button variant="outline" @click="copyRecognizedText">
+                {{ copySuccess ? '已複製文字' : '複製辨識結果' }}
+              </Button>
+              <Button @click="router.push('/app/contract/editor')">
+                進入契約編輯
+                <ArrowRight class="ml-2 h-4 w-4" />
+              </Button>
+            </div>
           </CardFooter>
         </Card>
       </TabsContent>
