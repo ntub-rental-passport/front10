@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
@@ -20,380 +19,49 @@ import {
   User,
   Zap,
 } from 'lucide-vue-next'
-import {
-  type AccentKey,
-  type CycleStatus,
-  type CycleView,
-  type PaymentMethod,
-  type RentalContract,
-  createSeedContracts,
-  paymentMethodLabel,
-} from '@/src/mocks/dashboard-seed'
+
+import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
+import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
+import { useDashboard } from '@/src/composables/useDashboard'
+import { paymentMethodLabel } from '@/src/mocks/dashboard-seed'
 import {
   describeDaysLeft,
-  daysUntil,
   formatCurrency,
   formatDate,
   formatOptionalAmount,
-  parseIso,
-  startOfToday,
 } from '@/src/utils/rent-format'
-import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
-import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
 
-// ─── 型別定義 ─────────────────────────────────────────────────────────────────
-interface ContractView extends Omit<RentalContract, 'cycles'> {
-  cycles: CycleView[]
-  paidCount: number
-  remainingCount: number
-  progressPercent: number
-  currentCycle: CycleView | null
-}
-
-// ─── 主題色對應表（每個租約的 accent 色系） ──────────────────────────────────
-const accentStyles: Record<
-  AccentKey,
-  {
-    badge: string; dot: string; progress: string; border: string; soft: string
-    selected: string; selectedText: string; selectedSubText: string; selectedTrack: string; selectedDot: string
-    hoverBg: string; hoverBorder: string; hoverText: string; hoverSubText: string; hoverTrack: string; hoverDot: string
-    headerBadge: string; headerText: string; headerSubText: string
-  }
-> = {
-  sky: {
-    badge: 'border-indigo-200 bg-indigo-50 text-[#005CAF]',
-    dot: 'bg-[#005CAF]',        //圓點 005CAF 藍色
-    progress: 'bg-[#005CAF]',   //進度條 005CAF 藍色
-    border: 'border-[#005CAF]',
-    soft: 'bg-indigo-50/80',
-    selected: 'border-[#005CAF]/50 bg-[#005CAF]/80',
-    selectedText: 'text-white',
-    selectedSubText: 'text-white/95',
-    selectedTrack: 'bg-white/30',
-    selectedDot: 'bg-white',
-    hoverBg: 'hover:bg-[#005CAF]/80',       // hover: 套在卡片自身
-    hoverBorder: 'hover:border-[#005CAF]',
-    hoverText: 'group-hover:text-white',     // group-hover: 套在子元素
-    hoverSubText: 'group-hover:text-white/95',
-    hoverTrack: 'group-hover:bg-white/30',
-    hoverDot: 'group-hover:bg-white',
-    headerBadge: 'border-white/30 bg-white/20 text-white',
-    headerText: 'text-white',
-    headerSubText: 'text-white/80',
-  },
-  emerald: {
-    badge: 'border-indigo-200 bg-indigo-50 text-[#113285]',
-    dot: 'bg-[#113285]',        //圓點 113285 藍色
-    progress: 'bg-[#113285]',   //進度條 113285 藍色
-    border: 'border-[#113285]',
-    soft: 'bg-indigo-50/80',
-    selected: 'border-[#113285]/50 bg-[#113285]/80',
-    selectedText: 'text-white',
-    selectedSubText: 'text-white/95',
-    selectedTrack: 'bg-white/30',
-    selectedDot: 'bg-white',
-    hoverBg: 'hover:bg-[#113285]/80',       // hover: 套在卡片自身
-    hoverBorder: 'hover:border-[#113285]',
-    hoverText: 'group-hover:text-white',     // group-hover: 套在子元素
-    hoverSubText: 'group-hover:text-white/95',
-    hoverTrack: 'group-hover:bg-white/30',
-    hoverDot: 'group-hover:bg-white',
-    headerBadge: 'border-white/30 bg-white/20 text-white',
-    headerText: 'text-white',
-    headerSubText: 'text-white/80',
-  },
-  amber: {
-    badge: 'border-indigo-200 bg-indigo-50 text-[#5F2677]',
-    dot: 'bg-[#5F2677]',        //圓點 6451D0 紫色
-    progress: 'bg-[#5F2677]',   //進度條 6451D0 紫色
-    border: 'border-[#5F2677]',
-    soft: 'bg-indigo-50/80',
-    selected: 'border-[#5F2677]/50 bg-[#5F2677]/80',
-    selectedText: 'text-white',
-    selectedSubText: 'text-white/95',
-    selectedTrack: 'bg-white/30',
-    selectedDot: 'bg-white',
-    hoverBg: 'hover:bg-[#5F2677]/80',       // hover: 套在卡片自身
-    hoverBorder: 'hover:border-[#5F2677]',
-    hoverText: 'group-hover:text-white',     // group-hover: 套在子元素
-    hoverSubText: 'group-hover:text-white/95',
-    hoverTrack: 'group-hover:bg-white/30',
-    hoverDot: 'group-hover:bg-white',
-    headerBadge: 'border-white/30 bg-white/20 text-white',
-    headerText: 'text-white',
-    headerSubText: 'text-white/80',
-  },
-}
-
-// ─── 狀態（Refs） ─────────────────────────────────────────────────────────────
-const contracts = ref<RentalContract[]>(createSeedContracts())
-const selectedContractId = ref(contracts.value[0]?.id ?? '')
-const selectedCycleId = ref<string | null>(null)
-const filterTab = ref<'all' | 'paid' | 'pending'>('all')
-const paymentDialogOpen = ref(false)
-const paymentTargetCycleId = ref<string | null>(null)
-const confirmDialogOpen = ref(false)
-const confirmTargetCycleId = ref<string | null>(null)
-
-// ─── 計算屬性 ─────────────────────────────────────────────────────────────────
-const contractViews = computed<ContractView[]>(() =>
-  contracts.value.map((contract) => {
-    const today = startOfToday()
-    const paidCount = contract.cycles.filter((c) => c.paidAt).length
-    const firstUnpaidIndex = contract.cycles.findIndex((c) => !c.paidAt)
-
-    const cycles = contract.cycles.map((cycle, index) => {
-      const utilityReady = cycle.electricityAmount != null && cycle.waterAmount != null
-      const partialAmount = cycle.rentAmount + (cycle.electricityAmount ?? 0) + (cycle.waterAmount ?? 0)
-      const totalAmount = utilityReady ? partialAmount : null
-
-      let status: CycleStatus = 'upcoming'
-      if (cycle.paidAt) {
-        status = 'paid'
-      } else if (index === firstUnpaidIndex) {
-        status = parseIso(cycle.dueDate) < today ? 'overdue' : 'current'
-      }
-
-      return {
-        contractId: contract.id,
-        contractTitle: contract.title,
-        cycle,
-        status,
-        totalAmount,
-        partialAmount,
-        daysLeft: daysUntil(cycle.dueDate),
-        utilityReady,
-      } satisfies CycleView
-    })
-
-    return {
-      ...contract,
-      cycles,
-      paidCount,
-      remainingCount: contract.cycles.length - paidCount,
-      progressPercent: Math.round((paidCount / contract.cycles.length) * 100),
-      currentCycle: firstUnpaidIndex === -1 ? null : cycles[firstUnpaidIndex] ?? null,
-    }
-  }),
-)
-
-const activeContractView = computed(
-  () => contractViews.value.find((c) => c.id === selectedContractId.value) ?? contractViews.value[0] ?? null,
-)
-
-watch(
+const {
+  accentStyles,
   activeContractView,
-  (contract) => {
-    if (!contract) {
-      selectedCycleId.value = null
-      return
-    }
-
-    const exists = contract.cycles.some((cycle) => cycle.cycle.id === selectedCycleId.value)
-    if (!exists) {
-      selectedCycleId.value = contract.currentCycle?.cycle.id ?? contract.cycles[0]?.cycle.id ?? null
-    }
-  },
-  { immediate: true },
-)
-
-watch(paymentDialogOpen, (isOpen) => {
-  if (!isOpen) paymentTargetCycleId.value = null
-})
-
-const filteredCycles = computed(() => {
-  if (!activeContractView.value) return []
-  if (filterTab.value === 'paid') return activeContractView.value.cycles.filter((cycle) => cycle.status === 'paid')
-  if (filterTab.value === 'pending') return activeContractView.value.cycles.filter((cycle) => cycle.status !== 'paid')
-  return activeContractView.value.cycles
-})
-
-const activeCurrentCycle = computed(() => activeContractView.value?.currentCycle ?? null)
-
-const paymentTargetCycle = computed(() => {
-  if (!paymentTargetCycleId.value) return null
-  return contractViews.value.flatMap((contract) => contract.cycles).find((cycle) => cycle.cycle.id === paymentTargetCycleId.value) ?? null
-})
-
-const globalStats = computed(() => {
-  const allCurrentCycles = contractViews.value.map((contract) => contract.currentCycle).filter((cycle): cycle is CycleView => cycle !== null)
-  const totalMonthlyRent = contractViews.value.reduce((sum, contract) => sum + (contract.cycles[0]?.cycle.rentAmount ?? 0), 0)
-  const totalPending = allCurrentCycles.reduce((sum, cycle) => sum + cycle.partialAmount, 0)
-  const nearestDue = allCurrentCycles.map((cycle) => cycle.cycle.dueDate).sort()[0] ?? null
-  const overdueCount = contractViews.value.flatMap((contract) => contract.cycles).filter((cycle) => cycle.status === 'overdue').length
-  const totalPaid = contractViews.value.reduce((sum, contract) => sum + contract.paidCount, 0)
-  const totalCycles = contractViews.value.reduce((sum, contract) => sum + contract.cycles.length, 0)
-  const pendingUtilityCount = contractViews.value.reduce(
-    (sum, contract) => sum + contract.cycles.filter((cycle) => !cycle.utilityReady).length,
-    0,
-  )
-
-  return { totalMonthlyRent, totalPending, nearestDue, overdueCount, totalPaid, totalCycles, pendingUtilityCount }
-})
-
-const reminderTitle = computed(() => {
-  if (!activeCurrentCycle.value) return '目前沒有待處理帳單'
-  return activeCurrentCycle.value.status === 'overdue'
-    ? `本期帳單已逾期 ${Math.abs(activeCurrentCycle.value.daysLeft)} 天`
-    : '本期帳單提醒'
-})
-
-const reminderAmountLine = computed(() => {
-  if (!activeCurrentCycle.value) return '本租約目前已全數繳清。'
-  if (activeCurrentCycle.value.totalAmount == null) {
-    return `目前已知金額：${formatCurrency(activeCurrentCycle.value.cycle.rentAmount)}，水電待匯入`
-  }
-  return `應繳金額：${formatCurrency(activeCurrentCycle.value.totalAmount)}`
-})
-
-const reminderActionLine = computed(() => {
-  if (!activeCurrentCycle.value) return '可以切換其他租約，檢查是否有新的待處理期數。'
-  return activeCurrentCycle.value.status === 'overdue'
-    ? '建議：優先完成繳費，並保留轉帳或收據證明。'
-    : '建議：確認付款資訊與金額後，再進行標記已繳。'
-})
-
-// ─── 靜態內容（租客防禦指南、精選文章） ──────────────────────────────────────
-const defenseReminder = {
-  eyebrow: 'AI 租客防禦提醒',
-  title: '租屋風險先看懂',
-  summary: '把違約金、設備修繕、押金退還等常見爭議整理成更好理解的重點，幫你在簽約和付款前先避開地雷。',
-  source: '內容整理自租賃實務常見情境與平台內部教學資料。',
-  actionLabel: '查看完整指南',
-  actionTo: '/app/contract',
-}
-
-const riskTags = [
-  { label: '違約金', count: 12, className: 'border-red-200 bg-red-50 text-red-600' },
-  { label: '設備修繕', count: 8, className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  { label: '押金退還', count: 15, className: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
-  { label: '租約續約', count: 10, className: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
-  { label: '水電費用', count: 22, className: 'border-slate-200 bg-slate-100 text-slate-600' },
-]
-
-const featuredArticles = [
-  { title: '提前解約要賠多少？租賃專法違約金上限解析', category: '違約金', publishedAt: '2026-04-05', to: '/app/contract' },
-  { title: '冷氣壞了誰修？圖解修繕責任與存證信函寫法', category: '設備修繕', publishedAt: '2026-03-28', to: '/app/contract' },
-  { title: '退租時被扣押金？這 3 種自然損耗房東不能扣', category: '押金退還', publishedAt: '2026-03-15', to: '/app/contract' },
-]
-
-// ─── 工具函式 ─────────────────────────────────────────────────────────────────
-function findContractIndexByCycle(cycleId: string): [number, number] | null {
-  for (let contractIndex = 0; contractIndex < contracts.value.length; contractIndex += 1) {
-    const cycleIndex = contracts.value[contractIndex].cycles.findIndex((cycle) => cycle.id === cycleId)
-    if (cycleIndex >= 0) return [contractIndex, cycleIndex]
-  }
-  return null
-}
-
-function scrollToCycle(cycleId: string) {
-  document.getElementById(`cycle-${cycleId}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-}
-
-function focusCycle(cycleId: string) {
-  const target = findContractIndexByCycle(cycleId)
-  if (!target) return
-  selectedContractId.value = contracts.value[target[0]].id
-  selectedCycleId.value = cycleId
-}
-
-function selectContract(contractId: string) {
-  selectedContractId.value = contractId
-  filterTab.value = 'all'
-  const contract = contractViews.value.find((item) => item.id === contractId)
-  selectedCycleId.value = contract?.currentCycle?.cycle.id ?? contract?.cycles[0]?.cycle.id ?? null
-}
-
-// ─── 繳費 Dialog ──────────────────────────────────────────────────────────────
-function openPaymentDialog(cycleId: string) {
-  const target = contractViews.value.flatMap((contract) => contract.cycles).find((cycle) => cycle.cycle.id === cycleId)
-  if (!target || target.cycle.paidAt) return
-  paymentTargetCycleId.value = cycleId
-  paymentDialogOpen.value = true
-}
-
-function submitPaymentRecord(form: { paidAt: string; method: PaymentMethod; note: string; proofName: string }) {
-  if (!paymentTargetCycleId.value) return
-  const target = findContractIndexByCycle(paymentTargetCycleId.value)
-  if (!target) return
-
-  const [contractIndex, cycleIndex] = target
-  const contract = contracts.value[contractIndex]
-  const cycle = contract.cycles[cycleIndex]
-  if (cycle.paidAt) return
-
-  cycle.paidAt = form.paidAt
-  cycle.paymentMethod = form.method
-  cycle.paymentNote = form.note.trim()
-  cycle.paymentProofName = form.proofName || null
-
-  const nextUnpaid = contract.cycles.find((item) => !item.paidAt)
-  selectedContractId.value = contract.id
-  selectedCycleId.value = nextUnpaid?.id ?? cycle.id
-  paymentDialogOpen.value = false
-  paymentTargetCycleId.value = null
-
-  if (selectedCycleId.value) nextTick(() => scrollToCycle(selectedCycleId.value!))
-}
-
-// ─── 撤銷 Dialog ──────────────────────────────────────────────────────────────
-function requestUndoCyclePaid(cycleId: string) {
-  confirmTargetCycleId.value = cycleId
-  confirmDialogOpen.value = true
-}
-
-function confirmUndoCyclePaid() {
-  if (!confirmTargetCycleId.value) return
-  const target = findContractIndexByCycle(confirmTargetCycleId.value)
-  if (!target) return
-
-  const [contractIndex, cycleIndex] = target
-  const contract = contracts.value[contractIndex]
-  const cycle = contract.cycles[cycleIndex]
-  cycle.paidAt = null
-  cycle.paymentMethod = null
-  cycle.paymentNote = ''
-  cycle.paymentProofName = null
-
-  selectedContractId.value = contract.id
-  selectedCycleId.value = cycle.id
-  confirmDialogOpen.value = false
-  confirmTargetCycleId.value = null
-  nextTick(() => scrollToCycle(cycle.id))
-}
-
-// ─── 樣式輔助函式 ─────────────────────────────────────────────────────────────
-function statusBadgeClass(status: CycleStatus): string {
-  if (status === 'paid') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  if (status === 'current') return 'border-amber-200 bg-amber-50 text-amber-700'
-  if (status === 'overdue') return 'border-red-200 bg-red-50 text-red-600'
-  return 'border-slate-200 bg-slate-50 text-slate-600'
-}
-
-function statusLabel(status: CycleStatus): string {
-  if (status === 'paid') return '已繳費'
-  if (status === 'current') return '處理中'
-  if (status === 'overdue') return '已逾期'
-  return '待匯入'
-}
-
-function totalAmountLabel(cycle: CycleView): string {
-  return cycle.totalAmount == null ? '待匯入' : formatCurrency(cycle.totalAmount)
-}
-
-function leaseTermLabel(months: number): string {
-  if (months === 24) return '兩年租約'
-  if (months === 12) return '一年租約'
-  if (months === 6) return '半年租約'
-  return `${months} 個月租約`
-}
-
-function cycleRowClass(status: CycleStatus): string {
-  if (status === 'overdue') return 'bg-red-50/70 hover:bg-red-50'
-  if (status === 'current') return 'bg-amber-50/70 hover:bg-amber-50'
-  if (status === 'paid') return 'bg-white hover:bg-slate-50'
-  return 'bg-slate-50/80 hover:bg-slate-100/70'
-}
+  activeCurrentCycle,
+  confirmDialogOpen,
+  contractViews,
+  cycleRowClass,
+  defenseReminder,
+  featuredArticles,
+  filterTab,
+  filteredCycles,
+  focusCycle,
+  globalStats,
+  leaseTermLabel,
+  openPaymentDialog,
+  paymentDialogOpen,
+  paymentTargetCycle,
+  reminderActionLine,
+  reminderAmountLine,
+  reminderTitle,
+  requestUndoCyclePaid,
+  riskTags,
+  selectContract,
+  selectedContractId,
+  selectedCycleId,
+  statusBadgeClass,
+  statusLabel,
+  submitPaymentRecord,
+  totalAmountLabel,
+  confirmUndoCyclePaid,
+} = useDashboard()
 </script>
 
 <template>
@@ -811,7 +479,7 @@ function cycleRowClass(status: CycleStatus): string {
     <!-- ── 停水停電通報 ──────────────────────────────────────────────────────── -->
     <section>
       <!-- 手機版：簡單橫幅連結（sm 以下顯示） -->
-      <RouterLink to="/app/outage" class="block sm:hidden">
+      <RouterLink v-if="false" to="/app/outage" class="block sm:hidden">
         <Card class="group cursor-pointer overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm transition-all hover:border-amber-300 hover:shadow-md">
           <CardContent class="p-5">
             <div class="flex items-center gap-4">
@@ -829,7 +497,7 @@ function cycleRowClass(status: CycleStatus): string {
       </RouterLink>
 
       <!-- 桌面版：直接顯示資訊卡（sm 以上顯示） -->
-      <div class="hidden sm:block space-y-3">
+      <div v-if="false" class="hidden sm:block space-y-3">
         <!-- 標題列 -->
         <div class="flex items-center justify-between">
           <div>
