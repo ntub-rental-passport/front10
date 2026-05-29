@@ -1,18 +1,5 @@
 <template>
   <div class="page-wrap">
-    <SectionTabs group="subsidy" />
-
-    <!-- Topbar -->
-    <div class="page-topbar">
-      <div class="breadcrumb">租補申請管理 / <span>申請流程</span></div>
-      <div class="topbar-right">{{ today }}</div>
-    </div>
-
-    <!-- Heading -->
-    <div class="page-heading">
-      <h1 class="page-title">租金補貼申請</h1>
-      <p class="page-sub">請依序完成以下五個步驟，系統將引導您完成整個申請流程</p>
-    </div>
 
     <!-- 步驟進度 -->
     <div class="step-progress-wrap">

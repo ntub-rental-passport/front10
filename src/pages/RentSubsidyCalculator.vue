@@ -1,18 +1,5 @@
 <template>
   <div class="page-wrap">
-    <SectionTabs group="subsidy" />
-
-    <!-- Topbar -->
-    <div class="page-topbar">
-      <div class="breadcrumb">租補申請管理 / <span>資格試算</span></div>
-      <div class="topbar-right">{{ today }}</div>
-    </div>
-
-    <!-- Heading -->
-    <div class="page-heading">
-      <h1 class="page-title">租金補貼資格試算</h1>
-      <p class="page-sub">回答以下問題，快速了解是否符合申請資格，並預估可領取補貼金額</p>
-    </div>
 
     <!-- 步驟進度 -->
     <div class="step-progress-wrap">

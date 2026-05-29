@@ -1,18 +1,12 @@
 <template>
   <div class="page-wrap">
-    <SectionTabs group="subsidy" />
 
-    <!-- Topbar -->
-    <div class="page-topbar">
-      <div class="breadcrumb">租補申請管理 / 申請進度 / <span>補件上傳</span></div>
-      <div class="topbar-right">{{ today }}</div>
-    </div>
+
 
     <!-- Heading -->
     <div class="page-heading">
       <div class="heading-row">
         <div>
-          <h1 class="page-title">補件上傳</h1>
           <p class="page-sub">請依照補件通知上傳所需文件，以繼續審核流程</p>
         </div>
         <div class="case-chip">

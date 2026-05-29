@@ -4,12 +4,12 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/componen
 import { Button } from '@/components/ui/button/index'
 import { Textarea } from '@/components/ui/textarea/index'
 import { Badge } from '@/components/ui/badge/index'
-import { 
-  AlertTriangle, 
-  Scale, 
-  Sparkles, 
-  Copy, 
-  Undo2, 
+import {
+  AlertTriangle,
+  Scale,
+  Sparkles,
+  Copy,
+  Undo2,
   ChevronRight,
   FileText
 } from 'lucide-vue-next'
@@ -21,17 +21,17 @@ const isGenerating = ref(false)
 
 // 模擬 RAG 比對結果
 const risks = ref([
-  { 
-    id: 1, 
-    title: '押金金額違反上限', 
+  {
+    id: 1,
+    title: '押金金額違反上限',
     severity: 'high',
     law: '應記載事項第 5 點',
     description: '契約書第三條約定押金為「三個月」，依法最高僅能收取「二個月」。',
     aiAdvice: '房東您好，關於合約中押金的部分，依內政部規定最高不得超過二個月租金。目前合約寫三個月似乎不符規範，是否能修正為二個月呢？'
   },
-  { 
-    id: 2, 
-    title: '電費計價方式不明確', 
+  {
+    id: 2,
+    title: '電費計價方式不明確',
     severity: 'medium',
     law: '應記載事項第 6 點',
     description: '未註明每度電費，且公共設施電費分攤方式未與台電帳單掛鉤。',
@@ -46,7 +46,7 @@ onMounted(() => {
 function handleAIAssist(risk: any) {
   activeRiskId.value = risk.id
   isGenerating.value = true
-  
+
   // 模擬 AI 生成延遲
   setTimeout(() => {
     negotiationScript.value = risk.aiAdvice
@@ -64,7 +64,7 @@ function copyToClipboard() {
 <template>
   <div class="min-h-screen bg-background text-foreground p-6 md:p-10 font-sans">
     <div class="max-w-7xl mx-auto space-y-8">
-      
+
       <header class="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border pb-6">
         <div>
           <h1 class="text-4xl font-bold tracking-tight text-primary">契約診斷分析</h1>
@@ -80,7 +80,7 @@ function copyToClipboard() {
       </header>
 
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
+
         <section class="lg:col-span-5 space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold flex items-center gap-2">
@@ -102,8 +102,8 @@ function copyToClipboard() {
           </h2>
 
           <div class="space-y-4">
-            <Card 
-              v-for="risk in risks" 
+            <Card
+              v-for="risk in risks"
               :key="risk.id"
               :class="[
                 'transition-all duration-300 border-l-4',
@@ -118,7 +118,7 @@ function copyToClipboard() {
                       {{ risk.law }}
                     </Badge>
                   </div>
-                  <Badge 
+                  <Badge
                     :class="risk.severity === 'high' ? 'bg-destructive text-destructive-foreground' : 'bg-accent text-accent-foreground'"
                   >
                     {{ risk.severity === 'high' ? '高風險' : '中風險' }}
@@ -129,8 +129,8 @@ function copyToClipboard() {
                 <p class="text-muted-foreground">{{ risk.description }}</p>
               </CardContent>
               <CardFooter class="pt-0">
-                <Button 
-                  @click="handleAIAssist(risk)" 
+                <Button
+                  @click="handleAIAssist(risk)"
                   class="bg-accent hover:bg-accent/90 text-accent-foreground font-semibold shadow-sm transition-transform active:scale-95"
                 >
                   <Sparkles class="w-4 h-4 mr-2" /> AI 談判輔助
@@ -139,8 +139,8 @@ function copyToClipboard() {
             </Card>
           </div>
 
-          <transition 
-            enter-active-class="transition duration-500 ease-out" 
+          <transition
+            enter-active-class="transition duration-500 ease-out"
             enter-from-class="opacity-0 translate-y-4"
             enter-to-class="opacity-100 translate-y-0"
           >
@@ -161,8 +161,8 @@ function copyToClipboard() {
                 </div>
                 <div v-else class="space-y-4">
                   <p class="text-xs text-primary/60 font-medium italic">您可以直接點擊下方區域進行手動編修：</p>
-                  <Textarea 
-                    v-model="negotiationScript" 
+                  <Textarea
+                    v-model="negotiationScript"
                     rows="6"
                     class="bg-background border-primary/20 focus:border-primary focus:ring-primary text-foreground text-md p-4 leading-relaxed resize-none"
                   />

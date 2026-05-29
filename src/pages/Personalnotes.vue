@@ -1,21 +1,7 @@
 <template>
   <div class="page-wrap">
-    <SectionTabs group="notes" />
 
-    <!-- Topbar -->
-    <div class="page-topbar">
-      <div class="breadcrumb">租屋管理</div>
-      <div class="topbar-actions">
-        <span class="security-badge">● 資料安全</span>
-        <button class="ai-btn" @click="showAI = !showAI">+ AI 就結</button>
-      </div>
-    </div>
-
-    <!-- Heading -->
-    <div class="page-heading">
-      <h1 class="page-title">記事板</h1>
-    </div>
-
+    <!-- 主內容 -->
     <div class="page-body">
       <div class="main-layout">
         <!-- 左側主區 -->
@@ -23,13 +9,6 @@
           <!-- Tab 列 -->
           <div class="tab-bar">
             <div class="tabs">
-              <button class="tab-btn" @click="goPersonal">
-                個人記事 <span class="tab-count">2</span>
-              </button>
-              <button class="tab-btn active">
-                室友協作 <span class="tab-count tab-count-active">{{ tasks.length }}</span>
-              </button>
-              <button class="tab-close">×</button>
             </div>
             <button class="btn-add" @click="openAddModal">+ 新增</button>
           </div>
@@ -42,190 +21,158 @@
               class="filter-btn"
               :class="{ active: activeFilter === f.key }"
               @click="activeFilter = f.key"
-            >
+             >
               {{ f.label }}
             </button>
-            <!-- 檢視切換 -->
-            <div class="view-toggle">
-              <button
-                class="view-btn"
-                :class="{ active: viewMode === 'list' }"
-                @click="viewMode = 'list'"
-                title="列表"
-              >
-                ≡
-              </button>
-              <button
-                class="view-btn"
-                :class="{ active: viewMode === 'week' }"
-                @click="viewMode = 'week'"
-                title="週曆"
-              >
-                ▦
-              </button>
-            </div>
           </div>
 
-          <!-- ── 週曆檢視 ── -->
+          <!-- 主內容 切換 -->
           <transition name="slide-fade" mode="out-in">
+            <!-- 週曆模式 -->
             <div v-if="viewMode === 'week'" key="week">
               <div class="week-card">
                 <div class="week-header-row">
-                  <span class="week-title">本週分工排程</span>
+                  <span class="week-title">本週記事排程</span>
                   <div class="week-nav">
                     <button class="week-nav-btn" @click="prevWeek">‹</button>
                     <span class="week-range">{{ weekRangeLabel }}</span>
                     <button class="week-nav-btn" @click="nextWeek">›</button>
                   </div>
                 </div>
-
-                <!-- 週曆格 -->
                 <div class="week-grid">
                   <div v-for="day in weekDays" :key="day.dateStr" class="week-col">
                     <div class="week-day-label">{{ day.weekLabel }}</div>
                     <div class="week-date-circle" :class="{ today: day.isToday }">
                       {{ day.dayNum }}
                     </div>
-
-                    <!-- 當天任務 -->
                     <div class="week-tasks">
                       <div
-                        v-for="task in getTasksForDay(day.dateStr)"
-                        :key="task.id"
+                        v-for="note in getNotesForDay(day.dateStr)"
+                        :key="note.id"
                         class="week-task-chip"
-                        :style="{ background: tagBg(task.tag), color: tagColor(task.tag) }"
-                        @click="openEditModal(task)"
-                        :title="task.title"
+                        :class="{ 'chip-done': note.done }"
+                        :style="{
+                          background: tagColor(note.tag) + '18',
+                          color: tagColor(note.tag),
+                        }"
+                        @click="openEditModal(note)"
+                        :title="note.title"
                       >
-                        <div class="chip-title">{{ task.title }}</div>
-                        <div class="chip-assignee">{{ task.assignee }}</div>
+                        <div class="chip-title">{{ note.title }}</div>
+                        <div class="chip-time" v-if="note.time">{{ note.time }}</div>
                       </div>
                     </div>
-
-                    <!-- 新增拖放區 -->
-                    <div class="week-drop-zone" @click="openAddOnDay(day.dateStr)" title="新增事項">
+                    <div class="week-drop-zone" @click="openAddOnDay(day.dateStr)" title="新增記事">
                       +
                     </div>
                   </div>
                 </div>
-
-                <!-- 標籤圖例 -->
                 <div class="week-legend">
                   <span v-for="t in tagOptions" :key="t.name" class="legend-item">
-                    <span class="legend-dot" :style="{ background: t.color }"></span>
-                    {{ t.name }}
+                    <span class="legend-dot" :style="{ background: t.color }"></span>{{ t.name }}
                   </span>
                 </div>
               </div>
             </div>
 
-            <!-- ── 列表檢視 ── -->
+            <!-- 列表模式 -->
             <div v-else key="list">
               <div class="notes-list">
                 <transition-group name="note-list">
                   <div
-                    v-for="task in filteredTasks"
-                    :key="task.id"
+                    v-for="note in filteredNotes"
+                    :key="note.id"
                     class="note-card"
-                    :class="{ completed: task.done }"
+                    :class="{ completed: note.done }"
                   >
                     <button
                       class="note-checkbox"
-                      :class="{ checked: task.done }"
-                      @click="toggleDone(task.id)"
+                      :class="{ checked: note.done }"
+                      @click="toggleDone(note.id)"
                     >
-                      <span v-if="task.done">✓</span>
+                      <span v-if="note.done">✓</span>
                     </button>
-                    <div class="note-body" @click="openEditModal(task)">
+                    <div class="note-body" @click="openEditModal(note)">
                       <div class="note-title-row">
-                        <span class="note-title" :class="{ 'done-text': task.done }">{{
-                          task.title
+                        <span class="note-title" :class="{ 'done-text': note.done }">{{
+                          note.title
                         }}</span>
                         <span
                           class="note-tag"
-                          :style="{ background: tagBg(task.tag), color: tagColor(task.tag) }"
-                          >{{ task.tag }}</span
+                          :style="{
+                            background: tagColor(note.tag) + '20',
+                            color: tagColor(note.tag),
+                          }"
                         >
+                          {{ note.tag }}
+                        </span>
                       </div>
-                      <div class="note-content" v-if="task.content">{{ task.content }}</div>
+                      <div class="note-content" v-if="note.content">{{ note.content }}</div>
                       <div class="note-meta">
-                        <span v-if="task.date" class="meta-item"
-                          ><span class="meta-icon">📅</span>{{ task.date }}</span
+                        <span v-if="note.date" class="meta-item"
+                          ><span class="meta-icon">📅</span> {{ note.date }}</span
                         >
-                        <span v-if="task.assignee" class="meta-item"
-                          ><span class="meta-icon">👤</span>{{ task.assignee }}</span
+                        <span v-if="note.time" class="meta-item"
+                          ><span class="meta-icon">🕐</span> {{ note.time }}</span
                         >
                       </div>
                     </div>
-                    <button class="note-delete" @click="deleteTask(task.id)">🗑</button>
+                    <button class="note-delete" @click="deleteNote(note.id)">🗑</button>
                   </div>
                 </transition-group>
-                <div v-if="filteredTasks.length === 0" class="empty-state">
-                  <div class="empty-icon">🤝</div>
-                  <div class="empty-text">尚無協作事項，點擊「+ 新增」建立</div>
+                <div v-if="filteredNotes.length === 0" class="empty-state">
+                  <div class="empty-icon">📝</div>
+                  <div class="empty-text">尚無記事，點擊「+ 新增」建立第一則筆記</div>
                 </div>
               </div>
             </div>
           </transition>
         </div>
 
-        <!-- 右側統計 -->
+        <!-- 右側摘要 -->
         <div class="side-col">
-          <!-- 協作摘要 -->
+          <!-- 個人摘要 -->
           <div class="card summary-card">
-            <div class="summary-title">協作摘要</div>
+            <div class="summary-title">個人摘要</div>
             <div class="summary-rows">
               <div class="summary-row">
-                <span class="summary-label">待處理</span>
-                <span class="summary-val blue">{{ tasks.filter((t) => !t.done).length }}</span>
+                <span class="summary-label">待辦事項</span>
+                <span class="summary-val blue">{{ summaryStats.todo }}</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">今日提醒</span>
+                <span class="summary-val orange">{{ summaryStats.todayReminder }}</span>
               </div>
               <div class="summary-row">
                 <span class="summary-label">已完成</span>
-                <span class="summary-val green">{{ tasks.filter((t) => t.done).length }}</span>
+                <span class="summary-val green">{{ summaryStats.done }}</span>
               </div>
             </div>
           </div>
 
-          <!-- 室友負責分佈 -->
-          <div class="card roommate-card" style="margin-top: 14px">
-            <div class="summary-title">室友負責分佈</div>
-            <div class="roommate-rows">
-              <div v-for="rm in roommateStats" :key="rm.name" class="roommate-row">
-                <span class="rm-name">{{ rm.name }}</span>
-                <div class="rm-progress-wrap">
-                  <div class="rm-progress-track">
-                    <div
-                      class="rm-progress-fill"
-                      :style="{ width: rm.total ? (rm.done / rm.total) * 100 + '%' : '0%' }"
-                    ></div>
-                  </div>
-                </div>
-                <span class="rm-stat">{{ rm.done }}/{{ rm.total }} 完成</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 事項類型 -->
+          <!-- 標籤分佈 -->
           <div class="card tag-card" style="margin-top: 14px">
-            <div class="summary-title">事項類型</div>
-            <div class="type-rows">
-              <div v-for="t in tagStats" :key="t.name" class="type-row">
-                <span
-                  class="type-chip"
-                  :style="{ background: tagBg(t.name), color: tagColor(t.name) }"
-                  >{{ t.name }}</span
-                >
-                <span class="type-count">{{ t.count }} 項</span>
+            <div class="summary-title">標籤分佈</div>
+            <div class="tag-bars">
+              <div v-for="t in tagStats" :key="t.name" class="tag-bar-row">
+                <span class="tag-bar-label">{{ t.name }}</span>
+                <div class="tag-bar-track">
+                  <div
+                    class="tag-bar-fill"
+                    :style="{ width: (t.count / maxTagCount) * 100 + '%', background: t.color }"
+                  ></div>
+                </div>
+                <span class="tag-bar-count">{{ t.count }}</span>
               </div>
             </div>
           </div>
 
-          <!-- AI 建議 -->
+          <!-- AI 建議（展開） -->
           <transition name="slide-fade">
             <div v-if="showAI" class="card ai-card" style="margin-top: 14px">
               <div class="ai-header">
                 <span class="ai-icon">✨</span>
-                <span class="ai-title">AI 協作建議</span>
+                <span class="ai-title">AI 小幫手</span>
               </div>
               <div class="ai-suggestions">
                 <div v-for="s in aiSuggestions" :key="s" class="ai-item">{{ s }}</div>
@@ -241,20 +188,20 @@
       <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
         <div class="modal">
           <div class="modal-header">
-            <span class="modal-title">{{ editingTask ? '編輯事項' : '新增協作事項' }}</span>
+            <span class="modal-title">{{ editingNote ? '編輯記事' : '新增記事' }}</span>
             <button class="modal-close" @click="closeModal">×</button>
           </div>
           <div class="modal-body">
             <div class="mfield">
               <label class="mlabel">標題 *</label>
-              <input class="minput" v-model="modalForm.title" placeholder="事項標題" />
+              <input class="minput" v-model="modalForm.title" placeholder="記事標題" />
             </div>
             <div class="mfield">
-              <label class="mlabel">說明</label>
+              <label class="mlabel">內容</label>
               <textarea
                 class="mtextarea"
                 v-model="modalForm.content"
-                rows="2"
+                rows="3"
                 placeholder="詳細說明（選填）"
               ></textarea>
             </div>
@@ -264,11 +211,8 @@
                 <input class="minput" type="date" v-model="modalForm.date" />
               </div>
               <div class="mfield">
-                <label class="mlabel">負責人</label>
-                <select class="mselect" v-model="modalForm.assignee">
-                  <option value="">請選擇</option>
-                  <option v-for="rm in roommates" :key="rm" :value="rm">{{ rm }}</option>
-                </select>
+                <label class="mlabel">時間</label>
+                <input class="minput" type="time" v-model="modalForm.time" />
               </div>
             </div>
             <div class="mfield">
@@ -279,11 +223,11 @@
                   :key="t.name"
                   class="tag-opt-btn"
                   :class="{ selected: modalForm.tag === t.name }"
-                  :style="
-                    modalForm.tag === t.name
-                      ? { borderColor: t.color, background: t.color + '18', color: t.color }
-                      : {}
-                  "
+                  :style="{
+                    borderColor: modalForm.tag === t.name ? t.color : '',
+                    background: modalForm.tag === t.name ? t.color + '20' : '',
+                    color: modalForm.tag === t.name ? t.color : '',
+                  }"
                   @click="modalForm.tag = t.name"
                 >
                   {{ t.name }}
@@ -293,8 +237,8 @@
           </div>
           <div class="modal-footer">
             <button class="btn-cancel" @click="closeModal">取消</button>
-            <button class="btn-save" :disabled="!modalForm.title" @click="saveTask">
-              {{ editingTask ? '儲存變更' : '新增事項' }}
+            <button class="btn-save" :disabled="!modalForm.title" @click="saveNote">
+              {{ editingNote ? '儲存變更' : '新增記事' }}
             </button>
           </div>
         </div>
@@ -310,15 +254,11 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import SectionTabs from '@/src/components/section-tabs.vue'
 
-const router = useRouter()
-
-// ── 日期工具 ──────────────────────────────────
+// ── 週曆工具 ──────────────────────────────────
 const todayDate = new Date()
 todayDate.setHours(0, 0, 0, 0)
-
 function toDateStr(d) {
   return d.toISOString().slice(0, 10)
 }
@@ -328,12 +268,11 @@ function addDays(d, n) {
   return r
 }
 
-// 週起始（本週日）
+const viewMode = ref('list')
 const weekOffset = ref(0)
 const weekStart = computed(() => {
   const d = new Date(todayDate)
-  const day = d.getDay() // 0=日
-  d.setDate(d.getDate() - day + weekOffset.value * 7)
+  d.setDate(d.getDate() - d.getDay() + weekOffset.value * 7)
   return d
 })
 const weekDays = computed(() => {
@@ -359,177 +298,213 @@ function prevWeek() {
 function nextWeek() {
   weekOffset.value++
 }
-
-// ── 資料 ──────────────────────────────────────
-const roommates = ['小林', '阿明', '小美', '全屋']
-const tagOptions = [
-  { name: '輪值', color: '#4845A5' },
-  { name: '公告', color: '#F59E0B' },
-  { name: '提醒', color: '#10B981' },
-  { name: '採購', color: '#8B5CF6' },
-  { name: '維護', color: '#EF4444' },
-]
-function tagColor(tag) {
-  return tagOptions.find((t) => t.name === tag)?.color ?? '#64748B'
+function getNotesForDay(dateStr) {
+  return notes.value.filter((n) => n.tab === activeTab.value && n.date === dateStr)
 }
-function tagBg(tag) {
-  return (tagOptions.find((t) => t.name === tag)?.color ?? '#64748B') + '18'
+function openAddOnDay(dateStr) {
+  editingNote.value = null
+  modalForm.value = { title: '', content: '', date: dateStr, time: '', tag: '提醒' }
+  showModal.value = true
 }
 
-// 產生本週相對日期
-function thisWeekDay(offset) {
-  const d = new Date(todayDate)
-  const sun = new Date(d)
-  sun.setDate(d.getDate() - d.getDay())
-  sun.setDate(sun.getDate() + offset)
-  return toDateStr(sun)
-}
+const today = new Date()
+  .toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  .replace(/\//g, '-')
 
-let nextId = 8
-const tasks = ref([
+// ── Tab ──────────────────────────────────────
+const activeTab = ref('personal')
+const tabs = computed(() => [
   {
-    id: 1,
-    title: '申請曬衣架',
-    content: '向管委會申請頂樓曬衣架使用',
-    date: thisWeekDay(2),
-    assignee: '小美',
-    tag: '輪值',
-    done: false,
+    key: 'personal',
+    label: '個人記事',
+    count: notes.value.filter((n) => n.tab === 'personal').length,
   },
   {
-    id: 2,
-    title: '倒垃圾',
-    content: '週五晚上記得倒垃圾',
-    date: thisWeekDay(5),
-    assignee: '小林',
-    tag: '輪值',
-    done: false,
-  },
-  {
-    id: 3,
-    title: '繳水電費',
-    content: '全屋分攤，每人 400 元',
-    date: thisWeekDay(6),
-    assignee: '全屋',
-    tag: '公告',
-    done: false,
-  },
-  {
-    id: 4,
-    title: '廚房清潔',
-    content: '輪到阿明本週清潔',
-    date: thisWeekDay(1),
-    assignee: '阿明',
-    tag: '輪值',
-    done: false,
-  },
-  {
-    id: 5,
-    title: '購買衛生紙',
-    content: '家樂福買兩串',
-    date: thisWeekDay(3),
-    assignee: '小美',
-    tag: '採購',
-    done: true,
+    key: 'roommate',
+    label: '室友協作',
+    count: notes.value.filter((n) => n.tab === 'roommate').length,
   },
 ])
 
-// ── Filter / View ──────────────────────────────
+// ── Filter ────────────────────────────────────
 const activeFilter = ref('all')
-const viewMode = ref('week')
 const filters = [
   { key: 'all', label: '全部' },
   { key: 'todo', label: '待辦' },
   { key: 'done', label: '完成' },
 ]
-const filteredTasks = computed(() =>
-  tasks.value.filter((t) => {
-    if (activeFilter.value === 'todo') return !t.done
-    if (activeFilter.value === 'done') return t.done
-    return true
-  }),
-)
-function getTasksForDay(dateStr) {
-  return tasks.value.filter((t) => t.date === dateStr)
+
+// ── 標籤設定 ──────────────────────────────────
+const tagOptions = [
+  { name: '繳款', color: '#EF4444' },
+  { name: '提醒', color: '#4845A5' },
+  { name: '維護', color: '#10B981' },
+  { name: '採購', color: '#F59E0B' },
+  { name: '其他', color: '#8B5CF6' },
+]
+function tagColor(tag) {
+  return tagOptions.find((t) => t.name === tag)?.color ?? '#64748B'
 }
 
+// ── 記事資料 ──────────────────────────────────
+let nextId = 4
+const notes = ref([
+  {
+    id: 1,
+    tab: 'personal',
+    title: '繳交三月房租',
+    content: '記得 ATM 轉帳給陳大文，帳號末四碼 5678',
+    date: '2026-03-10',
+    time: '09:00',
+    tag: '繳款',
+    done: false,
+  },
+  {
+    id: 2,
+    tab: 'personal',
+    title: '外出前確認事項',
+    content: '帶鑰匙、悠遊卡、雨傘（週末有雨）',
+    date: '2026-03-15',
+    time: '08:30',
+    tag: '提醒',
+    done: false,
+  },
+  {
+    id: 3,
+    tab: 'personal',
+    title: '冷氣濾網清洗',
+    content: '上次清洗是一月，建議每三個月一次',
+    date: '2026-03-20',
+    time: '',
+    tag: '維護',
+    done: true,
+  },
+  {
+    id: 4,
+    tab: 'roommate',
+    title: '廚房清潔輪值',
+    content: '本週輪到小明，下週輪到小花',
+    date: '2026-03-22',
+    time: '',
+    tag: '提醒',
+    done: false,
+  },
+  {
+    id: 5,
+    tab: 'roommate',
+    title: '網路費分攤',
+    content: '每人 300 元，繳給房東',
+    date: '2026-03-25',
+    time: '',
+    tag: '繳款',
+    done: false,
+  },
+  {
+    id: 6,
+    tab: 'roommate',
+    title: '購買洗碗精',
+    content: '快用完了，去家樂福買',
+    date: '2026-03-18',
+    time: '',
+    tag: '採購',
+    done: true,
+  },
+  {
+    id: 7,
+    tab: 'roommate',
+    title: '修繕漏水問題',
+    content: '通知房東浴室天花板有漏水',
+    date: '2026-03-12',
+    time: '10:00',
+    tag: '維護',
+    done: true,
+  },
+])
+
+const filteredNotes = computed(() => {
+  return notes.value.filter((n) => {
+    if (n.tab !== activeTab.value) return false
+    if (activeFilter.value === 'todo') return !n.done
+    if (activeFilter.value === 'done') return n.done
+    return true
+  })
+})
+
 // ── 統計 ──────────────────────────────────────
-const roommateStats = computed(() =>
-  roommates
-    .filter((r) => r !== '全屋')
-    .map((r) => ({
-      name: r,
-      total: tasks.value.filter((t) => t.assignee === r || t.assignee === '全屋').length,
-      done: tasks.value.filter((t) => (t.assignee === r || t.assignee === '全屋') && t.done).length,
-    })),
-)
-const tagStats = computed(() =>
-  tagOptions
-    .map((t) => ({ name: t.name, count: tasks.value.filter((tk) => tk.tag === t.name).length }))
-    .filter((t) => t.count > 0),
-)
+const summaryStats = computed(() => {
+  const personal = notes.value.filter((n) => n.tab === 'personal')
+  return {
+    todo: personal.filter((n) => !n.done).length,
+    todayReminder: personal.filter((n) => n.date === today && !n.done).length,
+    done: personal.filter((n) => n.done).length,
+  }
+})
+
+const tagStats = computed(() => {
+  const currentNotes = notes.value.filter((n) => n.tab === activeTab.value)
+  return tagOptions
+    .map((t) => ({
+      name: t.name,
+      color: t.color,
+      count: currentNotes.filter((n) => n.tag === t.name).length,
+    }))
+    .filter((t) => t.count > 0)
+})
+
+const maxTagCount = computed(() => Math.max(...tagStats.value.map((t) => t.count), 1))
+
+// ── 操作 ──────────────────────────────────────
+function toggleDone(id) {
+  const n = notes.value.find((n) => n.id === id)
+  if (n) n.done = !n.done
+}
+function deleteNote(id) {
+  notes.value = notes.value.filter((n) => n.id !== id)
+  showToastMsg('已刪除記事')
+}
 
 // ── Modal ──────────────────────────────────────
 const showModal = ref(false)
-const editingTask = ref(null)
-const modalForm = ref({ title: '', content: '', date: '', assignee: '', tag: '輪值' })
+const editingNote = ref(null)
+const modalForm = ref({ title: '', content: '', date: '', time: '', tag: '提醒' })
 
 function openAddModal() {
-  editingTask.value = null
-  modalForm.value = {
-    title: '',
-    content: '',
-    date: toDateStr(todayDate),
-    assignee: '',
-    tag: '輪值',
-  }
+  editingNote.value = null
+  modalForm.value = { title: '', content: '', date: '', time: '', tag: '提醒' }
   showModal.value = true
 }
-function openAddOnDay(dateStr) {
-  editingTask.value = null
-  modalForm.value = { title: '', content: '', date: dateStr, assignee: '', tag: '輪值' }
-  showModal.value = true
-}
-function openEditModal(task) {
-  editingTask.value = task
+function openEditModal(note) {
+  editingNote.value = note
   modalForm.value = {
-    title: task.title,
-    content: task.content,
-    date: task.date,
-    assignee: task.assignee,
-    tag: task.tag,
+    title: note.title,
+    content: note.content,
+    date: note.date,
+    time: note.time,
+    tag: note.tag,
   }
   showModal.value = true
 }
 function closeModal() {
   showModal.value = false
 }
-function saveTask() {
+function saveNote() {
   if (!modalForm.value.title) return
-  if (editingTask.value) {
-    Object.assign(editingTask.value, modalForm.value)
-    showToastMsg('✓ 事項已更新')
+  if (editingNote.value) {
+    Object.assign(editingNote.value, modalForm.value)
+    showToastMsg('✓ 記事已更新')
   } else {
-    tasks.value.push({ id: ++nextId, done: false, ...modalForm.value })
-    showToastMsg('✓ 事項已新增')
+    notes.value.unshift({ id: ++nextId, tab: activeTab.value, done: false, ...modalForm.value })
+    showToastMsg('✓ 記事已新增')
   }
   closeModal()
 }
-function toggleDone(id) {
-  const t = tasks.value.find((t) => t.id === id)
-  if (t) t.done = !t.done
-}
-function deleteTask(id) {
-  tasks.value = tasks.value.filter((t) => t.id !== id)
-  showToastMsg('已刪除事項')
-}
 
-// ── AI ────────────────────────────────────────
+// ── AI 建議 ───────────────────────────────────
 const showAI = ref(false)
 const aiSuggestions = [
-  '🔄 小林 和 阿明 本週尚無完成事項，可提醒確認',
-  '📢 繳水電費 截止日為週六，建議提前通知全屋',
-  '🧹 廚房清潔已設定輪值，可開啟自動週期提醒',
+  '📅 您有 2 筆待辦記事即將到期，建議優先處理',
+  '💡 本月繳款紀錄較多，可設定自動提醒',
+  '🔧 維護類事項建議定期追蹤，避免遺漏',
 ]
 
 // ── Toast ──────────────────────────────────────
@@ -539,10 +514,6 @@ function showToastMsg(msg) {
   toastMsg.value = msg
   showToast.value = true
   setTimeout(() => (showToast.value = false), 2200)
-}
-
-function goPersonal() {
-  router.push('/app/notes/personal')
 }
 </script>
 
@@ -661,6 +632,7 @@ function goPersonal() {
   background: var(--c-card);
   color: var(--c-text);
   font-weight: 700;
+  border-color: var(--c-border);
 }
 .tab-count {
   font-size: 11px;
@@ -681,6 +653,8 @@ function goPersonal() {
   border: none;
   cursor: pointer;
   padding: 0 6px;
+  line-height: 1;
+  transition: color 0.15s;
 }
 .tab-close:hover {
   color: var(--c-danger);
@@ -703,7 +677,6 @@ function goPersonal() {
 /* ── Filter Bar ── */
 .filter-bar {
   display: flex;
-  align-items: center;
   gap: 6px;
   margin-bottom: 14px;
   border-bottom: 1.5px solid var(--c-border);
@@ -729,6 +702,474 @@ function goPersonal() {
   color: #fff;
   border-color: var(--c-primary);
 }
+
+/* ── Note Cards ── */
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.note-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--c-card);
+  border-radius: var(--radius);
+  border: 1.5px solid var(--c-border);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  transition: all 0.2s;
+  cursor: default;
+}
+.note-card:hover {
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.1);
+  border-color: #c7d7f5;
+}
+.note-card.completed {
+  opacity: 0.65;
+  background: #fafafa;
+}
+
+.note-checkbox {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  border: 2px solid var(--c-border);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.note-checkbox:hover {
+  border-color: var(--c-primary);
+}
+.note-checkbox.checked {
+  background: var(--c-success);
+  border-color: var(--c-success);
+}
+
+.note-body {
+  flex: 1;
+  cursor: pointer;
+}
+.note-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.note-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.note-title.done-text {
+  text-decoration: line-through;
+  color: var(--c-muted);
+}
+.note-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 99px;
+}
+.note-content {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-bottom: 7px;
+  line-height: 1.6;
+}
+.note-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.meta-item {
+  font-size: 11px;
+  color: var(--c-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.meta-icon {
+  font-size: 12px;
+}
+
+.note-delete {
+  font-size: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--c-muted);
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 2px;
+}
+.note-card:hover .note-delete {
+  opacity: 1;
+}
+.note-delete:hover {
+  color: var(--c-danger);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 0;
+}
+.empty-icon {
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+.empty-text {
+  font-size: 13px;
+  color: var(--c-muted);
+}
+
+/* ── Side ── */
+.card {
+  background: var(--c-card);
+  border-radius: var(--radius);
+  border: 1.5px solid var(--c-border);
+  box-shadow: var(--shadow);
+}
+.summary-card {
+  padding: 16px 18px;
+}
+.summary-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.summary-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--c-border);
+}
+.summary-row:last-child {
+  border-bottom: none;
+}
+.summary-label {
+  font-size: 13px;
+  color: var(--c-muted);
+}
+.summary-val {
+  font-size: 20px;
+  font-weight: 800;
+}
+.summary-val.blue {
+  color: var(--c-primary);
+}
+.summary-val.orange {
+  color: var(--c-warning);
+}
+.summary-val.green {
+  color: var(--c-success);
+}
+
+.tag-card {
+  padding: 16px 18px;
+}
+.tag-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tag-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tag-bar-label {
+  font-size: 12px;
+  color: var(--c-text);
+  min-width: 32px;
+}
+.tag-bar-track {
+  flex: 1;
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.tag-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tag-bar-count {
+  font-size: 12px;
+  color: var(--c-muted);
+  min-width: 12px;
+  text-align: right;
+}
+
+.ai-card {
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #F0EFFE, #f5f3ff);
+}
+.ai-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.ai-icon {
+  font-size: 16px;
+}
+.ai-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-primary);
+}
+.ai-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ai-item {
+  font-size: 12px;
+  color: #3730a3;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 7px;
+  padding: 6px 10px;
+  line-height: 1.5;
+}
+
+/* ── Modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(3px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal {
+  background: var(--c-card);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  width: 100%;
+  max-width: 460px;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--c-border);
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.modal-close {
+  font-size: 20px;
+  line-height: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--c-muted);
+  padding: 0 4px;
+  transition: color 0.15s;
+}
+.modal-close:hover {
+  color: var(--c-danger);
+}
+.modal-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.mfield {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mfield-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.mlabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text);
+}
+.minput {
+  padding: 8px 11px;
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--c-text);
+  transition: border-color 0.2s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.minput:focus {
+  outline: none;
+  border-color: var(--c-primary);
+}
+.mtextarea {
+  padding: 8px 11px;
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--c-text);
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.mtextarea:focus {
+  outline: none;
+  border-color: var(--c-primary);
+}
+.tag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.tag-opt-btn {
+  padding: 4px 13px;
+  border-radius: 99px;
+  border: 1.5px solid var(--c-border);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--c-muted);
+}
+.modal-footer {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--c-border);
+}
+.btn-cancel {
+  padding: 9px 18px;
+  background: #fff;
+  color: var(--c-muted);
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-cancel:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+.btn-save {
+  flex: 1;
+  padding: 9px;
+  background: var(--c-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-save:hover:not(:disabled) {
+  background: var(--c-primary-dark);
+}
+.btn-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Toast ── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #fff;
+  padding: 10px 22px;
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 999;
+  white-space: nowrap;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+}
+.toast-enter-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toast-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(10px);
+}
+
+/* ── Transitions ── */
+.note-list-enter-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.note-list-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.note-list-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.note-list-leave-to {
+  opacity: 0;
+  transform: translateX(16px);
+}
+
+.slide-fade-enter-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-fade-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.slide-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.fade-enter-active {
+  transition: opacity 0.25s;
+}
+.fade-leave-active {
+  transition: opacity 0.2s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ── View Toggle ── */
 .view-toggle {
   margin-left: auto;
   display: flex;
@@ -804,8 +1245,6 @@ function goPersonal() {
   min-width: 80px;
   text-align: center;
 }
-
-/* ── Week Grid ── */
 .week-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -858,6 +1297,10 @@ function goPersonal() {
   filter: brightness(0.95);
   transform: translateY(-1px);
 }
+.week-task-chip.chip-done {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
 .chip-title {
   font-size: 11px;
   font-weight: 600;
@@ -866,7 +1309,7 @@ function goPersonal() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chip-assignee {
+.chip-time {
   font-size: 10px;
   opacity: 0.7;
   margin-top: 1px;
@@ -890,8 +1333,6 @@ function goPersonal() {
   color: var(--c-primary);
   background: var(--c-primary-light);
 }
-
-/* ── Legend ── */
 .week-legend {
   display: flex;
   gap: 12px;
@@ -911,508 +1352,10 @@ function goPersonal() {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-}
-
-/* ── Note Cards (list mode) ── */
-.notes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.note-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  background: var(--c-card);
-  border-radius: var(--radius);
-  border: 1.5px solid var(--c-border);
-  padding: 14px 16px;
-  box-shadow: var(--shadow);
-  transition: all 0.2s;
-}
-.note-card:hover {
-  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.1);
-  border-color: #c7d7f5;
-}
-.note-card.completed {
-  opacity: 0.65;
-  background: #fafafa;
-}
-.note-checkbox {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
   flex-shrink: 0;
-  margin-top: 1px;
-  border: 2px solid var(--c-border);
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.note-checkbox:hover {
-  border-color: var(--c-primary);
-}
-.note-checkbox.checked {
-  background: var(--c-success);
-  border-color: var(--c-success);
-}
-.note-body {
-  flex: 1;
-  cursor: pointer;
-}
-.note-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  flex-wrap: wrap;
-}
-.note-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-.note-title.done-text {
-  text-decoration: line-through;
-  color: var(--c-muted);
-}
-.note-tag {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 9px;
-  border-radius: 99px;
-}
-.note-content {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-bottom: 7px;
-  line-height: 1.6;
-}
-.note-meta {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.meta-item {
-  font-size: 11px;
-  color: var(--c-muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.meta-icon {
-  font-size: 12px;
-}
-.note-delete {
-  font-size: 14px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--c-muted);
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-.note-card:hover .note-delete {
-  opacity: 1;
-}
-.note-delete:hover {
-  color: var(--c-danger);
-}
-.empty-state {
-  text-align: center;
-  padding: 48px 0;
-}
-.empty-icon {
-  font-size: 36px;
-  margin-bottom: 10px;
-}
-.empty-text {
-  font-size: 13px;
-  color: var(--c-muted);
-}
-
-/* ── Side Cards ── */
-.card {
-  background: var(--c-card);
-  border-radius: var(--radius);
-  border: 1.5px solid var(--c-border);
-  box-shadow: var(--shadow);
-}
-.summary-card {
-  padding: 16px 18px;
-}
-.summary-title {
-  font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 12px;
-}
-.summary-rows {
-  display: flex;
-  flex-direction: column;
-}
-.summary-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--c-border);
-}
-.summary-row:last-child {
-  border-bottom: none;
-}
-.summary-label {
-  font-size: 13px;
-  color: var(--c-muted);
-}
-.summary-val {
-  font-size: 20px;
-  font-weight: 800;
-}
-.summary-val.blue {
-  color: var(--c-primary);
-}
-.summary-val.green {
-  color: var(--c-success);
-}
-
-.roommate-card {
-  padding: 16px 18px;
-}
-.roommate-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.roommate-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.rm-name {
-  font-size: 12px;
-  color: var(--c-text);
-  min-width: 32px;
-}
-.rm-progress-wrap {
-  flex: 1;
-}
-.rm-progress-track {
-  height: 5px;
-  background: #f1f5f9;
-  border-radius: 99px;
-  overflow: hidden;
-}
-.rm-progress-fill {
-  height: 100%;
-  background: var(--c-primary);
-  border-radius: 99px;
-  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.rm-stat {
-  font-size: 11px;
-  color: var(--c-muted);
-  white-space: nowrap;
-}
-
-.tag-card {
-  padding: 16px 18px;
-}
-.type-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.type-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.type-chip {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 10px;
-  border-radius: 99px;
-}
-.type-count {
-  font-size: 12px;
-  color: var(--c-muted);
-}
-
-.ai-card {
-  padding: 14px 16px;
-  background: linear-gradient(135deg, #F0EFFE, #f5f3ff);
-}
-.ai-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.ai-icon {
-  font-size: 16px;
-}
-.ai-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--c-primary);
-}
-.ai-suggestions {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.ai-item {
-  font-size: 12px;
-  color: #3730a3;
-  background: rgba(255, 255, 255, 0.6);
-  border-radius: 7px;
-  padding: 6px 10px;
-  line-height: 1.5;
-}
-
-/* ── Modal ── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(3px);
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-.modal {
-  background: var(--c-card);
-  border-radius: var(--radius);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
-  width: 100%;
-  max-width: 460px;
-}
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--c-border);
-}
-.modal-title {
-  font-size: 15px;
-  font-weight: 700;
-}
-.modal-close {
-  font-size: 20px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--c-muted);
-  padding: 0 4px;
-}
-.modal-close:hover {
-  color: var(--c-danger);
-}
-.modal-body {
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.mfield {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.mfield-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.mlabel {
-  font-size: 12px;
-  font-weight: 600;
-}
-.minput {
-  padding: 8px 11px;
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--c-text);
-  width: 100%;
-  box-sizing: border-box;
-  transition: border-color 0.2s;
-}
-.minput:focus {
-  outline: none;
-  border-color: var(--c-primary);
-}
-.mselect {
-  padding: 8px 11px;
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--c-text);
-  width: 100%;
-  box-sizing: border-box;
-  background: #fff;
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-.mselect:focus {
-  outline: none;
-  border-color: var(--c-primary);
-}
-.mtextarea {
-  padding: 8px 11px;
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--c-text);
-  resize: vertical;
-  font-family: inherit;
-  width: 100%;
-  box-sizing: border-box;
-}
-.mtextarea:focus {
-  outline: none;
-  border-color: var(--c-primary);
-}
-.tag-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-.tag-opt-btn {
-  padding: 4px 13px;
-  border-radius: 99px;
-  border: 1.5px solid var(--c-border);
-  background: #fff;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-  color: var(--c-muted);
-}
-.modal-footer {
-  display: flex;
-  gap: 10px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--c-border);
-}
-.btn-cancel {
-  padding: 9px 18px;
-  background: #fff;
-  color: var(--c-muted);
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-cancel:hover {
-  border-color: var(--c-primary);
-  color: var(--c-primary);
-}
-.btn-save {
-  flex: 1;
-  padding: 9px;
-  background: var(--c-primary);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-save:hover:not(:disabled) {
-  background: var(--c-primary-dark);
-}
-.btn-save:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* ── Toast ── */
-.toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #1e293b;
-  color: #fff;
-  padding: 10px 22px;
-  border-radius: 99px;
-  font-size: 13px;
-  font-weight: 500;
-  z-index: 999;
-  white-space: nowrap;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
-}
-.toast-enter-active {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.toast-leave-active {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(10px);
-}
-
-/* ── Transitions ── */
-.slide-fade-enter-active {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.slide-fade-leave-active {
-  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.slide-fade-enter-from {
-  opacity: 0;
-  transform: translateX(10px);
-}
-.slide-fade-leave-to {
-  opacity: 0;
-  transform: translateX(-10px);
-}
-.note-list-enter-active {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.note-list-leave-active {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.note-list-enter-from {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-.note-list-leave-to {
-  opacity: 0;
-  transform: translateX(16px);
-}
-.fade-enter-active {
-  transition: opacity 0.25s;
-}
-.fade-leave-active {
-  transition: opacity 0.2s;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 
 /* ── RWD ── */
-@media (max-width: 900px) {
-  .week-grid {
-    grid-template-columns: repeat(7, 1fr);
-  }
-  .chip-assignee {
-    display: none;
-  }
-}
 @media (max-width: 700px) {
   .page-topbar,
   .page-heading,
@@ -1423,9 +1366,10 @@ function goPersonal() {
   .main-layout {
     grid-template-columns: 1fr;
   }
-  .week-grid {
-    grid-template-columns: repeat(4, 1fr);
-    overflow-x: auto;
+  .side-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
   }
 }
 </style>

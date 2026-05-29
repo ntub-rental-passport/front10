@@ -1,16 +1,7 @@
 <template>
   <div class="progress-page">
-    <SectionTabs group="subsidy" />
-
-    <div class="page-topbar">
-      <div class="breadcrumb">租補申請管理 / <span>申請進度查詢</span></div>
-      <div class="topbar-right">
-        <span class="topbar-date">{{ today }}</span>
-      </div>
-    </div>
 
     <div class="page-heading">
-      <h1 class="page-title">租補申請進度</h1>
       <p class="page-sub">追蹤您的租金補貼申請審核狀態，並管理補件與通知</p>
     </div>
 
@@ -28,22 +19,18 @@
       </button>
     </div>
 
-    <!-- 主內容 -->
     <template v-if="current">
-      <!-- 警示補件通知（如有） -->
       <div v-if="current.pendingSupplement" class="alert-banner">
         <span class="alert-icon">⚠️</span>
         <div class="alert-body">
           <strong>需要補件</strong>
           「{{ current.pendingSupplement }}」尚未上傳，補件截止日：<strong>{{
             current.supplementDeadline
-          }}</strong
-          >。逾期將影響本期補貼申請。
+          }}</strong>。逾期將影響本期補貼申請。
         </div>
         <button class="alert-btn" @click="goSupplement">立即補件 →</button>
       </div>
 
-      <!-- 四個統計卡 -->
       <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-icon">📋</div>
@@ -72,9 +59,7 @@
         </div>
       </div>
 
-      <!-- 主要內容兩欄 -->
       <div class="main-cols">
-        <!-- 左：審核流程時間軸 -->
         <div class="col-left">
           <div class="card">
             <div class="card-header">
@@ -94,10 +79,8 @@
                   failed: step.status === 'failed',
                 }"
               >
-                <!-- 連接線 -->
                 <div class="tl-line" v-if="i < current.timeline.length - 1"></div>
 
-                <!-- 節點圓圈 -->
                 <div class="tl-dot">
                   <span v-if="step.status === 'done'">✓</span>
                   <span v-else-if="step.status === 'active'" class="pulse-dot"></span>
@@ -105,12 +88,10 @@
                   <span v-else>{{ i + 1 }}</span>
                 </div>
 
-                <!-- 內容 -->
                 <div class="tl-content">
                   <div class="tl-title">{{ step.title }}</div>
                   <div class="tl-date" v-if="step.date">{{ step.date }}</div>
                   <div class="tl-note" v-if="step.note">{{ step.note }}</div>
-                  <!-- 補件標籤 -->
                   <div class="tl-supplement" v-if="step.supplement">
                     <span class="supp-tag">📎 補件</span>
                     <span
@@ -128,9 +109,7 @@
           </div>
         </div>
 
-        <!-- 右：文件狀態 + 撥款紀錄 -->
         <div class="col-right">
-          <!-- 文件上傳狀態 -->
           <div class="card">
             <div class="card-header">
               <span class="card-title">文件狀態</span>
@@ -161,7 +140,6 @@
             </div>
           </div>
 
-          <!-- 撥款紀錄 -->
           <div class="card" style="margin-top: 16px">
             <div class="card-header">
               <span class="card-title">撥款紀錄</span>
@@ -188,7 +166,6 @@
         </div>
       </div>
 
-      <!-- 操作按鈕列 -->
       <div class="action-bar">
         <button
           class="action-btn outline"
@@ -205,7 +182,6 @@
       </div>
     </template>
 
-    <!-- Toast -->
     <transition name="toast">
       <div v-if="showToast" class="toast">{{ toastMsg }}</div>
     </transition>
@@ -374,8 +350,11 @@ function goApply() {
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 
   font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
-  background: var(--c-bg);
-  min-height: 100%;
+
+  /* 🎯 這裡改成透明，直接看穿到底層系統的淺灰藍色 */
+  background: transparent !important;
+  min-height: auto;
+
   color: var(--c-text);
   padding: 0 0 48px;
   position: relative;

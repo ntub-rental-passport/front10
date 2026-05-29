@@ -6,7 +6,7 @@ import StepIndicator from '@/src/components/subsidy/StepIndicator.vue'
 import Step1 from '@/src/components/subsidy/Step1.vue'
 import Step2 from '@/src/components/subsidy/Step2.vue'
 import ApplicationForm from '@/src/components/subsidy/ApplicationForm.vue'
-import SectionTabs from '@/src/components/section-tabs.vue'
+// 💡 已刪除不需再使用的 SectionTabs 引用
 import { Card, CardContent } from '@/components/ui/card/index'
 
 const step = ref(1)
@@ -14,14 +14,6 @@ const step = ref(1)
 
 <template>
   <div class="space-y-4 pb-20 md:pb-0">
-    <div>
-      <h1 class="text-xl font-bold">租金補貼</h1>
-      <p class="text-sm text-muted-foreground">政府租金補貼申請指南</p>
-    </div>
-
-    <SectionTabs group="subsidy" />
-
-    <!-- Info cards (always visible) -->
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <MenuCard
         :icon="PiggyBank"
@@ -41,7 +33,6 @@ const step = ref(1)
       />
     </div>
 
-    <!-- Step wizard -->
     <Card>
       <CardContent class="pt-6">
         <StepIndicator :current-step="step" :total-steps="3" />
