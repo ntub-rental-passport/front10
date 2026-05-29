@@ -474,6 +474,19 @@ function restartMainMap() {
   nextTick(() => startMap('main'))
 }
 
+function scrollToSection(i: number) {
+  guideActiveIndex.value = i
+  nextTick(() => {
+    const el = document.getElementById(`guide-section-${i}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+function centerMainMapOnUser() {
+  if (!mainMap || !userLocation.value) return
+  mainMap.flyTo({ center: [userLocation.value.lng, userLocation.value.lat], zoom: 15, duration: 800 })
+}
+
 // ─── MapLibre GL 地圖 ────────────────────────────────────────────────────────
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/bright'
 const DEFAULT_CENTER_LNGLAT: [number, number] = [121.46, 25.014] // MapLibre 座標順序：[lng, lat]
@@ -573,7 +586,7 @@ function startMap(which: 'main' | 'nearby' | 'manual') {
 
   let map: maplibregl.Map
   try {
-    map = new maplibregl.Map({ container: containerEl, style: STYLE_URL, center, zoom: 15 })
+    map = new maplibregl.Map({ container: containerEl, style: STYLE_URL, center, zoom: 15, attributionControl: false })
   }
   catch (err: any) {
     mapError.value = err?.message ?? '地圖初始化失敗'
@@ -928,6 +941,16 @@ const manualNearbyStations = computed(() => {
               >重新載入</button>
             </div>
 
+            <!-- 回到目前位置按鈕 -->
+            <button
+              v-if="userLocation && !mapError"
+              class="absolute bottom-3 right-3 z-[1001] flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-md transition-all hover:shadow-lg hover:scale-105 active:scale-95"
+              title="回到目前位置"
+              @click="centerMainMapOnUser"
+            >
+              <Navigation class="h-5 w-5 text-primary" />
+            </button>
+
             <!-- 地圖上的彈出資訊卡：z-[1001] 確保高於 MapLibre 的 tile/control 層 -->
             <div v-if="selectedStation && !mapError" class="absolute right-3 top-3 z-[1001] w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
               <div class="mb-3 flex items-start justify-between">
@@ -1013,9 +1036,64 @@ const manualNearbyStations = computed(() => {
         </div>
       </section>
 
-      <!-- ── 清運地點清單（表格） ───────────────────────────────────────────────── -->
+      <!-- ── 清運地點清單 ──────────────────────────────────────────────────────── -->
       <section>
-        <Card class="rounded-2xl">
+        <!-- ── 手機版：垂直清單，資訊橫向排列（sm 以下顯示） ── -->
+        <Card class="rounded-2xl sm:hidden">
+          <CardHeader class="border-b border-slate-100 px-4 py-3">
+            <CardTitle class="text-sm font-semibold text-slate-900">
+              清運地點清單
+              <span class="ml-1 font-normal text-slate-500">（共 {{ filteredStations.length }} 筆）</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="p-0">
+            <div v-if="filteredStations.length === 0" class="px-4 py-10 text-center text-sm text-slate-500">
+              目前條件下沒有找到清運站點
+            </div>
+            <div class="divide-y divide-slate-100">
+              <div v-for="(station, index) in filteredStations" :key="station.id" class="px-4 py-3">
+                <!-- 第一行：編號 + 名稱 + 狀態 + 操作（橫向） -->
+                <div class="flex items-center gap-2">
+                  <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">{{ index + 1 }}</span>
+                  <p class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{{ station.name }}</p>
+                  <Badge variant="outline" :class="['shrink-0 rounded-full px-2 py-0 text-[10px] font-semibold', STATUS_CONFIG[station.status].badgeClass]">
+                    {{ STATUS_CONFIG[station.status].label }}
+                  </Badge>
+                  <div class="flex shrink-0 items-center gap-1">
+                    <button class="rounded-lg p-1 hover:bg-amber-50" @click="toggleFavorite(station.id)">
+                      <Star class="h-3.5 w-3.5" :class="isFavorited(station.id) ? 'text-amber-500' : 'text-slate-300'" :fill="isFavorited(station.id) ? 'currentColor' : 'none'" />
+                    </button>
+                    <button class="rounded-lg p-1 hover:bg-slate-100" @click="openReminderTab(station.id)">
+                      <Bell class="h-3.5 w-3.5 text-slate-300" />
+                    </button>
+                  </div>
+                </div>
+                <!-- 第二行：時間、距離、ETA（橫向） -->
+                <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 pl-7 text-[11px] text-slate-500">
+                  <span class="flex items-center gap-1"><Clock class="h-3 w-3" /> {{ station.timeRange }}</span>
+                  <span class="flex items-center gap-1"><MapPin class="h-3 w-3" /> {{ station.distance }} m</span>
+                  <span v-if="station.etaTime" class="flex items-center gap-1 font-semibold text-primary">
+                    <Truck class="h-3 w-3" /> 預計 {{ station.etaTime }}
+                  </span>
+                </div>
+                <!-- 第三行：清運種類（橫向） -->
+                <div class="mt-1.5 flex flex-wrap gap-1 pl-7">
+                  <Badge
+                    v-for="item in station.items"
+                    :key="item"
+                    variant="outline"
+                    :class="['rounded-full px-2 py-0 text-[10px] font-semibold', ITEM_CONFIG[item]?.badge ?? 'border-slate-200 bg-slate-50 text-slate-500']"
+                  >
+                    {{ item }}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- ── 桌面版：原始表格（sm 以上顯示） ── -->
+        <Card class="hidden rounded-2xl sm:block">
           <CardHeader class="border-b border-slate-100 px-5 py-3.5">
             <CardTitle class="text-base font-bold text-slate-900">清運地點清單<span class="ml-1.5 text-sm font-normal text-slate-500">（共 {{ filteredStations.length }} 筆）</span></CardTitle>
           </CardHeader>
@@ -1097,9 +1175,10 @@ const manualNearbyStations = computed(() => {
     <!-- ═══════════════════════════════════════════════════════════════════════ -->
     <!-- TAB: 列表查詢（複用上面表格，但有額外篩選列）                               -->
     <!-- ═══════════════════════════════════════════════════════════════════════ -->
-    <section v-else-if="activeTab === 'list'">
+    <section v-else-if="activeTab === 'list'" class="space-y-4">
+      <!-- 篩選條件（所有裝置皆顯示） -->
       <Card class="rounded-2xl">
-        <CardContent class="space-y-4 border-b border-slate-100 p-5">
+        <CardContent class="space-y-4 p-5">
           <h3 class="text-sm font-semibold text-slate-900">篩選條件</h3>
           <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <!-- 縣市 -->
@@ -1161,6 +1240,64 @@ const manualNearbyStations = computed(() => {
             </div>
           </div>
         </CardContent>
+      </Card>
+
+      <!-- ── 手機版：垂直清單，資訊橫向排列（sm 以下顯示） ── -->
+      <Card class="rounded-2xl sm:hidden">
+        <CardHeader class="border-b border-slate-100 px-4 py-3">
+          <CardTitle class="text-sm font-semibold text-slate-900">
+            搜尋結果
+            <span class="ml-1 font-normal text-slate-500">（共 {{ filteredStations.length }} 筆）</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent class="p-0">
+          <div v-if="filteredStations.length === 0" class="px-4 py-10 text-center text-sm text-slate-500">
+            目前條件下沒有找到清運站點
+          </div>
+          <div class="divide-y divide-slate-100">
+            <div v-for="(station, index) in filteredStations" :key="station.id" class="px-4 py-3">
+              <!-- 第一行：編號 + 名稱 + 狀態 + 操作按鈕（橫向） -->
+              <div class="flex items-center gap-2">
+                <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">{{ index + 1 }}</span>
+                <p class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{{ station.name }}</p>
+                <Badge variant="outline" :class="['shrink-0 rounded-full px-2 py-0 text-[10px] font-semibold', STATUS_CONFIG[station.status].badgeClass]">
+                  {{ STATUS_CONFIG[station.status].label }}
+                </Badge>
+                <div class="flex shrink-0 items-center gap-1">
+                  <button class="rounded-lg p-1 hover:bg-amber-50" @click="toggleFavorite(station.id)">
+                    <Star class="h-3.5 w-3.5" :class="isFavorited(station.id) ? 'text-amber-500' : 'text-slate-300'" :fill="isFavorited(station.id) ? 'currentColor' : 'none'" />
+                  </button>
+                  <button class="rounded-lg p-1 hover:bg-slate-100" @click="openReminderTab(station.id)">
+                    <Bell class="h-3.5 w-3.5 text-slate-300" />
+                  </button>
+                </div>
+              </div>
+              <!-- 第二行：時間、距離、預估 ETA（橫向排列） -->
+              <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 pl-7 text-[11px] text-slate-500">
+                <span class="flex items-center gap-1"><Clock class="h-3 w-3" /> {{ station.timeRange }}</span>
+                <span class="flex items-center gap-1"><MapPin class="h-3 w-3" /> {{ station.distance }} m</span>
+                <span v-if="station.etaTime" class="flex items-center gap-1 font-semibold text-primary">
+                  <Truck class="h-3 w-3" /> 預計 {{ station.etaTime }}
+                </span>
+              </div>
+              <!-- 第三行：清運種類（橫向排列） -->
+              <div class="mt-1.5 flex flex-wrap gap-1 pl-7">
+                <Badge
+                  v-for="item in station.items"
+                  :key="item"
+                  variant="outline"
+                  :class="['rounded-full px-2 py-0 text-[10px] font-semibold', ITEM_CONFIG[item]?.badge ?? 'border-slate-200 bg-slate-50 text-slate-500']"
+                >
+                  {{ item }}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <!-- ── 桌面版：原始表格（sm 以上顯示） ── -->
+      <Card class="hidden rounded-2xl sm:block">
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
@@ -1184,7 +1321,10 @@ const manualNearbyStations = computed(() => {
                 <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ station.timeRange }}</td>
                 <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ station.distance }} m</td>
                 <td class="px-4 py-3"><div class="flex flex-wrap gap-1"><Badge v-for="item in station.items" :key="item" variant="outline" :class="['rounded-full px-2 py-0 text-[10px] font-semibold', ITEM_CONFIG[item]?.badge ?? '']">{{ item }}</Badge></div></td>
-                <td class="px-4 py-3"><div class="flex items-center justify-center gap-1"><button class="rounded-lg p-1.5 hover:bg-amber-50" @click="toggleFavorite(station.id)"><Star class="h-4 w-4" :class="isFavorited(station.id) ? 'text-amber-500' : 'text-slate-300'" :fill="isFavorited(station.id) ? 'currentColor' : 'none'" /></button><button class="rounded-lg p-1.5 hover:bg-slate-100"><Bell class="h-4 w-4 text-slate-300" /></button></div></td>
+                <td class="px-4 py-3"><div class="flex items-center justify-center gap-1"><button class="rounded-lg p-1.5 hover:bg-amber-50" @click="toggleFavorite(station.id)"><Star class="h-4 w-4" :class="isFavorited(station.id) ? 'text-amber-500' : 'text-slate-300'" :fill="isFavorited(station.id) ? 'currentColor' : 'none'" /></button><button class="rounded-lg p-1.5 hover:bg-slate-100" @click="openReminderTab(station.id)"><Bell class="h-4 w-4 text-slate-300" /></button></div></td>
+              </tr>
+              <tr v-if="filteredStations.length === 0">
+                <td colspan="8" class="px-4 py-12 text-center text-sm text-slate-500">目前條件下沒有找到清運站點</td>
               </tr>
             </tbody>
           </table>
@@ -1369,11 +1509,11 @@ const manualNearbyStations = computed(() => {
       <Card class="h-fit rounded-2xl lg:sticky lg:top-6">
         <CardContent class="space-y-1 p-4">
           <p class="mb-2 text-xs font-semibold text-slate-500">目錄</p>
-          <button v-for="(section, i) in GUIDE_SECTIONS" :key="i" :class="['w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors', guideActiveIndex === i ? 'bg-primary/[0.06] text-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700']" @click="guideActiveIndex = i">{{ section.title }}</button>
+          <button v-for="(section, i) in GUIDE_SECTIONS" :key="i" :class="['w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors', guideActiveIndex === i ? 'bg-primary/[0.06] text-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700']" @click="scrollToSection(i)">{{ section.title }}</button>
         </CardContent>
       </Card>
       <div class="space-y-6">
-        <Card v-for="(section, i) in GUIDE_SECTIONS" :key="i" class="rounded-2xl">
+        <Card v-for="(section, i) in GUIDE_SECTIONS" :key="i" :id="`guide-section-${i}`" class="rounded-2xl scroll-mt-4">
           <CardContent class="p-6">
             <h3 class="mb-3 text-lg font-bold text-slate-900">{{ section.title }}</h3>
             <p class="text-sm leading-7 text-slate-600">{{ section.desc }}</p>

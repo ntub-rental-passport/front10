@@ -1,4 +1,5 @@
 <template>
+<<<<<<< HEAD
   <div class="page-wrap">
 
     <!-- 主內容 -->
@@ -253,6 +254,7 @@
 </template>
 
 <script setup>
+<<<<<<< HEAD
 import { ref, computed } from 'vue'
 import SectionTabs from '@/src/components/section-tabs.vue'
 
@@ -1372,4 +1374,5 @@ function showToastMsg(msg) {
     gap: 12px;
   }
 }
+
 </style>

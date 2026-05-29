@@ -29,5 +29,15 @@ export function useNavigation() {
 
   const accountItem: NavItem = { icon: User, label: '我的帳戶', path: '/app/account' }
 
-  return { navItems, accountItem }
+  // 手機底部列專用項目（6 項）
+  const mobileNavItems: NavItem[] = [
+    { icon: Home, label: '首頁', path: '/app' },
+    { icon: FileText, label: '合約 OCR', path: '/app/contract' },
+    { icon: Trash2, label: '垃圾清運', path: '/app/garbage' },
+    { icon: CheckSquare, label: '點交清單', path: '/app/handover' },
+    { icon: ClipboardList, label: '備忘錄', path: '/app/notes' },
+    { icon: User, label: '我的帳號', path: '/app/account' },
+  ]
+
+  return { navItems, accountItem, mobileNavItems }
 }
