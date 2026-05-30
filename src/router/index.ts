@@ -54,7 +54,7 @@ const router = createRouter({
           path: 'subsidy/upload',
           component: () => import('@/src/pages/subsidy/upload.vue'),
         },
-        { path: 'garbage', component: () => import('@/src/pages/garbage.vue') },
+        { path: 'garbage', component: () => import('@/src/pages/garbage/index.vue') },
         { path: 'handover', component: () => import('@/src/pages/handover/index.vue') },
         { path: 'handover/baseline', component: () => import('@/src/pages/handover/baseline.vue') },
         { path: 'handover/checkout', component: () => import('@/src/pages/handover/checkout.vue') },
