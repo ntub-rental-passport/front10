@@ -1,617 +1,1121 @@
 <template>
-  <div class="subsidy-calculator">
-    <!-- Step Progress -->
-    <div class="step-progress">
-      <div v-for="s in 3" :key="s" class="step-item">
-        <div class="step-circle" :class="{ active: step === s, done: step > s }">
-          <i v-if="step > s" class="ti ti-check"></i>
-          <span v-else>{{ s }}</span>
+  <div class="page-wrap">
+
+    <!-- 步驟進度 -->
+    <div class="step-progress-wrap">
+      <div
+        v-for="(s, i) in stepDefs"
+        :key="i"
+        class="step-node"
+        :class="{ done: currentStep > i + 1, active: currentStep === i + 1 }"
+      >
+        <div class="step-circle">
+          <span v-if="currentStep > i + 1">✓</span>
+          <span v-else>{{ i + 1 }}</span>
         </div>
-        <div class="step-line" v-if="s < 3" :class="{ done: step > s }"></div>
+        <div class="step-label">{{ s }}</div>
+        <div v-if="i < stepDefs.length - 1" class="step-connector"></div>
       </div>
     </div>
 
-    <!-- Step 1: 基本資料 -->
-    <div v-if="step === 1" class="form-section">
-      <h3 class="section-title">基本資料</h3>
-      <p class="section-desc">請填寫您的基本個人與家庭資訊</p>
-
-      <div class="form-group">
-        <label>租屋縣市</label>
-        <select v-model="form.city" @change="form.district = ''">
-          <option value="">請選擇縣市</option>
-          <option v-for="c in cities" :key="c.name" :value="c.name">{{ c.name }}</option>
-        </select>
-      </div>
-
-      <div class="form-group" v-if="form.city">
-        <label>租屋行政區</label>
-        <select v-model="form.district">
-          <option value="">請選擇行政區</option>
-          <option v-for="d in currentDistricts" :key="d.name" :value="d.name">
-            {{ d.name }}（第{{ d.level }}級補助區域）
-          </option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>申請人年齡</label>
-        <input type="number" v-model.number="form.age" min="18" max="99" placeholder="請輸入年齡（需滿18歲）" />
-      </div>
-
-      <div class="form-group">
-        <label>家庭成員人數（含申請人）</label>
-        <div class="radio-group">
-          <label class="radio-item" v-for="n in [1, 2, 3, 4, 5]" :key="n">
-            <input type="radio" :value="n" v-model="form.members" />
-            <span>{{ n }}人{{ n === 5 ? '以上' : '' }}</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>家庭年所得總額（新台幣）</label>
-        <input type="number" v-model.number="form.income" min="0" placeholder="請輸入家庭全年所得合計" />
-        <p class="hint" v-if="form.city && form.income > 0 && form.members > 0">
-          每人每月平均所得：{{ formatCurrency(monthlyPerPerson) }} 元
-          <span :class="incomeOkClass">（{{ incomeStatusText }}）</span>
-        </p>
-      </div>
-
-      <button class="btn-next" @click="goStep2" :disabled="!step1Valid">下一步</button>
-    </div>
-
-    <!-- Step 2: 身份資格 -->
-    <div v-if="step === 2" class="form-section">
-      <h3 class="section-title">身份與資格</h3>
-      <p class="section-desc">請勾選符合您情況的身份類別（可複選）</p>
-
-      <div class="form-group">
-        <label>弱勢身份（擇一最符合者）</label>
-        <div class="checkbox-group">
-          <label class="check-item" v-for="id in identities" :key="id.value">
-            <input type="checkbox" :value="id.value" v-model="form.identities" @change="onIdentityChange(id.value)" />
-            <span>{{ id.label }}</span>
-            <span class="badge badge-info" v-if="id.note">{{ id.note }}</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>加碼資格（可複選）</label>
-        <div class="checkbox-group">
-          <label class="check-item" v-for="b in bonuses" :key="b.value">
-            <input type="checkbox" :value="b.value" v-model="form.bonuses" />
-            <span>{{ b.label }}</span>
-            <span class="badge badge-purple">加碼 {{ b.multiplier }} 倍</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>其他條件確認</label>
-        <div class="checkbox-group">
-          <label class="check-item">
-            <input type="checkbox" v-model="form.noOtherSubsidy" />
-            <span>未享有其他政府住宅補貼</span>
-          </label>
-          <label class="check-item">
-            <input type="checkbox" v-model="form.noOwnHouse" />
-            <span>家庭成員均無自有房屋</span>
-          </label>
-          <label class="check-item">
-            <input type="checkbox" v-model="form.validContract" />
-            <span>具合法有效租賃契約</span>
-          </label>
-          <label class="check-item">
-            <input type="checkbox" v-model="form.registeredAddress" />
-            <span>戶籍設於租屋所在縣市</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn-back" @click="step = 1">上一步</button>
-        <button class="btn-next" @click="goStep3" :disabled="!step2Valid">試算結果</button>
-      </div>
-    </div>
-
-    <!-- Step 3: 試算結果 -->
-    <div v-if="step === 3" class="form-section">
-      <h3 class="section-title">試算結果</h3>
-
-      <!-- 不符合資格 -->
-      <div v-if="!isEligible" class="result-card result-fail">
-        <i class="ti ti-circle-x result-icon"></i>
-        <h4>您目前不符合申請資格</h4>
-        <ul class="fail-reasons">
-          <li v-for="r in failReasons" :key="r">{{ r }}</li>
-        </ul>
-        <p class="hint">如有疑問，請洽各縣市政府住宅主管機關確認。</p>
-      </div>
-
-      <!-- 符合資格 -->
-      <div v-else class="result-card result-pass">
-        <div class="result-header">
-          <i class="ti ti-circle-check result-icon success"></i>
-          <div>
-            <h4>恭喜！您符合申請資格</h4>
-            <p class="level-badge">補助等級：第 {{ subsidyLevel }} 級</p>
+    <!-- 主內容 -->
+    <div class="page-body">
+      <transition name="slide-fade" mode="out-in">
+        <!-- STEP 1 -->
+        <div v-if="currentStep === 1" key="s1" class="two-col">
+          <div class="card main-card">
+            <div class="card-header">
+              <span class="card-title">基本身分資料</span>
+              <span class="step-badge">STEP 01 / 03</span>
+            </div>
+            <div class="card-body">
+              <div class="field-group">
+                <label class="field-label">年齡區間</label>
+                <div class="radio-grid cols-3">
+                  <label
+                    v-for="o in ageOptions"
+                    :key="o.value"
+                    class="radio-card"
+                    :class="{ selected: form.age === o.value }"
+                    @click="form.age = o.value"
+                  >
+                    <span class="rc-icon">{{ o.icon }}</span>
+                    <span class="rc-text">{{ o.label }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="field-group">
+                <label class="field-label">戶籍地與租屋地關係</label>
+                <div class="radio-list">
+                  <label
+                    v-for="o in residenceOptions"
+                    :key="o.value"
+                    class="radio-row"
+                    :class="{ selected: form.residence === o.value }"
+                    @click="form.residence = o.value"
+                  >
+                    <span class="rr-dot" :class="{ active: form.residence === o.value }"></span>
+                    <div>
+                      <div class="rr-title">{{ o.label }}</div>
+                      <div class="rr-hint">{{ o.hint }}</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+              <div class="field-group">
+                <label class="field-label">目前居住縣市</label>
+                <select class="select-field" v-model="form.city">
+                  <option value="">請選擇縣市</option>
+                  <option v-for="c in cities" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn-primary" :disabled="!step1Valid" @click="currentStep = 2">
+                下一步：家庭資料 →
+              </button>
+            </div>
+          </div>
+          <div class="side-cards">
+            <div class="card info-card">
+              <div class="info-icon">💡</div>
+              <div class="info-title">試算說明</div>
+              <div class="info-text">
+                本試算依據內政部租金補貼相關規定，結果僅供參考，實際資格以各縣市主管機關審核為準。
+              </div>
+            </div>
+            <div class="card info-card" style="margin-top: 12px">
+              <div class="info-icon">📋</div>
+              <div class="info-title">申請資格概要</div>
+              <ul class="info-list">
+                <li>設籍與租屋地不同鄉鎮</li>
+                <li>家庭年收入符合所得限制</li>
+                <li>無自有住宅</li>
+                <li>具書面租賃契約</li>
+              </ul>
+            </div>
           </div>
         </div>
 
-        <div class="amount-grid">
-          <div class="amount-card">
-            <p class="amount-label">基本月補貼</p>
-            <p class="amount-value">{{ formatCurrency(baseAmount) }} <span>元/月</span></p>
+        <!-- STEP 2 -->
+        <div v-else-if="currentStep === 2" key="s2" class="two-col">
+          <div class="card main-card">
+            <div class="card-header">
+              <span class="card-title">家庭與收入狀況</span>
+              <span class="step-badge">STEP 02 / 03</span>
+            </div>
+            <div class="card-body">
+              <div class="field-group">
+                <label class="field-label">家庭人口數（含本人）</label>
+                <div class="counter-row">
+                  <button
+                    class="counter-btn"
+                    @click="form.familySize = Math.max(1, form.familySize - 1)"
+                  >
+                    −
+                  </button>
+                  <span class="counter-val">{{ form.familySize }} 人</span>
+                  <button
+                    class="counter-btn"
+                    @click="form.familySize = Math.min(10, form.familySize + 1)"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div class="field-group">
+                <label class="field-label">家庭年收入（萬元）</label>
+                <input
+                  type="range"
+                  class="slider"
+                  min="0"
+                  max="200"
+                  step="5"
+                  v-model.number="form.income"
+                />
+                <div class="slider-labels">
+                  <span>0</span>
+                  <span class="slider-val">{{ form.income }} 萬</span>
+                  <span>200+</span>
+                </div>
+                <div class="income-tag-row">
+                  <span class="tag" :class="incomeLevel.cls">{{ incomeLevel.label }}</span>
+                  <span class="income-desc">{{ incomeLevel.desc }}</span>
+                </div>
+              </div>
+              <div class="field-group">
+                <label class="field-label">特殊身分（可複選）</label>
+                <div class="radio-grid cols-2">
+                  <label
+                    v-for="o in specialOptions"
+                    :key="o.value"
+                    class="radio-card"
+                    :class="{ selected: form.special.includes(o.value) }"
+                    @click="toggleSpecial(o.value)"
+                  >
+                    <span class="rc-icon">{{ o.icon }}</span>
+                    <span class="rc-text">{{ o.label }}</span>
+                    <span class="rc-check" v-if="form.special.includes(o.value)">✓</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer two-btn">
+              <button class="btn-outline" @click="currentStep = 1">← 上一步</button>
+              <button class="btn-primary" :disabled="!step2Valid" @click="currentStep = 3">
+                下一步：租屋資訊 →
+              </button>
+            </div>
           </div>
-          <div class="amount-card highlight">
-            <p class="amount-label">加碼後月補貼</p>
-            <p class="amount-value">{{ formatCurrency(finalAmount) }} <span>元/月</span></p>
-          </div>
-          <div class="amount-card">
-            <p class="amount-label">年補貼估算</p>
-            <p class="amount-value">{{ formatCurrency(finalAmount * 12) }} <span>元/年</span></p>
+          <div class="side-cards">
+            <div class="card info-card">
+              <div class="info-icon">🏠</div>
+              <div class="info-title">收入認定說明</div>
+              <div class="info-text">家庭年收入以最近一年度綜合所得稅申報資料為準。</div>
+            </div>
+            <div class="card info-card" style="margin-top: 12px">
+              <div class="info-icon">📊</div>
+              <div class="info-title">即時收入試算</div>
+              <div class="limit-row">
+                <span class="limit-label">所得上限</span
+                ><span class="limit-val">{{ Math.min(form.familySize * 24, 120) }} 萬元</span>
+              </div>
+              <div class="limit-row">
+                <span class="limit-label">您的收入</span
+                ><span
+                  class="limit-val"
+                  :class="
+                    form.income <= Math.min(form.familySize * 24, 120) ? 'val-ok' : 'val-over'
+                  "
+                  >{{ form.income }} 萬元</span
+                >
+              </div>
+              <div
+                class="limit-status"
+                :class="form.income <= Math.min(form.familySize * 24, 120) ? 'ok' : 'over'"
+              >
+                {{
+                  form.income <= Math.min(form.familySize * 24, 120)
+                    ? '✓ 符合收入條件'
+                    : '✗ 超過收入上限'
+                }}
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="detail-block">
-          <div class="detail-row">
-            <span>租屋地點</span>
-            <span>{{ form.city }} {{ form.district }}</span>
+        <!-- STEP 3 -->
+        <div v-else-if="currentStep === 3" key="s3" class="two-col">
+          <div class="card main-card">
+            <div class="card-header">
+              <span class="card-title">租屋資訊</span>
+              <span class="step-badge">STEP 03 / 03</span>
+            </div>
+            <div class="card-body">
+              <div class="field-group">
+                <label class="field-label">每月租金（元）</label>
+                <div class="input-unit">
+                  <input
+                    class="text-input"
+                    type="number"
+                    v-model.number="form.rent"
+                    placeholder="例如：8000"
+                    min="0"
+                  />
+                  <span class="unit">元 / 月</span>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer two-btn">
+              <button class="btn-outline" @click="currentStep = 2">← 上一步</button>
+              <button class="btn-primary" :disabled="!step3Valid" @click="currentStep = 4">
+                查看試算結果 →
+              </button>
+            </div>
           </div>
-          <div class="detail-row">
-            <span>補助等級</span>
-            <span>第 {{ subsidyLevel }} 級（{{ subsidyLevelDesc }}）</span>
-          </div>
-          <div class="detail-row">
-            <span>基本金額</span>
-            <span>{{ formatCurrency(baseAmount) }} 元</span>
-          </div>
-          <div class="detail-row" v-if="bestBonus > 1">
-            <span>加碼倍數</span>
-            <span>{{ bestBonus }} 倍（{{ bestBonusLabel }}）</span>
-          </div>
-          <div class="detail-row total">
-            <span>每月補貼</span>
-            <span>{{ formatCurrency(finalAmount) }} 元</span>
+          <div class="side-cards">
+            <div class="card info-card">
+              <div class="info-icon">💰</div>
+              <div class="info-title">各縣市補貼上限</div>
+              <div class="city-limit-list">
+                <div class="city-row">
+                  <span>台北市</span><span class="city-amt">6,000 元/月</span>
+                </div>
+                <div class="city-row">
+                  <span>新北、桃園</span><span class="city-amt">5,500 元/月</span>
+                </div>
+                <div class="city-row">
+                  <span>六都（其餘）</span><span class="city-amt">5,000 元/月</span>
+                </div>
+                <div class="city-row">
+                  <span>其他縣市</span><span class="city-amt">4,000 元/月</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="note-block">
-          <i class="ti ti-info-circle" aria-hidden="true"></i>
-          <p>此試算結果僅供參考，實際核定金額以各縣市政府審查結果為準。申請期間：全年受理（額滿為止）。</p>
+        <!-- 結果頁 -->
+        <div v-else-if="currentStep === 4" key="s4" class="two-col">
+          <div class="card main-card">
+            <div class="card-header">
+              <span class="card-title">試算結果</span>
+              <span
+                class="card-badge"
+                :class="result.eligible ? 'status-success' : 'status-danger'"
+              >
+                {{ result.eligible ? '初步符合' : '不符合' }}
+              </span>
+            </div>
+            <div class="card-body">
+              <div v-if="result.eligible" class="amount-block">
+                <div class="amount-label">預估每月補貼金額</div>
+                <div class="amount-row">
+                  <span class="amount-num">{{ result.monthlyAmount.toLocaleString() }}</span>
+                  <span class="amount-unit">元 / 月</span>
+                </div>
+                <div class="amount-annual">
+                  每年最高補貼 NT$ {{ (result.monthlyAmount * 12).toLocaleString() }} 元
+                </div>
+              </div>
+              <div v-else class="ineligible-block">
+                <div class="ineligible-icon">😔</div>
+                <div class="ineligible-text">{{ result.summary }}</div>
+              </div>
+              <div class="check-list" style="margin-top: 16px">
+                <div class="check-section-title">條件檢核</div>
+                <div
+                  v-for="r in result.reasons"
+                  :key="r.text"
+                  class="check-row"
+                  :class="r.pass ? 'pass' : 'fail'"
+                >
+                  <span class="check-icon">{{ r.pass ? '✓' : '✗' }}</span>
+                  <span>{{ r.text }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer two-btn">
+              <button class="btn-outline" @click="reset">重新試算</button>
+              <button v-if="result.eligible" class="btn-primary" @click="goApply">
+                前往申請 →
+              </button>
+            </div>
+          </div>
+          <div class="side-cards">
+            <div class="card info-card">
+              <div class="info-icon">📋</div>
+              <div class="info-title">您的試算摘要</div>
+              <div class="summary-rows">
+                <div class="sum-row">
+                  <span>年齡區間</span
+                  ><span>{{ ageOptions.find((o) => o.value === form.age)?.label }}</span>
+                </div>
+                <div class="sum-row">
+                  <span>居住縣市</span><span>{{ form.city }}</span>
+                </div>
+                <div class="sum-row">
+                  <span>家庭人口</span><span>{{ form.familySize }} 人</span>
+                </div>
+                <div class="sum-row">
+                  <span>家庭年收入</span><span>{{ form.income }} 萬元</span>
+                </div>
+                <div class="sum-row">
+                  <span>每月租金</span><span>NT$ {{ form.rent?.toLocaleString() }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="card info-card" style="margin-top: 12px">
+              <div class="info-icon">⚠️</div>
+              <div class="info-title">注意事項</div>
+              <div class="info-text">
+                試算結果僅供參考，實際資格及補貼金額以各縣市主管機關審核核定為準。
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn-back" @click="step = 2">上一步</button>
-        <button class="btn-next" @click="resetForm">重新試算</button>
-      </div>
+      </transition>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import SectionTabs from '@/src/components/section-tabs.vue'
 
-const step = ref(1)
+const router = useRouter()
 
+const today = new Date()
+  .toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  .replace(/\//g, '-')
+const stepDefs = ['基本資料', '家庭收入', '租屋資訊', '試算結果']
+const currentStep = ref(1)
 const form = ref({
+  age: '',
+  residence: '',
   city: '',
-  district: '',
-  age: null,
-  members: 1,
-  income: null,
-  identities: [],
-  bonuses: [],
-  noOtherSubsidy: false,
-  noOwnHouse: false,
-  validContract: false,
-  registeredAddress: false,
+  familySize: 1,
+  income: 60,
+  special: [],
+  rent: null,
 })
 
-// ── 縣市 / 行政區補助級距資料（依內政部公告）
-// level: 1=最高補助區域, 2=次高, 3=一般
-// 補助金額（第一級身份/第二級身份/第三級身份）
+const ageOptions = [
+  { value: 'youth', label: '18–40 歲', icon: '🧑' },
+  { value: 'middle', label: '41–64 歲', icon: '👨‍💼' },
+  { value: 'senior', label: '65 歲以上', icon: '👴' },
+]
+const residenceOptions = [
+  { value: 'diff', label: '戶籍地與租屋地不同縣市', hint: '符合一般租金補貼申請條件' },
+  { value: 'same_city', label: '同縣市但不同鄉鎮', hint: '部分縣市方案仍可申請' },
+  { value: 'same', label: '戶籍地就在租屋處', hint: '通常不符合補助條件' },
+]
 const cities = [
-  {
-    name: '台北市',
-    incomeLimit: 50948,
-    districts: [
-      { name: '信義區', level: 1 }, { name: '大安區', level: 1 }, { name: '中正區', level: 1 },
-      { name: '中山區', level: 1 }, { name: '松山區', level: 1 }, { name: '大同區', level: 1 },
-      { name: '萬華區', level: 1 }, { name: '南港區', level: 1 }, { name: '內湖區', level: 2 },
-      { name: '士林區', level: 2 }, { name: '北投區', level: 2 }, { name: '文山區', level: 2 },
-    ],
-    // [area_level][subsidy_level] → 金額
-    amounts: {
-      1: { 1: 8000, 2: 6000, 3: 3000 },
-      2: { 1: 7000, 2: 5000, 3: 3000 },
-    },
-  },
-  {
-    name: '新北市',
-    incomeLimit: 42250,
-    districts: [
-      { name: '板橋區', level: 1 }, { name: '新莊區', level: 1 }, { name: '中和區', level: 1 },
-      { name: '永和區', level: 1 }, { name: '土城區', level: 1 }, { name: '三重區', level: 1 },
-      { name: '蘆洲區', level: 1 }, { name: '汐止區', level: 1 },
-      { name: '新店區', level: 2 }, { name: '樹林區', level: 2 }, { name: '三峽區', level: 2 },
-      { name: '林口區', level: 2 }, { name: '淡水區', level: 2 },
-      { name: '瑞芳區', level: 3 }, { name: '平溪區', level: 3 }, { name: '雙溪區', level: 3 },
-    ],
-    amounts: {
-      1: { 1: 6000, 2: 5000, 3: 2600 },
-      2: { 1: 5500, 2: 4000, 3: 2400 },
-      3: { 1: 4000, 2: 3000, 3: 2000 },
-    },
-  },
-  {
-    name: '桃園市',
-    incomeLimit: 41920,
-    districts: [
-      { name: '桃園區', level: 1 }, { name: '中壢區', level: 1 }, { name: '八德區', level: 1 },
-      { name: '蘆竹區', level: 1 },
-      { name: '大溪區', level: 2 }, { name: '楊梅區', level: 2 }, { name: '平鎮區', level: 2 },
-      { name: '龍潭區', level: 3 }, { name: '新屋區', level: 3 }, { name: '觀音區', level: 3 },
-    ],
-    amounts: {
-      1: { 1: 5500, 2: 4500, 3: 2400 },
-      2: { 1: 4500, 2: 3600, 3: 2200 },
-      3: { 1: 3500, 2: 2800, 3: 2000 },
-    },
-  },
-  {
-    name: '台中市',
-    incomeLimit: 40193,
-    districts: [
-      { name: '西屯區', level: 1 }, { name: '南屯區', level: 1 }, { name: '北屯區', level: 1 },
-      { name: '西區', level: 1 }, { name: '北區', level: 1 }, { name: '中區', level: 1 },
-      { name: '大里區', level: 2 }, { name: '太平區', level: 2 }, { name: '烏日區', level: 2 },
-      { name: '霧峰區', level: 3 }, { name: '潭子區', level: 3 }, { name: '豐原區', level: 2 },
-    ],
-    amounts: {
-      1: { 1: 5500, 2: 4500, 3: 2400 },
-      2: { 1: 4500, 2: 3600, 3: 2200 },
-      3: { 1: 3500, 2: 2800, 3: 2000 },
-    },
-  },
-  {
-    name: '台南市',
-    incomeLimit: 38788,
-    districts: [
-      { name: '中西區', level: 1 }, { name: '東區', level: 1 }, { name: '南區', level: 1 },
-      { name: '北區', level: 1 }, { name: '安平區', level: 1 }, { name: '安南區', level: 1 },
-      { name: '永康區', level: 2 }, { name: '仁德區', level: 2 }, { name: '歸仁區', level: 2 },
-      { name: '新化區', level: 3 }, { name: '善化區', level: 3 },
-    ],
-    amounts: {
-      1: { 1: 4500, 2: 3600, 3: 2200 },
-      2: { 1: 4000, 2: 3200, 3: 2000 },
-      3: { 1: 3000, 2: 2400, 3: 2000 },
-    },
-  },
-  {
-    name: '高雄市',
-    incomeLimit: 40100,
-    districts: [
-      { name: '前金區', level: 1 }, { name: '苓雅區', level: 1 }, { name: '新興區', level: 1 },
-      { name: '三民區', level: 1 }, { name: '鼓山區', level: 1 }, { name: '左營區', level: 1 },
-      { name: '楠梓區', level: 2 }, { name: '鳳山區', level: 2 }, { name: '仁武區', level: 2 },
-      { name: '大寮區', level: 3 }, { name: '林園區', level: 3 }, { name: '岡山區', level: 2 },
-    ],
-    amounts: {
-      1: { 1: 5000, 2: 4000, 3: 2400 },
-      2: { 1: 4000, 2: 3200, 3: 2200 },
-      3: { 1: 3000, 2: 2400, 3: 2000 },
-    },
-  },
-  {
-    name: '新竹市',
-    incomeLimit: 38788,
-    districts: [
-      { name: '東區', level: 1 }, { name: '北區', level: 1 }, { name: '香山區', level: 2 },
-    ],
-    amounts: {
-      1: { 1: 5000, 2: 4000, 3: 2400 },
-      2: { 1: 4000, 2: 3200, 3: 2200 },
-    },
-  },
-  {
-    name: '其他縣市',
-    incomeLimit: 38788,
-    districts: [
-      { name: '市區', level: 1 }, { name: '一般區域', level: 2 }, { name: '偏遠區域', level: 3 },
-    ],
-    amounts: {
-      1: { 1: 4000, 2: 3200, 3: 2000 },
-      2: { 1: 3000, 2: 2400, 3: 2000 },
-      3: { 1: 2400, 2: 2000, 3: 2000 },
-    },
-  },
+  '台北市',
+  '新北市',
+  '桃園市',
+  '台中市',
+  '台南市',
+  '高雄市',
+  '基隆市',
+  '新竹市',
+  '新竹縣',
+  '苗栗縣',
+  '彰化縣',
+  '南投縣',
+  '雲林縣',
+  '嘉義市',
+  '嘉義縣',
+  '屏東縣',
+  '宜蘭縣',
+  '花蓮縣',
+  '台東縣',
+  '澎湖縣',
+  '金門縣',
+  '連江縣',
+]
+const specialOptions = [
+  { value: 'disability', label: '身心障礙', icon: '♿' },
+  { value: 'lowIncome', label: '低收/中低收', icon: '🏠' },
+  { value: 'indigenous', label: '原住民族', icon: '🌿' },
+  { value: 'singleParent', label: '單親家庭', icon: '👨‍👧' },
+  { value: 'senior', label: '獨居老人', icon: '👴' },
+  { value: 'none', label: '無特殊身分', icon: '👤' },
 ]
 
-const identities = [
-  { value: 'low_income', label: '低收入戶' },
-  { value: 'mid_low_income', label: '中低收入戶' },
-  { value: 'none', label: '無特殊身份' },
-]
+const incomeLevel = computed(() => {
+  const i = form.value.income
+  if (i <= 40) return { label: '低收入', cls: 'tag-red', desc: '可能符合較高補助額度' }
+  if (i <= 80) return { label: '中低收入', cls: 'tag-orange', desc: '符合一般補助資格門檻' }
+  if (i <= 120) return { label: '中等收入', cls: 'tag-blue', desc: '視家庭人口數評估' }
+  return { label: '較高收入', cls: 'tag-gray', desc: '超過收入上限可能不符資格' }
+})
+const step1Valid = computed(() => form.value.age && form.value.residence && form.value.city)
+const step2Valid = computed(() => form.value.familySize > 0)
+const step3Valid = computed(() => form.value.rent > 0)
 
-const bonuses = [
-  { value: 'young', label: '18~39歲單身青年', multiplier: 1.2 },
-  { value: 'newwed_old', label: '新婚家庭（2025/12/31前登記）', multiplier: 1.3 },
-  { value: 'newwed_new', label: '新婚家庭（2026/1/1後登記）', multiplier: 1.5 },
-  { value: 'child', label: '育有未成年子女家庭', multiplier: 1.8 },
-  { value: 'social_weak', label: '社會弱勢（身障/原住民/特殊境遇等）', multiplier: 1.2 },
-  { value: 'mid_low_bonus', label: '中低收入戶身份加碼', multiplier: 1.4 },
-  { value: 'low_bonus', label: '低收入戶身份加碼', multiplier: 1.4 },
-]
+function toggleSpecial(val) {
+  if (val === 'none') {
+    form.value.special = ['none']
+    return
+  }
+  form.value.special = form.value.special.filter((v) => v !== 'none')
+  const idx = form.value.special.indexOf(val)
+  if (idx > -1) form.value.special.splice(idx, 1)
+  else form.value.special.push(val)
+}
 
-const onIdentityChange = (val) => {
-  if (val !== 'none') {
-    form.value.identities = form.value.identities.filter(v => v !== 'none')
-  } else {
-    form.value.identities = ['none']
+const result = computed(() => {
+  const f = form.value
+  const reasons = []
+  let eligible = true
+  const residenceOk = f.residence === 'diff' || f.residence === 'same_city'
+  reasons.push({ text: '戶籍地與租屋地符合規定', pass: residenceOk })
+  if (!residenceOk) eligible = false
+  const incomeLimit = Math.min(f.familySize * 24, 120)
+  const incomeOk = f.income <= incomeLimit
+  reasons.push({ text: `家庭年收入符合所得上限（≤ ${incomeLimit} 萬元）`, pass: incomeOk })
+  if (!incomeOk) eligible = false
+  reasons.push({
+    text: f.age === 'youth' ? '青年族群，可申請青年租金補貼加碼' : '年齡條件確認',
+    pass: true,
+  })
+  let monthlyAmount = 0
+  if (eligible) {
+    const cityLimit =
+      f.city === '台北市'
+        ? 6000
+        : ['新北市', '桃園市'].includes(f.city)
+          ? 5500
+          : ['台中市', '台南市', '高雄市'].includes(f.city)
+            ? 5000
+            : 4000
+    const base = Math.min(f.rent, cityLimit)
+    let factor = f.income <= 40 ? 1.0 : f.income <= 80 ? 0.8 : 0.6
+    const hasSpecial = f.special.some((v) =>
+      ['disability', 'lowIncome', 'indigenous', 'singleParent', 'senior'].includes(v),
+    )
+    if (hasSpecial) factor = Math.min(factor + 0.1, 1.0)
+    monthlyAmount = Math.round((base * factor) / 100) * 100
+  }
+  return {
+    eligible,
+    summary: '依目前資料，有條件尚未符合，請調整後重新試算。',
+    reasons,
+    monthlyAmount,
+  }
+})
+
+function reset() {
+  currentStep.value = 1
+  form.value = {
+    age: '',
+    residence: '',
+    city: '',
+    familySize: 1,
+    income: 60,
+    special: [],
+    rent: null,
   }
 }
 
-const currentCityData = computed(() => cities.find(c => c.name === form.value.city))
-const currentDistricts = computed(() => currentCityData.value?.districts || [])
-const currentDistrict = computed(() => currentDistricts.value.find(d => d.name === form.value.district))
-const incomeLimit = computed(() => currentCityData.value?.incomeLimit || 38788)
-
-const monthlyPerPerson = computed(() => {
-  if (!form.value.income || !form.value.members) return 0
-  return Math.round(form.value.income / 12 / form.value.members)
-})
-
-const incomeOkClass = computed(() => monthlyPerPerson.value < incomeLimit.value ? 'text-pass' : 'text-fail')
-const incomeStatusText = computed(() => monthlyPerPerson.value < incomeLimit.value ? '符合所得限制' : '超出所得限制')
-
-const step1Valid = computed(() =>
-  form.value.city && form.value.district && form.value.age >= 18 &&
-  form.value.income > 0 && form.value.members > 0
-)
-
-const step2Valid = computed(() =>
-  form.value.noOtherSubsidy && form.value.noOwnHouse &&
-  form.value.validContract && form.value.registeredAddress
-)
-
-// ── 補助等級判定
-const subsidyLevel = computed(() => {
-  const ids = form.value.identities
-  const m = form.value.members
-  if (
-    (ids.includes('low_income') && m >= 2) ||
-    (ids.includes('mid_low_income') && m >= 3)
-  ) return 1
-  if (m >= 2) return 2
-  return 3
-})
-
-const subsidyLevelDesc = computed(() => {
-  if (subsidyLevel.value === 1) return '低/中低收入多人家庭'
-  if (subsidyLevel.value === 2) return '2人以上家庭'
-  return '單身（1人）'
-})
-
-const areaLevel = computed(() => currentDistrict.value?.level || 1)
-
-const baseAmount = computed(() => {
-  const city = currentCityData.value
-  if (!city) return 0
-  const aLv = areaLevel.value
-  const sLv = subsidyLevel.value
-  return city.amounts[aLv]?.[sLv] || city.amounts[1]?.[sLv] || 0
-})
-
-const bestBonus = computed(() => {
-  const selected = form.value.bonuses
-  if (!selected.length) return 1
-  const mults = selected.map(v => bonuses.find(b => b.value === v)?.multiplier || 1)
-  return Math.max(...mults)
-})
-
-const bestBonusLabel = computed(() => {
-  const selected = form.value.bonuses
-  if (!selected.length) return ''
-  let best = null, bestVal = 1
-  selected.forEach(v => {
-    const b = bonuses.find(b => b.value === v)
-    if (b && b.multiplier > bestVal) { best = b; bestVal = b.multiplier }
-  })
-  return best?.label || ''
-})
-
-const finalAmount = computed(() => Math.round(baseAmount.value * bestBonus.value))
-
-const failReasons = computed(() => {
-  const r = []
-  if (form.value.age < 18) r.push('申請人年齡未滿 18 歲')
-  if (monthlyPerPerson.value >= incomeLimit.value)
-    r.push(`每人每月平均所得 ${formatCurrency(monthlyPerPerson.value)} 元，超出 ${form.value.city} 上限 ${formatCurrency(incomeLimit.value)} 元`)
-  if (!form.value.noOtherSubsidy) r.push('正享有其他政府住宅補貼')
-  if (!form.value.noOwnHouse) r.push('家庭成員持有自有房屋')
-  if (!form.value.validContract) r.push('租賃契約不符規定')
-  if (!form.value.registeredAddress) r.push('戶籍未設於租屋縣市')
-  return r
-})
-
-const isEligible = computed(() => failReasons.value.length === 0)
-
-const goStep2 = () => { if (step1Valid.value) step.value = 2 }
-const goStep3 = () => { if (step2Valid.value) step.value = 3 }
-const resetForm = () => {
-  step.value = 1
-  form.value = { city: '', district: '', age: null, members: 1, income: null, identities: [], bonuses: [], noOtherSubsidy: false, noOwnHouse: false, validContract: false, registeredAddress: false }
+function goApply() {
+  router.push('/app/subsidy/apply')
 }
-
-const formatCurrency = (n) => Math.round(n).toLocaleString('zh-TW')
 </script>
 
 <style scoped>
-.subsidy-calculator { padding: 0; }
-
-.step-progress {
+.page-wrap {
+  --c-primary: #4845A5;
+  --c-primary-light: #F0EFFE;
+  --c-primary-dark: #393684;
+  --c-success: #10b981;
+  --c-success-light: #ecfdf5;
+  --c-danger: #ef4444;
+  --c-danger-light: #fef2f2;
+  --c-text: #1e293b;
+  --c-muted: #64748b;
+  --c-border: #e2e8f0;
+  --c-bg: #f8fafc;
+  --c-card: #ffffff;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  min-height: 100%;
+  color: var(--c-text);
+  padding: 0 0 48px;
+}
+.page-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px 0;
+}
+.breadcrumb {
+  font-size: 13px;
+  color: var(--c-muted);
+}
+.breadcrumb span {
+  color: var(--c-text);
+  font-weight: 600;
+}
+.topbar-right {
+  font-size: 13px;
+  color: var(--c-muted);
+}
+.page-heading {
+  padding: 10px 28px 16px;
+}
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 3px;
+}
+.page-sub {
+  font-size: 13px;
+  color: var(--c-muted);
+  margin: 0;
+}
+.step-progress-wrap {
+  display: flex;
+  align-items: flex-start;
+  padding: 0 28px 20px;
+}
+.step-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+.step-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--c-border);
+  background: var(--c-card);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  margin-bottom: 2rem;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-muted);
+  transition: all 0.25s;
+  z-index: 1;
 }
-.step-item { display: flex; align-items: center; }
-.step-circle {
-  width: 36px; height: 36px;
-  border-radius: 50%;
-  border: 2px solid #d4c9f0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 500;
-  color: #8f7fcf;
-  background: #fff;
+.step-node.done .step-circle {
+  background: var(--c-success);
+  border-color: var(--c-success);
+  color: #fff;
+}
+.step-node.active .step-circle {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+.step-label {
+  font-size: 11px;
+  color: var(--c-muted);
+  margin-top: 5px;
+  white-space: nowrap;
+}
+.step-node.active .step-label {
+  color: var(--c-primary);
+  font-weight: 600;
+}
+.step-node.done .step-label {
+  color: var(--c-success);
+}
+.step-connector {
+  position: absolute;
+  top: 15px;
+  left: calc(50% + 15px);
+  width: calc(100% - 30px);
+  height: 2px;
+  background: var(--c-border);
+}
+.step-node.done .step-connector {
+  background: var(--c-success);
+}
+.page-body {
+  padding: 0 28px;
+}
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+}
+.main-card {
+  display: flex;
+  flex-direction: column;
+}
+.card {
+  background: var(--c-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1.5px solid var(--c-border);
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--c-border);
+}
+.card-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+.step-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--c-primary);
+  background: var(--c-primary-light);
+  padding: 3px 10px;
+  border-radius: 99px;
+}
+.card-badge {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-weight: 600;
+}
+.status-success {
+  background: var(--c-success-light);
+  color: #065f46;
+}
+.status-danger {
+  background: var(--c-danger-light);
+  color: #991b1b;
+}
+.card-body {
+  padding: 18px;
+  flex: 1;
+}
+.card-footer {
+  padding: 14px 18px;
+  border-top: 1px solid var(--c-border);
+}
+.card-footer.two-btn {
+  display: flex;
+  gap: 10px;
+}
+.info-card {
+  padding: 16px;
+}
+.info-icon {
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+.info-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.info-text {
+  font-size: 12px;
+  color: var(--c-muted);
+  line-height: 1.7;
+}
+.info-list {
+  margin: 0;
+  padding-left: 16px;
+}
+.info-list li {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-bottom: 4px;
+  line-height: 1.6;
+}
+.field-group {
+  margin-bottom: 20px;
+}
+.field-group:last-child {
+  margin-bottom: 0;
+}
+.field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.radio-grid {
+  display: grid;
+  gap: 8px;
+}
+.radio-grid.cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.radio-grid.cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+.radio-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 8px;
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+.radio-card:hover {
+  border-color: var(--c-primary);
+}
+.radio-card.selected {
+  border-color: var(--c-primary);
+  background: var(--c-primary-light);
+}
+.rc-icon {
+  font-size: 20px;
+}
+.rc-text {
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+.rc-check {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  font-size: 10px;
+  color: var(--c-primary);
+  font-weight: 700;
+}
+.radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
   transition: all 0.2s;
 }
-.step-circle.active { background: #5b4ecb; border-color: #5b4ecb; color: #fff; }
-.step-circle.done { background: #ede9fa; border-color: #5b4ecb; color: #5b4ecb; }
-.step-line { width: 60px; height: 2px; background: #e0d9f7; margin: 0 4px; }
-.step-line.done { background: #5b4ecb; }
-
-.form-section {}
-.section-title { font-size: 18px; font-weight: 500; color: #2d2257; margin: 0 0 4px; }
-.section-desc { font-size: 14px; color: #888; margin: 0 0 1.5rem; }
-
-.form-group { margin-bottom: 1.25rem; }
-.form-group > label { display: block; font-size: 14px; font-weight: 500; color: #444; margin-bottom: 6px; }
-.form-group select,
-.form-group input[type="number"] {
+.radio-row:hover {
+  border-color: var(--c-primary);
+}
+.radio-row.selected {
+  border-color: var(--c-primary);
+  background: var(--c-primary-light);
+}
+.rr-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--c-border);
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: all 0.2s;
+}
+.rr-dot.active {
+  border-color: var(--c-primary);
+  background: var(--c-primary);
+}
+.rr-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+.rr-hint {
+  font-size: 11px;
+  color: var(--c-muted);
+  margin-top: 1px;
+}
+.select-field {
   width: 100%;
-  padding: 10px 14px;
-  border: 1px solid #d9d4f0;
-  border-radius: 8px;
-  font-size: 15px;
-  color: #2d2257;
-  background: #faf9ff;
+  padding: 9px 12px;
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: #fff;
+  color: var(--c-text);
+  cursor: pointer;
+  transition: border-color 0.2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748B' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+.select-field:focus {
   outline: none;
-  box-sizing: border-box;
+  border-color: var(--c-primary);
+}
+.counter-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.counter-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--c-border);
+  background: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-primary);
+}
+.counter-btn:hover {
+  border-color: var(--c-primary);
+  background: var(--c-primary-light);
+}
+.counter-val {
+  font-size: 16px;
+  font-weight: 700;
+  min-width: 48px;
+  text-align: center;
+}
+.slider {
+  width: 100%;
+  accent-color: var(--c-primary);
+}
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--c-muted);
+  margin-top: 4px;
+}
+.slider-val {
+  font-weight: 700;
+  color: var(--c-primary);
+}
+.income-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.income-desc {
+  font-size: 12px;
+  color: var(--c-muted);
+}
+.tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 99px;
+}
+.tag-red {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.tag-orange {
+  background: #fef3c7;
+  color: #d97706;
+}
+.tag-blue {
+  background: #E7E6FA;
+  color: #393684;
+}
+.tag-gray {
+  background: #f1f5f9;
+  color: #475569;
+}
+.input-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.text-input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--c-text);
   transition: border-color 0.2s;
 }
-.form-group select:focus,
-.form-group input:focus { border-color: #5b4ecb; background: #fff; }
-
-.radio-group { display: flex; gap: 10px; flex-wrap: wrap; }
-.radio-item {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid #d9d4f0;
-  border-radius: 20px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #444;
-  transition: all 0.15s;
+.text-input:focus {
+  outline: none;
+  border-color: var(--c-primary);
 }
-.radio-item:has(input:checked) { background: #5b4ecb; border-color: #5b4ecb; color: #fff; }
-.radio-item input { display: none; }
-
-.checkbox-group { display: flex; flex-direction: column; gap: 8px; }
-.check-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid #e8e4f4;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #444;
-  transition: all 0.15s;
+.unit {
+  font-size: 13px;
+  color: var(--c-muted);
+  white-space: nowrap;
 }
-.check-item:has(input:checked) { background: #f3f0fd; border-color: #5b4ecb; }
-.check-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: #5b4ecb; }
-
-.badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: auto; }
-.badge-info { background: #e8f4fd; color: #1a6fa8; }
-.badge-purple { background: #ede9fa; color: #5b4ecb; }
-
-.hint { font-size: 13px; color: #888; margin-top: 6px; }
-.text-pass { color: #16a34a; font-weight: 500; }
-.text-fail { color: #dc2626; font-weight: 500; }
-
-.btn-next {
-  width: 100%;
-  padding: 14px;
-  background: #5b4ecb;
+.limit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--c-border);
+}
+.limit-label {
+  color: var(--c-muted);
+}
+.limit-val {
+  font-weight: 700;
+}
+.val-ok {
+  color: var(--c-success);
+}
+.val-over {
+  color: var(--c-danger);
+}
+.limit-status {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+.limit-status.ok {
+  background: var(--c-success-light);
+  color: #065f46;
+}
+.limit-status.over {
+  background: var(--c-danger-light);
+  color: #991b1b;
+}
+.city-limit-list {
+  display: flex;
+  flex-direction: column;
+}
+.city-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--c-border);
+}
+.city-row:last-child {
+  border-bottom: none;
+}
+.city-amt {
+  font-weight: 700;
+  color: var(--c-primary);
+}
+.amount-block {
+  background: linear-gradient(135deg, var(--c-primary-light), #E7E6FA);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.amount-label {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-bottom: 6px;
+}
+.amount-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+}
+.amount-num {
+  font-size: 44px;
+  font-weight: 800;
+  color: var(--c-primary);
+}
+.amount-unit {
+  font-size: 16px;
+  color: var(--c-primary);
+}
+.amount-annual {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 5px;
+}
+.ineligible-block {
+  text-align: center;
+  padding: 24px 0 16px;
+}
+.ineligible-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+}
+.ineligible-text {
+  font-size: 13px;
+  color: var(--c-muted);
+  line-height: 1.7;
+}
+.check-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.check-row.pass {
+  background: var(--c-success-light);
+  color: #065f46;
+}
+.check-row.fail {
+  background: var(--c-danger-light);
+  color: #991b1b;
+}
+.summary-rows {
+  display: flex;
+  flex-direction: column;
+}
+.sum-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--c-border);
+}
+.sum-row:last-child {
+  border-bottom: none;
+}
+.sum-row span:first-child {
+  color: var(--c-muted);
+}
+.sum-row span:last-child {
+  font-weight: 600;
+}
+.btn-primary {
+  flex: 1;
+  padding: 10px 20px;
+  background: var(--c-primary);
   color: #fff;
   border: none;
-  border-radius: 10px;
-  font-size: 16px;
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  margin-top: 0.5rem;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  width: 100%;
 }
-.btn-next:hover:not(:disabled) { background: #4a3db0; }
-.btn-next:disabled { background: #c9c3e8; cursor: not-allowed; }
-.btn-back {
-  padding: 14px 24px;
-  background: transparent;
-  color: #5b4ecb;
-  border: 1px solid #d4c9f0;
-  border-radius: 10px;
-  font-size: 15px;
-  cursor: pointer;
-  transition: background 0.15s;
+.btn-primary:hover:not(:disabled) {
+  background: var(--c-primary-dark);
 }
-.btn-back:hover { background: #f3f0fd; }
-
-.btn-row { display: flex; gap: 12px; margin-top: 1rem; }
-.btn-row .btn-next { flex: 1; margin-top: 0; }
-
-/* Result */
-.result-card {
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
-.result-fail {
-  background: #fff8f8;
-  border: 1px solid #fca5a5;
-  text-align: center;
-}
-.result-fail h4 { color: #b91c1c; font-size: 17px; margin: 0.5rem 0; }
-.result-icon { font-size: 40px; color: #ef4444; }
-.fail-reasons { list-style: none; padding: 0; margin: 1rem 0; text-align: left; }
-.fail-reasons li { font-size: 14px; color: #7f1d1d; padding: 4px 0; }
-.fail-reasons li::before { content: '✗ '; color: #ef4444; }
-
-.result-pass { background: #f9f8ff; border: 1px solid #c4b8f0; }
-.result-header { display: flex; align-items: center; gap: 14px; margin-bottom: 1.25rem; }
-.result-icon.success { font-size: 40px; color: #5b4ecb; }
-.result-header h4 { font-size: 17px; color: #2d2257; margin: 0 0 4px; }
-.level-badge { font-size: 13px; background: #ede9fa; color: #5b4ecb; padding: 2px 12px; border-radius: 10px; display: inline-block; margin: 0; }
-
-.amount-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1.25rem; }
-.amount-card {
+.btn-outline {
+  padding: 10px 18px;
   background: #fff;
-  border: 1px solid #e0d9f7;
-  border-radius: 10px;
-  padding: 12px;
-  text-align: center;
+  color: var(--c-muted);
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
 }
-.amount-card.highlight { background: #5b4ecb; border-color: #5b4ecb; }
-.amount-label { font-size: 12px; color: #888; margin: 0 0 4px; }
-.amount-card.highlight .amount-label { color: #d4c9f0; }
-.amount-value { font-size: 20px; font-weight: 500; color: #2d2257; margin: 0; }
-.amount-value span { font-size: 12px; font-weight: 400; }
-.amount-card.highlight .amount-value { color: #fff; }
-.amount-card.highlight .amount-value span { color: #d4c9f0; }
-
-.detail-block { background: #fff; border: 1px solid #e8e4f4; border-radius: 10px; overflow: hidden; margin-bottom: 1rem; }
-.detail-row { display: flex; justify-content: space-between; padding: 10px 16px; font-size: 14px; border-bottom: 1px solid #f0edf9; }
-.detail-row:last-child { border-bottom: none; }
-.detail-row span:first-child { color: #888; }
-.detail-row span:last-child { color: #2d2257; font-weight: 500; }
-.detail-row.total span { color: #5b4ecb; font-weight: 500; font-size: 15px; }
-
-.note-block { display: flex; gap: 8px; align-items: flex-start; background: #faf9ff; border: 1px solid #e0d9f7; border-radius: 8px; padding: 12px; }
-.note-block i { font-size: 18px; color: #8f7fcf; flex-shrink: 0; margin-top: 1px; }
-.note-block p { font-size: 13px; color: #888; margin: 0; line-height: 1.5; }
+.btn-outline:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+.slide-fade-enter-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-fade-leave-active {
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-fade-enter-from {
+  opacity: 0;
+  transform: translateX(16px);
+}
+.slide-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-16px);
+}
+@media (max-width: 700px) {
+  .page-topbar,
+  .page-heading,
+  .step-progress-wrap,
+  .page-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

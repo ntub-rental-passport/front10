@@ -1,6 +1,21 @@
 <template>
   <div class="page-wrap">
 
+
+
+    <!-- Heading -->
+    <div class="page-heading">
+      <div class="heading-row">
+        <div>
+          <p class="page-sub">請依照補件通知上傳所需文件，以繼續審核流程</p>
+        </div>
+        <div class="case-chip">
+          <span class="case-chip-label">申請案號</span>
+          <span class="case-chip-no">{{ caseNo }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 主內容 -->
     <div class="page-body">
       <!-- 補件通知橫幅 -->

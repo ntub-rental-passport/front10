@@ -35,8 +35,8 @@ const router = createRouter({
         { path: '', component: () => import('@/src/pages/dashboard.vue') },
         { path: 'contract', component: () => import('@/src/pages/contract/index.vue') },
         { path: 'contract-analysis', component: () => import('@/src/pages/contract/analysis.vue') },
-        { path: 'contract/editor', component: () => import('@/src/pages/contract/ContractEditor.vue') },
-        { path: 'contract/combined', component: () => import('@/src/pages/contract/ContractAnalysisCombined.vue') },
+        { path: 'contract/editor', component: () => import('@/src/pages/contract/editor.vue') },
+        { path: 'contract/combined', component: () => import('@/src/pages/contract/combined.vue') },
         { path: 'subsidy', component: () => import('@/src/pages/subsidy/index.vue') },
         {
           path: 'subsidy/calculator',
