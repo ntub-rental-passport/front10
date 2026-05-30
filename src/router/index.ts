@@ -1,4 +1,4 @@
-﻿import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/src/components/layout.vue'
 import AdminLayout from '@/src/components/admin-layout.vue'
 import {
@@ -33,47 +33,51 @@ const router = createRouter({
       meta: { requiresAuth: true, role: 'user' as AuthRole },
       children: [
         { path: '', component: () => import('@/src/pages/dashboard.vue') },
-        { path: 'contract', component: () => import('@/src/pages/contract.vue') },
-        { path: 'contract-analysis', component: () => import('@/src/pages/contract-analysis.vue') },
+        { path: 'contract', component: () => import('@/src/pages/contract/index.vue') },
+        { path: 'contract-analysis', component: () => import('@/src/pages/contract/analysis.vue') },
+        { path: 'contract/editor', component: () => import('@/src/pages/contract/ContractEditor.vue') },
+        { path: 'contract/combined', component: () => import('@/src/pages/contract/ContractAnalysisCombined.vue') },
+        { path: 'subsidy', component: () => import('@/src/pages/subsidy/index.vue') },
         {
-          path: 'subsidy',
-          component: () => import('@/src/components/Subsidylayout.vue'),
-          children: [
-            { path: '', redirect: '/app/subsidy/calculator' },
-            {
-              path: 'calculator',
-              name: 'Calculator',
-              component: () => import('@/src/pages/RentSubsidyCalculator.vue'),
-            },
-            {
-              path: 'apply',
-              name: 'Apply',
-              component: () => import('@/src/pages/Rentsubsidyapply.vue'),
-            },
-            {
-              path: 'progress',
-              name: 'Progress',
-              component: () => import('@/src/pages/Rentsubsidyprogress.vue'),
-            },
-            {
-              path: 'upload',
-              name: 'Upload',
-              component: () => import('@/src/pages/Rentsubsidysupplementupload.vue'),
-            },
-          ],
+          path: 'subsidy/calculator',
+          component: () => import('@/src/pages/subsidy/calculator.vue'),
+        },
+        {
+          path: 'subsidy/apply',
+          component: () => import('@/src/pages/subsidy/apply.vue'),
+        },
+        {
+          path: 'subsidy/progress',
+          component: () => import('@/src/pages/subsidy/progress.vue'),
+        },
+        {
+          path: 'subsidy/upload',
+          component: () => import('@/src/pages/subsidy/upload.vue'),
         },
         { path: 'garbage', component: () => import('@/src/pages/garbage.vue') },
-        { path: 'handover', component: () => import('@/src/pages/handover.vue') },
-        { path: 'handover/baseline', component: () => import('@/src/pages/handover-baseline.vue') },
-        { path: 'handover/checkout', component: () => import('@/src/pages/handover-checkout.vue') },
-        { path: 'outage', component: () => import('@/src/pages/outage.vue') },
+        { path: 'handover', component: () => import('@/src/pages/handover/index.vue') },
+        { path: 'handover/baseline', component: () => import('@/src/pages/handover/baseline.vue') },
+        { path: 'handover/checkout', component: () => import('@/src/pages/handover/checkout.vue') },
+        {
+          path: 'outage',
+          component: () => import('@/src/pages/outage/OutageShell.vue'),
+          children: [
+            { path: '', component: () => import('@/src/pages/outage/index.vue') },
+            { path: 'actions', component: () => import('@/src/pages/outage/actions.vue') },
+            {
+              path: 'notifications',
+              component: () => import('@/src/pages/outage/notifications.vue'),
+            },
+            { path: 'sources', component: () => import('@/src/pages/outage/sources.vue') },
+          ],
+        },
         {
           path: 'notes',
           component: () => import('@/src/components/NotesLayout.vue'),
           children: [
-            { path: '', redirect: '/app/notes/personal' },
-            { path: 'personal', component: () => import('@/src/pages/notes/index.vue') },
-            { path: 'roommates', component: () => import('@/src/pages/notes/index.vue') },
+            { path: '', component: () => import('@/src/pages/notes/index.vue') },
+            { path: 'personal', redirect: '/app/notes' },
+            { path: 'roommates', component: () => import('@/src/pages/notes/roommates.vue') },
           ],
         },
         { path: 'account', component: () => import('@/src/pages/account.vue') },
@@ -92,8 +96,8 @@ const router = createRouter({
     { path: '/outage/actions', redirect: '/app/outage/actions' },
     { path: '/outage/notifications', redirect: '/app/outage/notifications' },
     { path: '/outage/sources', redirect: '/app/outage/sources' },
-    { path: '/notes', redirect: '/app/notes/personal' },
-    { path: '/collaboration', redirect: '/app/notes/personal' },
+    { path: '/notes', redirect: '/app/notes' },
+    { path: '/collaboration', redirect: '/app/notes' },
     { path: '/roommate-collaboration', redirect: '/app/notes/roommates' },
     { path: '/account', redirect: '/app/account' },
     { path: '/:pathMatch(.*)*', redirect: '/' },
