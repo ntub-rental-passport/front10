@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "gen-lang-client-0609547006",
+  "private_key_id": "0bc6214671162a0252ae3db0ad2bff0bf8cf0af3",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCsKYGRPaeZO5Ls\nsY/aha5M8mwZY7LKrwHkxQyiwSPggIOISnPxIL48BpR3lVce3iUfhkqD8qYv65e/\nO72RxnOh+l3wcWNIbW/JrZmMoCzY5LsX7Ai9PETk0ArlRXjad9R+ZvN9LRVUUxJj\net8Ec/k7wJ53aDOB+QbljHrGSi4v8DkWeQiiYEpT5bb088pUjn+cTnMoUo3KXAN0\nIe7TQNhivpzhyeBuy4tffgbBr3qwm/F+TI82pwcLXHLI5I8UVh4670Vqom6+t6EF\n+TiJVDfALNIwYUVybmr5FwSz2GSEycO7IJ1wdILqX7U4gPawmsZvx4TS1kxfvuZY\nyBwYmoR7AgMBAAECggEAGtSrz7Hh0SdlV3ljZ6ABMRbFiBNvRYKOyKjOYP25af89\nVdvx7ni24m34F3GbzpYPsmELHeiOw9XIpCda/OwGZg5kiNjIVfz6413TGgUggtDq\n45Mygs4bbTmLE9OG6S1XCDgNPHXukWISRz9aoGaz8f8BSK9hpPY61ULWeNljZ1mc\nLHDe4czEOdLnh3Bp+E2tiFz6xmaXp6YIp7v0ygb9xtZrTBIOXbPFGczNqcyRXVfw\niVo6jtBQ6kN9SkPB51Xqaz4FKAj7LCp7KHpU39b0PH2ZYT7HvawT1e1jMz5+2DWK\ng3PEkRDpfBQpF8igF3/uhuRynqhGDu10kIGyTEAPoQKBgQDlFJIGoTBxUXQFb+V/\nQpu525f4dvOd1qwFL31t7gI5SGT9Mim+3tQIEreX8bKmcjOcd+zhOGhpgFb+0ya+\nqRzlJLCJwcbkDHEodKvWSg2Oy+JUIaqEeehgILssxq/DBuN1kvUvFp+GKL/lWbZE\nSmieVZJobJVXaWleDdefbvHM6wKBgQDAZKngOdusGJB9IoD6WloGgoxox2j2Mf0i\nTuufkQIrwrYkQ8XM5pPtquLekXAJtV9e032M5g1cuF6Vwua07d0vIeFzKdgccUiR\neW27sIemdBC6/jnOzar9yVTJ7tZZsIUplGY3EBjZG0fF4RrSnLxPrv2fQiFTBiua\nm4G5QvYCsQKBgQDLFNBbpjweyVn0k/09M1yAiMcR0sonzC7VrgMhGFXKWH6G5BiU\nCFCqE4XE4tVAr49HkB1kkDAoD0mQQLphXeSq0zrZ9PqQIuOSPNQ1dZLNW7v6X5oe\nNUCnL30ftcgNOicdjTllFEY5lhiAh2aI5foXG79eaZx/UIjDg7v6sE0WHwKBgQCc\nbz1RfLoJbM/Pb8a/ycd5k5zndXz68hqJUvJzhEznmCLRyemDedi+XzypDEi1HCy3\nxe9IKaajxaXiz98XLnGyaTIPme6G8fW3k6yN+DPUPHt+EEigxspKIPI4X2Ma+lTM\nQkX6b7REk9IAK9DLf3X+tKK0Y+kEwPejdt477R5rgQKBgET1L6tU5kqbDT+M3OL3\nSNp+jRh7Mm9opI+X6IY0lPoMg2HD0E/rvBjEQHsnCk4LMI1GG44Xe+34WwxAoIdU\nuJUZSXCSTufsV6wAnEExexOPflZw2DDhn59iv/6LezWaQ+mZW2ADRvD18s83ENku\nyWTaXT8ZByqeBLAR7FhhT7XY\n-----END PRIVATE KEY-----\n",
+  "client_email": "rentmate-ocr@gen-lang-client-0609547006.iam.gserviceaccount.com",
+  "client_id": "105188639832025662996",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/rentmate-ocr%40gen-lang-client-0609547006.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
