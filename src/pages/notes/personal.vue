@@ -1,228 +1,315 @@
+<script setup lang="ts">
+import { reactive } from 'vue'
+import { Badge } from '@/components/ui/badge/index'
+import { Button } from '@/components/ui/button/index'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog/index'
+import { Input } from '@/components/ui/input/index'
+import { Label } from '@/components/ui/label/index'
+import { Textarea } from '@/components/ui/textarea/index'
+import {
+  ArrowUpRight,
+  Bell,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Plus,
+  Sparkles,
+  Trash2,
+} from 'lucide-vue-next'
+import paperPlaneImage from '@/src/assets/notes/note-paper-plane.png'
+import notesMascotImage from '@/src/assets/notes/note-mascot.png'
+import { useNotesState } from './useNotesState'
+
+const notes = reactive(useNotesState('personal'))
+</script>
+
 <template>
-  <div class="personal-notes-container">
+  <div class="room-rhythm-page">
+    <header class="topbar">
+      <div class="mode-switch" aria-label="記事模式切換">
+        <button
+          :class="['mode-button', { active: notes.activeTab === 'personal' }]"
+          @click="notes.switchTab('personal')"
+        >
+          個人記事
+          <span>{{ notes.personalStats.pending }}</span>
+        </button>
+        <button
+          :class="['mode-button', { active: notes.activeTab === 'roommate' }]"
+          @click="notes.switchTab('roommate')"
+        >
+          室友協作
+          <span>{{ notes.roommateStats.pending }}</span>
+        </button>
+      </div>
 
-    <div class="notes-content-grid">
+      <div class="topbar-meta">
+        <CalendarDays class="h-4 w-4" />
+        <span>{{ notes.formatTopDate() }}</span>
+        <Bell class="ml-3 h-5 w-5" />
+      </div>
+    </header>
 
-      <div class="left-cards-column">
-        <div class="action-control-row">
-          <div class="filter-pill-group">
-            <button class="pill-btn" :class="{ active: currentFilter === 'all' }" @click="currentFilter = 'all'">全部</button>
-            <button class="pill-btn" :class="{ active: currentFilter === 'todo' }" @click="currentFilter = 'todo'">待辦</button>
-            <button class="pill-btn" :class="{ active: currentFilter === 'done' }" @click="currentFilter = 'done'">完成</button>
-          </div>
-          <button class="btn-add-task" @click="handleAction('新增事項')">+ 新增事項</button>
+    <section class="hero-panel">
+      <div class="hero-copy">
+        <p class="hero-eyebrow">{{ notes.activeEyebrow }}</p>
+        <h1>{{ notes.activeTitle }}</h1>
+        <p>{{ notes.activeSubtitle }}</p>
+      </div>
+
+      <img class="paper-plane" :src="paperPlaneImage" alt="紙飛機與虛線飛行軌跡" />
+
+      <div class="rhythm-summary" aria-label="今日節奏摘要">
+        <div class="summary-item">
+          <span class="summary-label">今日事項</span>
+          <strong>{{ String(notes.personalStats.today).padStart(2, '0') }}</strong>
+          <small>TO DO</small>
         </div>
+        <div class="summary-divider" />
+        <div class="summary-item completion">
+          <span class="summary-label">本月完成度</span>
+          <div class="progress-ring" :style="{ '--progress': `${notes.activeStats.completion}%` }">
+            <span>{{ notes.activeStats.completion }}%</span>
+          </div>
+          <small>{{ notes.activeStats.done }} / {{ notes.activeStats.total }} 則完成</small>
+        </div>
+      </div>
+    </section>
 
-        <div class="cards-stack">
-          <div
-            v-for="note in filteredNotes"
-            :key="note.id"
-            class="task-card-item"
-            :class="{ 'is-completed-grey': note.completed }"
-          >
-            <div class="task-card-left">
-              <input type="checkbox" class="task-checkbox" v-model="note.completed" />
-              <div class="task-text-info">
-                <span class="task-title" :class="{ 'title-done': note.completed }">{{ note.title }}</span>
-                <p class="task-desc">{{ note.desc }}</p>
-                <div class="task-time-meta">📅 提醒時間：{{ note.time }}</div>
-              </div>
+    <main class="content-grid content-grid-personal">
+      <section class="focus-board">
+        <aside class="date-index-panel merged-panel">
+          <div class="panel-heading">
+            <h2>DATE INDEX</h2>
+            <CalendarDays class="h-5 w-5" />
+          </div>
+
+          <div class="date-list">
+            <button
+              v-for="day in notes.dateIndexDays"
+              :key="day.key"
+              :class="['date-row', { active: day.isSelected, today: day.isToday }]"
+              @click="notes.selectDate(day.key)"
+            >
+              <span class="date-main">{{ day.dateText }}</span>
+              <span class="date-week">{{ day.weekText }}</span>
+              <span
+                :class="[
+                  'date-dot',
+                  day.hasOverdue ? 'overdue' : day.count ? 'has-note' : 'empty',
+                  day.isToday ? 'is-today' : '',
+                ]"
+              />
+            </button>
+          </div>
+
+          <div class="mini-calendar">
+            <div class="mini-calendar-header">
+              <button type="button" class="mini-month-button" @click="notes.changeMiniCalendarMonth(-1)">
+                <ChevronLeft class="h-4 w-4" />
+              </button>
+              <strong>{{ notes.miniCalendarLabel }}</strong>
+              <button type="button" class="mini-month-button" @click="notes.changeMiniCalendarMonth(1)">
+                <ChevronRight class="h-4 w-4" />
+              </button>
             </div>
-            <span class="status-sticker" :class="note.stickerClass">{{ note.tag }}</span>
-          </div>
-        </div>
 
-        <div class="purple-gradient-banner">
-          <div class="banner-inner-content">
-            <h3>重要公告</h3>
-            <p>本月 25 號將進行大樓水塔清洗，屆時將停水 4 小時。請各位室友提前做好儲水準備，並確保洗衣機等用水設備已關閉。</p>
-            <button class="btn-banner-more" @click="handleAction('查看公告詳情')">了解詳情</button>
-          </div>
-          <div class="banner-water-drop">💧</div>
-        </div>
-      </div>
+            <div class="mini-calendar-weekdays">
+              <span v-for="weekday in ['日', '一', '二', '三', '四', '五', '六']" :key="weekday">{{ weekday }}</span>
+            </div>
 
-      <div class="right-summary-column">
-        <div class="white-panel-card">
-          <h3 class="panel-section-title">個人摘要</h3>
-          <div class="summary-data-row">
-            <span class="summary-label">✓ 待辦事項</span>
-            <span class="summary-value text-blue-num">{{ todoCount }}</span>
+            <div class="mini-calendar-grid">
+              <button
+                v-for="day in notes.miniCalendarDays"
+                :key="day.key"
+                type="button"
+                :class="[
+                  'mini-calendar-day',
+                  {
+                    muted: !day.isCurrentMonth,
+                    today: day.isToday,
+                    selected: day.isSelected,
+                    marked: day.hasItems,
+                  },
+                ]"
+                @click="notes.selectDate(day.key)"
+              >
+                {{ day.label }}
+              </button>
+            </div>
           </div>
-          <div class="summary-data-row">
-            <span class="summary-label">🔔 今日提醒</span>
-            <span class="summary-value">0</span>
-          </div>
-          <div class="summary-data-row">
-            <span class="summary-label">✓ 已完成</span>
-            <span class="summary-value text-green-num">{{ doneCount }}</span>
-          </div>
-        </div>
 
-        <div class="white-panel-card">
-          <h3 class="panel-section-title">標籤分佈</h3>
-          <div class="progress-group-row">
-            <div class="progress-txt-info"><span>匯款 (Remittance)</span> <span>{{ tagCounts.remit }}</span></div>
-            <div class="progress-rail"><div class="progress-fill fill-red" :style="{ width: tagProgress.remit }"></div></div>
-          </div>
-          <div class="progress-group-row">
-            <div class="progress-txt-info"><span>提醒 (Reminder)</span> <span>{{ tagCounts.alert }}</span></div>
-            <div class="progress-rail"><div class="progress-fill fill-purple" :style="{ width: tagProgress.alert }"></div></div>
-          </div>
-          <div class="progress-group-row">
-            <div class="progress-txt-info"><span>維護 (Maintenance)</span> <span>{{ tagCounts.maintain }}</span></div>
-            <div class="progress-rail"><div class="progress-fill fill-green" :style="{ width: tagProgress.maintain }"></div></div>
-          </div>
-        </div>
+          <Button variant="outline" class="calendar-button" @click="notes.selectDate(notes.todayKey)">
+            <CalendarDays class="h-4 w-4" />
+            回到今天
+          </Button>
+        </aside>
 
-        <div class="white-panel-card deep-blue-action-card">
-          <div class="action-card-badge">下一步？</div>
-          <p class="action-card-text">排定下週的室友會議</p>
-          <router-link to="/app/notes/roommates" class="action-card-link">前往日曆 ➔</router-link>
-        </div>
-      </div>
+        <section class="notes-board merged-panel">
+          <div class="board-header">
+            <div>
+              <p class="board-kicker">TODAY / 個人記事</p>
+              <h2>個人記事板</h2>
+            </div>
 
-    </div>
+            <Button class="primary-action" @click="notes.openPersonalDialogFor()">
+              <Plus class="h-4 w-4" />
+              新增記事
+            </Button>
+          </div>
+
+          <div class="filter-row">
+            <button
+              v-for="option in notes.personalFilters"
+              :key="option.value"
+              :class="['filter-pill', { active: notes.personalFilter === option.value }]"
+              @click="notes.personalFilter = option.value"
+            >
+              {{ option.label }}
+              <span>{{ option.count() }}</span>
+            </button>
+          </div>
+
+          <div class="list-heading">
+            <span>編號</span>
+            <span>類別</span>
+            <span>事項</span>
+            <span>時間</span>
+            <span />
+          </div>
+
+          <div class="note-list">
+            <article
+              v-for="(note, index) in notes.filteredPersonal"
+              :key="note.id"
+              :class="['note-row', { done: note.done, overdue: notes.isOverdue(note.date, note.done) }]"
+            >
+              <div class="note-number">{{ String(index + 1).padStart(2, '0') }}</div>
+              <Badge variant="outline" :class="['note-tag', notes.noteTagClass(note.tag, note.done)]">{{ note.tag }}</Badge>
+              <div class="note-main">
+                <h3>{{ note.title }}</h3>
+                <p>{{ note.content || '尚未填寫補充說明' }}</p>
+              </div>
+              <div class="note-time">
+                <Clock3 class="h-4 w-4" />
+                <span>{{ notes.formatNoteDate(note.date, note.time) }}</span>
+              </div>
+              <div class="note-actions">
+                <button :aria-label="note.done ? '標示為待辦' : '標示為完成'" @click="notes.togglePersonalDone(note.id)">
+                  <CheckCircle2 class="h-5 w-5" />
+                </button>
+                <button aria-label="刪除記事" @click="notes.removePersonalNote(note.id)">
+                  <Trash2 class="h-4 w-4" />
+                </button>
+              </div>
+            </article>
+
+            <div v-if="notes.filteredPersonal.length === 0" class="empty-state">
+              目前沒有符合篩選條件的個人記事。
+            </div>
+          </div>
+
+          <button class="show-completed" @click="notes.personalFilter = 'done'">
+            <Sparkles class="h-4 w-4" />
+            顯示已完成記事
+          </button>
+        </section>
+      </section>
+
+      <aside class="life-panel life-panel-personal">
+        <section class="weekly-focus-card">
+          <div class="weekly-focus-header">
+            <h2>THIS WEEK</h2>
+            <button type="button" class="weekly-focus-link">
+              週檢視
+              <ArrowUpRight class="h-4 w-4" />
+            </button>
+          </div>
+
+          <div class="weekly-focus-stats">
+            <div>
+              <span>待辦</span>
+              <strong>{{ notes.weeklyHighlights.pending }}</strong>
+            </div>
+            <div>
+              <span>今天</span>
+              <strong>{{ notes.weeklyHighlights.today }}</strong>
+            </div>
+            <div>
+              <span>完成</span>
+              <strong class="text-[#05050a]">{{ notes.weeklyHighlights.done }}</strong>
+            </div>
+          </div>
+
+          <div class="weekly-focus-divider" />
+
+          <div class="section-title weekly-focus-event-title">
+            <h2>NEXT EVENT</h2>
+            <button type="button">更多</button>
+          </div>
+          <div v-if="notes.nextEvent" class="next-event-card compact">
+            <CalendarDays class="h-6 w-6" />
+            <div class="next-event-copy">
+              <h3>{{ notes.nextEvent.title }}</h3>
+              <p>{{ notes.formatNoteDate(notes.nextEvent.date, notes.nextEvent.time) }}</p>
+            </div>
+          </div>
+          <div v-else class="empty-mini">目前沒有待處理事件。</div>
+
+          <img class="weekly-focus-mascot" :src="notesMascotImage" alt="坐在懶骨頭上寫記事的 RentMate 插畫人物" />
+        </section>
+      </aside>
+    </main>
+
+    <Dialog v-model:open="notes.showPersonalDialog">
+      <DialogContent class="max-w-lg rounded-[24px]">
+        <DialogHeader>
+          <DialogTitle class="text-lg font-bold text-[#111322]">新增個人記事</DialogTitle>
+          <DialogDescription>新增日常提醒、租務或生活待辦。</DialogDescription>
+        </DialogHeader>
+        <form class="space-y-4" @submit.prevent="notes.savePersonalNote">
+          <div class="space-y-2">
+            <Label>標題</Label>
+            <Input v-model="notes.personalForm.title" placeholder="例如：繳交六月房租" class="rounded-xl" />
+          </div>
+          <div class="space-y-2">
+            <Label>補充內容</Label>
+            <Textarea v-model="notes.personalForm.content" placeholder="補充細節或提醒事項" class="min-h-[92px] rounded-xl" />
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="space-y-2"><Label>日期</Label><Input v-model="notes.personalForm.date" type="date" class="rounded-xl" /></div>
+            <div class="space-y-2"><Label>時間</Label><Input v-model="notes.personalForm.time" type="time" class="rounded-xl" /></div>
+          </div>
+          <div class="space-y-2">
+            <Label>類別</Label>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="tag in notes.personalTags"
+                :key="tag"
+                type="button"
+                :class="['rounded-full border px-3 py-1.5 text-xs font-bold transition-colors', notes.personalForm.tag === tag ? notes.noteTagClass(tag) : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300']"
+                @click="notes.personalForm.tag = tag"
+              >
+                {{ tag }}
+              </button>
+            </div>
+          </div>
+          <div class="flex gap-3 pt-2">
+            <Button type="button" variant="outline" class="flex-1 rounded-xl" @click="notes.showPersonalDialog = false; notes.resetPersonalForm()">取消</Button>
+            <Button type="submit" class="flex-1 rounded-xl bg-[#4845A5] hover:bg-[#3c398f]">儲存記事</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
-<script setup>
-import { ref, computed } from 'vue';
-
-// 控制過濾狀態：'all' | 'todo' | 'done'
-const currentFilter = ref('all');
-
-// 響應式備忘錄數據
-const notes = ref([
-  { id: 1, title: '繳交三月房租', desc: '記得 ATM 轉帳給陳大文，帳號末四碼 5678', time: '2026-03-10 09:00', tag: '匯款', stickerClass: 'sticker-red', completed: false, type: 'remit' },
-  { id: 2, title: '外出前確認事項', desc: '帶鑰匙、悠遊卡、雨傘（週末有雨）', time: '2026-03-15 08:30', tag: '提醒', stickerClass: 'sticker-purple', completed: false, type: 'alert' },
-  { id: 3, title: '冷氣濾網清洗', desc: '上次清洗是一月，建議每兩個月一次', time: '2026-03-20 --:--', tag: '維護', stickerClass: 'sticker-green', completed: true, type: 'maintain' }
-]);
-
-// 根據過濾條件動態篩選
-const filteredNotes = computed(() => {
-  if (currentFilter.value === 'todo') return notes.value.filter(n => !n.completed);
-  if (currentFilter.value === 'done') return notes.value.filter(n => n.completed);
-  return notes.value;
-});
-
-// 動態統計摘要
-const todoCount = computed(() => notes.value.filter(n => !n.completed).length);
-const doneCount = computed(() => notes.value.filter(n => n.completed).length);
-
-// 統計標籤數量
-const tagCounts = computed(() => {
-  const counts = { remit: 0, alert: 0, maintain: 0 };
-  notes.value.forEach(n => { counts[n.type]++; });
-  return counts;
-});
-
-// 計算進度條比例
-const tagProgress = computed(() => {
-  const total = notes.value.length || 1;
-  return {
-    remit: `${(tagCounts.value.remit / total) * 100}%`,
-    alert: `${(tagCounts.value.alert / total) * 100}%`,
-    maintain: `${(tagCounts.value.maintain / total) * 100}%`,
-  };
-});
-
-// 按鈕點擊事件監聽
-const handleAction = (actionName) => {
-  alert(`您點擊了「${actionName}」功能，後端串接完成後即可開啟彈窗或執行動作！`);
-};
-</script>
-
-<style scoped>
-
-/* 裝著三個按鈕的容器，設定間距把它們推開 */
-.filter-pill-group {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-/* 獨立的白色膠囊按鈕 */
-.pill-btn {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-  padding: 8px 24px;
-  font-size: 14px;
-  font-weight: 500;
-  border-radius: 9999px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
-}
-
-/* 滑鼠移過去的效果 */
-.pill-btn:hover:not(.active) {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-/* 點擊作用中的紫色按鈕 */
-.pill-btn.active {
-  background: #4845A5;
-  color: #ffffff;
-  border-color: #4845A5;
-  box-shadow: 0 4px 10px rgba(72, 69, 165, 0.2);
-  font-weight: 600;
-}
-
-
-
-/* 樣式保持與前一版相同 */
-.personal-notes-container { padding: 32px 40px; }
-.top-unified-bar { background: #ffffff; border-radius: 30px; padding: 16px 32px; display: flex; align-items: center; gap: 32px; box-shadow: 0 4px 20px rgba(148, 163, 184, 0.04); margin-bottom: 32px; border: 1px solid #f1f5f9; }
-.board-main-title { font-size: 24px; font-weight: 700; color: #1e293b; margin: 0; }
-.capsule-nav-group { background: #f1f5f9; padding: 4px; border-radius: 99px; display: flex; align-items: center; }
-.capsule-btn { padding: 8px 20px; font-size: 14px; font-weight: 500; color: #64748b; text-decoration: none; border-radius: 99px; transition: all 0.2s ease; }
-.capsule-btn.active { background: #4845A5; color: #ffffff; font-weight: 600; }
-.notes-content-grid { display: grid; grid-template-columns: 1fr 320px; gap: 32px; align-items: start; }
-.action-control-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-.filter-pill-box { background: #e2e8f0; padding: 4px; border-radius: 10px; display: flex; }
-.pill-item { padding: 6px 18px; font-size: 14px; font-weight: 500; color: #64748b; cursor: pointer; border-radius: 8px; transition: background 0.2s; }
-.pill-item.active { background: #4845A5; color: white; }
-.btn-add-task { background: #4845A5; color: white; border: none; padding: 8px 18px; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 14px; }
-.cards-stack { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
-.task-card-item { background: #ffffff; border-radius: 16px; padding: 20px; display: flex; justify-content: space-between; align-items: flex-start; box-shadow: 0 4px 15px rgba(148, 163, 184, 0.03); border: 1px solid #f1f5f9; transition: opacity 0.3s; }
-.task-card-item.is-completed-grey { opacity: 0.6; background: #fafafa; }
-.task-card-left { display: flex; gap: 16px; }
-.task-checkbox { width: 20px; height: 20px; margin-top: 3px; cursor: pointer; accent-color: #4845A5; }
-.task-title { font-size: 16px; font-weight: 700; color: #1e293b; }
-.task-title.title-done { text-decoration: line-through; color: #94a3b8; }
-.task-desc { color: #64748b; font-size: 14px; margin: 6px 0 12px 0; }
-.task-time-meta { font-size: 12px; color: #94a3b8; }
-.status-sticker { padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }
-.sticker-red { background: #fee2e2; color: #ef4444; }
-.sticker-purple { background: #f3e8ff; color: #a855f7; }
-.sticker-green { background: #dcfce7; color: #22c55e; }
-.purple-gradient-banner { background: linear-gradient(135deg, #4845A5, #312e81); color: white; border-radius: 24px; padding: 24px; display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; }
-.banner-inner-content { z-index: 2; max-width: 80%; }
-.purple-gradient-banner h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; color: white; }
-.purple-gradient-banner p { font-size: 14px; opacity: 0.9; line-height: 1.6; margin-bottom: 16px; color: white; }
-.btn-banner-more { background: white; color: #4845A5; border: none; padding: 8px 24px; border-radius: 99px; font-weight: 700; cursor: pointer; }
-.banner-water-drop { font-size: 90px; position: absolute; right: 16px; bottom: -20px; opacity: 0.15; z-index: 1; }
-.white-panel-card { background: #ffffff; border-radius: 24px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 15px rgba(148, 163, 184, 0.02); border: 1px solid #f1f5f9; }
-.panel-section-title { font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 20px; }
-.summary-data-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f8fafc; }
-.summary-data-row:last-child { border-bottom: none; }
-.summary-label { color: #475569; font-size: 14px; }
-.summary-value { font-size: 24px; font-weight: 700; color: #1e293b; }
-.text-blue-num { color: #3b82f6; }
-.text-green-num { color: #22c55e; }
-.progress-group-row { margin-bottom: 16px; }
-.progress-group-row:last-child { margin-bottom: 0; }
-.progress-txt-info { display: flex; justify-content: space-between; font-size: 13px; color: #475569; margin-bottom: 6px; }
-.progress-rail { background: #f1f5f9; height: 6px; border-radius: 99px; overflow: hidden; }
-.progress-fill { height: 100%; border-radius: 99px; transition: width 0.3s ease; }
-.fill-red { background: #ef4444; }
-.fill-purple { background: #a855f7; }
-.fill-green { background: #22c55e; }
-.deep-blue-action-card { background: #00668f; color: white; }
-.action-card-badge { background: rgba(255, 255, 255, 0.2); display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
-.action-card-text { font-size: 15px; font-weight: 700; color: white; margin-bottom: 16px; }
-.action-card-link { color: white; text-decoration: none; font-size: 14px; font-weight: 600; }
-</style>
+<style src="./notes.css"></style>

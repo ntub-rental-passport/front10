@@ -14,6 +14,7 @@ const isSidebarHovered = ref(false)
 
 const isSidebarExpanded = computed(() => isSidebarPinned.value || isSidebarHovered.value)
 const desktopNavItems = computed(() => [...navItems, accountItem])
+const isWideContentRoute = computed(() => route.path.startsWith('/app/notes'))
 
 function isActive(path: string): boolean {
   if (path === '/app') return route.path === '/app'
@@ -100,7 +101,7 @@ watch(isSidebarPinned, (value) => {
 
     <!-- Main Content -->
     <main class="flex-1 overflow-y-auto pb-16 sm:pb-0">
-      <div class="mx-auto min-h-full max-w-[1400px] p-4 md:p-6">
+      <div :class="isWideContentRoute ? 'min-h-full w-full' : 'mx-auto min-h-full max-w-[1400px] p-4 md:p-6'">
         <RouterView />
       </div>
       <footer class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300">
