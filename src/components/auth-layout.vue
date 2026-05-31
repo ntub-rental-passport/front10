@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import { House, ShieldCheck } from 'lucide-vue-next'
+import authLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
+import authLogoIconWhite from '@/src/assets/Logo/Rentmate-Logo-icon2.png'
+import { ShieldCheck } from 'lucide-vue-next'
 
 const brandName = '\u79df\u968a\u53cb RentMate'
 const platformLineOne = '\u4e00\u7ad9\u5f0f\u667a\u6167\u79df\u5c4b\u7ba1\u7406\u5e73\u53f0\u3002'
@@ -25,16 +27,14 @@ withDefaults(
         class="hidden flex-col justify-between border-r border-white/10 p-10 text-white lg:flex [background:var(--auth-panel-background)]"
       >
         <RouterLink to="/" class="flex items-center gap-3 font-bold text-white/92">
-          <div class="rounded-2xl bg-white/12 p-2">
-            <House class="h-5 w-5" />
-          </div>
+          <img :src="authLogoIconWhite" alt="RentMate Logo" class="h-10 w-10 shrink-0 object-contain" />
           <span class="text-lg">{{ brandName }}</span>
         </RouterLink>
 
         <div class="flex flex-1 items-center justify-center">
           <div class="space-y-6 text-center">
-            <div class="mx-auto flex h-28 w-28 items-center justify-center rounded-[2rem] bg-white shadow-[0_24px_60px_rgba(17,33,110,0.25)]">
-              <House class="h-11 w-11 text-primary" />
+            <div class="mx-auto flex h-32 w-32 items-center justify-center rounded-[2rem] bg-white/10 p-5 shadow-[0_24px_60px_rgba(17,33,110,0.25)] backdrop-blur-sm">
+              <img :src="authLogoIconWhite" alt="RentMate Logo" class="h-full w-full object-contain" />
             </div>
             <div class="space-y-3">
               <h1 class="text-3xl font-bold tracking-tight">{{ brandName }}</h1>
@@ -53,9 +53,7 @@ withDefaults(
       <section class="flex items-center justify-center px-6 py-8 lg:px-8">
         <div :class="['w-full p-6 lg:p-7', contentWidthClass]">
           <RouterLink to="/" class="inline-flex items-center gap-3 font-bold text-primary lg:hidden">
-            <div class="rounded-2xl bg-primary/10 p-2">
-              <House class="h-5 w-5" />
-            </div>
+            <img :src="authLogoIcon" alt="RentMate Logo" class="h-10 w-10 shrink-0 object-contain" />
             <span class="text-xl">{{ brandName }}</span>
           </RouterLink>
 

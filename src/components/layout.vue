@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { ChevronLeft, ChevronRight, Home } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
+import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { useNavigation } from '@/src/composables/useNavigation'
 
 const route = useRoute()
@@ -48,9 +49,9 @@ watch(isSidebarPinned, (value) => {
         :class="isSidebarExpanded ? 'justify-between px-4' : 'justify-center px-3'"
       >
         <RouterLink to="/app" class="flex min-w-0 items-center" :class="isSidebarExpanded ? 'gap-2' : 'justify-center'">
-          <Home class="h-5 w-5 shrink-0" />
+          <img :src="brandLogoIcon" alt="RentMate Logo" class="h-6 w-6 shrink-0 object-contain" />
           <span
-            class="overflow-hidden whitespace-nowrap transition-all duration-300"
+            class="flex h-6 translate-y-px items-center overflow-hidden whitespace-nowrap leading-none transition-all duration-300"
             :class="isSidebarExpanded ? 'max-w-[180px] opacity-100' : 'max-w-0 opacity-0'"
           >
             租隊友 RentMate
