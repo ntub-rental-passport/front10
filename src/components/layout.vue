@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { ChevronLeft, ChevronRight, Home } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
+import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { useNavigation } from '@/src/composables/useNavigation'
 
 const route = useRoute()
-const { navItems, accountItem } = useNavigation()
+const { navItems, accountItem, mobileNavItems } = useNavigation()
 const SIDEBAR_PIN_KEY = 'rentmate-sidebar-pinned'
 
 const isSidebarPinned = ref(false)
@@ -14,6 +15,7 @@ const isSidebarHovered = ref(false)
 
 const isSidebarExpanded = computed(() => isSidebarPinned.value || isSidebarHovered.value)
 const desktopNavItems = computed(() => [...navItems, accountItem])
+const isWideContentRoute = computed(() => route.path.startsWith('/app/notes'))
 
 function isActive(path: string): boolean {
   if (path === '/app') return route.path === '/app'
@@ -37,7 +39,7 @@ watch(isSidebarPinned, (value) => {
   <div class="flex h-screen w-full bg-muted/20">
     <!-- Desktop Sidebar -->
     <aside
-      class="relative hidden flex-col border-r bg-background transition-[width] duration-300 ease-out sm:flex"
+      class="relative hidden flex-col border-r bg-sidebar-background transition-[width] duration-300 ease-out sm:flex"
       :class="isSidebarExpanded ? 'w-64' : 'w-20'"
       @mouseenter="isSidebarHovered = true"
       @mouseleave="isSidebarHovered = false"
@@ -47,9 +49,9 @@ watch(isSidebarPinned, (value) => {
         :class="isSidebarExpanded ? 'justify-between px-4' : 'justify-center px-3'"
       >
         <RouterLink to="/app" class="flex min-w-0 items-center" :class="isSidebarExpanded ? 'gap-2' : 'justify-center'">
-          <Home class="h-5 w-5 shrink-0" />
+          <img :src="brandLogoIcon" alt="RentMate Logo" class="h-6 w-6 shrink-0 object-contain" />
           <span
-            class="overflow-hidden whitespace-nowrap transition-all duration-300"
+            class="flex h-6 translate-y-px items-center overflow-hidden whitespace-nowrap leading-none transition-all duration-300"
             :class="isSidebarExpanded ? 'max-w-[180px] opacity-100' : 'max-w-0 opacity-0'"
           >
             租隊友 RentMate
@@ -100,7 +102,7 @@ watch(isSidebarPinned, (value) => {
 
     <!-- Main Content -->
     <main class="flex-1 overflow-y-auto pb-16 sm:pb-0">
-      <div class="mx-auto min-h-full max-w-[1400px] p-4 md:p-6">
+      <div :class="isWideContentRoute ? 'min-h-full w-full' : 'mx-auto min-h-full max-w-[1400px] p-4 md:p-6'">
         <RouterView />
       </div>
       <footer class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300">
@@ -120,11 +122,11 @@ watch(isSidebarPinned, (value) => {
     <!-- Mobile Bottom Nav -->
     <nav class="fixed bottom-0 left-0 right-0 z-50 flex h-16 border-t bg-background sm:hidden">
       <RouterLink
-        v-for="item in navItems.slice(0, 5)"
+        v-for="item in mobileNavItems"
         :key="item.path"
         :to="item.path"
         :class="cn(
-          'flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors',
+          'flex flex-1 flex-col items-center justify-center gap-0.5 text-[9px] font-medium transition-colors',
           isActive(item.path) ? 'text-primary' : 'text-muted-foreground'
         )"
       >

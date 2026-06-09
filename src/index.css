@@ -38,6 +38,8 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    --color-sidebar-background: var(--sidebar-background);
+    --color-landing-background: var(--landing-background);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -48,7 +50,11 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
+    --background: oklch(96.792% 0.00104 11.366);
+    --sidebar-background: oklch(100% 0.00011 271.152); /* Sidebar 側欄背景 */
+    --landing-background: oklch(100% 0.00011 271.152); /* 首頁 Header 背景 */
+    --auth-background: linear-gradient(135deg, #f6f1ea, #fcfaf7 45%, #f4f5fb); /* 登入/註冊頁外層背景 */
+    --auth-panel-background: radial-gradient(circle at top, rgba(255,255,255,0.14), transparent 24%), linear-gradient(180deg, rgba(78,73,173,0.98), rgba(76,72,167,0.97) 56%, rgba(69,66,153,0.96)); /* 登入/註冊頁左側面板 */
     --foreground: oklch(0.2 0.05 280); /* Neutral_100 #0E0D35 */
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.2 0.05 280);

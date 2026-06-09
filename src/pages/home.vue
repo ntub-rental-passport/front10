@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent } from '@/components/ui/card/index'
 import {
   ArrowRight,
-  FileText,
   Globe,
   HandHelping,
   ShieldCheck,
@@ -49,12 +49,10 @@ const featureCards = [
 
 <template>
   <div class="min-h-screen flex flex-col bg-[radial-gradient(circle_at_top_left,_rgba(217,215,255,0.55),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(254,182,61,0.16),_transparent_24%),linear-gradient(180deg,_#fdfcff,_#f6f7fb)]">
-    <header class="border-b border-border/60 bg-background/80 backdrop-blur">
+    <header class="border-b border-border/60 bg-landing-background/80 backdrop-blur">
       <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-10">
         <RouterLink to="/" class="flex items-center gap-3 font-bold text-primary">
-          <div class="rounded-2xl bg-primary/10 p-2">
-            <FileText class="h-5 w-5" />
-          </div>
+          <img :src="brandLogoIcon" alt="RentMate Logo" class="h-10 w-10 shrink-0 object-contain" />
           <span class="text-2xl">租隊友 RentMate</span>
         </RouterLink>
 

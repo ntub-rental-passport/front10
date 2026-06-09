@@ -1,32 +1,38 @@
-# 前端版型 (front10)
+# RentMate FRONT10
 
-台北商業大學畢業專題 - 前端介面
+Vue 3 + Vite 前端專案，包含租屋管理、帳戶、合約 OCR 與合約分析等頁面。
 
-## 本地執行
+## Project Setup
 
-**前置需求：** Node.js
+```sh
+npm install
+```
 
-1. 安裝相依套件：
-   `npm install`
-2. 複製環境變數檔：
-   `copy .env.example .env.local`
-3. 啟動前端：
-   `npm run dev`
+## Development
 
-## Google Cloud Vision OCR 設定
+啟動前端：
 
-這個專案現在已加入一個本機 OCR API，讓 `src/pages/contract.vue` 可以真的上傳圖片或 PDF，並呼叫 Google Cloud Vision 做文字辨識。
+```sh
+npm run dev
+```
 
-### 1. 在 Google Cloud 啟用服務
+啟動 OCR API：
 
-1. 建立或選擇你的 Google Cloud 專案
-2. 啟用 `Cloud Vision API`
-3. 建立一個 `Service Account`
-4. 下載該服務帳戶的 JSON 金鑰
+```sh
+npm run dev:api
+```
 
-### 2. 設定憑證
+預設前端會在 `http://localhost:3000` 啟動，OCR API 預設為 `http://localhost:8787`。
 
-在 `.env.local` 內加入：
+## Environment
+
+先複製環境變數範本：
+
+```sh
+copy .env.example .env.local
+```
+
+常用設定：
 
 ```env
 GOOGLE_APPLICATION_CREDENTIALS="C:\\path\\to\\service-account.json"
@@ -34,50 +40,17 @@ OCR_API_PORT="8787"
 VITE_OCR_API_URL="http://localhost:8787"
 ```
 
-也可以直接在系統環境變數中設定 `GOOGLE_APPLICATION_CREDENTIALS`。
+## Scripts
 
-### 3. 啟動 OCR API
-
-另開一個終端機執行：
-
-```bash
-npm run dev:api
+```sh
+npm run build
+npm run preview
+npm run lint
+npm run format
 ```
 
-這會啟動本機 OCR 服務：
+## OCR Notes
 
-```text
-http://localhost:8787/api/ocr
-```
+`src/pages/contract.vue` 會上傳檔案到本機 OCR API，再由後端串接 Google Cloud Vision。請先在 Google Cloud 啟用 Cloud Vision API，建立 service account，並把 JSON 金鑰路徑設定到 `GOOGLE_APPLICATION_CREDENTIALS`。
 
-### 4. 啟動前端
-
-再開另一個終端機執行：
-
-```bash
-npm run dev
-```
-
-Vite 在開發模式下會把 `/api/*` 代理到 `VITE_OCR_API_URL`。
-
-## 目前 OCR 支援範圍
-
-- 圖片：`PNG`、`JPG`、`JPEG`、`WEBP`、`BMP`
-- 文件：`PDF`、`TIFF`、`GIF`
-- 多語言提示：繁中、簡中、日文、英文
-
-## PDF 限制
-
-目前使用的是 Vision API 的同步文件 OCR 路徑，適合先做 MVP。
-
-- 小型 PDF 很適合
-- 若租約超過 5 頁，建議之後升級成 GCS + 非同步批次 OCR 流程
-
-## 下一步建議
-
-當 OCR 穩定後，下一步可以把 Vision 回傳的全文送進 Gemini：
-
-1. 依條號切段
-2. 比對高風險規則
-3. 產生白話解析
-4. 生成談判腳本
+支援的圖片格式包含 PNG、JPG、JPEG、WEBP、BMP。PDF、TIFF、GIF 目前不在前端 MVP 支援範圍內。
