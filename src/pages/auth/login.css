@@ -1,0 +1,278 @@
+@reference "../../index.css";
+
+.auth-page-header {
+  @apply space-y-4 pt-4;
+}
+
+@media (min-width: 1024px) {
+  .auth-page-header {
+    padding-top: 0;
+  }
+}
+
+.auth-page-eyebrow {
+  @apply text-sm font-semibold uppercase text-primary/70;
+  letter-spacing: 0.32em;
+}
+
+.auth-page-title {
+  @apply mt-4 text-4xl font-black tracking-tight text-foreground;
+}
+
+@media (min-width: 640px) {
+  .auth-page-title {
+    @apply text-5xl;
+  }
+}
+
+.auth-page-subtitle {
+  @apply mt-3 max-w-2xl text-base leading-7 text-muted-foreground;
+}
+
+.auth-page-form {
+  @apply mt-10 space-y-8;
+}
+
+.auth-role-section {
+  @apply space-y-4;
+}
+
+.auth-role-copy {
+  @apply flex flex-col gap-2;
+}
+
+.auth-role-title {
+  @apply text-sm font-semibold text-foreground;
+}
+
+.auth-role-description {
+  @apply text-sm leading-6 text-muted-foreground;
+}
+
+.auth-role-grid {
+  @apply grid gap-4;
+}
+
+@media (min-width: 768px) {
+  .auth-role-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.auth-role-card {
+  @apply rounded-[1.5rem] border px-5 py-5 text-left transition-all duration-200;
+}
+
+.auth-role-card--selected {
+  @apply border-transparent text-white;
+  background: linear-gradient(135deg, #5b4de2 0%, #4e46d6 55%, #3f3abf 100%);
+  box-shadow: 0 24px 60px rgba(91, 77, 226, 0.28);
+}
+
+.auth-role-card--idle {
+  @apply border-border/70 bg-white;
+}
+
+.auth-role-card--idle:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  background-color: color-mix(in oklab, var(--color-primary) 3%, white);
+}
+
+.auth-role-card__content {
+  @apply flex items-center gap-4;
+}
+
+.auth-role-card__icon-shell {
+  @apply flex h-14 w-14 items-center justify-center rounded-2xl border transition-colors;
+}
+
+.auth-role-card__icon-shell--selected {
+  @apply border-white/15 bg-white/10 text-white;
+}
+
+.auth-role-card__icon-shell--idle {
+  @apply border-primary/15 bg-primary/5 text-primary;
+}
+
+.auth-role-card__icon {
+  @apply h-7 w-7;
+}
+
+.auth-role-card__text {
+  @apply space-y-1.5;
+}
+
+.auth-role-card__label {
+  @apply text-lg font-bold;
+}
+
+.auth-role-card__description {
+  @apply text-sm;
+}
+
+.auth-role-card__description--selected {
+  @apply text-white/80;
+}
+
+.auth-role-card__description--idle {
+  @apply text-muted-foreground;
+}
+
+.auth-form-section {
+  @apply space-y-6;
+}
+
+.auth-helper-card {
+  @apply rounded-[1.25rem] border border-primary/10 bg-primary/[0.04] px-4 py-3 text-sm leading-6 text-muted-foreground;
+}
+
+.auth-field-block {
+  @apply space-y-2;
+}
+
+.auth-field-copy {
+  @apply space-y-2;
+}
+
+.auth-field-label {
+  @apply block font-semibold text-foreground;
+}
+
+.auth-field-description {
+  @apply text-sm text-muted-foreground;
+}
+
+.auth-field-row {
+  @apply flex items-center justify-between;
+}
+
+.auth-inline-link {
+  @apply text-sm font-medium text-primary transition-colors;
+}
+
+.auth-inline-link:hover {
+  color: color-mix(in oklab, var(--color-primary) 80%, white);
+}
+
+.auth-input-wrap {
+  @apply relative;
+}
+
+.auth-input {
+  @apply h-14 rounded-[1rem] bg-background text-base transition-colors;
+}
+
+.auth-input--with-leading {
+  @apply pl-11;
+}
+
+.auth-input--with-status {
+  @apply pr-12;
+}
+
+.auth-input--default {
+  @apply border-border/80;
+}
+
+.auth-input--valid {
+  @apply border-emerald-500/90;
+}
+
+.auth-input--valid:focus-visible {
+  border-color: rgb(16 185 129);
+  box-shadow: 0 0 0 3px rgb(209 250 229 / 1);
+}
+
+.auth-input--error {
+  @apply border-destructive;
+}
+
+.auth-input--error:focus-visible {
+  border-color: var(--color-destructive);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-destructive) 10%, white);
+}
+
+.auth-input-icon {
+  @apply pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground;
+}
+
+.auth-input-status-icon {
+  @apply pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2;
+}
+
+.auth-input-status-icon--valid {
+  @apply text-emerald-500;
+}
+
+.auth-input-status-icon--error {
+  @apply text-destructive;
+}
+
+.auth-input-toggle {
+  @apply absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors;
+}
+
+.auth-input-toggle:hover {
+  color: var(--color-foreground);
+}
+
+.auth-input-toggle-icon {
+  @apply h-4 w-4;
+}
+
+.auth-feedback {
+  @apply text-sm;
+}
+
+.auth-feedback--valid {
+  @apply text-emerald-600;
+}
+
+.auth-feedback--error {
+  @apply text-destructive;
+}
+
+.auth-checkbox-row {
+  @apply flex items-center gap-3 text-sm text-muted-foreground;
+}
+
+.auth-checkbox {
+  @apply rounded border-border/80;
+}
+
+.auth-primary-button {
+  @apply h-14 w-full rounded-[1rem] text-base;
+  box-shadow: 0 18px 45px rgba(91, 77, 226, 0.22);
+}
+
+.auth-page-footer {
+  @apply mt-8 space-y-6;
+}
+
+.auth-divider {
+  @apply flex items-center gap-4 text-sm text-muted-foreground;
+}
+
+.auth-divider-line {
+  @apply h-px flex-1 bg-border;
+}
+
+.auth-secondary-button {
+  @apply h-14 w-full rounded-[1rem] border-border/80 bg-background text-base;
+}
+
+.auth-google-icon {
+  @apply mr-3 h-5 w-5 shrink-0;
+}
+
+.auth-footer-copy {
+  @apply text-center text-sm text-muted-foreground;
+}
+
+.auth-footer-link {
+  @apply font-semibold text-primary;
+}
+
+.auth-footer-link:hover {
+  text-decoration: underline;
+}

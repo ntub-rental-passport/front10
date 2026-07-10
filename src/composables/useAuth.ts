@@ -12,6 +12,7 @@ export interface PendingRegistration {
   email: string
   password: string
   verificationCode: string
+  role: AuthRole
 }
 
 interface UserProfile {
@@ -100,13 +101,13 @@ export function signIn(role: AuthRole, email: string): AuthSession {
   return createSession(role, profile)
 }
 
-export function registerWithGoogle(email: string): AuthSession {
+export function registerWithGoogle(email: string, role: AuthRole = 'user'): AuthSession {
   const profile = upsertUserProfile(email, {
     emailVerified: true,
     nickname: null,
   })
 
-  return createSession('user', profile)
+  return createSession(role, profile)
 }
 
 export function signOut(): void {
@@ -122,11 +123,16 @@ export function needsNicknameSetup(session: AuthSession | null): boolean {
   return Boolean(session?.isAuthenticated && session.role === 'user' && !session.nickname)
 }
 
-export function startEmailRegistration(email: string, password: string): PendingRegistration {
+export function startEmailRegistration(
+  email: string,
+  password: string,
+  role: AuthRole = 'user',
+): PendingRegistration {
   const pendingRegistration: PendingRegistration = {
     email,
     password,
     verificationCode: DEMO_VERIFICATION_CODE,
+    role,
   }
 
   writeJson(PENDING_REGISTRATION_KEY, pendingRegistration)
@@ -156,7 +162,7 @@ export function completeEmailVerification(code: string): AuthSession | null {
   })
 
   clearPendingRegistration()
-  return createSession('user', profile)
+  return createSession(pendingRegistration.role ?? 'user', profile)
 }
 
 export function finishNicknameSetup(nickname: string): AuthSession | null {
