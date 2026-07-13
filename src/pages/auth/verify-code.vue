@@ -5,7 +5,13 @@ import AuthShell from '@/src/components/auth-layout.vue'
 import { Button } from '@/components/ui/button/index'
 import { Label } from '@/components/ui/label/index'
 import { BadgeCheck } from 'lucide-vue-next'
-import { completeEmailVerification, getPendingRegistration, getVerificationHint } from '@/src/composables/useAuth'
+import {
+  completeEmailVerification,
+  getPendingRegistration,
+  getVerificationHint,
+  needsNicknameSetup,
+  resolveRoleHome,
+} from '@/src/composables/useAuth'
 
 const route = useRoute()
 const router = useRouter()
@@ -94,18 +100,20 @@ async function handleVerification(): Promise<void> {
   }
 
   errorMessage.value = ''
-  await router.push('/welcome')
+  await router.push(needsNicknameSetup(session) ? '/welcome' : resolveRoleHome(session.role))
 }
 </script>
 
 <template>
-  <AuthShell content-width-class="max-w-lg" footer-note="完成信箱驗證後，就能正式開始使用 RentMate。">
-    <div class="space-y-4">
+  <AuthShell content-width-class="max-w-xl" footer-note="完成信箱驗證後，我們會依照您選擇的身分開通 RentMate 工作區。">
+    <div class="space-y-4 pt-4 lg:pt-0">
       <div>
-        <p class="text-sm font-semibold uppercase tracking-[0.24em] text-primary/70">Verify Email</p>
-        <h2 class="mt-3 text-3xl font-black tracking-tight">輸入信箱驗證碼</h2>
-        <p class="mt-1 text-sm leading-relaxed text-muted-foreground">
-          我們已將 6 碼驗證碼寄到 <span class="font-semibold text-foreground">{{ email }}</span>
+        <p class="text-sm font-semibold uppercase tracking-[0.32em] text-primary/70">Verify Email</p>
+        <h2 class="mt-4 text-4xl font-black tracking-tight text-foreground sm:text-5xl">驗證您的電子信箱</h2>
+        <p class="mt-3 text-base leading-7 text-muted-foreground">
+          我們已經將 6 碼驗證碼寄到
+          <span class="font-semibold text-foreground">{{ email }}</span>
+          ，請輸入後完成驗證。
         </p>
       </div>
     </div>
@@ -114,8 +122,8 @@ async function handleVerification(): Promise<void> {
       <div class="flex items-start gap-3">
         <BadgeCheck class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <div class="space-y-1">
-          <p class="font-medium text-foreground">目前為示範流程</p>
-          <p>可使用驗證碼 <span class="font-semibold text-primary">{{ getVerificationHint() }}</span> 繼續。</p>
+          <p class="font-medium text-foreground">展示用驗證碼</p>
+          <p>目前測試流程可直接輸入 <span class="font-semibold text-primary">{{ getVerificationHint() }}</span> 完成驗證。</p>
         </div>
       </div>
     </div>
@@ -134,20 +142,20 @@ async function handleVerification(): Promise<void> {
             inputmode="numeric"
             maxlength="1"
             autocomplete="one-time-code"
-            class="h-14 w-12 rounded-x0.5 border border-border/80 bg-background text-center text-xl font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 sm:h-16 sm:w-14"
+            class="h-14 w-12 rounded-[1rem] border border-border/80 bg-background text-center text-xl font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 sm:h-16 sm:w-14"
             @input="handleDigitInput($event, index)"
             @keydown="handleKeydown($event, index)"
           />
         </div>
-        <p class="text-xs text-muted-foreground">請輸入 6 位數字驗證碼。</p>
+        <p class="text-xs text-muted-foreground">請輸入 6 碼數字驗證碼。</p>
         <p v-if="errorMessage" class="text-sm text-destructive">{{ errorMessage }}</p>
       </div>
 
       <div class="flex flex-col gap-3 pt-2">
-        <Button type="submit" size="lg" class="h-12 w-full rounded-x0.5 text-base">
+        <Button type="submit" size="lg" class="h-14 w-full rounded-[1rem] text-base">
           驗證並繼續
         </Button>
-        <Button as-child size="lg" variant="outline" class="h-12 w-full rounded-x0.5 text-base">
+        <Button as-child size="lg" variant="outline" class="h-14 w-full rounded-[1rem] text-base">
           <RouterLink to="/register">返回註冊</RouterLink>
         </Button>
       </div>

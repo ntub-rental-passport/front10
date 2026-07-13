@@ -14,7 +14,7 @@ const errorMessage = ref('')
 
 async function handleStart(): Promise<void> {
   if (!nickname.value.trim()) {
-    errorMessage.value = '請先輸入你希望我們怎麼稱呼你。'
+    errorMessage.value = '請先輸入您想顯示的暱稱。'
     return
   }
 
@@ -25,12 +25,14 @@ async function handleStart(): Promise<void> {
 </script>
 
 <template>
-  <AuthShell content-width-class="max-w-lg" footer-note="設定好稱呼後，就可以開始整理你的租屋生活。">
-    <div class="space-y-4">
+  <AuthShell content-width-class="max-w-lg" footer-note="完成這一步後，我們會帶您進入 RentMate 租客工作區。">
+    <div class="space-y-4 pt-4 lg:pt-0">
       <div>
-        <p class="text-sm font-semibold uppercase tracking-[0.24em] text-primary/70">Welcome</p>
-        <h2 class="mt-3 text-3xl font-black tracking-tight">歡迎使用 RentMate</h2>
-        <p class="mt-1 text-sm leading-relaxed text-muted-foreground">設定一個你喜歡的名字，開始你的租屋管理之旅！</p>
+        <p class="text-sm font-semibold uppercase tracking-[0.32em] text-primary/70">Welcome</p>
+        <h2 class="mt-4 text-4xl font-black tracking-tight text-foreground">歡迎加入 RentMate</h2>
+        <p class="mt-3 text-base leading-7 text-muted-foreground">
+          只差最後一步，設定您的顯示名稱後，就能開始使用租客專屬功能。
+        </p>
       </div>
     </div>
 
@@ -40,27 +42,27 @@ async function handleStart(): Promise<void> {
           <Sparkles class="h-5 w-5" />
         </div>
         <div>
-          <p class="font-semibold text-foreground">想怎麼稱呼你？</p>
-          <p class="text-sm text-muted-foreground">暱稱之後隨時可以更改，不用擔心</p>
+          <p class="font-semibold text-foreground">建立您的暱稱</p>
+          <p class="text-sm text-muted-foreground">這個名稱會顯示在您的個人介面與合作功能中。</p>
         </div>
       </div>
 
       <form class="space-y-5" @submit.prevent="handleStart">
         <div class="space-y-1.5">
-          <Label for="welcome-nickname" class="font-semibold text-foreground">你的暱稱</Label>
+          <Label for="welcome-nickname" class="font-semibold text-foreground">顯示名稱</Label>
           <div class="relative">
             <UserRound class="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="welcome-nickname"
               v-model="nickname"
-              placeholder="例如：小美"
-              class="h-12 rounded-x0.5 pl-11"
+              placeholder="例如：小安"
+              class="h-12 rounded-[1rem] pl-11"
             />
           </div>
           <p v-if="errorMessage" class="text-sm text-destructive">{{ errorMessage }}</p>
         </div>
 
-        <Button type="submit" size="lg" class="h-12 w-full rounded-x0.5 text-base">
+        <Button type="submit" size="lg" class="h-12 w-full rounded-[1rem] text-base">
           開始使用
         </Button>
       </form>
