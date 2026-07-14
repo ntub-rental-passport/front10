@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button/index'
 import { Checkbox } from '@/components/ui/checkbox/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
-import { CircleAlert, CircleCheckBig, Eye, EyeOff, House, LockKeyhole, Mail, UserRound } from 'lucide-vue-next'
+import { CircleAlert, CircleCheckBig, Eye, EyeOff, House, LockKeyhole, Mail, ShieldCheck, UserRound } from 'lucide-vue-next'
 import { resolveRoleHome, signIn } from '@/src/composables/useAuth'
 import {
   authIdentityOptions,
@@ -149,6 +149,7 @@ async function handleGoogleLogin(): Promise<void> {
                 ]"
               >
                 <UserRound v-if="option.value === 'tenant'" class="auth-role-card__icon" />
+                <ShieldCheck v-else-if="option.value === 'admin'" class="auth-role-card__icon" />
                 <House v-else class="auth-role-card__icon" />
               </div>
               <div class="auth-role-card__text">

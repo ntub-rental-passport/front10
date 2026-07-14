@@ -59,6 +59,12 @@
   }
 }
 
+@media (min-width: 1024px) {
+  .auth-role-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .auth-role-card {
   @apply rounded-[1.5rem] border px-5 py-5 text-left transition-all duration-200;
 }
