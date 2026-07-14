@@ -1,4 +1,4 @@
-export type AuthRole = 'user' | 'admin'
+export type AuthRole = 'user' | 'landlord' | 'admin'
 
 export interface AuthSession {
   email: string
@@ -120,7 +120,7 @@ export function resolveRoleHome(role: AuthRole): '/app' | '/admin' {
 }
 
 export function needsNicknameSetup(session: AuthSession | null): boolean {
-  return Boolean(session?.isAuthenticated && session.role === 'user' && !session.nickname)
+  return Boolean(session?.isAuthenticated && session.role !== 'admin' && !session.nickname)
 }
 
 export function startEmailRegistration(

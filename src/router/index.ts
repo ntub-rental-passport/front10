@@ -19,18 +19,18 @@ const router = createRouter({
     {
       path: '/welcome',
       component: () => import('@/src/pages/auth/welcome.vue'),
-      meta: { requiresAuth: true, role: 'user' as AuthRole },
+      meta: { requiresAuth: true },
     },
     {
       path: '/admin',
       component: AdminLayout,
-      meta: { requiresAuth: true, role: 'admin' as AuthRole },
+      meta: { requiresAuth: true, roles: ['admin'] as AuthRole[] },
       children: [{ path: '', component: () => import('@/src/pages/admin-dashboard.vue') }],
     },
     {
       path: '/app',
       component: Layout,
-      meta: { requiresAuth: true, role: 'user' as AuthRole },
+      meta: { requiresAuth: true, roles: ['user', 'landlord'] as AuthRole[] },
       children: [
         { path: '', component: () => import('@/src/pages/dashboard.vue') },
         { path: 'contract', component: () => import('@/src/pages/contract/index.vue') },
@@ -124,10 +124,10 @@ router.beforeEach((to) => {
 
   const protectedRecord = [...to.matched]
     .reverse()
-    .find((record) => typeof record.meta.role === 'string')
-  const requiredRole = protectedRecord?.meta.role as AuthRole | undefined
+    .find((record) => Array.isArray(record.meta.roles))
+  const requiredRoles = protectedRecord?.meta.roles as AuthRole[] | undefined
 
-  if (requiredRole && session.role !== requiredRole) {
+  if (requiredRoles && !requiredRoles.includes(session.role)) {
     return resolveRoleHome(session.role)
   }
 
