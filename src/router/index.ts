@@ -25,7 +25,10 @@ const router = createRouter({
       path: '/admin',
       component: AdminLayout,
       meta: { requiresAuth: true, roles: ['admin'] as AuthRole[] },
-      children: [{ path: '', component: () => import('@/src/pages/admin/index.vue') }],
+      children: [
+        { path: '', component: () => import('@/src/pages/admin/index.vue') },
+        { path: 'users', component: () => import('@/src/pages/admin/users.vue') },
+      ],
     },
     {
       path: '/app',
