@@ -1,11 +1,29 @@
 ﻿<script setup lang="ts">
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { Building2, LayoutDashboard, ShieldCheck } from 'lucide-vue-next'
+import {
+  BookOpen,
+  Building2,
+  ClipboardCheck,
+  CreditCard,
+  LayoutDashboard,
+  ScrollText,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 
 const route = useRoute()
 
-const adminNavItems = [{ label: '後台總覽', path: '/admin', icon: LayoutDashboard }]
+const adminNavItems = [
+  { label: '後台總覽', path: '/admin', icon: LayoutDashboard },
+  { label: '使用者管理', path: '/admin/users', icon: Users },
+  { label: '物件與評價審核', path: '/admin/review', icon: ClipboardCheck },
+  { label: '法規知識庫', path: '/admin/knowledge', icon: BookOpen },
+  { label: 'AI 品質監控', path: '/admin/ai-quality', icon: Sparkles },
+  { label: '訂閱與容量', path: '/admin/subscription', icon: CreditCard },
+  { label: '稽核紀錄', path: '/admin/audit', icon: ScrollText },
+]
 
 function isActive(path: string): boolean {
   if (path === '/admin') return route.path === '/admin'
