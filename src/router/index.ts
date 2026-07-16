@@ -29,6 +29,7 @@ const router = createRouter({
         { path: '', component: () => import('@/src/pages/admin/index.vue') },
         { path: 'users', component: () => import('@/src/pages/admin/users.vue') },
         { path: 'review', component: () => import('@/src/pages/admin/review.vue') },
+        { path: 'knowledge', component: () => import('@/src/pages/admin/knowledge.vue') },
       ],
     },
     {
