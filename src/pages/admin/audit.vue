@@ -46,13 +46,13 @@ const filteredEvents = computed(() =>
   events.value.filter((event) => {
     if (actionFilter.value !== 'all' && event.action !== actionFilter.value) return false
 
-    const text = keyword.value.trim()
-    if (text && !`${event.actor} ${event.target} ${event.detail}`.includes(text)) return false
+    const text = keyword.value.trim().toLowerCase()
+    if (text && !`${event.actor} ${event.target} ${event.detail}`.toLowerCase().includes(text)) return false
 
     if (fromDate.value && event.at < new Date(`${fromDate.value}T00:00:00`).toISOString()) {
       return false
     }
-    if (toDate.value && event.at > new Date(`${toDate.value}T23:59:59`).toISOString()) {
+    if (toDate.value && event.at > new Date(`${toDate.value}T23:59:59.999`).toISOString()) {
       return false
     }
     return true
