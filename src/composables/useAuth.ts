@@ -1,4 +1,4 @@
-export type AuthRole = 'user' | 'admin'
+export type AuthRole = 'tenant' | 'landlord' | 'admin' | 'reviewer'
 
 export interface AuthSession {
   email: string
@@ -21,7 +21,8 @@ interface UserProfile {
   nickname: string | null
 }
 
-const AUTH_STORAGE_KEY = 'rentmate-auth-session'
+// v2 invalidates legacy sessions where the old `admin` role represented landlords.
+const AUTH_STORAGE_KEY = 'rentmate-auth-session-v2'
 const USER_STORAGE_KEY = 'rentmate-user-profiles'
 const PENDING_REGISTRATION_KEY = 'rentmate-pending-registration'
 const DEMO_VERIFICATION_CODE = '123456'
@@ -101,7 +102,7 @@ export function signIn(role: AuthRole, email: string): AuthSession {
   return createSession(role, profile)
 }
 
-export function registerWithGoogle(email: string, role: AuthRole = 'user'): AuthSession {
+export function registerWithGoogle(email: string, role: AuthRole = 'tenant'): AuthSession {
   const profile = upsertUserProfile(email, {
     emailVerified: true,
     nickname: null,
@@ -115,18 +116,25 @@ export function signOut(): void {
   window.localStorage.removeItem(AUTH_STORAGE_KEY)
 }
 
-export function resolveRoleHome(role: AuthRole): '/app' | '/admin' {
-  return role === 'admin' ? '/admin' : '/app'
+export function resolveRoleHome(role: AuthRole): '/app' | '/landlord' | '/admin' | '/reviewer' {
+  const roleHomes: Record<AuthRole, '/app' | '/landlord' | '/admin' | '/reviewer'> = {
+    tenant: '/app',
+    landlord: '/landlord',
+    admin: '/admin',
+    reviewer: '/reviewer',
+  }
+
+  return roleHomes[role]
 }
 
 export function needsNicknameSetup(session: AuthSession | null): boolean {
-  return Boolean(session?.isAuthenticated && session.role === 'user' && !session.nickname)
+  return Boolean(session?.isAuthenticated && session.role === 'tenant' && !session.nickname)
 }
 
 export function startEmailRegistration(
   email: string,
   password: string,
-  role: AuthRole = 'user',
+  role: AuthRole = 'tenant',
 ): PendingRegistration {
   const pendingRegistration: PendingRegistration = {
     email,
@@ -162,7 +170,7 @@ export function completeEmailVerification(code: string): AuthSession | null {
   })
 
   clearPendingRegistration()
-  return createSession(pendingRegistration.role ?? 'user', profile)
+  return createSession(pendingRegistration.role ?? 'tenant', profile)
 }
 
 export function finishNicknameSetup(nickname: string): AuthSession | null {

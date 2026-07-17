@@ -229,7 +229,7 @@ async function handleGoogleRegister(): Promise<void> {
 </script>
 
 <template>
-  <AuthShell content-width-class="max-w-3xl" :footer-note="selectedOption.registerFooterNote">
+  <AuthShell content-width-class="max-w-xl" :footer-note="selectedOption.registerFooterNote">
     <div class="auth-page-header">
       <div>
         <p class="auth-page-eyebrow">Register</p>

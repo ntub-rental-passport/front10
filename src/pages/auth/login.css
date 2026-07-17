@@ -1,7 +1,7 @@
 @reference "../../index.css";
 
 .auth-page-header {
-  @apply space-y-4 pt-4;
+  @apply space-y-2 pt-2;
 }
 
 @media (min-width: 1024px) {
@@ -11,34 +11,34 @@
 }
 
 .auth-page-eyebrow {
-  @apply text-sm font-semibold uppercase text-primary/70;
+  @apply text-xs font-semibold uppercase text-primary/70;
   letter-spacing: 0.32em;
 }
 
 .auth-page-title {
-  @apply mt-4 text-4xl font-black tracking-tight text-foreground;
+  @apply mt-2 text-3xl font-black tracking-tight text-foreground;
 }
 
 @media (min-width: 640px) {
   .auth-page-title {
-    @apply text-5xl;
+    @apply text-4xl;
   }
 }
 
 .auth-page-subtitle {
-  @apply mt-3 max-w-2xl text-base leading-7 text-muted-foreground;
+  @apply mt-2 max-w-2xl text-sm leading-6 text-muted-foreground;
 }
 
 .auth-page-form {
-  @apply mt-10 space-y-8;
+  @apply mt-6 space-y-5;
 }
 
 .auth-role-section {
-  @apply space-y-4;
+  @apply space-y-3;
 }
 
 .auth-role-copy {
-  @apply flex flex-col gap-2;
+  @apply flex flex-col gap-1;
 }
 
 .auth-role-title {
@@ -46,11 +46,11 @@
 }
 
 .auth-role-description {
-  @apply text-sm leading-6 text-muted-foreground;
+  @apply text-xs leading-5 text-muted-foreground;
 }
 
 .auth-role-grid {
-  @apply grid gap-4;
+  @apply grid gap-3;
 }
 
 @media (min-width: 768px) {
@@ -60,7 +60,7 @@
 }
 
 .auth-role-card {
-  @apply rounded-[1.5rem] border px-5 py-5 text-left transition-all duration-200;
+  @apply rounded-[1.125rem] border px-4 py-3 text-left transition-all duration-200;
 }
 
 .auth-role-card--selected {
@@ -79,11 +79,11 @@
 }
 
 .auth-role-card__content {
-  @apply flex items-center gap-4;
+  @apply flex items-center gap-3;
 }
 
 .auth-role-card__icon-shell {
-  @apply flex h-14 w-14 items-center justify-center rounded-2xl border transition-colors;
+  @apply flex h-11 w-11 items-center justify-center rounded-xl border transition-colors;
 }
 
 .auth-role-card__icon-shell--selected {
@@ -95,19 +95,19 @@
 }
 
 .auth-role-card__icon {
-  @apply h-7 w-7;
+  @apply h-5 w-5;
 }
 
 .auth-role-card__text {
-  @apply space-y-1.5;
+  @apply space-y-1;
 }
 
 .auth-role-card__label {
-  @apply text-lg font-bold;
+  @apply text-base font-bold;
 }
 
 .auth-role-card__description {
-  @apply text-sm;
+  @apply text-xs;
 }
 
 .auth-role-card__description--selected {
@@ -119,27 +119,27 @@
 }
 
 .auth-form-section {
-  @apply space-y-6;
+  @apply space-y-4;
 }
 
 .auth-helper-card {
-  @apply rounded-[1.25rem] border border-primary/10 bg-primary/[0.04] px-4 py-3 text-sm leading-6 text-muted-foreground;
+  @apply rounded-xl border border-primary/10 bg-primary/[0.04] px-4 py-2 text-xs leading-5 text-muted-foreground;
 }
 
 .auth-field-block {
-  @apply space-y-2;
+  @apply space-y-1.5;
 }
 
 .auth-field-copy {
-  @apply space-y-2;
+  @apply space-y-1.5;
 }
 
 .auth-field-label {
-  @apply block font-semibold text-foreground;
+  @apply block text-sm font-semibold text-foreground;
 }
 
 .auth-field-description {
-  @apply text-sm text-muted-foreground;
+  @apply text-xs text-muted-foreground;
 }
 
 .auth-field-row {
@@ -147,7 +147,7 @@
 }
 
 .auth-inline-link {
-  @apply text-sm font-medium text-primary transition-colors;
+  @apply text-xs font-medium text-primary transition-colors;
 }
 
 .auth-inline-link:hover {
@@ -159,7 +159,7 @@
 }
 
 .auth-input {
-  @apply h-14 rounded-[1rem] bg-background text-base transition-colors;
+  @apply h-11 rounded-xl bg-background text-sm transition-colors;
 }
 
 .auth-input--with-leading {
@@ -221,7 +221,7 @@
 }
 
 .auth-feedback {
-  @apply text-sm;
+  @apply text-xs;
 }
 
 .auth-feedback--valid {
@@ -233,7 +233,7 @@
 }
 
 .auth-checkbox-row {
-  @apply flex items-center gap-3 text-sm text-muted-foreground;
+  @apply flex items-center gap-2 text-xs text-muted-foreground;
 }
 
 .auth-checkbox {
@@ -241,16 +241,16 @@
 }
 
 .auth-primary-button {
-  @apply h-14 w-full rounded-[1rem] text-base;
+  @apply h-11 w-full rounded-xl text-sm;
   box-shadow: 0 18px 45px rgba(91, 77, 226, 0.22);
 }
 
 .auth-page-footer {
-  @apply mt-8 space-y-6;
+  @apply mt-5 space-y-4;
 }
 
 .auth-divider {
-  @apply flex items-center gap-4 text-sm text-muted-foreground;
+  @apply flex items-center gap-3 text-xs text-muted-foreground;
 }
 
 .auth-divider-line {
@@ -258,11 +258,11 @@
 }
 
 .auth-secondary-button {
-  @apply h-14 w-full rounded-[1rem] border-border/80 bg-background text-base;
+  @apply h-11 w-full rounded-xl border-border/80 bg-background text-sm;
 }
 
 .auth-google-icon {
-  @apply mr-3 h-5 w-5 shrink-0;
+  @apply mr-2 h-4 w-4 shrink-0;
 }
 
 .auth-footer-copy {
@@ -275,4 +275,38 @@
 
 .auth-footer-link:hover {
   text-decoration: underline;
+}
+
+
+/* Short desktop viewports: keep the login usable at 100% browser zoom. */
+@media (min-width: 1024px) and (max-height: 760px) {
+  .auth-page-title {
+    @apply text-3xl;
+  }
+
+  .auth-page-form {
+    @apply mt-4 space-y-4;
+  }
+
+  .auth-form-section {
+    @apply space-y-3;
+  }
+
+  .auth-role-card {
+    @apply py-2.5;
+  }
+
+  .auth-helper-card {
+    @apply py-1.5;
+  }
+
+  .auth-input,
+  .auth-primary-button,
+  .auth-secondary-button {
+    @apply h-10;
+  }
+
+  .auth-page-footer {
+    @apply mt-4 space-y-3;
+  }
 }
