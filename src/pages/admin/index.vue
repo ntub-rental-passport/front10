@@ -12,17 +12,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog/index'
-import { ClipboardCheck, RotateCcw, ScrollText, Sparkles, Users } from 'lucide-vue-next'
+import { RotateCcw } from 'lucide-vue-next'
+import BarStatCard from '@/src/components/admin/BarStatCard.vue'
+import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { useAdminAiQuality } from '@/src/composables/admin/useAdminAiQuality'
 import { useAdminReview } from '@/src/composables/admin/useAdminReview'
-import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
+import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { resetAdminData } from '@/src/composables/admin/useAdminStore'
 import { formatDateTime } from '@/src/utils/admin-format'
+import type { AdminUserRole } from '@/src/mocks/admin-seed'
+
+const CHART_INDIGO = '#5660D6'
+const CHART_TEAL = '#0E9488'
+const CHART_AMBER = '#D97706'
+const CHART_RED = '#DC2626'
+const CHART_INDIGO_MUTED = '#B4B9EE'
 
 const { users } = useAdminUsers()
 const { pendingListings, pendingRatings } = useAdminReview()
-const { needsReviewCount } = useAdminAiQuality()
+const { records, needsReviewCount } = useAdminAiQuality()
 const { events, logAction } = useAdminAudit()
 
 const resetOpen = ref(false)
@@ -32,36 +41,70 @@ const todayEventCount = computed(() => {
   return events.value.filter((event) => new Date(event.at).toDateString() === today).length
 })
 
-const statCards = computed(() => [
-  {
-    title: '待審核項目',
-    value: pendingListings.value.length + pendingRatings.value.length,
-    note: `物件 ${pendingListings.value.length} 筆、評價 ${pendingRatings.value.length} 筆`,
-    icon: ClipboardCheck,
-    to: '/admin/review',
-  },
-  {
-    title: '使用者總數',
-    value: users.value.length,
-    note: `停用中 ${users.value.filter((user) => user.status === 'suspended').length} 筆`,
-    icon: Users,
-    to: '/admin/users',
-  },
-  {
-    title: 'AI 品質警示',
-    value: needsReviewCount.value,
-    note: '低分產出待人工複核',
-    icon: Sparkles,
-    to: '/admin/ai-quality',
-  },
-  {
-    title: '今日稽核事件',
-    value: todayEventCount.value,
-    note: '含管理操作與系統事件',
-    icon: ScrollText,
-    to: '/admin/audit',
-  },
+const reviewSegments = computed(() => [
+  { label: '待審物件', value: pendingListings.value.length, color: CHART_INDIGO },
+  { label: '待審評價', value: pendingRatings.value.length, color: CHART_TEAL },
 ])
+
+const pendingTotal = computed(() => pendingListings.value.length + pendingRatings.value.length)
+
+const roleColors: Record<AdminUserRole, string> = {
+  user: CHART_INDIGO,
+  landlord: CHART_TEAL,
+  admin: CHART_AMBER,
+}
+
+const roleSegments = computed(() =>
+  (Object.keys(roleColors) as AdminUserRole[]).map((role) => ({
+    label: adminRoleLabels[role],
+    value: users.value.filter((user) => user.role === role).length,
+    color: roleColors[role],
+  })),
+)
+
+const suspendedNote = computed(() => {
+  const suspended = users.value.filter((user) => user.status === 'suspended').length
+  return suspended > 0 ? `停用中 ${suspended} 筆` : '目前沒有停用帳號'
+})
+
+const ratingLabels = ['1 星', '2 星', '3 星', '4 星', '5 星']
+const ratingColors = [CHART_RED, CHART_RED, CHART_INDIGO, CHART_INDIGO, CHART_INDIGO]
+
+const ratingValues = computed(() => {
+  const counts = [0, 0, 0, 0, 0]
+  for (const record of records.value) {
+    if (record.rating !== null && record.rating >= 1 && record.rating <= 5) {
+      counts[record.rating - 1] += 1
+    }
+  }
+  return counts
+})
+
+const trendDays = computed(() => {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date()
+    date.setHours(0, 0, 0, 0)
+    date.setDate(date.getDate() - (6 - index))
+    return date
+  })
+})
+
+const trendLabels = computed(() =>
+  trendDays.value.map((date, index) =>
+    index === 6 ? '今天' : `${date.getMonth() + 1}/${date.getDate()}`,
+  ),
+)
+
+const trendValues = computed(() =>
+  trendDays.value.map((date) => {
+    const dayString = date.toDateString()
+    return events.value.filter((event) => new Date(event.at).toDateString() === dayString).length
+  }),
+)
+
+const trendColors = computed(() =>
+  trendDays.value.map((_, index) => (index === 6 ? CHART_INDIGO : CHART_INDIGO_MUTED)),
+)
 
 const queueItems = computed(() => [
   ...pendingListings.value.map((listing) => ({
@@ -116,18 +159,38 @@ function confirmReset(): void {
     </div>
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <RouterLink v-for="item in statCards" :key="item.title" :to="item.to" class="block">
-        <Card class="h-full rounded-[1.5rem] border-border/70 bg-background/90 shadow-sm transition-shadow hover:shadow-md">
-          <CardHeader class="flex flex-row items-center justify-between pb-2">
-            <CardTitle class="text-sm font-medium">{{ item.title }}</CardTitle>
-            <component :is="item.icon" class="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent class="space-y-1">
-            <div class="text-3xl font-black">{{ item.value }}</div>
-            <p class="text-sm text-muted-foreground">{{ item.note }}</p>
-          </CardContent>
-        </Card>
-      </RouterLink>
+      <DonutStatCard
+        title="待審核項目"
+        to="/admin/review"
+        :center-value="pendingTotal"
+        center-label="筆待審"
+        :segments="reviewSegments"
+      />
+      <DonutStatCard
+        title="使用者組成"
+        to="/admin/users"
+        :center-value="users.length"
+        center-label="位使用者"
+        :segments="roleSegments"
+        :note="suspendedNote"
+      />
+      <BarStatCard
+        title="AI 產出品質"
+        to="/admin/ai-quality"
+        :labels="ratingLabels"
+        :values="ratingValues"
+        :colors="ratingColors"
+        :corner-text="`需複核 ${needsReviewCount} 筆`"
+        :corner-variant="needsReviewCount > 0 ? 'destructive' : 'secondary'"
+      />
+      <BarStatCard
+        title="稽核事件趨勢"
+        to="/admin/audit"
+        :labels="trendLabels"
+        :values="trendValues"
+        :colors="trendColors"
+        :corner-text="`今日 ${todayEventCount} 筆`"
+      />
     </div>
 
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
