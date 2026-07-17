@@ -48,6 +48,17 @@ export function resetAdminData(): void {
   for (const entry of registry.values()) {
     entry.target.value = entry.seed()
   }
+
+  if (!canUseStorage()) return
+  const registeredKeys = new Set(
+    [...registry.keys()].map((name) => `${STORAGE_PREFIX}${name}`),
+  )
+  for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+    const key = window.localStorage.key(i)
+    if (key && key.startsWith(STORAGE_PREFIX) && !registeredKeys.has(key)) {
+      window.localStorage.removeItem(key)
+    }
+  }
 }
 
 export function newId(prefix: string): string {
