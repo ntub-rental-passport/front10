@@ -24,6 +24,20 @@ npm run dev:api
 
 預設前端會在 `http://localhost:3000` 啟動，OCR API 預設為 `http://localhost:8787`。
 
+## Role workspaces
+
+目前前端已拆分四種角色與工作區：
+
+```text
+tenant   -> /app
+landlord -> /landlord
+admin    -> /admin
+reviewer -> /reviewer
+```
+
+租客與房東使用 `/login` 登入；系統管理員與資料審核人員使用 `/staff-login`。
+目前登入與頁面資料屬於前端展示流程，正式上線前仍需由後端完成帳密驗證、權限檢查、密碼雜湊與操作紀錄。
+
 ## Environment
 
 先複製環境變數範本：

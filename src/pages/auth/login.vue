@@ -111,7 +111,7 @@ async function handleGoogleLogin(): Promise<void> {
 </script>
 
 <template>
-  <AuthShell content-width-class="max-w-3xl" :footer-note="selectedOption.loginFooterNote">
+  <AuthShell content-width-class="max-w-xl" :footer-note="selectedOption.loginFooterNote">
     <div class="auth-page-header">
       <div>
         <p class="auth-page-eyebrow">Sign In</p>

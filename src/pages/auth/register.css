@@ -1,7 +1,7 @@
 @reference "../../index.css";
 
 .auth-page-header {
-  @apply space-y-4 pt-4;
+  @apply space-y-2 pt-2;
 }
 
 @media (min-width: 1024px) {
@@ -11,42 +11,42 @@
 }
 
 .auth-page-eyebrow {
-  @apply text-sm font-semibold uppercase text-primary/70;
+  @apply text-xs font-semibold uppercase text-primary/70;
   letter-spacing: 0.32em;
 }
 
 .auth-page-title {
-  @apply mt-4 text-4xl font-black tracking-tight text-foreground;
+  @apply mt-2 text-3xl font-black tracking-tight text-foreground;
 }
 
 @media (min-width: 640px) {
   .auth-page-title {
-    @apply text-5xl;
+    @apply text-4xl;
   }
 }
 
 .auth-page-subtitle {
-  @apply mt-3 max-w-2xl text-base leading-7 text-muted-foreground;
+  @apply mt-2 max-w-2xl text-sm leading-6 text-muted-foreground;
 }
 
 .auth-page-form {
-  @apply mt-10;
+  @apply mt-6;
 }
 
 .auth-form-section {
-  @apply space-y-6;
-}
-
-.auth-form-section--spacious {
-  @apply space-y-8;
-}
-
-.auth-role-section {
   @apply space-y-4;
 }
 
+.auth-form-section--spacious {
+  @apply space-y-5;
+}
+
+.auth-role-section {
+  @apply space-y-3;
+}
+
 .auth-role-grid {
-  @apply grid gap-4;
+  @apply grid gap-3;
 }
 
 @media (min-width: 768px) {
@@ -56,7 +56,7 @@
 }
 
 .auth-role-card {
-  @apply rounded-[1.5rem] border px-5 py-5 text-left transition-all duration-200;
+  @apply rounded-[1.125rem] border px-4 py-3 text-left transition-all duration-200;
 }
 
 .auth-role-card--selected {
@@ -75,11 +75,11 @@
 }
 
 .auth-role-card__content {
-  @apply flex items-center gap-4;
+  @apply flex items-center gap-3;
 }
 
 .auth-role-card__icon-shell {
-  @apply flex h-14 w-14 items-center justify-center rounded-2xl border transition-colors;
+  @apply flex h-11 w-11 items-center justify-center rounded-xl border transition-colors;
 }
 
 .auth-role-card__icon-shell--selected {
@@ -91,11 +91,11 @@
 }
 
 .auth-role-card__icon {
-  @apply h-7 w-7;
+  @apply h-5 w-5;
 }
 
 .auth-role-card__text {
-  @apply space-y-1.5;
+  @apply space-y-1;
 }
 
 .auth-role-card__text--grow {
@@ -107,7 +107,7 @@
 }
 
 .auth-role-card__label {
-  @apply text-lg font-bold;
+  @apply text-base font-bold;
 }
 
 .auth-role-card__badge {
@@ -115,7 +115,7 @@
 }
 
 .auth-role-card__description {
-  @apply text-sm;
+  @apply text-xs;
 }
 
 .auth-role-card__description--selected {
@@ -127,19 +127,19 @@
 }
 
 .auth-field-block {
-  @apply space-y-2;
+  @apply space-y-1.5;
 }
 
 .auth-field-block--dense {
-  @apply space-y-3;
+  @apply space-y-2;
 }
 
 .auth-field-label {
-  @apply font-semibold text-foreground;
+  @apply text-sm font-semibold text-foreground;
 }
 
 .auth-field-description {
-  @apply text-sm leading-6 text-muted-foreground;
+  @apply text-xs leading-5 text-muted-foreground;
 }
 
 .auth-field-description--compact {
@@ -151,7 +151,7 @@
 }
 
 .auth-input {
-  @apply h-14 rounded-[1rem] bg-background text-base transition-colors;
+  @apply h-11 rounded-xl bg-background text-sm transition-colors;
 }
 
 .auth-input--with-leading {
@@ -213,7 +213,7 @@
 }
 
 .auth-feedback {
-  @apply text-sm;
+  @apply text-xs;
 }
 
 .auth-feedback--valid {
@@ -229,7 +229,7 @@
 }
 
 .password-rule-list {
-  @apply flex flex-wrap gap-x-5 gap-y-2 text-sm;
+  @apply flex flex-wrap gap-x-4 gap-y-1.5 text-xs;
 }
 
 .password-rule-item {
@@ -249,16 +249,16 @@
 }
 
 .auth-action-group {
-  @apply space-y-4;
+  @apply space-y-3;
 }
 
 .auth-primary-button {
-  @apply h-14 w-full rounded-[1rem] text-base;
+  @apply h-11 w-full rounded-xl text-sm;
   box-shadow: 0 18px 45px rgba(91, 77, 226, 0.22);
 }
 
 .auth-divider {
-  @apply flex items-center gap-4 text-sm text-muted-foreground;
+  @apply flex items-center gap-3 text-xs text-muted-foreground;
 }
 
 .auth-divider-line {
@@ -266,23 +266,23 @@
 }
 
 .auth-secondary-button {
-  @apply h-14 w-full rounded-[1rem] border-border/80 bg-background text-base;
+  @apply h-11 w-full rounded-xl border-border/80 bg-background text-sm;
 }
 
 .auth-google-icon {
-  @apply mr-3 h-5 w-5 shrink-0;
+  @apply mr-2 h-4 w-4 shrink-0;
 }
 
 .auth-legal-card {
-  @apply space-y-4 rounded-[1.5rem] border border-border/70 bg-slate-50/80 p-4;
+  @apply space-y-3 rounded-[1.125rem] border border-border/70 bg-slate-50/80 p-3;
 }
 
 .auth-checkbox-row {
-  @apply flex items-center gap-3 text-sm text-muted-foreground;
+  @apply flex items-center gap-2 text-xs text-muted-foreground;
 }
 
 .auth-checkbox-row--start {
-  @apply items-start leading-6;
+  @apply items-start leading-5;
 }
 
 .auth-checkbox {
@@ -298,7 +298,7 @@
 }
 
 .auth-email-notice {
-  @apply flex items-start gap-3 rounded-[1rem] border border-primary/10 bg-primary/[0.04] px-4 py-3 text-sm leading-6 text-muted-foreground;
+  @apply flex items-start gap-2 rounded-xl border border-primary/10 bg-primary/[0.04] px-3 py-2 text-xs leading-5 text-muted-foreground;
 }
 
 .auth-email-notice__icon {
@@ -306,7 +306,7 @@
 }
 
 .auth-page-footer {
-  @apply mt-8 text-sm text-muted-foreground;
+  @apply mt-5 text-xs text-muted-foreground;
 }
 
 .auth-page-footer--center {
@@ -319,4 +319,31 @@
 
 .auth-footer-link:hover {
   text-decoration: underline;
+}
+
+
+/* Registration remains scrollable; this only prevents oversized controls on short screens. */
+@media (min-width: 1024px) and (max-height: 800px) {
+  .auth-page-title {
+    @apply text-3xl;
+  }
+
+  .auth-page-form {
+    @apply mt-4;
+  }
+
+  .auth-form-section,
+  .auth-form-section--spacious {
+  @apply space-y-5;
+  }
+
+  .auth-role-card {
+    @apply py-2.5;
+  }
+
+  .auth-input,
+  .auth-primary-button,
+  .auth-secondary-button {
+    @apply h-10;
+  }
 }

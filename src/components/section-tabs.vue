@@ -22,8 +22,7 @@ const route = useRoute()
 const tabs = computed(() => {
   if (props.group === 'subsidy') {
     return [
-      { label: '租補首頁', path: '/app/subsidy', icon: ClipboardList },
-      { label: '租補試算', path: '/app/subsidy/calculator', icon: Calculator },
+      { label: '租補試算', path: '/app/subsidy', icon: Calculator },
       { label: '租補申請', path: '/app/subsidy/apply', icon: FilePlus2 },
       { label: '申請進度', path: '/app/subsidy/progress', icon: ListChecks },
       { label: '補件上傳', path: '/app/subsidy/upload', icon: UploadCloud },
@@ -31,8 +30,7 @@ const tabs = computed(() => {
   }
 
   return [
-    { label: '備忘錄首頁', path: '/app/notes', icon: ClipboardList },
-    { label: '個人備忘', path: '/app/notes/personal', icon: ClipboardList },
+    { label: '個人備忘', path: '/app/notes', icon: ClipboardList },
     { label: '室友協作', path: '/app/notes/roommates', icon: Users },
   ]
 })

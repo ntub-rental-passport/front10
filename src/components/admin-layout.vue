@@ -1,73 +1,16 @@
-﻿<script setup lang="ts">
-import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { Building2, LayoutDashboard, ShieldCheck } from 'lucide-vue-next'
-import { cn } from '@/lib/utils'
+<script setup lang="ts">
+import { FileClock, LayoutDashboard, ScrollText, Settings, UserCog } from 'lucide-vue-next'
+import ManagementLayout from '@/src/components/management-layout.vue'
 
-const route = useRoute()
-
-const adminNavItems = [{ label: '後台總覽', path: '/admin', icon: LayoutDashboard }]
-
-function isActive(path: string): boolean {
-  if (path === '/admin') return route.path === '/admin'
-  return route.path.startsWith(path)
-}
+const navItems = [
+  { label: '系統總覽', path: '/admin', icon: LayoutDashboard },
+  { label: '帳號與角色', path: '/admin/users', icon: UserCog },
+  { label: '資料與內容維護', path: '/admin/content', icon: FileClock },
+  { label: '操作紀錄', path: '/admin/audit-logs', icon: ScrollText },
+  { label: '系統設定', path: '/admin/settings', icon: Settings },
+]
 </script>
 
 <template>
-  <div class="min-h-screen bg-[linear-gradient(180deg,_#f7f8fc,_#f3f5fb)]">
-    <header class="border-b border-border/60 bg-background/90 backdrop-blur">
-      <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-10">
-        <RouterLink to="/admin" class="flex items-center gap-3 font-bold text-primary">
-          <div class="rounded-2xl bg-primary/10 p-2">
-            <ShieldCheck class="h-5 w-5" />
-          </div>
-          <span class="text-xl">RentMate Admin</span>
-        </RouterLink>
-
-        <div class="flex items-center gap-3">
-          <RouterLink to="/app" class="text-sm text-muted-foreground transition-colors hover:text-foreground">
-            前往使用者工作區
-          </RouterLink>
-          <RouterLink to="/" class="text-sm text-muted-foreground transition-colors hover:text-foreground">
-            返回首頁
-          </RouterLink>
-        </div>
-      </div>
-    </header>
-
-    <div class="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[240px_minmax(0,1fr)] lg:px-10">
-      <aside class="rounded-[1.75rem] border border-border/70 bg-background/85 p-4 shadow-sm">
-        <div class="mb-4 flex items-center gap-3 rounded-[1.25rem] bg-primary/5 p-4 text-primary">
-          <div class="rounded-full bg-primary/10 p-2">
-            <Building2 class="h-4 w-4" />
-          </div>
-          <div>
-            <p class="text-sm font-semibold">管理工作區</p>
-            <p class="text-xs text-muted-foreground">集中管理 OCR 任務、內容與系統設定</p>
-          </div>
-        </div>
-
-        <nav class="space-y-1">
-          <RouterLink
-            v-for="item in adminNavItems"
-            :key="item.path"
-            :to="item.path"
-            :class="cn(
-              'flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors',
-              isActive(item.path)
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            )"
-          >
-            <component :is="item.icon" class="h-4 w-4" />
-            {{ item.label }}
-          </RouterLink>
-        </nav>
-      </aside>
-
-      <main>
-        <RouterView />
-      </main>
-    </div>
-  </div>
+  <ManagementLayout title="RentMate 系統管理" workspace-label="系統管理員工作區" workspace-description="管理帳號、角色、資料內容與系統操作紀錄" home-path="/admin" :nav-items="navItems" />
 </template>
