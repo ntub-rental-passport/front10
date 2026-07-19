@@ -71,12 +71,6 @@ const loginLink = computed(() => ({
   },
 }))
 
-const roleSummary = computed(() =>
-  selectedIdentity.value === 'tenant'
-    ? '開始管理租屋，更高效、更安心。'
-    : '開始管理物件與租客，更高效、更安心。',
-)
-
 const passwordRules = computed<PasswordRule[]>(() => {
   const password = form.value.password
 
@@ -234,9 +228,6 @@ async function handleGoogleRegister(): Promise<void> {
       <div>
         <p class="auth-page-eyebrow">Register</p>
         <h2 class="auth-page-title">建立你的 RentMate 帳號</h2>
-        <p class="auth-page-subtitle">
-          {{ roleSummary }}
-        </p>
       </div>
     </div>
 
@@ -275,14 +266,6 @@ async function handleGoogleRegister(): Promise<void> {
                       class="auth-role-card__badge"
                     />
                   </div>
-                  <p
-                    :class="[
-                      'auth-role-card__description',
-                      selectedIdentity === option.value ? 'auth-role-card__description--selected' : 'auth-role-card__description--idle',
-                    ]"
-                  >
-                    {{ option.value === 'tenant' ? '尋找理想房源、輕鬆租屋' : '管理物件與租客更簡單' }}
-                  </p>
                 </div>
               </div>
             </button>
