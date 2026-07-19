@@ -25,10 +25,6 @@
   }
 }
 
-.auth-page-subtitle {
-  @apply mt-2 max-w-2xl text-sm leading-6 text-muted-foreground;
-}
-
 .auth-page-form {
   @apply mt-6;
 }
@@ -94,10 +90,6 @@
   @apply h-5 w-5;
 }
 
-.auth-role-card__text {
-  @apply space-y-1;
-}
-
 .auth-role-card__text--grow {
   @apply min-w-0 flex-1;
 }
@@ -112,18 +104,6 @@
 
 .auth-role-card__badge {
   @apply h-5 w-5 shrink-0 text-white;
-}
-
-.auth-role-card__description {
-  @apply text-xs;
-}
-
-.auth-role-card__description--selected {
-  @apply text-white/80;
-}
-
-.auth-role-card__description--idle {
-  @apply text-muted-foreground;
 }
 
 .auth-field-block {

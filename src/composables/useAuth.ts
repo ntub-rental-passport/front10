@@ -19,7 +19,15 @@ interface UserProfile {
   email: string
   emailVerified: boolean
   nickname: string | null
+  password?: string
+  role?: AuthRole
 }
+
+export type EmailSignInError = 'account-not-found' | 'invalid-password' | 'role-mismatch' | 'email-not-verified'
+
+export type EmailSignInResult =
+  | { ok: true; session: AuthSession }
+  | { ok: false; error: EmailSignInError }
 
 // v2 invalidates legacy sessions where the old `admin` role represented landlords.
 const AUTH_STORAGE_KEY = 'rentmate-auth-session-v2'
@@ -60,8 +68,9 @@ function saveUserProfiles(profiles: Record<string, UserProfile>): void {
 
 function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserProfile {
   const profiles = getUserProfiles()
-  const currentProfile = profiles[email] ?? {
-    email,
+  const normalizedEmail = email.trim().toLowerCase()
+  const currentProfile = profiles[normalizedEmail] ?? {
+    email: normalizedEmail,
     emailVerified: false,
     nickname: null,
   }
@@ -69,10 +78,10 @@ function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserPr
   const nextProfile: UserProfile = {
     ...currentProfile,
     ...updates,
-    email,
+    email: normalizedEmail,
   }
 
-  profiles[email] = nextProfile
+  profiles[normalizedEmail] = nextProfile
   saveUserProfiles(profiles)
   return nextProfile
 }
@@ -100,6 +109,18 @@ export function signIn(role: AuthRole, email: string): AuthSession {
   })
 
   return createSession(role, profile)
+}
+
+export function signInWithEmail(email: string, password: string, role: AuthRole): EmailSignInResult {
+  const normalizedEmail = email.trim().toLowerCase()
+  const profile = getUserProfiles()[normalizedEmail]
+
+  if (!profile || !profile.password) return { ok: false, error: 'account-not-found' }
+  if (!profile.emailVerified) return { ok: false, error: 'email-not-verified' }
+  if (profile.role && profile.role !== role) return { ok: false, error: 'role-mismatch' }
+  if (profile.password !== password) return { ok: false, error: 'invalid-password' }
+
+  return { ok: true, session: createSession(role, profile) }
 }
 
 export function registerWithGoogle(email: string, role: AuthRole = 'tenant'): AuthSession {
@@ -137,7 +158,7 @@ export function startEmailRegistration(
   role: AuthRole = 'tenant',
 ): PendingRegistration {
   const pendingRegistration: PendingRegistration = {
-    email,
+    email: email.trim().toLowerCase(),
     password,
     verificationCode: DEMO_VERIFICATION_CODE,
     role,
@@ -167,6 +188,8 @@ export function completeEmailVerification(code: string): AuthSession | null {
   const profile = upsertUserProfile(pendingRegistration.email, {
     emailVerified: true,
     nickname: null,
+    password: pendingRegistration.password,
+    role: pendingRegistration.role ?? 'tenant',
   })
 
   clearPendingRegistration()
