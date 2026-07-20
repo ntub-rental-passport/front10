@@ -30,6 +30,11 @@ const resendAvailableIn = computed(() => Math.max(
   0,
   Math.ceil(((pendingRegistration.value?.resendAvailableAt ?? 0) - now.value) / 1000),
 ))
+const verificationExpiresIn = computed(() => Math.max(
+  0,
+  Math.ceil(((pendingRegistration.value?.expiresAt ?? 0) - now.value) / 1000),
+))
+const verificationExpired = computed(() => verificationExpiresIn.value === 0)
 const digitInputs = ref<HTMLInputElement[]>([])
 
 function setDigitInput(element: unknown, index: number): void {
@@ -101,6 +106,10 @@ async function handleKeydown(event: KeyboardEvent, index: number): Promise<void>
 }
 
 async function handleVerification(): Promise<void> {
+  if (verificationExpired.value) {
+    errorMessage.value = '驗證碼已過期，請重新寄送驗證碼。'
+    return
+  }
   if (getCode().length !== 6) {
     errorMessage.value = '請輸入完整的六碼驗證碼。'
     return
@@ -153,7 +162,18 @@ async function handleResend(): Promise<void> {
       <div class="flex items-start gap-3">
         <BadgeCheck class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <div class="space-y-1">
-          <p class="font-medium text-foreground">驗證碼有效時間為 2 分鐘</p>
+          <p
+            :class="[
+              'font-medium',
+              verificationExpired || verificationExpiresIn <= 30 ? 'text-destructive' : 'text-foreground',
+            ]"
+          >
+            {{
+              verificationExpired
+                ? '驗證碼已過期，請重新寄送'
+                : `驗證碼將在 ${verificationExpiresIn} 秒後失效`
+            }}
+          </p>
           <p>最多可輸入錯誤 3 次；達到上限後需要重新註冊。</p>
         </div>
       </div>
@@ -184,7 +204,12 @@ async function handleResend(): Promise<void> {
       </div>
 
       <div class="flex flex-col gap-3 pt-2">
-        <Button type="submit" size="lg" class="h-14 w-full rounded-[1rem] text-base" :disabled="submitting">
+        <Button
+          type="submit"
+          size="lg"
+          class="h-14 w-full rounded-[1rem] text-base"
+          :disabled="submitting || verificationExpired"
+        >
           驗證並繼續
         </Button>
         <Button

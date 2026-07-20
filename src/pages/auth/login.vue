@@ -287,7 +287,7 @@ onMounted(handleGoogleOAuthReturn)
         </div>
 
         <label class="auth-checkbox-row">
-          <Checkbox v-model:checked="rememberMe" class="auth-checkbox" />
+          <Checkbox v-model="rememberMe" class="auth-checkbox" />
           記住這個登入狀態
         </label>
 

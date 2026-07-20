@@ -47,6 +47,7 @@ interface PasswordRule {
 
 const router = useRouter()
 const route = useRoute()
+const privacyPolicyUrl = `${import.meta.env.BASE_URL}rentmate-privacy-policy.pdf`
 const form = ref({
   email: '',
   password: '',
@@ -444,12 +445,21 @@ async function handleGoogleRegister(): Promise<void> {
 
         <div class="auth-legal-card">
           <label class="auth-checkbox-row auth-checkbox-row--start">
-            <Checkbox v-model:checked="agreeToTerms" class="auth-checkbox auth-checkbox--offset" />
+            <Checkbox v-model="agreeToTerms" class="auth-checkbox auth-checkbox--offset" />
             <span>
               我已閱讀並同意
               <span class="auth-inline-accent">服務條款</span>
               與
-              <span class="auth-inline-accent">隱私權政策</span>
+              <a
+                :href="privacyPolicyUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="auth-inline-accent"
+                aria-label="在新分頁開啟 RentMate 隱私權政策 PDF"
+                @click.stop
+              >
+                隱私權政策
+              </a>
             </span>
           </label>
 
