@@ -22,10 +22,10 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = KEY_PATH
 
 try:
     ocr_client = vision.ImageAnnotatorClient()
-    print("✅ [Google Vision] 真實憑證載入成功，連線就緒！")
+    print("[Google Vision] 真實憑證載入成功，連線就緒。")
 except Exception as e:
     ocr_client = None
-    print(f"⚠️ [Google Vision] 初始化失敗: {e}")
+    print(f"[Google Vision] 初始化失敗: {e}")
 
 
 @router.post("/upload/{rental_id}")

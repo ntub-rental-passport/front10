@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/src/components/auth-layout.vue'
 import { Button } from '@/components/ui/button/index'
@@ -8,8 +8,8 @@ import { BadgeCheck } from 'lucide-vue-next'
 import {
   completeEmailVerification,
   getPendingRegistration,
-  getVerificationHint,
   needsNicknameSetup,
+  resendEmailVerification,
   resolveRoleHome,
 } from '@/src/composables/useAuth'
 
@@ -17,10 +17,19 @@ const route = useRoute()
 const router = useRouter()
 const codeDigits = ref(['', '', '', '', '', ''])
 const errorMessage = ref('')
-const pendingRegistration = computed(() => getPendingRegistration())
+const successMessage = ref('')
+const submitting = ref(false)
+const pendingRegistration = ref(getPendingRegistration())
+const now = ref(Date.now())
+const timer = window.setInterval(() => { now.value = Date.now() }, 1000)
+onUnmounted(() => window.clearInterval(timer))
 const email = computed(() =>
   typeof route.query.email === 'string' ? route.query.email : pendingRegistration.value?.email ?? 'your@email.com',
 )
+const resendAvailableIn = computed(() => Math.max(
+  0,
+  Math.ceil(((pendingRegistration.value?.resendAvailableAt ?? 0) - now.value) / 1000),
+))
 const digitInputs = ref<HTMLInputElement[]>([])
 
 function setDigitInput(element: unknown, index: number): void {
@@ -92,15 +101,37 @@ async function handleKeydown(event: KeyboardEvent, index: number): Promise<void>
 }
 
 async function handleVerification(): Promise<void> {
-  const session = completeEmailVerification(getCode())
-
-  if (!session) {
-    errorMessage.value = '驗證碼不正確，請再試一次。'
+  if (getCode().length !== 6) {
+    errorMessage.value = '請輸入完整的六碼驗證碼。'
     return
   }
+  submitting.value = true
+  try {
+    const session = await completeEmailVerification(getCode())
+    if (!session) throw new Error('找不到待驗證資料，請重新註冊。')
+    errorMessage.value = ''
+    await router.push(needsNicknameSetup(session) ? '/welcome' : resolveRoleHome(session.role))
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '驗證失敗，請稍後再試。'
+  } finally {
+    submitting.value = false
+  }
+}
 
+async function handleResend(): Promise<void> {
   errorMessage.value = ''
-  await router.push(needsNicknameSetup(session) ? '/welcome' : resolveRoleHome(session.role))
+  successMessage.value = ''
+  submitting.value = true
+  try {
+    pendingRegistration.value = await resendEmailVerification()
+    if (!pendingRegistration.value) throw new Error('找不到待驗證資料，請重新註冊。')
+    successMessage.value = '新的驗證碼已寄出，舊驗證碼已失效。'
+    codeDigits.value = ['', '', '', '', '', '']
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '重新寄送失敗，請稍後再試。'
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -122,8 +153,8 @@ async function handleVerification(): Promise<void> {
       <div class="flex items-start gap-3">
         <BadgeCheck class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <div class="space-y-1">
-          <p class="font-medium text-foreground">展示用驗證碼</p>
-          <p>目前測試流程可直接輸入 <span class="font-semibold text-primary">{{ getVerificationHint() }}</span> 完成驗證。</p>
+          <p class="font-medium text-foreground">驗證碼有效時間為 2 分鐘</p>
+          <p>最多可輸入錯誤 3 次；達到上限後需要重新註冊。</p>
         </div>
       </div>
     </div>
@@ -149,11 +180,22 @@ async function handleVerification(): Promise<void> {
         </div>
         <p class="text-xs text-muted-foreground">請輸入 6 碼數字驗證碼。</p>
         <p v-if="errorMessage" class="text-sm text-destructive">{{ errorMessage }}</p>
+        <p v-if="successMessage" class="text-sm text-emerald-600">{{ successMessage }}</p>
       </div>
 
       <div class="flex flex-col gap-3 pt-2">
-        <Button type="submit" size="lg" class="h-14 w-full rounded-[1rem] text-base">
+        <Button type="submit" size="lg" class="h-14 w-full rounded-[1rem] text-base" :disabled="submitting">
           驗證並繼續
+        </Button>
+        <Button
+          type="button"
+          size="lg"
+          variant="outline"
+          class="h-14 w-full rounded-[1rem] text-base"
+          :disabled="submitting || resendAvailableIn > 0"
+          @click="handleResend"
+        >
+          {{ resendAvailableIn > 0 ? `${resendAvailableIn} 秒後可重新寄送` : '重新寄送驗證碼' }}
         </Button>
         <Button as-child size="lg" variant="outline" class="h-14 w-full rounded-[1rem] text-base">
           <RouterLink to="/register">返回註冊</RouterLink>

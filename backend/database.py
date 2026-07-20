@@ -9,25 +9,28 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not DATABASE_URL:
-    raise ValueError("❌ 找不到 DATABASE_URL，請檢查 backend/.env 檔案是否存在！")
-
-# 建立 SQLAlchemy 連線引擎
-engine = create_engine(
-    DATABASE_URL, 
-    pool_pre_ping=True,  # 自動檢查連線是否活著，防止長時間沒動作被學校防火牆斷線
-    pool_size=10,        # 連線池大小
-    max_overflow=20      # 超過連線池時最多可再追加幾個連線
-)
-
-# 建立本地 Session 類別
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+if DATABASE_URL:
+    # 建立 SQLAlchemy 連線引擎
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,  # 自動檢查連線是否活著，防止長時間沒動作被學校防火牆斷線
+        pool_size=10,        # 連線池大小
+        max_overflow=20      # 超過連線池時最多可再追加幾個連線
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+else:
+    # Google 登入驗證不需要資料庫；開發時允許驗證端點獨立啟動。
+    engine = None
+    SessionLocal = None
 
 # 宣告 ORM 模型基底
 Base = declarative_base()
 
 # FastAPI 專用的資料庫 Session 依賴項 (Dependency Injection)
 def get_db():
+    if SessionLocal is None:
+        raise RuntimeError("尚未設定 DATABASE_URL，無法使用資料庫功能。")
+
     db = SessionLocal()
     try:
         yield db

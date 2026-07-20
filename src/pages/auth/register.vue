@@ -20,11 +20,11 @@ import {
   UserRound,
 } from 'lucide-vue-next'
 import {
-  needsNicknameSetup,
-  registerWithGoogle,
-  resolveRoleHome,
+  getGoogleRegistrationContext,
+  startGoogleEmailRegistration,
   startEmailRegistration,
 } from '@/src/composables/useAuth'
+import { getGoogleLoginUrl } from '@/src/services/authApi'
 import {
   authIdentityOptions,
   getAuthIdentity,
@@ -59,6 +59,13 @@ const showConfirmPassword = ref(false)
 const errorMessage = ref('')
 const hasSubmitted = ref(false)
 const selectedIdentity = ref<AuthIdentity>(getAuthIdentity(route.query.role))
+const googleRegistration = ref(getGoogleRegistrationContext())
+const submitting = ref(false)
+
+if (googleRegistration.value) {
+  selectedIdentity.value = googleRegistration.value.role
+  form.value.email = googleRegistration.value.email
+}
 
 const selectedOption = computed(
   () => authIdentityOptions.find((option) => option.value === selectedIdentity.value) ?? authIdentityOptions[0],
@@ -157,6 +164,7 @@ function getInputStateClass(state: FieldState): string {
 }
 
 function selectIdentity(identity: AuthIdentity): void {
+  if (googleRegistration.value) return
   selectedIdentity.value = identity
   errorMessage.value = ''
   void router.replace({
@@ -195,30 +203,47 @@ async function handleRegister(): Promise<void> {
   hasSubmitted.value = true
   if (!validateRegistrationForm()) return
 
-  const pendingRegistration = startEmailRegistration(
-    form.value.email || 'new-user@rentmate.tw',
-    form.value.password || 'Password123!',
-    selectedOption.value.authRole,
-  )
-
-  await router.push({
-    path: '/verify-email',
-    query: {
-      email: pendingRegistration.email,
-      role: selectedIdentity.value,
-    },
-  })
+  submitting.value = true
+  try {
+    const pendingRegistration = await startEmailRegistration(
+      form.value.email,
+      form.value.password,
+      selectedOption.value.authRole,
+      form.value.inviteCode,
+    )
+    await router.push({
+      path: '/verify-email',
+      query: { email: pendingRegistration.email, role: selectedIdentity.value },
+    })
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '無法開始註冊，請稍後再試。'
+  } finally {
+    submitting.value = false
+  }
 }
 
 async function handleGoogleRegister(): Promise<void> {
   if (!validateGoogleRegistration()) return
+  if (!googleRegistration.value) {
+    window.location.assign(getGoogleLoginUrl(selectedOption.value.authRole, '/register'))
+    return
+  }
 
-  const session = registerWithGoogle(
-    form.value.email || `google-${selectedIdentity.value}@rentmate.tw`,
-    selectedOption.value.authRole,
-  )
-
-  await router.push(needsNicknameSetup(session) ? '/welcome' : resolveRoleHome(session.role))
+  submitting.value = true
+  try {
+    const pendingRegistration = await startGoogleEmailRegistration(
+      googleRegistration.value,
+      form.value.inviteCode,
+    )
+    await router.push({
+      path: '/verify-email',
+      query: { email: pendingRegistration.email, role: selectedIdentity.value },
+    })
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '無法開始 Google 註冊，請稍後再試。'
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -239,6 +264,7 @@ async function handleGoogleRegister(): Promise<void> {
               v-for="option in authIdentityOptions"
               :key="option.value"
               type="button"
+              :disabled="Boolean(googleRegistration)"
               :aria-pressed="selectedIdentity === option.value"
               :class="[
                 'auth-role-card',
@@ -282,6 +308,7 @@ async function handleGoogleRegister(): Promise<void> {
               type="email"
               autocomplete="email"
               placeholder="name@example.com"
+              :disabled="Boolean(googleRegistration)"
               :class="['auth-input auth-input--with-status auth-input--with-leading', getInputStateClass(emailState)]"
             />
             <CircleCheckBig
@@ -301,7 +328,7 @@ async function handleGoogleRegister(): Promise<void> {
           </p>
         </div>
 
-        <div class="auth-field-block auth-field-block--dense">
+        <div v-if="!googleRegistration" class="auth-field-block auth-field-block--dense">
           <Label for="register-password" class="auth-field-label">密碼</Label>
           <div class="auth-input-wrap">
             <LockKeyhole class="auth-input-icon" />
@@ -340,7 +367,7 @@ async function handleGoogleRegister(): Promise<void> {
           </div>
         </div>
 
-        <div class="auth-field-block">
+        <div v-if="!googleRegistration" class="auth-field-block">
           <Label for="register-confirm-password" class="auth-field-label">確認密碼</Label>
           <div class="auth-input-wrap">
             <LockKeyhole class="auth-input-icon" />
@@ -389,11 +416,11 @@ async function handleGoogleRegister(): Promise<void> {
         </div>
 
         <div class="auth-action-group">
-          <Button type="submit" size="lg" class="auth-primary-button">
+          <Button v-if="!googleRegistration" type="submit" size="lg" class="auth-primary-button" :disabled="submitting">
             建立帳號
           </Button>
 
-          <div class="auth-divider">
+          <div v-if="!googleRegistration" class="auth-divider">
             <div class="auth-divider-line" />
             <span>或透過以下方式註冊</span>
             <div class="auth-divider-line" />
@@ -403,6 +430,7 @@ async function handleGoogleRegister(): Promise<void> {
             type="button"
             variant="outline"
             class="auth-secondary-button"
+            :disabled="submitting"
             @click="handleGoogleRegister"
           >
             <img
@@ -410,7 +438,7 @@ async function handleGoogleRegister(): Promise<void> {
               alt="Google"
               class="auth-google-icon"
             />
-            使用 Google 帳號註冊
+            {{ googleRegistration ? '寄送 Google 帳號驗證碼' : '使用 Google 帳號註冊' }}
           </Button>
         </div>
 

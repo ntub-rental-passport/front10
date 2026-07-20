@@ -4,6 +4,8 @@ dist-ssr/
 coverage/
 logs/
 node_modules/
+__pycache__/
+*.py[cod]
 
 .DS_Store
 *.log

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
 import { Checkbox } from '@/components/ui/checkbox/index'
@@ -21,6 +21,7 @@ import {
   needsNicknameSetup,
   registerWithGoogle,
   resolveRoleHome,
+  saveGoogleRegistrationContext,
   signInWithEmail,
   type EmailSignInError,
 } from '@/src/composables/useAuth'
@@ -33,6 +34,10 @@ import {
   isValidAuthEmail,
   type FieldState,
 } from '@/src/constants/auth-validation'
+import {
+  exchangeGoogleTicket,
+  getGoogleLoginUrl,
+} from '@/src/services/authApi'
 
 const email = ref('')
 const password = ref('')
@@ -40,6 +45,7 @@ const rememberMe = ref(false)
 const showPassword = ref(false)
 const hasSubmitted = ref(false)
 const loginError = ref('')
+const googleLoginPending = ref(false)
 const router = useRouter()
 const route = useRoute()
 const selectedIdentity = ref<AuthIdentity>(getAuthIdentity(route.query.role))
@@ -69,6 +75,10 @@ function getPostLoginTarget(): string {
   const redirectTarget = typeof route.query.redirect === 'string' ? route.query.redirect : null
   return redirectTarget || resolveRoleHome(selectedOption.value.authRole)
 }
+
+const googleLoginUrl = computed(() =>
+  getGoogleLoginUrl(selectedOption.value.authRole, getPostLoginTarget()),
+)
 
 const emailState = computed<FieldState>(() => {
   if (!hasSubmitted.value) return 'default'
@@ -118,15 +128,63 @@ async function handleLogin(): Promise<void> {
   await router.push(getPostLoginTarget())
 }
 
-async function handleGoogleLogin(): Promise<void> {
-  loginError.value = ''
-  const googleEmail = isValidAuthEmail(email.value)
-    ? email.value.trim().toLowerCase()
-    : `google-${selectedIdentity.value}@rentmate.tw`
-  const session = registerWithGoogle(googleEmail, selectedOption.value.authRole)
-
-  await router.push(needsNicknameSetup(session) ? '/welcome' : getPostLoginTarget())
+const googleOAuthErrorMessages: Record<string, string> = {
+  access_denied: '你已取消 Google 登入。',
+  invalid_state: 'Google 登入狀態已過期，請重新登入。',
+  missing_config: '後端尚未設定 Google Client Secret。',
+  verification_failed: 'Google 帳號驗證失敗，請稍後再試。',
 }
+
+async function clearGoogleOAuthQuery(): Promise<void> {
+  const nextQuery = { ...route.query }
+  delete nextQuery.google_ticket
+  delete nextQuery.google_error
+  await router.replace({ query: nextQuery })
+}
+
+async function handleGoogleOAuthReturn(): Promise<void> {
+  const oauthError = typeof route.query.google_error === 'string'
+    ? route.query.google_error
+    : null
+  const ticket = typeof route.query.google_ticket === 'string'
+    ? route.query.google_ticket
+    : null
+
+  if (oauthError) {
+    loginError.value = googleOAuthErrorMessages[oauthError] || 'Google 登入失敗，請重新嘗試。'
+    await clearGoogleOAuthQuery()
+    return
+  }
+  if (!ticket) return
+
+  googleLoginPending.value = true
+  loginError.value = ''
+  try {
+    const account = await exchangeGoogleTicket(ticket)
+    if (account.registrationRequired) {
+      saveGoogleRegistrationContext(account)
+      await router.replace({
+        path: '/register',
+        query: { role: account.role, google: '1' },
+      })
+      return
+    }
+    const session = registerWithGoogle(account.email, account.role)
+    const target = needsNicknameSetup(session)
+      ? '/welcome'
+      : account.redirectPath || resolveRoleHome(session.role)
+    await router.replace(target)
+  } catch (error) {
+    loginError.value = error instanceof Error
+      ? error.message
+      : 'Google 登入失敗，請重新嘗試。'
+    await clearGoogleOAuthQuery()
+  } finally {
+    googleLoginPending.value = false
+  }
+}
+
+onMounted(handleGoogleOAuthReturn)
 
 </script>
 
@@ -233,10 +291,6 @@ async function handleGoogleLogin(): Promise<void> {
           記住這個登入狀態
         </label>
 
-        <p v-if="loginError" class="auth-feedback auth-feedback--error" role="alert">
-          {{ loginError }}
-        </p>
-
         <div class="auth-login-actions">
           <Button type="submit" size="lg" class="auth-primary-button">
             登入
@@ -248,19 +302,28 @@ async function handleGoogleLogin(): Promise<void> {
             <span class="auth-divider-line" />
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
+          <a
+            :href="googleLoginUrl"
             class="auth-google-button"
-            @click="handleGoogleLogin"
+            :aria-busy="googleLoginPending"
+            :aria-disabled="googleLoginPending"
+            @click="googleLoginPending && $event.preventDefault()"
           >
             <img
-              src="https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/google/default.svg"
+              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
               alt=""
               class="auth-google-icon"
             />
-            使用 Google 帳號登入
-          </Button>
+            <span>{{ googleLoginPending ? '正在完成 Google 登入…' : '使用 Google 帳號登入' }}</span>
+          </a>
+
+          <p
+            v-if="loginError"
+            class="auth-feedback auth-feedback--error auth-login-error"
+            role="alert"
+          >
+            {{ loginError }}
+          </p>
         </div>
             </section>
           </form>
