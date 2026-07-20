@@ -6,6 +6,7 @@ logs/
 node_modules/
 __pycache__/
 *.py[cod]
+*.db
 
 .DS_Store
 *.log

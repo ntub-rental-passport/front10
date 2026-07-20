@@ -7,6 +7,7 @@ export interface VerifiedGoogleAccount {
 }
 
 export interface GoogleOAuthSession extends VerifiedGoogleAccount {
+  flowVersion: 2
   role: 'tenant' | 'landlord'
   redirectPath: string | null
   registrationRequired: boolean
@@ -65,6 +66,12 @@ export async function exchangeGoogleTicket(ticket: string): Promise<GoogleOAuthS
   }
   if (!body?.email || !body.emailVerified) {
     throw new Error('Google 未回傳已驗證的電子郵件。')
+  }
+  if (body.flowVersion !== 2 || typeof body.registrationRequired !== 'boolean') {
+    throw new Error('後端仍在執行舊版 Google 登入流程，請重新啟動後端後再試。')
+  }
+  if (body.registrationRequired && !body.registrationToken) {
+    throw new Error('後端未提供 Google 註冊票證，請重新使用 Google 登入。')
   }
 
   return body

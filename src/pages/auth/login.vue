@@ -161,7 +161,7 @@ async function handleGoogleOAuthReturn(): Promise<void> {
   loginError.value = ''
   try {
     const account = await exchangeGoogleTicket(ticket)
-    if (account.registrationRequired) {
+    if (account.registrationRequired === true) {
       saveGoogleRegistrationContext(account)
       await router.replace({
         path: '/register',

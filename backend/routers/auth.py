@@ -76,6 +76,7 @@ class GoogleAccountResponse(BaseModel):
 
 
 class GoogleOAuthSessionResponse(GoogleAccountResponse):
+    flowVersion: int = 2
     role: str
     redirectPath: str | None = None
     registrationRequired: bool
@@ -479,6 +480,7 @@ def exchange_google_ticket(
 
     return GoogleOAuthSessionResponse(
         **account.model_dump(),
+        flowVersion=2,
         role=requested_role,
         redirectPath=(
             str(ticket_data["redirectPath"])

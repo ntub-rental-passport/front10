@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from fastapi import HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -29,7 +30,10 @@ Base = declarative_base()
 # FastAPI 專用的資料庫 Session 依賴項 (Dependency Injection)
 def get_db():
     if SessionLocal is None:
-        raise RuntimeError("尚未設定 DATABASE_URL，無法使用資料庫功能。")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="後端尚未設定 DATABASE_URL，無法判斷 Google 帳號是否已註冊。",
+        )
 
     db = SessionLocal()
     try:
