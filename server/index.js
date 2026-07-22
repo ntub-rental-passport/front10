@@ -115,8 +115,7 @@ async function recognizeDocument(buffer, mimeType, languageHints) {
   const [result] = await fileClient.batchAnnotateFiles(request);
   const responses = result.responses?.[0]?.responses ?? [];
   const pageTexts = responses
-    .map((response) => response.fullTextAnnotation?.text?.trim() || '')
-    .filter(Boolean);
+    .map((response) => response.fullTextAnnotation?.text?.trim() || '');
 
   const warnings = [];
   if (mimeType === 'application/pdf') {
@@ -124,7 +123,7 @@ async function recognizeDocument(buffer, mimeType, languageHints) {
   }
 
   return {
-    text: pageTexts.join('\n\n'),
+    text: pageTexts.filter(Boolean).join('\n\n'),
     pageCount: responses.length,
     pageTexts,
     warnings,

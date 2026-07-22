@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  loadContractOcrResult,
+  saveContractOcrResult,
+  type ContractOcrResult,
+} from '@/src/utils/contract-ocr'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card/index'
 import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
@@ -12,43 +17,11 @@ import {
   CheckCircle,
   Edit3,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   PenLine,
 } from 'lucide-vue-next'
-
-const ocrFullText = ref(
-  `房屋租賃契約書
-
-立契約書人：
-出租人（以下簡稱甲方）：陳大明
-承租人（以下簡稱乙方）：林小明
-
-第一條 租賃標的
-甲方將其所有坐落於 台北市大安區 忠孝路一段 120 號 5 樓 之房屋，
-出租乙方作住宅用途使用。
-
-第二條 租賃期間
-自民國 114 年 3 月 1 日起至民國 116 年 2 月 28 日止，共計 2 年。
-
-第三條 租金
-每月租金為新台幣 壹萬捌仟元整（NT$18,000），
-乙方應於每月 5 日前繳納。
-
-第四條 押金
-乙方應於簽約時繳納押金新台幣 參萬陸仟元整（NT$36,000），
-即兩個月租金。租約屆滿一交還房屋後，甲方無息返還。
-
-第五條 提前終止
-任一方如需提前終止合約，應於一個月前書面通知對方，
-並由提前終止之一方支付相當於一個月租金之違約金。
-
-第六條 修繕責任
-房屋結構性損壞由甲方負責修繕，乙方使用不當造成之損壞由乙方負擔。
-
-第七條 其他約定
-乙方不得將房屋轉租或分租予第三人。
-乙方同意不申請租屋補貼。`
-)
 
 interface ContractField {
   id: string
@@ -58,17 +31,104 @@ interface ContractField {
   editing: boolean
 }
 
-const fields = ref<ContractField[]>([
-  { id: 'landlord',   label: '出租人（甲方）', value: '陳大明',                              confidence: 'high',   editing: false },
-  { id: 'tenant',     label: '承租人（乙方）', value: '林小明',                              confidence: 'high',   editing: false },
-  { id: 'address',    label: '租屋地址',       value: '台北市大安區 忠孝路一段 120 號 5 樓', confidence: 'high',   editing: false },
-  { id: 'start_date', label: '租期起始',       value: '114 年 3 月 1 日',                   confidence: 'high',   editing: false },
-  { id: 'end_date',   label: '租期結束',       value: '116 年 2 月 28 日',                  confidence: 'high',   editing: false },
-  { id: 'rent',       label: '每月租金',       value: 'NT$18,000',                          confidence: 'high',   editing: false },
-  { id: 'due_day',    label: '繳租日',         value: '每月 5 日前',                        confidence: 'medium', editing: false },
-  { id: 'deposit',    label: '押金',           value: 'NT$36,000',                          confidence: 'medium', editing: false },
-  { id: 'penalty',    label: '違約金',         value: '一個月租金',                         confidence: 'low',    editing: false },
-])
+const storedOcrResult = ref<ContractOcrResult | null>(loadContractOcrResult())
+const initialPageTexts = storedOcrResult.value?.pageTexts.length
+  ? storedOcrResult.value.pageTexts
+  : storedOcrResult.value?.text
+    ? [storedOcrResult.value.text]
+    : []
+const ocrPages = ref<string[]>([...initialPageTexts])
+const currentPageIndex = ref(0)
+const pageCount = computed(() => ocrPages.value.length)
+const currentPageNumber = computed(() => currentPageIndex.value + 1)
+const ocrFullText = computed(() => ocrPages.value.filter(Boolean).join('\n\n'))
+const currentPageText = computed({
+  get: () => ocrPages.value[currentPageIndex.value] ?? '',
+  set: (value: string) => {
+    if (currentPageIndex.value < ocrPages.value.length) {
+      ocrPages.value[currentPageIndex.value] = value
+    }
+  },
+})
+const hasOcrData = computed(() => Boolean(ocrFullText.value.trim()))
+
+function cleanCapturedValue(value?: string): string {
+  return value?.replace(/^[\s:：。．、-]+|[\s。；;]+$/g, '').replace(/\s+/g, ' ').trim() ?? ''
+}
+
+function captureFirst(text: string, patterns: RegExp[]): string {
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    const value = cleanCapturedValue(match?.[1])
+    if (value) return value
+  }
+  return ''
+}
+
+function makeField(
+  id: string,
+  label: string,
+  value: string,
+  confidence: ContractField['confidence'] = 'high',
+): ContractField {
+  return {
+    id,
+    label,
+    value: value || '尚未辨識',
+    confidence: value ? confidence : 'low',
+    editing: false,
+  }
+}
+
+function extractContractFields(text: string): ContractField[] {
+  const landlord = captureFirst(text, [
+    /出租人\s*[（(][^\r\n）)]*[）)]\s*[：:]\s*([^\r\n]+)/,
+    /出租人姓名\s*[：:]\s*([^\r\n]+)/,
+    /出租人[^\r\n]*[\r\n]+(?:[^\r\n]*[\r\n]+){0,2}\s*(?:[o○•]\s*)?姓名\s*[：:]\s*([^\r\n]+)/,
+  ])
+  const tenant = captureFirst(text, [
+    /承租人\s*[（(][^\r\n）)]*[）)]\s*[：:]\s*([^\r\n]+)/,
+    /承租人姓名\s*[：:]\s*([^\r\n]+)/,
+    /承租人[^\r\n]*[\r\n]+(?:[^\r\n]*[\r\n]+){0,2}\s*(?:[o○•]\s*)?姓名\s*[：:]\s*([^\r\n]+)/,
+  ])
+  const address = captureFirst(text, [
+    /租賃住宅地址[\s\S]{0,100}?(?:位置\s*)?[：:]\s*([^\r\n]+)/,
+    /(?:租屋地址|房屋地址|租賃標的地址)\s*[：:]\s*([^\r\n]+)/,
+    /坐落於\s*([^\r\n，。]+?)(?:之房屋|，|。)/,
+  ])
+  const dateRange = text.match(
+    /租期自\s*(?:民國\s*)?([^\r\n]+?)\s*起至\s*(?:民國\s*)?([^\r\n]+?)\s*止/,
+  ) ?? text.match(
+    /自\s*(?:民國\s*)?([0-9０-９]{2,3}\s*年\s*[0-9０-９]{1,2}\s*月\s*[0-9０-９]{1,2}\s*日)\s*起至\s*(?:民國\s*)?([0-9０-９]{2,3}\s*年\s*[0-9０-９]{1,2}\s*月\s*[0-9０-９]{1,2}\s*日)\s*止/,
+  )
+  const rent = captureFirst(text, [
+    /月租金\s*[：:為]?\s*(?:新臺幣|新台幣|NT\$?)?\s*([0-9０-９,，]+)\s*元/,
+  ])
+  const dueDay = captureFirst(text, [
+    /租金\s*每月\s*([0-9０-９]{1,2})\s*日\s*前/,
+    /每月\s*([0-9０-９]{1,2})\s*日\s*前\s*繳納/,
+  ])
+  const deposit = captureFirst(text, [
+    /押金[^\r\n]{0,60}?(?:新臺幣|新台幣|NT\$?)\s*([0-9０-９,，]+)\s*元/,
+  ])
+  const penalty = captureFirst(text, [
+    /(?:違約金[^\r\n：:]{0,20}[：:]?|支付相當於)\s*([^\r\n。；;]{1,40}?(?:個月租金|元整|元))/,
+  ])
+
+  return [
+    makeField('landlord', '出租人（甲方）', landlord),
+    makeField('tenant', '承租人（乙方）', tenant),
+    makeField('address', '租屋地址', address),
+    makeField('start_date', '租期起始', cleanCapturedValue(dateRange?.[1])),
+    makeField('end_date', '租期結束', cleanCapturedValue(dateRange?.[2])),
+    makeField('rent', '每月租金', rent ? `NT$${rent.replace('，', ',')}` : ''),
+    makeField('due_day', '繳租日', dueDay ? `每月 ${dueDay} 日前` : '', 'medium'),
+    makeField('deposit', '押金', deposit ? `NT$${deposit.replace('，', ',')}` : '', 'medium'),
+    makeField('penalty', '違約金', penalty, 'medium'),
+  ]
+}
+
+const fields = ref<ContractField[]>(extractContractFields(ocrFullText.value))
 
 const isEditing = ref(false)
 const isSaved = ref(false)
@@ -100,12 +160,38 @@ function toggleEdit(field: ContractField) {
 }
 
 function handleSave() {
+  if (!storedOcrResult.value || !ocrFullText.value.trim()) return
+
+  storedOcrResult.value = {
+    ...storedOcrResult.value,
+    text: ocrFullText.value,
+    pageCount: pageCount.value,
+    pageTexts: [...ocrPages.value],
+  }
+  saveContractOcrResult(storedOcrResult.value)
   isSaved.value = true
+}
+
+function goToPage(pageIndex: number): void {
+  if (pageIndex < 0 || pageIndex >= pageCount.value) return
+  currentPageIndex.value = pageIndex
+}
+
+function goToPreviousPage(): void {
+  goToPage(currentPageIndex.value - 1)
+}
+
+function goToNextPage(): void {
+  goToPage(currentPageIndex.value + 1)
 }
 
 const router = useRouter()
 function goToAnalysis() {
-  router.push('/app/contract/analysis')
+  router.push('/app/contract-analysis')
+}
+
+function returnToOcr(): void {
+  router.push('/app/contract')
 }
 </script>
 
@@ -117,21 +203,29 @@ function goToAnalysis() {
           <FileText class="text-primary" />
           契約電子檔編輯
         </h1>
-        <p class="text-muted-foreground mt-1">
-          以下為 OCR 辨識結果，請確認各欄位內容是否正確。模糊或不確定的欄位已標示，請手動修正。
-        </p>
       </div>
       <div class="flex items-center gap-3">
-        <Button variant="outline" @click="isEditing = !isEditing">
+        <Button variant="outline" :disabled="!hasOcrData" @click="isEditing = !isEditing">
           <PenLine v-if="!isEditing" data-icon="inline-start" />
           <Eye v-else data-icon="inline-start" />
           {{ isEditing ? '預覽模式' : '編輯模式' }}
         </Button>
-        <Button @click="handleSave" :disabled="isSaved">
+        <Button @click="handleSave" :disabled="isSaved || !hasOcrData">
           <Save data-icon="inline-start" />
           確認儲存
         </Button>
       </div>
+    </div>
+
+    <div
+      v-if="!hasOcrData"
+      class="flex items-center justify-between gap-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3"
+    >
+      <div class="flex items-center gap-3">
+        <AlertTriangle class="shrink-0 text-red-600" :size="20" />
+        <span class="text-sm text-red-800">找不到 OCR 辨識結果，請返回契約辨識頁重新上傳文件。</span>
+      </div>
+      <Button size="sm" variant="outline" @click="returnToOcr">返回 OCR</Button>
     </div>
 
     <div
@@ -161,25 +255,68 @@ function goToAnalysis() {
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <Card class="lg:col-span-3">
-        <CardHeader>
+      <Card class="contract-document-card lg:col-span-3">
+        <CardHeader class="document-reader-heading">
           <CardTitle class="flex items-center gap-2 text-lg">
             <FileText :size="18" />
-            契約全文
+            契約 PDF 閱讀器
           </CardTitle>
-          <CardDescription>OCR 辨識後的完整文字內容，可直接修改</CardDescription>
+          <CardDescription>一次顯示一頁 OCR 內容，可使用頁碼切換與逐頁修改</CardDescription>
         </CardHeader>
-        <CardContent>
-          <textarea
-            v-if="isEditing"
-            v-model="ocrFullText"
-            class="w-full min-h-[600px] rounded-lg border border-border bg-background p-4 text-sm leading-7 font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-y"
-          />
-          <div
-            v-else
-            class="w-full min-h-[600px] rounded-lg border border-border bg-muted/30 p-4 text-sm leading-7 whitespace-pre-wrap break-words font-mono"
-          >
-            {{ ocrFullText }}
+        <CardContent class="document-reader-content">
+          <div v-if="pageCount" class="pdf-reader-toolbar">
+            <div class="pdf-file-info">
+              <strong>{{ storedOcrResult?.fileName || 'OCR 契約文件' }}</strong>
+              <span>第 {{ currentPageNumber }} 頁，共 {{ pageCount }} 頁</span>
+            </div>
+
+            <nav class="pdf-pagination" aria-label="契約頁面切換">
+              <button
+                type="button"
+                class="page-nav-button"
+                :disabled="currentPageIndex === 0"
+                aria-label="上一頁"
+                @click="goToPreviousPage"
+              >
+                <ChevronLeft :size="17" />
+              </button>
+              <button
+                v-for="(_, pageIndex) in ocrPages"
+                :key="pageIndex"
+                type="button"
+                class="page-number-button"
+                :class="{ 'is-active': pageIndex === currentPageIndex }"
+                :aria-current="pageIndex === currentPageIndex ? 'page' : undefined"
+                :aria-label="`前往第 ${pageIndex + 1} 頁`"
+                @click="goToPage(pageIndex)"
+              >
+                {{ pageIndex + 1 }}
+              </button>
+              <button
+                type="button"
+                class="page-nav-button"
+                :disabled="currentPageIndex === pageCount - 1"
+                aria-label="下一頁"
+                @click="goToNextPage"
+              >
+                <ChevronRight :size="17" />
+              </button>
+            </nav>
+          </div>
+
+          <div v-if="pageCount" class="pdf-reader-canvas">
+            <section class="pdf-page" :aria-label="`契約第 ${currentPageNumber} 頁`">
+              <div class="pdf-page-marker">{{ currentPageNumber }}</div>
+              <textarea
+                v-if="isEditing"
+                v-model="currentPageText"
+                class="pdf-page-editor"
+                :aria-label="`編輯契約第 ${currentPageNumber} 頁`"
+              />
+              <div v-else class="pdf-page-text">
+                {{ currentPageText || '此頁沒有辨識到文字，請切換至編輯模式手動補充。' }}
+              </div>
+            </section>
           </div>
         </CardContent>
       </Card>
