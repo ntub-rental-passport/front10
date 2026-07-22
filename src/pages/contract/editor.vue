@@ -110,7 +110,7 @@ function goToAnalysis() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-6 p-6 max-w-[1400px] mx-auto">
+  <div class="contract-editor-page">
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -263,3 +263,5 @@ function goToAnalysis() {
     </div>
   </div>
 </template>
+
+<style scoped src="./editor.css"></style>

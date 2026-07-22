@@ -153,7 +153,7 @@ function onDragLeave(): void {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="contract-index-page">
     <div>
       <h1 class="text-3xl font-bold tracking-tight">契約分析</h1>
       <p class="text-muted-foreground">上傳租賃契約圖片或 PDF，先由 Google Cloud Vision OCR 轉成可分析文字，再作為後續條文切段與 AI 解析的基礎。</p>
@@ -438,3 +438,5 @@ function onDragLeave(): void {
     </Tabs>
   </div>
 </template>
+
+<style scoped src="./index.css"></style>

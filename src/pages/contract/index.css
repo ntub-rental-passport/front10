@@ -1,0 +1,3 @@
+.contract-index-page > * + * {
+  margin-block-start: 1.5rem;
+}

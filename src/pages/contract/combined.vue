@@ -467,7 +467,7 @@ async function copyScript() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-5 p-6 max-w-[1600px] mx-auto">
+  <div class="contract-combined-page">
 
     <!-- ─── 頁首 ─── -->
     <div class="flex items-center justify-between">
@@ -903,3 +903,5 @@ async function copyScript() {
 
   </div>
 </template>
+
+<style scoped src="./combined.css"></style>

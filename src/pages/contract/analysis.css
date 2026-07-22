@@ -1,0 +1,28 @@
+.contract-analysis-page {
+  min-height: 100vh;
+  padding: 1rem;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  background-color: var(--muted);
+}
+
+@media (min-width: 640px) {
+  .contract-analysis-page {
+    padding: 1.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .contract-analysis-page {
+    padding: 2.5rem;
+  }
+}
