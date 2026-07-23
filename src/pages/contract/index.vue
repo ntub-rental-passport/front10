@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/i
 import { useRouter } from 'vue-router'
 import {
   clearContractOcrResult,
+  normalizeContractOcrResult,
   saveContractOcrResult,
   type ContractOcrResult,
 } from '@/src/utils/contract-ocr'
@@ -96,7 +97,7 @@ const usageSteps = [
   '上傳租賃契約圖片或 PDF 檔案',
   '依文件清晰度選擇辨識品質',
   '系統將契約轉換為可分析文字',
-  '檢視結果並進入條款風險分析',
+  '逐頁校對 OCR 內容並進入條款風險分析',
 ]
 
 const faqItems = [
@@ -259,7 +260,14 @@ async function sendToOcr(file: File): Promise<void> {
 
     uploadProgress.value = 100
     uploadStatus.value = '辨識完成，可以檢視契約文字與進入後續分析'
-    const result = payload as ContractOcrResult
+    const result = normalizeContractOcrResult(payload as Partial<ContractOcrResult>)
+    if (!result) {
+      throw new Error('OCR 回傳資料缺少可用的逐頁文字，請重新辨識文件。')
+    }
+
+    // 瀏覽器的 File.name 保留使用者選取時的正確 Unicode 檔名。
+    result.fileName = file.name
+
     ocrResult.value = result
     saveContractOcrResult(result)
     activeTab.value = 'preview'
@@ -526,7 +534,7 @@ function onDragLeave(): void {
               <FileSearch />
               OCR 辨識結果
             </CardTitle>
-            <CardDescription>請先確認重要金額、日期、地址與手寫欄位，再進入後續契約分析。</CardDescription>
+            <CardDescription>辨識完成後可進入契約編輯器，依頁碼逐頁校對文字，再進行後續契約分析。</CardDescription>
           </CardHeader>
           <CardContent class="result-content">
             <div class="result-metrics">

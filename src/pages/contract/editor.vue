@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   loadContractOcrResult,
+  mergeContractPageTexts,
   saveContractOcrResult,
+  type ContractFieldReview,
   type ContractOcrResult,
 } from '@/src/utils/contract-ocr'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card/index'
 import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
-import { Separator } from '@/components/ui/separator/index'
 import {
   FileText,
   Save,
@@ -21,15 +22,27 @@ import {
   ChevronRight,
   Eye,
   PenLine,
+  Info,
 } from 'lucide-vue-next'
 
 interface ContractField {
   id: string
   label: string
   value: string
+  sourceValue: string
   confidence: 'high' | 'medium' | 'low'
+  reviewState: 'unreviewed' | 'verified' | 'edited'
+  required: boolean
   editing: boolean
+  editStartValue: string
 }
+
+interface CapturedValue {
+  value: string
+  sourceValue: string
+}
+
+type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
 
 const storedOcrResult = ref<ContractOcrResult | null>(loadContractOcrResult())
 const initialPageTexts = storedOcrResult.value?.pageTexts.length
@@ -41,7 +54,7 @@ const ocrPages = ref<string[]>([...initialPageTexts])
 const currentPageIndex = ref(0)
 const pageCount = computed(() => ocrPages.value.length)
 const currentPageNumber = computed(() => currentPageIndex.value + 1)
-const ocrFullText = computed(() => ocrPages.value.filter(Boolean).join('\n\n'))
+const ocrFullText = computed(() => mergeContractPageTexts(ocrPages.value))
 const currentPageText = computed({
   get: () => ocrPages.value[currentPageIndex.value] ?? '',
   set: (value: string) => {
@@ -56,27 +69,54 @@ function cleanCapturedValue(value?: string): string {
   return value?.replace(/^[\s:：。．、-]+|[\s。；;]+$/g, '').replace(/\s+/g, ' ').trim() ?? ''
 }
 
-function captureFirst(text: string, patterns: RegExp[]): string {
+function captureFirst(text: string, patterns: RegExp[]): CapturedValue {
   for (const pattern of patterns) {
     const match = text.match(pattern)
     const value = cleanCapturedValue(match?.[1])
-    if (value) return value
+    if (value) {
+      return {
+        value,
+        sourceValue: match?.[1]?.trim() ?? value,
+      }
+    }
   }
-  return ''
+  return { value: '', sourceValue: '' }
+}
+
+function captureValue(value?: string): CapturedValue {
+  return {
+    value: cleanCapturedValue(value),
+    sourceValue: value?.trim() ?? '',
+  }
+}
+
+function formatCapturedValue(
+  captured: CapturedValue,
+  formatter: (value: string) => string,
+): CapturedValue {
+  return {
+    ...captured,
+    value: captured.value ? formatter(captured.value) : '',
+  }
 }
 
 function makeField(
   id: string,
   label: string,
-  value: string,
+  captured: CapturedValue,
   confidence: ContractField['confidence'] = 'high',
+  required = true,
 ): ContractField {
   return {
     id,
     label,
-    value: value || '尚未辨識',
-    confidence: value ? confidence : 'low',
+    value: captured.value || '尚未辨識',
+    sourceValue: captured.sourceValue,
+    confidence: captured.value ? confidence : 'low',
+    reviewState: 'unreviewed',
+    required,
     editing: false,
+    editStartValue: captured.value || '',
   }
 }
 
@@ -101,92 +141,332 @@ function extractContractFields(text: string): ContractField[] {
   ) ?? text.match(
     /自\s*(?:民國\s*)?([0-9０-９]{2,3}\s*年\s*[0-9０-９]{1,2}\s*月\s*[0-9０-９]{1,2}\s*日)\s*起至\s*(?:民國\s*)?([0-9０-９]{2,3}\s*年\s*[0-9０-９]{1,2}\s*月\s*[0-9０-９]{1,2}\s*日)\s*止/,
   )
-  const rent = captureFirst(text, [
+  const rent = formatCapturedValue(captureFirst(text, [
     /月租金\s*[：:為]?\s*(?:新臺幣|新台幣|NT\$?)?\s*([0-9０-９,，]+)\s*元/,
-  ])
-  const dueDay = captureFirst(text, [
+  ]), value => `NT$${value.replace('，', ',')}`)
+  const dueDay = formatCapturedValue(captureFirst(text, [
     /租金\s*每月\s*([0-9０-９]{1,2})\s*日\s*前/,
     /每月\s*([0-9０-９]{1,2})\s*日\s*前\s*繳納/,
-  ])
-  const deposit = captureFirst(text, [
+  ]), value => `每月 ${value} 日前`)
+  const deposit = formatCapturedValue(captureFirst(text, [
     /押金[^\r\n]{0,60}?(?:新臺幣|新台幣|NT\$?)\s*([0-9０-９,，]+)\s*元/,
+  ]), value => `NT$${value.replace('，', ',')}`)
+  const penaltyAmount = captureFirst(text, [
+    /違約金\s*(?:新臺幣|新台幣|NT\$?)\s*([0-9０-９,，]+)\s*元/,
   ])
-  const penalty = captureFirst(text, [
+  const penaltyDescription = captureFirst(text, [
     /(?:違約金[^\r\n：:]{0,20}[：:]?|支付相當於)\s*([^\r\n。；;]{1,40}?(?:個月租金|元整|元))/,
   ])
+  const penalty = penaltyAmount.value
+    ? formatCapturedValue(penaltyAmount, value => `NT$${value.replace('，', ',')}`)
+    : penaltyDescription
 
   return [
     makeField('landlord', '出租人（甲方）', landlord),
     makeField('tenant', '承租人（乙方）', tenant),
     makeField('address', '租屋地址', address),
-    makeField('start_date', '租期起始', cleanCapturedValue(dateRange?.[1])),
-    makeField('end_date', '租期結束', cleanCapturedValue(dateRange?.[2])),
-    makeField('rent', '每月租金', rent ? `NT$${rent.replace('，', ',')}` : ''),
-    makeField('due_day', '繳租日', dueDay ? `每月 ${dueDay} 日前` : '', 'medium'),
-    makeField('deposit', '押金', deposit ? `NT$${deposit.replace('，', ',')}` : '', 'medium'),
-    makeField('penalty', '違約金', penalty, 'medium'),
+    makeField('start_date', '租期起始', captureValue(dateRange?.[1])),
+    makeField('end_date', '租期結束', captureValue(dateRange?.[2])),
+    makeField('rent', '每月租金', rent),
+    makeField('due_day', '繳租日', dueDay, 'medium'),
+    makeField('deposit', '押金', deposit, 'medium'),
+    makeField('penalty', '違約金', penalty, 'low', false),
   ]
 }
 
-const fields = ref<ContractField[]>(extractContractFields(ocrFullText.value))
+const fields = ref<ContractField[]>(
+  extractContractFields(ocrFullText.value).map((field) => {
+    const savedReview = storedOcrResult.value?.fieldReviews?.[field.id]
+    if (!savedReview) return field
+
+    return {
+      ...field,
+      value: savedReview.value,
+      sourceValue: savedReview.sourceValue,
+      confidence: savedReview.confidence,
+      reviewState: savedReview.reviewState,
+      editStartValue: savedReview.value,
+    }
+  }),
+)
 
 const isEditing = ref(false)
 const isSaved = ref(false)
+const isDirty = ref(false)
+const saveError = ref('')
+const pageNumberScrollRef = ref<HTMLElement | null>(null)
+const activeFieldFilter = ref<FieldFilter>('all')
 
-const uncertainCount = computed(() =>
-  fields.value.filter(f => f.confidence !== 'high').length
+watch(
+  ocrPages,
+  () => {
+    isDirty.value = true
+    isSaved.value = false
+    saveError.value = ''
+  },
+  { deep: true },
 )
 
-const confidenceStyle = (level: string) => {
-  switch (level) {
-    case 'high':   return 'border-green-200 bg-green-50'
+watch(
+  () => fields.value.map(field => `${field.value}:${field.reviewState}`),
+  () => {
+    isDirty.value = true
+    isSaved.value = false
+    saveError.value = ''
+  },
+)
+
+const extractedCount = computed(() =>
+  fields.value.filter(field => field.value !== '尚未辨識').length
+)
+const verifiedCount = computed(() =>
+  fields.value.filter(field => field.reviewState !== 'unreviewed').length
+)
+const mediumConfidenceCount = computed(() =>
+  fields.value.filter(field => field.confidence === 'medium' && field.reviewState === 'unreviewed').length
+)
+const lowConfidenceCount = computed(() =>
+  fields.value.filter(field => field.confidence === 'low' && field.reviewState === 'unreviewed').length
+)
+const reviewProgress = computed(() =>
+  fields.value.length ? Math.round((verifiedCount.value / fields.value.length) * 100) : 0
+)
+const requiredRemainingCount = computed(() =>
+  fields.value.filter(field => field.required && field.reviewState === 'unreviewed').length
+)
+const canStartAnalysis = computed(() =>
+  hasOcrData.value && requiredRemainingCount.value === 0
+)
+
+const goodConfidenceCount = computed(() =>
+  fields.value.filter(field => field.confidence === 'high' && field.reviewState === 'unreviewed').length
+)
+const reviewedFieldCount = computed(() =>
+  fields.value.filter(field => field.reviewState !== 'unreviewed').length
+)
+const filteredFields = computed(() => fields.value.filter((field) => {
+  switch (activeFieldFilter.value) {
+    case 'good':
+      return field.confidence === 'high' && field.reviewState === 'unreviewed'
+    case 'medium':
+      return field.confidence === 'medium' && field.reviewState === 'unreviewed'
+    case 'low':
+      return field.confidence === 'low' && field.reviewState === 'unreviewed'
+    case 'reviewed':
+      return field.reviewState !== 'unreviewed'
+    default:
+      return true
+  }
+}))
+
+const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: number }>>(() => [
+  { id: 'all', label: '全部', count: fields.value.length },
+  { id: 'good', label: '辨識良好', count: goodConfidenceCount.value },
+  { id: 'medium', label: '建議確認', count: mediumConfidenceCount.value },
+  { id: 'low', label: '人工確認', count: lowConfidenceCount.value },
+  { id: 'reviewed', label: '已處理', count: reviewedFieldCount.value },
+])
+
+function fieldStatus(field: ContractField): { text: string; class: string } {
+  if (field.reviewState === 'edited') {
+    return { text: '已修正', class: 'bg-blue-100 text-blue-700' }
+  }
+  if (field.reviewState === 'verified') {
+    return { text: '已確認', class: 'bg-violet-100 text-violet-700' }
+  }
+
+  switch (field.confidence) {
+    case 'high':
+      return { text: '辨識結果良好', class: 'bg-green-100 text-green-700' }
+    case 'medium':
+      return { text: '建議確認', class: 'bg-amber-100 text-amber-700' }
+    case 'low':
+      return { text: '需要人工確認', class: 'bg-red-100 text-red-700' }
+  }
+}
+
+function fieldCardClass(field: ContractField): string {
+  if (field.reviewState === 'edited') return 'border-blue-300 bg-blue-50'
+  if (field.reviewState === 'verified') return 'border-violet-300 bg-violet-50'
+
+  switch (field.confidence) {
+    case 'high': return 'border-green-200 bg-green-50'
     case 'medium': return 'border-amber-300 bg-amber-50'
-    case 'low':    return 'border-red-300 bg-red-50'
-    default:       return ''
+    case 'low': return 'border-red-300 bg-red-50'
   }
 }
 
-const confidenceBadge = (level: string) => {
-  switch (level) {
-    case 'high':   return { text: '辨識正常',   class: 'bg-green-100 text-green-700' }
-    case 'medium': return { text: '待確認',     class: 'bg-amber-100 text-amber-700' }
-    case 'low':    return { text: '模糊不確定', class: 'bg-red-100 text-red-700' }
-    default:       return { text: '', class: '' }
+function startFieldEdit(field: ContractField): void {
+  field.editStartValue = field.value === '尚未辨識' ? '' : field.value
+  field.value = field.editStartValue
+  field.editing = true
+}
+
+function replaceFirstInPages(pattern: RegExp, replacement: string): string | null {
+  for (let pageIndex = 0; pageIndex < ocrPages.value.length; pageIndex += 1) {
+    const pageText = ocrPages.value[pageIndex] ?? ''
+    if (!pattern.test(pageText)) continue
+
+    ocrPages.value[pageIndex] = pageText.replace(pattern, replacement)
+    return replacement
   }
+  return null
 }
 
-function toggleEdit(field: ContractField) {
-  field.editing = !field.editing
+function syncFieldToContract(field: ContractField, newValue: string): boolean {
+  const moneyValue = newValue.replace(/[^0-9０-９,，]/g, '')
+  const dayValue = newValue.match(/[0-9０-９]{1,2}/)?.[0] ?? ''
+  let insertedValue: string | null = null
+
+  if (field.id === 'rent' && moneyValue) {
+    insertedValue = replaceFirstInPages(
+      /(月租金\s*[：:為]?\s*(?:新臺幣|新台幣|NT\$?)?\s*)[0-9０-９,，]+(\s*元)/,
+      `$1${moneyValue}$2`,
+    )
+    if (insertedValue !== null) field.sourceValue = moneyValue
+    return insertedValue !== null
+  }
+
+  if (field.id === 'deposit' && moneyValue) {
+    insertedValue = replaceFirstInPages(
+      /(押金[^\r\n]{0,60}?(?:新臺幣|新台幣|NT\$?)\s*)[0-9０-９,，]+(\s*元)/,
+      `$1${moneyValue}$2`,
+    )
+    if (insertedValue !== null) field.sourceValue = moneyValue
+    return insertedValue !== null
+  }
+
+  if (field.id === 'penalty' && moneyValue) {
+    insertedValue = replaceFirstInPages(
+      /(違約金\s*(?:新臺幣|新台幣|NT\$?)\s*)[0-9０-９,，]+(\s*元)/,
+      `$1${moneyValue}$2`,
+    )
+    if (insertedValue !== null) {
+      field.sourceValue = moneyValue
+      return true
+    }
+  }
+
+  if (field.id === 'due_day' && dayValue) {
+    insertedValue = replaceFirstInPages(
+      /((?:租金\s*)?每月\s*)[0-9０-９]{1,2}(\s*日\s*前)/,
+      `$1${dayValue}$2`,
+    )
+    if (insertedValue !== null) field.sourceValue = dayValue
+    return insertedValue !== null
+  }
+
+  if (!field.sourceValue) {
+    if (!ocrPages.value.length) return false
+    const supplementalText = `【人工校對補充】${field.label}：${newValue}`
+    ocrPages.value[0] = `${ocrPages.value[0]?.trimEnd() ?? ''}\n\n${supplementalText}`.trim()
+    field.sourceValue = newValue
+    return true
+  }
+
+  for (let pageIndex = 0; pageIndex < ocrPages.value.length; pageIndex += 1) {
+    const pageText = ocrPages.value[pageIndex] ?? ''
+    const sourceIndex = pageText.indexOf(field.sourceValue)
+    if (sourceIndex < 0) continue
+
+    ocrPages.value[pageIndex] = `${pageText.slice(0, sourceIndex)}${newValue}${pageText.slice(sourceIndex + field.sourceValue.length)}`
+    field.sourceValue = newValue
+    return true
+  }
+
+  return false
 }
 
-function handleSave() {
-  if (!storedOcrResult.value || !ocrFullText.value.trim()) return
+function confirmFieldEdit(field: ContractField): void {
+  const nextValue = field.value.trim()
+  if (!nextValue) {
+    field.value = '尚未辨識'
+    field.reviewState = 'unreviewed'
+    field.editing = false
+    return
+  }
 
-  storedOcrResult.value = {
+  if (nextValue !== field.editStartValue) {
+    if (!syncFieldToContract(field, nextValue)) {
+      saveError.value = `無法在契約全文定位「${field.label}」的原始文字，請先在左側編輯模式中修正。`
+      return
+    }
+    field.reviewState = 'edited'
+  } else {
+    field.reviewState = 'verified'
+  }
+
+  field.editing = false
+  saveError.value = ''
+}
+
+function verifyField(field: ContractField): void {
+  if (field.value === '尚未辨識') {
+    startFieldEdit(field)
+    return
+  }
+  field.reviewState = 'verified'
+}
+
+function persistContract(): boolean {
+  if (!storedOcrResult.value || !ocrFullText.value.trim()) return false
+
+  const updatedResult: ContractOcrResult = {
     ...storedOcrResult.value,
-    text: ocrFullText.value,
+    text: mergeContractPageTexts(ocrPages.value),
     pageCount: pageCount.value,
     pageTexts: [...ocrPages.value],
+    fieldReviews: Object.fromEntries(
+      fields.value.map(field => [field.id, {
+        value: field.value,
+        sourceValue: field.sourceValue,
+        confidence: field.confidence,
+        reviewState: field.reviewState,
+      } satisfies ContractFieldReview]),
+    ),
   }
-  saveContractOcrResult(storedOcrResult.value)
+
+  if (!saveContractOcrResult(updatedResult)) {
+    saveError.value = '無法儲存契約內容，請確認瀏覽器允許工作階段儲存後再試。'
+    return false
+  }
+
+  storedOcrResult.value = updatedResult
+  isDirty.value = false
   isSaved.value = true
+  isEditing.value = false
+  saveError.value = ''
+  return true
 }
 
-function goToPage(pageIndex: number): void {
+function handleSave(): void {
+  persistContract()
+}
+
+async function goToPage(pageIndex: number): Promise<void> {
   if (pageIndex < 0 || pageIndex >= pageCount.value) return
   currentPageIndex.value = pageIndex
+
+  await nextTick()
+  const activePageButton = pageNumberScrollRef.value?.querySelector<HTMLElement>('[aria-current="page"]')
+  activePageButton?.scrollIntoView({
+    block: 'nearest',
+    inline: 'center',
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  })
 }
 
 function goToPreviousPage(): void {
-  goToPage(currentPageIndex.value - 1)
+  void goToPage(currentPageIndex.value - 1)
 }
 
 function goToNextPage(): void {
-  goToPage(currentPageIndex.value + 1)
+  void goToPage(currentPageIndex.value + 1)
 }
 
 const router = useRouter()
-function goToAnalysis() {
+function completeReviewAndAnalyze(): void {
+  if (!canStartAnalysis.value || !persistContract()) return
   router.push('/app/contract-analysis')
 }
 
@@ -197,20 +477,20 @@ function returnToOcr(): void {
 
 <template>
   <div class="contract-editor-page">
-    <div class="flex items-center justify-between">
-      <div>
+    <div class="editor-header">
+      <div class="editor-heading">
         <h1 class="text-2xl font-bold text-foreground flex items-center gap-2">
           <FileText class="text-primary" />
           契約電子檔編輯
         </h1>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="editor-actions">
         <Button variant="outline" :disabled="!hasOcrData" @click="isEditing = !isEditing">
           <PenLine v-if="!isEditing" data-icon="inline-start" />
           <Eye v-else data-icon="inline-start" />
           {{ isEditing ? '預覽模式' : '編輯模式' }}
         </Button>
-        <Button @click="handleSave" :disabled="isSaved || !hasOcrData">
+        <Button @click="handleSave" :disabled="!hasOcrData || (isSaved && !isDirty)">
           <Save data-icon="inline-start" />
           確認儲存
         </Button>
@@ -228,34 +508,63 @@ function returnToOcr(): void {
       <Button size="sm" variant="outline" @click="returnToOcr">返回 OCR</Button>
     </div>
 
-    <div
-      v-if="uncertainCount > 0 && !isSaved"
-      class="flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3"
-    >
-      <AlertTriangle class="text-amber-600 shrink-0" :size="20" />
-      <span class="text-amber-800 text-sm">
-        系統偵測到 <strong>{{ uncertainCount }}</strong> 個欄位辨識結果可能不準確，已以顏色標示，請逐一確認或修正。
-      </span>
-    </div>
+    <section v-if="hasOcrData" class="review-summary" aria-labelledby="review-summary-title">
+      <div class="review-summary-header">
+        <div>
+          <p class="review-summary-kicker">OCR 辨識完成</p>
+          <h2 id="review-summary-title">契約校對摘要</h2>
+        </div>
+        <strong class="review-progress-value">{{ reviewProgress }}%</strong>
+      </div>
+
+      <div class="review-stat-grid">
+        <div class="review-stat">
+          <span>已擷取欄位</span>
+          <strong>{{ extractedCount }} / {{ fields.length }}</strong>
+        </div>
+        <div class="review-stat">
+          <span>已確認或修正</span>
+          <strong>{{ verifiedCount }}</strong>
+        </div>
+        <div class="review-stat review-stat--warning">
+          <span>建議確認</span>
+          <strong>{{ mediumConfidenceCount }}</strong>
+        </div>
+        <div class="review-stat review-stat--danger">
+          <span>需要人工確認</span>
+          <strong>{{ lowConfidenceCount }}</strong>
+        </div>
+      </div>
+
+      <div class="review-progress-track" role="progressbar" aria-label="契約校對完成度" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="reviewProgress">
+        <div class="review-progress-bar" :style="{ width: `${reviewProgress}%` }" />
+      </div>
+
+      <div class="review-summary-footer">
+        <p v-if="requiredRemainingCount">
+          尚有 <strong>{{ requiredRemainingCount }}</strong> 個必填欄位需要確認，完成後才能進入下一步。
+        </p>
+        <p v-else>所有必填欄位皆已確認，可以開始 AI 契約分析。</p>
+        <Button :disabled="!canStartAnalysis" @click="completeReviewAndAnalyze">
+          完成校對並開始 AI 契約分析
+          <ArrowRight data-icon="inline-end" />
+        </Button>
+      </div>
+    </section>
 
     <div
-      v-if="isSaved"
-      class="flex items-center justify-between rounded-lg border border-green-300 bg-green-50 px-4 py-3"
+      v-if="saveError"
+      class="editor-notice editor-notice--error"
+      role="alert"
     >
       <div class="flex items-center gap-3">
-        <CheckCircle class="text-green-600 shrink-0" :size="20" />
-        <span class="text-green-800 text-sm">
-          契約資料已儲存成功，您可以繼續進行條文風險分析。
-        </span>
+        <AlertTriangle class="shrink-0 text-red-600" :size="20" />
+        <span class="text-sm text-red-800">{{ saveError }}</span>
       </div>
-      <Button size="sm" @click="goToAnalysis">
-        條文風險分析
-        <ArrowRight data-icon="inline-end" />
-      </Button>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <Card class="contract-document-card lg:col-span-3">
+    <div class="editor-layout">
+      <Card class="contract-document-card">
         <CardHeader class="document-reader-heading">
           <CardTitle class="flex items-center gap-2 text-lg">
             <FileText :size="18" />
@@ -280,18 +589,26 @@ function returnToOcr(): void {
               >
                 <ChevronLeft :size="17" />
               </button>
-              <button
-                v-for="(_, pageIndex) in ocrPages"
-                :key="pageIndex"
-                type="button"
-                class="page-number-button"
-                :class="{ 'is-active': pageIndex === currentPageIndex }"
-                :aria-current="pageIndex === currentPageIndex ? 'page' : undefined"
-                :aria-label="`前往第 ${pageIndex + 1} 頁`"
-                @click="goToPage(pageIndex)"
+
+              <div
+                ref="pageNumberScrollRef"
+                class="page-number-scroll"
+                aria-label="契約頁碼"
               >
-                {{ pageIndex + 1 }}
-              </button>
+                <button
+                  v-for="(_, pageIndex) in ocrPages"
+                  :key="pageIndex"
+                  type="button"
+                  class="page-number-button"
+                  :class="{ 'is-active': pageIndex === currentPageIndex }"
+                  :aria-current="pageIndex === currentPageIndex ? 'page' : undefined"
+                  :aria-label="`前往第 ${pageIndex + 1} 頁`"
+                  @click="goToPage(pageIndex)"
+                >
+                  {{ pageIndex + 1 }}
+                </button>
+              </div>
+
               <button
                 type="button"
                 class="page-nav-button"
@@ -302,6 +619,10 @@ function returnToOcr(): void {
                 <ChevronRight :size="17" />
               </button>
             </nav>
+
+            <p class="sr-only" aria-live="polite">
+              目前顯示第 {{ currentPageNumber }} 頁，共 {{ pageCount }} 頁
+            </p>
           </div>
 
           <div v-if="pageCount" class="pdf-reader-canvas">
@@ -321,79 +642,99 @@ function returnToOcr(): void {
         </CardContent>
       </Card>
 
-      <div class="lg:col-span-2 flex flex-col gap-4">
+      <div class="editor-side-column">
         <Card>
-          <CardHeader>
-            <CardTitle class="flex items-center gap-2 text-lg">
-              <Edit3 :size="18" />
-              關鍵欄位
-            </CardTitle>
+          <CardHeader class="field-panel-header">
+            <div class="field-panel-title-row">
+              <CardTitle class="flex items-center gap-2 text-lg">
+                <Edit3 :size="18" />
+                關鍵欄位
+              </CardTitle>
+              <details class="field-status-help">
+                <summary>
+                  <Info :size="15" />
+                  狀態說明
+                </summary>
+                <div class="field-status-popover">
+                  <p class="field-status-popover-title">欄位狀態說明</p>
+                  <div class="field-status-legend">
+                    <div><span class="status-dot status-dot--good" />辨識結果良好 — 仍請核對原始契約</div>
+                    <div><span class="status-dot status-dot--medium" />建議確認 — 系統擷取結果需再次確認</div>
+                    <div><span class="status-dot status-dot--low" />需要人工確認 — 請查看原始內容</div>
+                    <div><span class="status-dot status-dot--verified" />已確認 — 使用者已完成核對</div>
+                    <div><span class="status-dot status-dot--edited" />已修正 — 修改已同步至左側契約</div>
+                  </div>
+                </div>
+              </details>
+            </div>
             <CardDescription>系統自動擷取的欄位，點擊可修改</CardDescription>
           </CardHeader>
-          <CardContent class="flex flex-col gap-3">
+
+          <div class="field-filter-bar" aria-label="依欄位狀態篩選">
+            <button
+              v-for="filter in fieldFilters"
+              :key="filter.id"
+              type="button"
+              class="field-filter-button"
+              :class="{ 'is-active': activeFieldFilter === filter.id }"
+              :aria-pressed="activeFieldFilter === filter.id"
+              @click="activeFieldFilter = filter.id"
+            >
+              <span>{{ filter.label }}</span>
+              <strong>{{ filter.count }}</strong>
+            </button>
+          </div>
+
+          <CardContent class="field-list">
             <div
-              v-for="field in fields"
+              v-for="field in filteredFields"
               :key="field.id"
-              class="rounded-lg border p-3 transition-colors"
-              :class="confidenceStyle(field.confidence)"
+              class="contract-field-card rounded-lg border p-3 transition-colors"
+              :class="fieldCardClass(field)"
             >
               <div class="flex items-center justify-between mb-1">
                 <span class="text-xs font-medium text-muted-foreground">
                   {{ field.label }}
+                  <span v-if="field.required" class="required-mark">必填</span>
                 </span>
                 <Badge
                   variant="secondary"
                   class="text-xs"
-                  :class="confidenceBadge(field.confidence).class"
+                  :class="fieldStatus(field).class"
                 >
-                  {{ confidenceBadge(field.confidence).text }}
+                  {{ fieldStatus(field).text }}
                 </Badge>
               </div>
 
-              <div v-if="field.editing" class="flex items-center gap-2">
+              <div v-if="field.editing" class="field-edit-row">
                 <input
                   v-model="field.value"
                   class="flex-1 rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  @keyup.enter="field.editing = false"
+                  @keyup.enter="confirmFieldEdit(field)"
                 />
-                <Button size="sm" variant="ghost" @click="field.editing = false">
+                <Button size="sm" variant="ghost" aria-label="確認欄位修改" @click="confirmFieldEdit(field)">
                   <CheckCircle :size="16" class="text-green-600" />
                 </Button>
               </div>
-              <div
-                v-else
-                class="flex items-center justify-between cursor-pointer group"
-                @click="toggleEdit(field)"
-              >
+              <div v-else class="field-value-row">
                 <span class="text-sm font-semibold text-foreground">
                   {{ field.value }}
                 </span>
-                <PenLine
-                  :size="14"
-                  class="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                />
+                <div class="field-actions">
+                  <button type="button" class="field-action-button" @click="verifyField(field)">
+                    <CheckCircle :size="14" />
+                    確認
+                  </button>
+                  <button type="button" class="field-action-button" @click="startFieldEdit(field)">
+                    <PenLine :size="14" />
+                    修改
+                  </button>
+                </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent class="pt-4">
-            <p class="text-xs font-medium text-muted-foreground mb-3">辨識信心度圖例</p>
-            <div class="flex flex-col gap-2">
-              <div class="flex items-center gap-2">
-                <span class="inline-block size-3 rounded-full bg-green-500" />
-                <span class="text-xs text-muted-foreground">辨識正常 — 無需修改</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="inline-block size-3 rounded-full bg-amber-500" />
-                <span class="text-xs text-muted-foreground">待確認 — 建議核對原件</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="inline-block size-3 rounded-full bg-red-500" />
-                <span class="text-xs text-muted-foreground">模糊不確定 — 請手動修正</span>
-              </div>
-            </div>
+            <p v-if="!filteredFields.length" class="field-filter-empty">
+              目前沒有符合此狀態的欄位
+            </p>
           </CardContent>
         </Card>
       </div>

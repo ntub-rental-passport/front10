@@ -52,6 +52,7 @@
   width: 48px;
   height: 48px;
   flex: 0 0 48px;
+  margin-top: 18px;
   place-items: center;
   border-radius: 14px;
   background: linear-gradient(145deg, #6559d7, #443aa5);
@@ -305,7 +306,35 @@
 .select-file-button {
   margin-left: 6px;
   border-color: var(--contract-primary-border) !important;
+  background: #fff !important;
   color: var(--contract-primary) !important;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease;
+}
+
+.select-file-button:hover:not(:disabled),
+.selected-file-actions button:first-child:hover:not(:disabled) {
+  border-color: #b9adff !important;
+  background: #f3f0ff !important;
+  color: #4b35d6 !important;
+  box-shadow: 0 3px 10px rgb(91 70 229 / 10%);
+}
+
+.select-file-button:focus-visible,
+.selected-file-actions button:first-child:focus-visible {
+  border-color: #8c7cff !important;
+  background: #f7f5ff !important;
+  color: #4b35d6 !important;
+  box-shadow: 0 0 0 3px rgb(140 124 255 / 18%);
+}
+
+.select-file-button:active:not(:disabled),
+.selected-file-actions button:first-child:active:not(:disabled) {
+  background: #ede9ff !important;
+  box-shadow: none;
 }
 
 .select-file-button svg,

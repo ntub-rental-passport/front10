@@ -8,25 +8,110 @@ export type ContractOcrResult = {
   pageTexts: string[]
   languageHints: string[]
   warnings: string[]
+  fieldReviews?: Record<string, ContractFieldReview>
+}
+
+export type ContractFieldReview = {
+  value: string
+  sourceValue: string
+  confidence: 'high' | 'medium' | 'low'
+  reviewState: 'unreviewed' | 'verified' | 'edited'
 }
 
 const CONTRACT_OCR_STORAGE_KEY = 'rentmate:contract-ocr-result'
 
+function normalizePageText(pageText: unknown): string {
+  return typeof pageText === 'string'
+    ? pageText.replace(/\r\n?/g, '\n')
+    : ''
+}
+
+/**
+ * 依照原始頁面順序重新合併 OCR 文字。
+ * 不使用 filter(Boolean)，避免空白頁造成頁面順序錯位。
+ */
+export function mergeContractPageTexts(pageTexts: string[]): string {
+  return pageTexts
+    .map(pageText => normalizePageText(pageText).trimEnd())
+    .join('\n\n')
+    .trim()
+}
+
+export function normalizeContractOcrResult(
+  input: Partial<ContractOcrResult> | null | undefined,
+): ContractOcrResult | null {
+  if (!input) return null
+
+  const sourceText = normalizePageText(input.text)
+  const storedPages = Array.isArray(input.pageTexts)
+    ? input.pageTexts.map(normalizePageText)
+    : []
+
+  // 相容舊資料：若只有全文而沒有逐頁文字，至少保留成單頁。
+  const pageTexts = storedPages.length
+    ? [...storedPages]
+    : sourceText.trim()
+      ? [sourceText]
+      : []
+
+  const declaredPageCount = Number.isFinite(input.pageCount)
+    ? Math.max(0, Math.trunc(Number(input.pageCount)))
+    : 0
+  const normalizedPageCount = Math.max(declaredPageCount, pageTexts.length)
+
+  while (pageTexts.length < normalizedPageCount) {
+    pageTexts.push('')
+  }
+
+  const text = mergeContractPageTexts(pageTexts) || sourceText.trim()
+  if (!text) return null
+
+  const fieldReviews = input.fieldReviews && typeof input.fieldReviews === 'object'
+    ? Object.fromEntries(
+        Object.entries(input.fieldReviews)
+          .filter(([, review]) => review && typeof review.value === 'string')
+          .map(([fieldId, review]) => [fieldId, {
+            value: review.value,
+            sourceValue: typeof review.sourceValue === 'string' ? review.sourceValue : '',
+            confidence: ['high', 'medium', 'low'].includes(review.confidence)
+              ? review.confidence
+              : 'low',
+            reviewState: ['unreviewed', 'verified', 'edited'].includes(review.reviewState)
+              ? review.reviewState
+              : 'unreviewed',
+          }]),
+      ) as Record<string, ContractFieldReview>
+    : undefined
+
+  return {
+    engine: typeof input.engine === 'string' ? input.engine : '',
+    fileName: typeof input.fileName === 'string' ? input.fileName : '',
+    mimeType: typeof input.mimeType === 'string' ? input.mimeType : '',
+    size: Number.isFinite(input.size) ? Math.max(0, Number(input.size)) : 0,
+    text,
+    pageCount: pageTexts.length,
+    pageTexts,
+    languageHints: Array.isArray(input.languageHints)
+      ? input.languageHints.map(item => String(item)).filter(Boolean)
+      : [],
+    warnings: Array.isArray(input.warnings)
+      ? input.warnings.map(item => String(item)).filter(Boolean)
+      : [],
+    fieldReviews,
+  }
+}
+
 export function saveContractOcrResult(result: ContractOcrResult): boolean {
   if (typeof window === 'undefined') return false
 
+  const normalizedResult = normalizeContractOcrResult(result)
+  if (!normalizedResult) return false
+
   try {
-    window.sessionStorage.setItem(CONTRACT_OCR_STORAGE_KEY, JSON.stringify({
-      engine: result.engine,
-      fileName: result.fileName,
-      mimeType: result.mimeType,
-      size: result.size,
-      text: result.text,
-      pageCount: result.pageCount,
-      pageTexts: result.pageTexts,
-      languageHints: result.languageHints,
-      warnings: result.warnings,
-    }))
+    window.sessionStorage.setItem(
+      CONTRACT_OCR_STORAGE_KEY,
+      JSON.stringify(normalizedResult),
+    )
     return true
   } catch {
     return false
@@ -40,27 +125,9 @@ export function loadContractOcrResult(): ContractOcrResult | null {
     const rawResult = window.sessionStorage.getItem(CONTRACT_OCR_STORAGE_KEY)
     if (!rawResult) return null
 
-    const result = JSON.parse(rawResult) as Partial<ContractOcrResult>
-    const pageTexts = Array.isArray(result.pageTexts)
-      ? result.pageTexts.map(pageText => typeof pageText === 'string' ? pageText : '')
-      : []
-    const text = typeof result.text === 'string'
-      ? result.text
-      : pageTexts.filter(Boolean).join('\n\n')
-
-    if (!text.trim()) return null
-
-    return {
-      engine: result.engine ?? '',
-      fileName: result.fileName ?? '',
-      mimeType: result.mimeType ?? '',
-      size: result.size ?? 0,
-      text,
-      pageCount: result.pageCount ?? pageTexts.length,
-      pageTexts,
-      languageHints: result.languageHints ?? [],
-      warnings: result.warnings ?? [],
-    }
+    return normalizeContractOcrResult(
+      JSON.parse(rawResult) as Partial<ContractOcrResult>,
+    )
   } catch {
     return null
   }
