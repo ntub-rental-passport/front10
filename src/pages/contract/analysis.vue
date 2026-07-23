@@ -73,7 +73,7 @@ function copyToClipboard() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-background p-4 font-sans text-foreground sm:p-6 md:p-10">
+  <div class="contract-analysis-page">
     <div class="mx-auto max-w-7xl space-y-6 sm:space-y-8">
       <header class="flex flex-col justify-between gap-3 border-b border-border pb-4 sm:flex-row sm:items-end sm:pb-6">
         <div>
@@ -218,13 +218,4 @@ function copyToClipboard() {
   </div>
 </template>
 
-<style scoped>
-.scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-}
-
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: var(--muted);
-  border-radius: 10px;
-}
-</style>
+<style scoped src="./analysis.css"></style>

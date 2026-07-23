@@ -1,0 +1,1071 @@
+.contract-index-page {
+  --contract-primary: #5146b8;
+  --contract-primary-hover: #4338a4;
+  --contract-primary-soft: #eeecff;
+  --contract-primary-border: #c8c4f4;
+  --contract-ink: #12172f;
+  --contract-muted: #6b7188;
+  --contract-canvas: #f5f6f9;
+  --contract-surface: #ffffff;
+  --contract-border: #dfe2ea;
+  --contract-success: #12a86b;
+  --contract-warning: #d88a0a;
+  --contract-danger: #e5484d;
+  container-name: contract-page;
+  container-type: inline-size;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 24px;
+  color: var(--contract-ink);
+}
+
+.contract-index-page *,
+.contract-index-page *::before,
+.contract-index-page *::after {
+  box-sizing: border-box;
+}
+
+.contract-index-page svg {
+  width: 1.25em;
+  height: 1.25em;
+  stroke-width: 1.8;
+}
+
+.contract-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.hero-copy {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.hero-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  margin-top: 18px;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #6559d7, #443aa5);
+  color: #fff;
+  box-shadow: 0 10px 24px rgb(81 70 184 / 24%);
+}
+
+.hero-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.eyebrow,
+.section-kicker {
+  margin: 0 0 4px;
+  color: var(--contract-primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.contract-hero h1 {
+  margin: 0;
+  font-size: clamp(28px, 2.6vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.hero-description {
+  max-width: 820px;
+  margin: 8px 0 0;
+  color: var(--contract-muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.hero-trust-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--contract-primary-border);
+  border-radius: 999px;
+  background: #fff;
+  padding: 9px 14px;
+  color: var(--contract-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.capability-card {
+  display: flex;
+  min-width: 0;
+  min-height: 116px;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid var(--contract-border);
+  border-radius: 16px;
+  background: var(--contract-surface);
+  padding: 20px;
+  box-shadow: 0 3px 8px rgb(18 23 47 / 6%);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.capability-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--contract-primary-border);
+  box-shadow: 0 10px 24px rgb(18 23 47 / 9%);
+}
+
+.capability-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.capability-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.capability-icon--image {
+  background: #eeecff;
+  color: #5146b8;
+}
+
+.capability-icon--pdf {
+  background: #fff0eb;
+  color: #ff6846;
+}
+
+.capability-icon--language {
+  background: #e4f8f1;
+  color: #0aa86f;
+}
+
+.capability-icon--handwriting {
+  background: #f3eaff;
+  color: #944cff;
+}
+
+.capability-card h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.capability-card p {
+  margin: 6px 0 0;
+  color: var(--contract-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ocr-workspace,
+.usage-card,
+.faq-card,
+.benefits-card {
+  min-width: 0;
+  border: 1px solid var(--contract-border);
+  border-radius: 20px;
+  background: var(--contract-surface);
+  padding: clamp(20px, 2.5vw, 28px);
+  box-shadow: 0 6px 18px rgb(18 23 47 / 6%);
+}
+
+.ocr-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section-heading,
+.quality-heading,
+.status-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-heading h2,
+.guide-heading h2,
+.benefits-heading h2 {
+  margin: 0;
+  font-size: clamp(21px, 1.8vw, 27px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.section-heading > div > p:last-child,
+.guide-heading p,
+.benefits-heading > p:last-child {
+  margin: 7px 0 0;
+  color: var(--contract-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.workspace-badge {
+  flex: 0 0 auto;
+  border-color: var(--contract-primary-border) !important;
+  color: var(--contract-primary) !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.upload-dropzone {
+  display: flex;
+  min-height: 230px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  border: 2px dashed #c9c6ef;
+  border-radius: 18px;
+  background: #fbfbfe;
+  padding: 28px;
+  text-align: center;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone:focus-visible,
+.upload-dropzone--active {
+  border-color: var(--contract-primary);
+  background: #f7f6ff;
+  box-shadow: 0 0 0 4px rgb(81 70 184 / 9%);
+  outline: none;
+}
+
+.upload-dropzone--selected {
+  min-height: 112px;
+  justify-content: flex-start;
+  border-style: solid;
+  background: #fafaff;
+  text-align: left;
+}
+
+.upload-icon,
+.selected-file-icon {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  flex: 0 0 62px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--contract-primary-soft);
+  color: var(--contract-primary);
+}
+
+.upload-icon svg,
+.selected-file-icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+.upload-copy h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.upload-copy p,
+.selected-file-copy p {
+  margin: 7px 0 0;
+  color: var(--contract-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.select-file-button {
+  margin-left: 6px;
+  border-color: var(--contract-primary-border) !important;
+  background: #fff !important;
+  color: var(--contract-primary) !important;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease;
+}
+
+.select-file-button:hover:not(:disabled),
+.selected-file-actions button:first-child:hover:not(:disabled) {
+  border-color: #b9adff !important;
+  background: #f3f0ff !important;
+  color: #4b35d6 !important;
+  box-shadow: 0 3px 10px rgb(91 70 229 / 10%);
+}
+
+.select-file-button:focus-visible,
+.selected-file-actions button:first-child:focus-visible {
+  border-color: #8c7cff !important;
+  background: #f7f5ff !important;
+  color: #4b35d6 !important;
+  box-shadow: 0 0 0 3px rgb(140 124 255 / 18%);
+}
+
+.select-file-button:active:not(:disabled),
+.selected-file-actions button:first-child:active:not(:disabled) {
+  background: #ede9ff !important;
+  box-shadow: none;
+}
+
+.select-file-button svg,
+.selected-file-actions svg,
+.recognize-button svg,
+.result-footer svg {
+  width: 16px;
+  height: 16px;
+}
+
+.selected-file-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.selected-file-name {
+  overflow: hidden;
+  margin: 0 !important;
+  color: var(--contract-ink) !important;
+  font-size: 15px !important;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-file-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.selected-file-actions button:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.remove-file-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  place-items: center;
+  border: 1px solid var(--contract-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--contract-muted);
+}
+
+.remove-file-button:hover:not(:disabled) {
+  border-color: #f3b4b7;
+  background: #fff6f6;
+  color: var(--contract-danger);
+}
+
+.remove-file-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.quality-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quality-heading h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 780;
+}
+
+.quality-heading p {
+  margin: 4px 0 0;
+  color: var(--contract-muted);
+  font-size: 13px;
+}
+
+.quality-heading > span {
+  border-radius: 999px;
+  background: var(--contract-primary-soft);
+  padding: 7px 11px;
+  color: var(--contract-primary);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.quality-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.quality-option {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 126px;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 1px solid var(--contract-border);
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px;
+  color: var(--contract-ink);
+  text-align: left;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.quality-option:hover:not(:disabled) {
+  border-color: var(--contract-primary-border);
+  background: #faf9ff;
+}
+
+.quality-option--selected {
+  border-color: var(--contract-primary);
+  background: #f2f0ff;
+  box-shadow: 0 0 0 2px rgb(81 70 184 / 10%);
+}
+
+.quality-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.quality-option strong {
+  font-size: 15px;
+  font-weight: 780;
+}
+
+.quality-option small {
+  margin-top: 5px;
+  color: var(--contract-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.quality-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: auto;
+  padding-top: 12px;
+  color: var(--contract-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.quality-meta svg,
+.quality-check svg {
+  width: 13px;
+  height: 13px;
+}
+
+.quality-check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--contract-primary);
+  color: #fff;
+}
+
+.recognition-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #e2e3ea;
+  border-radius: 12px;
+  background: #f8f9fb;
+  padding: 11px 14px;
+  color: var(--contract-muted);
+  font-size: 12px;
+}
+
+.recognition-summary > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.recognition-summary svg {
+  flex: 0 0 auto;
+  color: var(--contract-primary);
+}
+
+.recognition-summary strong {
+  color: var(--contract-ink);
+}
+
+.recognition-summary p {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.recognition-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--contract-primary-border);
+  border-radius: 14px;
+  background: #faf9ff;
+  padding: 14px;
+}
+
+.status-heading {
+  align-items: center;
+}
+
+.status-heading p,
+.status-heading small {
+  margin: 0;
+}
+
+.status-heading p {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.status-heading small {
+  display: block;
+  max-width: 620px;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--contract-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-heading strong {
+  color: var(--contract-primary);
+  font-size: 13px;
+}
+
+.status-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.status-message svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.status-message--error {
+  background: #fff0f0;
+  color: #bc2d32;
+}
+
+.status-message--warning {
+  background: #fff8e9;
+  color: #9a6500;
+}
+
+.recognize-button {
+  width: 100%;
+  min-height: 48px;
+  gap: 9px;
+  border-radius: 12px !important;
+  background: var(--contract-primary) !important;
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.recognize-button:hover:not(:disabled) {
+  background: var(--contract-primary-hover) !important;
+}
+
+.recognize-button:disabled {
+  background: #aeb2bf !important;
+  color: #fff !important;
+}
+
+.result-tabs {
+  min-width: 0;
+}
+
+.result-tab-list {
+  display: grid !important;
+  width: 100% !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.result-tab-content {
+  margin-top: 16px !important;
+}
+
+.result-card {
+  overflow: hidden;
+  border-radius: 18px !important;
+}
+
+.result-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.result-title svg {
+  color: var(--contract-primary);
+}
+
+.result-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.result-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.result-metrics > div {
+  min-width: 0;
+  border: 1px solid var(--contract-border);
+  border-radius: 12px;
+  background: #f8f9fb;
+  padding: 13px;
+}
+
+.result-metrics span,
+.result-metrics strong {
+  display: block;
+}
+
+.result-metrics span {
+  color: var(--contract-muted);
+  font-size: 11px;
+}
+
+.result-metrics strong {
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recognized-text {
+  max-height: 32rem;
+  overflow: auto;
+  border-radius: 14px;
+  background: #f3f4f7;
+  padding: 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.result-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.result-footer > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.result-footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.analysis-copy {
+  color: var(--contract-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.analysis-copy > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 14px;
+  border: 1px solid var(--contract-border);
+  border-radius: 12px;
+  background: #f8f9fb;
+  padding: 14px;
+}
+
+.analysis-copy strong {
+  color: var(--contract-ink);
+}
+
+.success-icon {
+  color: var(--contract-success) !important;
+}
+
+.warning-icon {
+  color: var(--contract-warning) !important;
+}
+
+.guide-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.guide-heading > svg {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  color: var(--contract-primary);
+}
+
+.usage-steps {
+  display: grid;
+  margin: 20px 0 0;
+  padding: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+}
+
+.usage-steps li {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+.usage-steps li + li::before {
+  position: absolute;
+  top: 18%;
+  bottom: 18%;
+  left: 0;
+  width: 1px;
+  background: var(--contract-border);
+  content: '';
+}
+
+.usage-steps span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--contract-primary-soft);
+  color: var(--contract-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.usage-steps p {
+  margin: 0;
+  color: var(--contract-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.faq-item {
+  overflow: hidden;
+  border: 1px solid var(--contract-border);
+  border-radius: 12px;
+  background: #f9fafc;
+}
+
+.faq-item summary {
+  display: flex;
+  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-item summary svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  color: var(--contract-muted);
+  transition: transform 160ms ease;
+}
+
+.faq-item[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.faq-item[open] summary {
+  color: var(--contract-primary);
+}
+
+.faq-item > p {
+  margin: 0;
+  border-top: 1px solid var(--contract-border);
+  padding: 13px 16px 16px;
+  color: var(--contract-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.benefits-card {
+  border-color: #ddd9ff;
+  background: linear-gradient(135deg, #f4f2ff, #fbfaff);
+}
+
+.benefits-heading {
+  max-width: 760px;
+}
+
+.benefits-grid {
+  display: grid;
+  margin-top: 22px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 28px;
+}
+
+.benefits-grid article {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.benefits-grid article > div {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: #e8e5ff;
+  color: var(--contract-primary);
+}
+
+.benefits-grid article > div svg {
+  width: 18px;
+  height: 18px;
+}
+
+.benefits-grid article > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.benefits-grid strong {
+  font-size: 14px;
+}
+
+.benefits-grid small {
+  color: var(--contract-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@container contract-page (max-width: 1120px) {
+  .capability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .result-metrics,
+  .usage-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .usage-steps li:nth-child(3)::before {
+    display: none;
+  }
+}
+
+@container contract-page (max-width: 760px) {
+  .contract-hero,
+  .section-heading,
+  .recognition-summary,
+  .result-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hero-trust-badge,
+  .workspace-badge {
+    align-self: flex-start;
+  }
+
+  .quality-grid,
+  .analysis-grid,
+  .benefits-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-dropzone {
+    min-height: 260px;
+    flex-direction: column;
+  }
+
+  .upload-dropzone--selected {
+    min-height: 0;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .selected-file-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .recognition-summary p {
+    flex: 1 1 auto;
+  }
+
+  .result-footer > div {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .result-footer > div button,
+  .result-footer > button {
+    flex: 1 1 auto;
+  }
+}
+
+@container contract-page (max-width: 520px) {
+  .contract-index-page {
+    gap: 18px;
+  }
+
+  .hero-icon {
+    display: none;
+  }
+
+  .capability-grid,
+  .result-metrics,
+  .usage-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .capability-card {
+    min-height: 92px;
+    padding: 16px;
+  }
+
+  .ocr-workspace,
+  .usage-card,
+  .faq-card,
+  .benefits-card {
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .upload-dropzone {
+    padding: 22px 16px;
+  }
+
+  .quality-option {
+    min-height: 112px;
+  }
+
+  .usage-steps li {
+    padding: 10px 0;
+  }
+
+  .usage-steps li + li::before {
+    top: 0;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: auto;
+    height: 1px;
+  }
+
+  .result-tab-list {
+    grid-template-columns: 1fr;
+    height: auto !important;
+  }
+
+  .result-footer,
+  .result-footer > div {
+    flex-direction: column;
+  }
+
+  .result-footer button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contract-index-page *,
+  .contract-index-page *::before,
+  .contract-index-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
