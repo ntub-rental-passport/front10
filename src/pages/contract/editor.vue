@@ -142,7 +142,55 @@ function makeField(
   }
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function findContextualFieldSource(
+  field: ContractField,
+  pageText: string,
+): { sourceValue: string; sourceStart: number; sourceEnd: number } | null {
+  if (field.id !== 'due_day') return null
+
+  const dayValue = (field.sourceValue || field.value).match(/[0-9０-９]{1,2}/)?.[0]
+  if (!dayValue) return null
+
+  // 繳租日只有一個數字時很容易誤中身分證、地址或電話，必須連同「每月／日前」語境定位。
+  const pattern = new RegExp(`(?:租金\\s*)?(每月\\s*${escapeRegExp(dayValue)}\\s*日\\s*前)`)
+  const match = pageText.match(pattern)
+  const sourceValue = match?.[1]
+  if (!match || !sourceValue) return null
+
+  const sourceStart = (match.index ?? 0) + match[0].indexOf(sourceValue)
+  return {
+    sourceValue,
+    sourceStart,
+    sourceEnd: sourceStart + sourceValue.length,
+  }
+}
+
 function locateFieldSource(field: ContractField, pages: string[]): ContractField {
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+    const contextualSource = findContextualFieldSource(field, pages[pageIndex] ?? '')
+    if (!contextualSource) continue
+
+    return {
+      ...field,
+      ...contextualSource,
+      sourcePageIndex: pageIndex,
+    }
+  }
+
+  // 找不到完整繳租日語境時寧可標示未定位，也不能退回搜尋單一數字而標錯位置。
+  if (field.id === 'due_day') {
+    return {
+      ...field,
+      sourcePageIndex: null,
+      sourceStart: -1,
+      sourceEnd: -1,
+    }
+  }
+
   const candidates = [field.sourceValue, field.value]
     .map(value => value.trim())
     .filter(value => value && value !== '尚未擷取')

@@ -721,21 +721,22 @@
 }
 
 .field-source-page {
-  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--primary) 7%, var(--background));
-  padding: 0.15rem 0.45rem;
-  color: var(--primary);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--foreground);
   font-size: 0.6875rem;
-  font-weight: 750;
+  font-weight: 500;
   line-height: 1.4;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .field-source-page:hover {
-  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
-  background: color-mix(in srgb, var(--primary) 12%, var(--background));
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
 }
 
 .field-source-page:focus-visible {
@@ -744,10 +745,14 @@
 }
 
 .field-source-page--missing {
-  border-color: var(--border);
-  background: var(--muted);
+  background: transparent;
   color: var(--muted-foreground);
   cursor: default;
+}
+
+.field-source-page--missing:hover {
+  color: var(--muted-foreground);
+  text-decoration: none;
 }
 
 @container contract-editor (max-width: 1050px) {
