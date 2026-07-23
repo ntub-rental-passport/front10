@@ -226,6 +226,7 @@ async function handleRegister(): Promise<void> {
 async function handleGoogleRegister(): Promise<void> {
   if (!validateGoogleRegistration()) return
   if (!googleRegistration.value) {
+    submitting.value = true
     window.location.assign(getGoogleLoginUrl(selectedOption.value.authRole, '/register'))
     return
   }
@@ -439,13 +440,31 @@ async function handleGoogleRegister(): Promise<void> {
               alt="Google"
               class="auth-google-icon"
             />
-            {{ googleRegistration ? '寄送 Google 帳號驗證碼' : '使用 Google 帳號註冊' }}
+            {{
+              submitting
+                ? '處理中…'
+                : googleRegistration
+                  ? '寄送 Google 帳號驗證碼'
+                  : '使用 Google 帳號註冊'
+            }}
           </Button>
+
+          <p
+            v-if="errorMessage"
+            role="alert"
+            class="auth-feedback auth-feedback--error text-center"
+          >
+            {{ errorMessage }}
+          </p>
         </div>
 
         <div class="auth-legal-card">
           <label class="auth-checkbox-row auth-checkbox-row--start">
-            <Checkbox v-model="agreeToTerms" class="auth-checkbox auth-checkbox--offset" />
+            <Checkbox
+              v-model="agreeToTerms"
+              class="auth-checkbox auth-checkbox--offset"
+              @update:model-value="errorMessage = ''"
+            />
             <span>
               我已閱讀並同意
               <span class="auth-inline-accent">服務條款</span>
@@ -467,8 +486,6 @@ async function handleGoogleRegister(): Promise<void> {
             <Mail class="auth-email-notice__icon" />
             <p>註冊完成後，我們會寄送驗證信到您的電子信箱，完成驗證後才能正式啟用帳號。</p>
           </div>
-
-          <p v-if="errorMessage" class="auth-feedback auth-feedback--error auth-feedback--legal">{{ errorMessage }}</p>
         </div>
       </section>
     </form>
