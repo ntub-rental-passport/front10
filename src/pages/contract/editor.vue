@@ -23,6 +23,8 @@ import {
   Eye,
   PenLine,
   Info,
+  Search,
+  X,
 } from 'lucide-vue-next'
 
 interface ContractField {
@@ -35,6 +37,9 @@ interface ContractField {
   required: boolean
   editing: boolean
   editStartValue: string
+  sourcePageIndex: number | null
+  sourceStart: number
+  sourceEnd: number
 }
 
 interface CapturedValue {
@@ -43,6 +48,20 @@ interface CapturedValue {
 }
 
 type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
+
+interface TextMatch {
+  pageIndex: number
+  start: number
+  end: number
+}
+
+interface HighlightSegment {
+  text: string
+  highlighted: boolean
+  fieldSource: boolean
+  searchResult: boolean
+  activeSearchResult: boolean
+}
 
 const storedOcrResult = ref<ContractOcrResult | null>(loadContractOcrResult())
 const initialPageTexts = storedOcrResult.value?.pageTexts.length
@@ -117,6 +136,37 @@ function makeField(
     required,
     editing: false,
     editStartValue: captured.value || '',
+    sourcePageIndex: null,
+    sourceStart: -1,
+    sourceEnd: -1,
+  }
+}
+
+function locateFieldSource(field: ContractField, pages: string[]): ContractField {
+  const candidates = [field.sourceValue, field.value]
+    .map(value => value.trim())
+    .filter(value => value && value !== '尚未擷取')
+
+  for (const candidate of candidates) {
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+      const sourceStart = (pages[pageIndex] ?? '').indexOf(candidate)
+      if (sourceStart < 0) continue
+
+      return {
+        ...field,
+        sourceValue: candidate,
+        sourcePageIndex: pageIndex,
+        sourceStart,
+        sourceEnd: sourceStart + candidate.length,
+      }
+    }
+  }
+
+  return {
+    ...field,
+    sourcePageIndex: null,
+    sourceStart: -1,
+    sourceEnd: -1,
   }
 }
 
@@ -175,18 +225,22 @@ function extractContractFields(text: string): ContractField[] {
 }
 
 const fields = ref<ContractField[]>(
-  extractContractFields(ocrFullText.value).map((field) => {
+  extractContractFields(ocrFullText.value).map((extractedField) => {
+    const field = locateFieldSource(extractedField, ocrPages.value)
     const savedReview = storedOcrResult.value?.fieldReviews?.[field.id]
     if (!savedReview) return field
 
-    return {
+    return locateFieldSource({
       ...field,
       value: savedReview.value,
       sourceValue: savedReview.sourceValue,
       confidence: savedReview.confidence,
       reviewState: savedReview.reviewState,
       editStartValue: savedReview.value,
-    }
+      sourcePageIndex: savedReview.sourcePageIndex ?? field.sourcePageIndex,
+      sourceStart: savedReview.sourceStart ?? field.sourceStart,
+      sourceEnd: savedReview.sourceEnd ?? field.sourceEnd,
+    }, ocrPages.value)
   }),
 )
 
@@ -196,6 +250,9 @@ const isDirty = ref(false)
 const saveError = ref('')
 const pageNumberScrollRef = ref<HTMLElement | null>(null)
 const activeFieldFilter = ref<FieldFilter>('all')
+const searchQuery = ref('')
+const activeSearchMatchIndex = ref(-1)
+const activeFieldHighlight = ref<TextMatch | null>(null)
 
 watch(
   ocrPages,
@@ -266,6 +323,82 @@ const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: num
   { id: 'low', label: '人工確認', count: lowConfidenceCount.value },
   { id: 'reviewed', label: '已處理', count: reviewedFieldCount.value },
 ])
+
+const searchMatches = computed<TextMatch[]>(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase()
+  if (!query) return []
+
+  const matches: TextMatch[] = []
+  ocrPages.value.forEach((pageText, pageIndex) => {
+    const searchableText = pageText.toLocaleLowerCase()
+    let start = 0
+
+    while (start < searchableText.length) {
+      const matchStart = searchableText.indexOf(query, start)
+      if (matchStart < 0) break
+      matches.push({ pageIndex, start: matchStart, end: matchStart + query.length })
+      start = matchStart + Math.max(query.length, 1)
+    }
+  })
+
+  return matches
+})
+
+const activeSearchMatch = computed<TextMatch | null>(() =>
+  searchMatches.value[activeSearchMatchIndex.value] ?? null
+)
+
+const searchResultPosition = computed(() =>
+  activeSearchMatch.value ? activeSearchMatchIndex.value + 1 : 0
+)
+
+const highlightedPageSegments = computed<HighlightSegment[]>(() => {
+  const pageText = currentPageText.value
+  if (!pageText) return []
+
+  const searchRanges = searchMatches.value.filter(match => match.pageIndex === currentPageIndex.value)
+  const fieldRange = activeFieldHighlight.value?.pageIndex === currentPageIndex.value
+    ? activeFieldHighlight.value
+    : null
+  const boundaries = new Set<number>([0, pageText.length])
+
+  searchRanges.forEach((range) => {
+    boundaries.add(range.start)
+    boundaries.add(range.end)
+  })
+  if (fieldRange) {
+    boundaries.add(fieldRange.start)
+    boundaries.add(fieldRange.end)
+  }
+
+  const sortedBoundaries = [...boundaries]
+    .filter(position => position >= 0 && position <= pageText.length)
+    .sort((left, right) => left - right)
+
+  return sortedBoundaries.slice(0, -1).map((start, index) => {
+    const end = sortedBoundaries[index + 1] ?? pageText.length
+    const fieldSource = Boolean(fieldRange && start >= fieldRange.start && end <= fieldRange.end)
+    const searchResult = searchRanges.some(range => start >= range.start && end <= range.end)
+    const activeSearchResult = Boolean(
+      activeSearchMatch.value
+      && activeSearchMatch.value.pageIndex === currentPageIndex.value
+      && start >= activeSearchMatch.value.start
+      && end <= activeSearchMatch.value.end
+    )
+
+    return {
+      text: pageText.slice(start, end),
+      highlighted: fieldSource || searchResult,
+      fieldSource,
+      searchResult,
+      activeSearchResult,
+    }
+  })
+})
+
+watch(searchQuery, () => {
+  activeSearchMatchIndex.value = -1
+})
 
 function fieldStatus(field: ContractField): { text: string; class: string } {
   if (field.reviewState === 'edited') {
@@ -391,6 +524,7 @@ function confirmFieldEdit(field: ContractField): void {
       saveError.value = `無法在契約全文定位「${field.label}」的原始文字，請先在左側編輯模式中修正。`
       return
     }
+    Object.assign(field, locateFieldSource(field, ocrPages.value))
     field.reviewState = 'edited'
   } else {
     field.reviewState = 'verified'
@@ -422,6 +556,9 @@ function persistContract(): boolean {
         sourceValue: field.sourceValue,
         confidence: field.confidence,
         reviewState: field.reviewState,
+        sourcePageIndex: field.sourcePageIndex,
+        sourceStart: field.sourceStart,
+        sourceEnd: field.sourceEnd,
       } satisfies ContractFieldReview]),
     ),
   }
@@ -462,6 +599,63 @@ function goToPreviousPage(): void {
 
 function goToNextPage(): void {
   void goToPage(currentPageIndex.value + 1)
+}
+
+async function scrollToHighlight(): Promise<void> {
+  await nextTick()
+  const highlight = document.querySelector<HTMLElement>('.pdf-page .reader-highlight--target')
+  highlight?.scrollIntoView({
+    block: 'center',
+    inline: 'nearest',
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  })
+}
+
+async function revealFieldSource(field: ContractField): Promise<void> {
+  const locatedField = locateFieldSource(field, ocrPages.value)
+  Object.assign(field, locatedField)
+
+  if (field.sourcePageIndex === null || field.sourceStart < 0) {
+    saveError.value = `目前找不到「${field.label}」在契約中的來源文字，可能已在編輯模式中被移除。`
+    return
+  }
+
+  isEditing.value = false
+  saveError.value = ''
+  activeSearchMatchIndex.value = -1
+  activeFieldHighlight.value = {
+    pageIndex: field.sourcePageIndex,
+    start: field.sourceStart,
+    end: field.sourceEnd,
+  }
+  await goToPage(field.sourcePageIndex)
+  await scrollToHighlight()
+}
+
+async function moveToSearchResult(direction: 1 | -1): Promise<void> {
+  const matches = searchMatches.value
+  if (!matches.length) {
+    activeSearchMatchIndex.value = -1
+    return
+  }
+
+  const currentIndex = activeSearchMatchIndex.value
+  activeSearchMatchIndex.value = currentIndex < 0
+    ? direction === 1 ? 0 : matches.length - 1
+    : (currentIndex + direction + matches.length) % matches.length
+
+  const match = matches[activeSearchMatchIndex.value]
+  if (!match) return
+
+  isEditing.value = false
+  activeFieldHighlight.value = null
+  await goToPage(match.pageIndex)
+  await scrollToHighlight()
+}
+
+function clearSearch(): void {
+  searchQuery.value = ''
+  activeSearchMatchIndex.value = -1
 }
 
 const router = useRouter()
@@ -572,6 +766,51 @@ function returnToOcr(): void {
           </CardTitle>
           <CardDescription>一次顯示一頁 OCR 內容，可使用頁碼切換與逐頁修改</CardDescription>
         </CardHeader>
+        <div class="pdf-search-bar" role="search">
+          <Search :size="16" class="pdf-search-icon" aria-hidden="true" />
+          <input
+            v-model="searchQuery"
+            type="search"
+            class="pdf-search-input"
+            placeholder="搜尋契約文字"
+            aria-label="搜尋契約全文"
+            @keydown.enter.prevent="moveToSearchResult($event.shiftKey ? -1 : 1)"
+            @keydown.esc="clearSearch"
+          />
+          <span v-if="searchQuery.trim()" class="pdf-search-count" aria-live="polite">
+            {{ searchResultPosition }} / {{ searchMatches.length }}
+          </span>
+          <button
+            type="button"
+            class="pdf-search-button"
+            :disabled="!searchMatches.length"
+            aria-label="上一個搜尋結果"
+            title="上一個搜尋結果（Shift + Enter）"
+            @click="moveToSearchResult(-1)"
+          >
+            <ChevronLeft :size="16" />
+          </button>
+          <button
+            type="button"
+            class="pdf-search-button"
+            :disabled="!searchMatches.length"
+            aria-label="下一個搜尋結果"
+            title="下一個搜尋結果（Enter）"
+            @click="moveToSearchResult(1)"
+          >
+            <ChevronRight :size="16" />
+          </button>
+          <button
+            v-if="searchQuery"
+            type="button"
+            class="pdf-search-button"
+            aria-label="清除搜尋"
+            title="清除搜尋"
+            @click="clearSearch"
+          >
+            <X :size="16" />
+          </button>
+        </div>
         <CardContent class="document-reader-content">
           <div v-if="pageCount" class="pdf-reader-toolbar">
             <div class="pdf-file-info">
@@ -635,7 +874,22 @@ function returnToOcr(): void {
                 :aria-label="`編輯契約第 ${currentPageNumber} 頁`"
               />
               <div v-else class="pdf-page-text">
-                {{ currentPageText || '此頁沒有辨識到文字，請切換至編輯模式手動補充。' }}
+                <template v-if="currentPageText">
+                  <template v-for="(segment, segmentIndex) in highlightedPageSegments" :key="segmentIndex">
+                    <mark
+                      v-if="segment.highlighted"
+                      class="reader-highlight"
+                      :class="{
+                        'reader-highlight--field': segment.fieldSource,
+                        'reader-highlight--search': segment.searchResult,
+                        'reader-highlight--active-search': segment.activeSearchResult,
+                        'reader-highlight--target': segment.fieldSource || segment.activeSearchResult,
+                      }"
+                    >{{ segment.text }}</mark>
+                    <span v-else>{{ segment.text }}</span>
+                  </template>
+                </template>
+                <template v-else>此頁沒有辨識到文字，請切換至編輯模式手動補充。</template>
               </div>
             </section>
           </div>
@@ -692,18 +946,33 @@ function returnToOcr(): void {
               class="contract-field-card rounded-lg border p-3 transition-colors"
               :class="fieldCardClass(field)"
             >
-              <div class="flex items-center justify-between mb-1">
+              <div class="field-card-header">
                 <span class="text-xs font-medium text-muted-foreground">
                   {{ field.label }}
                   <span v-if="field.required" class="required-mark">必填</span>
                 </span>
-                <Badge
-                  variant="secondary"
-                  class="text-xs"
-                  :class="fieldStatus(field).class"
-                >
-                  {{ fieldStatus(field).text }}
-                </Badge>
+                <div class="field-card-badges">
+                  <button
+                    v-if="field.sourcePageIndex !== null"
+                    type="button"
+                    class="field-source-page"
+                    :aria-label="`前往${field.label}的來源第 ${field.sourcePageIndex + 1} 頁`"
+                    :title="`在左側顯示並標記第 ${field.sourcePageIndex + 1} 頁原文`"
+                    @click="revealFieldSource(field)"
+                  >
+                    第 {{ field.sourcePageIndex + 1 }} 頁
+                  </button>
+                  <span v-else class="field-source-page field-source-page--missing">
+                    來源未定位
+                  </span>
+                  <Badge
+                    variant="secondary"
+                    class="text-xs"
+                    :class="fieldStatus(field).class"
+                  >
+                    {{ fieldStatus(field).text }}
+                  </Badge>
+                </div>
               </div>
 
               <div v-if="field.editing" class="field-edit-row">

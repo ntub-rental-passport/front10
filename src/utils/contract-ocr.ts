@@ -16,6 +16,9 @@ export type ContractFieldReview = {
   sourceValue: string
   confidence: 'high' | 'medium' | 'low'
   reviewState: 'unreviewed' | 'verified' | 'edited'
+  sourcePageIndex?: number | null
+  sourceStart?: number
+  sourceEnd?: number
 }
 
 const CONTRACT_OCR_STORAGE_KEY = 'rentmate:contract-ocr-result'
@@ -79,6 +82,15 @@ export function normalizeContractOcrResult(
             reviewState: ['unreviewed', 'verified', 'edited'].includes(review.reviewState)
               ? review.reviewState
               : 'unreviewed',
+            sourcePageIndex: Number.isInteger(review.sourcePageIndex)
+              ? Math.max(0, Number(review.sourcePageIndex))
+              : null,
+            sourceStart: Number.isInteger(review.sourceStart)
+              ? Math.max(-1, Number(review.sourceStart))
+              : -1,
+            sourceEnd: Number.isInteger(review.sourceEnd)
+              ? Math.max(-1, Number(review.sourceEnd))
+              : -1,
           }]),
       ) as Record<string, ContractFieldReview>
     : undefined

@@ -405,6 +405,80 @@
   border-bottom: 1px solid var(--border);
 }
 
+.pdf-search-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 35%, var(--background));
+  padding: 0.625rem 1rem;
+}
+
+.pdf-search-icon {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+.pdf-search-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  outline: none;
+}
+
+.pdf-search-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.pdf-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.pdf-search-bar:focus-within {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.pdf-search-count {
+  min-width: 3.5rem;
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.pdf-search-button {
+  display: inline-grid;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: 0 0 1.9rem;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.pdf-search-button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--background);
+  color: var(--primary);
+}
+
+.pdf-search-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.pdf-search-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 1px;
+}
+
 .document-reader-content {
   padding: 0;
 }
@@ -593,6 +667,87 @@
 
 .pdf-page-editor:focus {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary) 65%, transparent);
+}
+
+.reader-highlight {
+  border-radius: 0.2rem;
+  background: transparent;
+  color: inherit;
+  scroll-margin-block: 7rem;
+}
+
+.reader-highlight--search {
+  background: #fef08a;
+  box-shadow: 0 0 0 1px rgb(234 179 8 / 18%);
+}
+
+.reader-highlight--active-search {
+  background: #facc15;
+  box-shadow: 0 0 0 2px #eab308;
+}
+
+.reader-highlight--field {
+  background: #ddd6fe;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 50%, transparent);
+  animation: field-highlight-pulse 900ms ease-out;
+}
+
+@keyframes field-highlight-pulse {
+  from {
+    background: #c4b5fd;
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+  to {
+    background: #ddd6fe;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 50%, transparent);
+  }
+}
+
+.field-card-badges {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.field-card-header {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.field-source-page {
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 7%, var(--background));
+  padding: 0.15rem 0.45rem;
+  color: var(--primary);
+  font-size: 0.6875rem;
+  font-weight: 750;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.field-source-page:hover {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--background));
+}
+
+.field-source-page:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.field-source-page--missing {
+  border-color: var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: default;
 }
 
 @container contract-editor (max-width: 1050px) {
