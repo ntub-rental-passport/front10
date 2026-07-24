@@ -16,6 +16,7 @@
     "lint:types": "vue-tsc --noEmit",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
+    "test:contract-fields": "tsx scripts/verify-contract-extraction.ts",
     "format": "prettier --write --experimental-cli src/ components/ lib/ server/"
   },
   "dependencies": {

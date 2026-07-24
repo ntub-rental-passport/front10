@@ -8,7 +8,17 @@ import {
   type ContractFieldReview,
   type ContractOcrResult,
 } from '@/src/utils/contract-ocr'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card/index'
+import {
+  extractContractFieldCandidates,
+  type ContractFieldCandidate,
+} from '@/src/utils/contract-field-extraction'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card/index'
 import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
 import {
@@ -40,11 +50,6 @@ interface ContractField {
   sourcePageIndex: number | null
   sourceStart: number
   sourceEnd: number
-}
-
-interface CapturedValue {
-  value: string
-  sourceValue: string
 }
 
 type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
@@ -84,46 +89,10 @@ const currentPageText = computed({
 })
 const hasOcrData = computed(() => Boolean(ocrFullText.value.trim()))
 
-function cleanCapturedValue(value?: string): string {
-  return value?.replace(/^[\s:：。．、-]+|[\s。；;]+$/g, '').replace(/\s+/g, ' ').trim() ?? ''
-}
-
-function captureFirst(text: string, patterns: RegExp[]): CapturedValue {
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    const value = cleanCapturedValue(match?.[1])
-    if (value) {
-      return {
-        value,
-        sourceValue: match?.[1]?.trim() ?? value,
-      }
-    }
-  }
-  return { value: '', sourceValue: '' }
-}
-
-function captureValue(value?: string): CapturedValue {
-  return {
-    value: cleanCapturedValue(value),
-    sourceValue: value?.trim() ?? '',
-  }
-}
-
-function formatCapturedValue(
-  captured: CapturedValue,
-  formatter: (value: string) => string,
-): CapturedValue {
-  return {
-    ...captured,
-    value: captured.value ? formatter(captured.value) : '',
-  }
-}
-
 function makeField(
   id: string,
   label: string,
-  captured: CapturedValue,
-  confidence: ContractField['confidence'] = 'high',
+  captured: ContractFieldCandidate,
   required = true,
 ): ContractField {
   return {
@@ -131,7 +100,7 @@ function makeField(
     label,
     value: captured.value || '尚未辨識',
     sourceValue: captured.sourceValue,
-    confidence: captured.value ? confidence : 'low',
+    confidence: captured.value ? captured.confidence : 'low',
     reviewState: 'unreviewed',
     required,
     editing: false,
@@ -151,6 +120,16 @@ function findContextualFieldSource(
   pageText: string,
 ): { sourceValue: string; sourceStart: number; sourceEnd: number } | null {
   if (field.id !== 'due_day') return null
+
+  const monthEndMatch = pageText.match(/每月(?:底|月)\s*(?:以)?前/)
+  if (monthEndMatch?.[0] && /每月底前/.test(field.value)) {
+    const sourceStart = monthEndMatch.index ?? 0
+    return {
+      sourceValue: monthEndMatch[0],
+      sourceStart,
+      sourceEnd: sourceStart + monthEndMatch[0].length,
+    }
+  }
 
   const dayValue = (field.sourceValue || field.value).match(/[0-9０-９]{1,2}/)?.[0]
   if (!dayValue) return null
@@ -192,8 +171,8 @@ function locateFieldSource(field: ContractField, pages: string[]): ContractField
   }
 
   const candidates = [field.sourceValue, field.value]
-    .map(value => value.trim())
-    .filter(value => value && value !== '尚未擷取')
+    .map((value) => value.trim())
+    .filter((value) => value && value !== '尚未辨識')
 
   for (const candidate of candidates) {
     for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
@@ -219,56 +198,18 @@ function locateFieldSource(field: ContractField, pages: string[]): ContractField
 }
 
 function extractContractFields(text: string): ContractField[] {
-  const landlord = captureFirst(text, [
-    /出租人\s*[（(][^\r\n）)]*[）)]\s*[：:]\s*([^\r\n]+)/,
-    /出租人姓名\s*[：:]\s*([^\r\n]+)/,
-    /出租人[^\r\n]*[\r\n]+(?:[^\r\n]*[\r\n]+){0,2}\s*(?:[o○•]\s*)?姓名\s*[：:]\s*([^\r\n]+)/,
-  ])
-  const tenant = captureFirst(text, [
-    /承租人\s*[（(][^\r\n）)]*[）)]\s*[：:]\s*([^\r\n]+)/,
-    /承租人姓名\s*[：:]\s*([^\r\n]+)/,
-    /承租人[^\r\n]*[\r\n]+(?:[^\r\n]*[\r\n]+){0,2}\s*(?:[o○•]\s*)?姓名\s*[：:]\s*([^\r\n]+)/,
-  ])
-  const address = captureFirst(text, [
-    /租賃住宅地址[\s\S]{0,100}?(?:位置\s*)?[：:]\s*([^\r\n]+)/,
-    /(?:租屋地址|房屋地址|租賃標的地址)\s*[：:]\s*([^\r\n]+)/,
-    /坐落於\s*([^\r\n，。]+?)(?:之房屋|，|。)/,
-  ])
-  const dateRange = text.match(
-    /租期自\s*(?:民國\s*)?([^\r\n]+?)\s*起至\s*(?:民國\s*)?([^\r\n]+?)\s*止/,
-  ) ?? text.match(
-    /自\s*(?:民國\s*)?([0-9０-９]{2,3}\s*年\s*[0-9０-９]{1,2}\s*月\s*[0-9０-９]{1,2}\s*日)\s*起至\s*(?:民國\s*)?([0-9０-９]{2,3}\s*年\s*[0-9０-９]{1,2}\s*月\s*[0-9０-９]{1,2}\s*日)\s*止/,
-  )
-  const rent = formatCapturedValue(captureFirst(text, [
-    /月租金\s*[：:為]?\s*(?:新臺幣|新台幣|NT\$?)?\s*([0-9０-９,，]+)\s*元/,
-  ]), value => `NT$${value.replace('，', ',')}`)
-  const dueDay = formatCapturedValue(captureFirst(text, [
-    /租金\s*每月\s*([0-9０-９]{1,2})\s*日\s*前/,
-    /每月\s*([0-9０-９]{1,2})\s*日\s*前\s*繳納/,
-  ]), value => `每月 ${value} 日前`)
-  const deposit = formatCapturedValue(captureFirst(text, [
-    /押金[^\r\n]{0,60}?(?:新臺幣|新台幣|NT\$?)\s*([0-9０-９,，]+)\s*元/,
-  ]), value => `NT$${value.replace('，', ',')}`)
-  const penaltyAmount = captureFirst(text, [
-    /違約金\s*(?:新臺幣|新台幣|NT\$?)\s*([0-9０-９,，]+)\s*元/,
-  ])
-  const penaltyDescription = captureFirst(text, [
-    /(?:違約金[^\r\n：:]{0,20}[：:]?|支付相當於)\s*([^\r\n。；;]{1,40}?(?:個月租金|元整|元))/,
-  ])
-  const penalty = penaltyAmount.value
-    ? formatCapturedValue(penaltyAmount, value => `NT$${value.replace('，', ',')}`)
-    : penaltyDescription
+  const extracted = extractContractFieldCandidates(text)
 
   return [
-    makeField('landlord', '出租人（甲方）', landlord),
-    makeField('tenant', '承租人（乙方）', tenant),
-    makeField('address', '租屋地址', address),
-    makeField('start_date', '租期起始', captureValue(dateRange?.[1])),
-    makeField('end_date', '租期結束', captureValue(dateRange?.[2])),
-    makeField('rent', '每月租金', rent),
-    makeField('due_day', '繳租日', dueDay, 'medium'),
-    makeField('deposit', '押金', deposit, 'medium'),
-    makeField('penalty', '違約金', penalty, 'low', false),
+    makeField('landlord', '出租人（甲方）', extracted.landlord),
+    makeField('tenant', '承租人（乙方）', extracted.tenant),
+    makeField('address', '租屋地址', extracted.address),
+    makeField('start_date', '租期起始', extracted.startDate),
+    makeField('end_date', '租期結束', extracted.endDate),
+    makeField('rent', '每月租金', extracted.rent),
+    makeField('due_day', '繳租日', extracted.dueDay),
+    makeField('deposit', '押金', extracted.deposit),
+    makeField('penalty', '違約金', extracted.penalty, false),
   ]
 }
 
@@ -278,17 +219,20 @@ const fields = ref<ContractField[]>(
     const savedReview = storedOcrResult.value?.fieldReviews?.[field.id]
     if (!savedReview) return field
 
-    return locateFieldSource({
-      ...field,
-      value: savedReview.value,
-      sourceValue: savedReview.sourceValue,
-      confidence: savedReview.confidence,
-      reviewState: savedReview.reviewState,
-      editStartValue: savedReview.value,
-      sourcePageIndex: savedReview.sourcePageIndex ?? field.sourcePageIndex,
-      sourceStart: savedReview.sourceStart ?? field.sourceStart,
-      sourceEnd: savedReview.sourceEnd ?? field.sourceEnd,
-    }, ocrPages.value)
+    return locateFieldSource(
+      {
+        ...field,
+        value: savedReview.value,
+        sourceValue: savedReview.sourceValue,
+        confidence: savedReview.confidence,
+        reviewState: savedReview.reviewState,
+        editStartValue: savedReview.value,
+        sourcePageIndex: savedReview.sourcePageIndex ?? field.sourcePageIndex,
+        sourceStart: savedReview.sourceStart ?? field.sourceStart,
+        sourceEnd: savedReview.sourceEnd ?? field.sourceEnd,
+      },
+      ocrPages.value,
+    )
   }),
 )
 
@@ -313,7 +257,7 @@ watch(
 )
 
 watch(
-  () => fields.value.map(field => `${field.value}:${field.reviewState}`),
+  () => fields.value.map((field) => `${field.value}:${field.reviewState}`),
   () => {
     isDirty.value = true
     isSaved.value = false
@@ -321,48 +265,56 @@ watch(
   },
 )
 
-const extractedCount = computed(() =>
-  fields.value.filter(field => field.value !== '尚未辨識').length
+const extractedCount = computed(
+  () => fields.value.filter((field) => field.value !== '尚未辨識').length,
 )
-const verifiedCount = computed(() =>
-  fields.value.filter(field => field.reviewState !== 'unreviewed').length
+const verifiedCount = computed(
+  () => fields.value.filter((field) => field.reviewState !== 'unreviewed').length,
 )
-const mediumConfidenceCount = computed(() =>
-  fields.value.filter(field => field.confidence === 'medium' && field.reviewState === 'unreviewed').length
+const mediumConfidenceCount = computed(
+  () =>
+    fields.value.filter(
+      (field) => field.confidence === 'medium' && field.reviewState === 'unreviewed',
+    ).length,
 )
-const lowConfidenceCount = computed(() =>
-  fields.value.filter(field => field.confidence === 'low' && field.reviewState === 'unreviewed').length
+const lowConfidenceCount = computed(
+  () =>
+    fields.value.filter((field) => field.confidence === 'low' && field.reviewState === 'unreviewed')
+      .length,
 )
 const reviewProgress = computed(() =>
-  fields.value.length ? Math.round((verifiedCount.value / fields.value.length) * 100) : 0
+  fields.value.length ? Math.round((verifiedCount.value / fields.value.length) * 100) : 0,
 )
-const requiredRemainingCount = computed(() =>
-  fields.value.filter(field => field.required && field.reviewState === 'unreviewed').length
+const requiredRemainingCount = computed(
+  () => fields.value.filter((field) => field.required && field.reviewState === 'unreviewed').length,
 )
-const canStartAnalysis = computed(() =>
-  hasOcrData.value && requiredRemainingCount.value === 0
-)
+const canStartAnalysis = computed(() => hasOcrData.value && requiredRemainingCount.value === 0)
 
-const goodConfidenceCount = computed(() =>
-  fields.value.filter(field => field.confidence === 'high' && field.reviewState === 'unreviewed').length
+const goodConfidenceCount = computed(
+  () =>
+    fields.value.filter(
+      (field) => field.confidence === 'high' && field.reviewState === 'unreviewed',
+    ).length,
 )
-const reviewedFieldCount = computed(() =>
-  fields.value.filter(field => field.reviewState !== 'unreviewed').length
+const reviewedFieldCount = computed(
+  () => fields.value.filter((field) => field.reviewState !== 'unreviewed').length,
 )
-const filteredFields = computed(() => fields.value.filter((field) => {
-  switch (activeFieldFilter.value) {
-    case 'good':
-      return field.confidence === 'high' && field.reviewState === 'unreviewed'
-    case 'medium':
-      return field.confidence === 'medium' && field.reviewState === 'unreviewed'
-    case 'low':
-      return field.confidence === 'low' && field.reviewState === 'unreviewed'
-    case 'reviewed':
-      return field.reviewState !== 'unreviewed'
-    default:
-      return true
-  }
-}))
+const filteredFields = computed(() =>
+  fields.value.filter((field) => {
+    switch (activeFieldFilter.value) {
+      case 'good':
+        return field.confidence === 'high' && field.reviewState === 'unreviewed'
+      case 'medium':
+        return field.confidence === 'medium' && field.reviewState === 'unreviewed'
+      case 'low':
+        return field.confidence === 'low' && field.reviewState === 'unreviewed'
+      case 'reviewed':
+        return field.reviewState !== 'unreviewed'
+      default:
+        return true
+    }
+  }),
+)
 
 const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: number }>>(() => [
   { id: 'all', label: '全部', count: fields.value.length },
@@ -392,22 +344,25 @@ const searchMatches = computed<TextMatch[]>(() => {
   return matches
 })
 
-const activeSearchMatch = computed<TextMatch | null>(() =>
-  searchMatches.value[activeSearchMatchIndex.value] ?? null
+const activeSearchMatch = computed<TextMatch | null>(
+  () => searchMatches.value[activeSearchMatchIndex.value] ?? null,
 )
 
 const searchResultPosition = computed(() =>
-  activeSearchMatch.value ? activeSearchMatchIndex.value + 1 : 0
+  activeSearchMatch.value ? activeSearchMatchIndex.value + 1 : 0,
 )
 
 const highlightedPageSegments = computed<HighlightSegment[]>(() => {
   const pageText = currentPageText.value
   if (!pageText) return []
 
-  const searchRanges = searchMatches.value.filter(match => match.pageIndex === currentPageIndex.value)
-  const fieldRange = activeFieldHighlight.value?.pageIndex === currentPageIndex.value
-    ? activeFieldHighlight.value
-    : null
+  const searchRanges = searchMatches.value.filter(
+    (match) => match.pageIndex === currentPageIndex.value,
+  )
+  const fieldRange =
+    activeFieldHighlight.value?.pageIndex === currentPageIndex.value
+      ? activeFieldHighlight.value
+      : null
   const boundaries = new Set<number>([0, pageText.length])
 
   searchRanges.forEach((range) => {
@@ -420,18 +375,18 @@ const highlightedPageSegments = computed<HighlightSegment[]>(() => {
   }
 
   const sortedBoundaries = [...boundaries]
-    .filter(position => position >= 0 && position <= pageText.length)
+    .filter((position) => position >= 0 && position <= pageText.length)
     .sort((left, right) => left - right)
 
   return sortedBoundaries.slice(0, -1).map((start, index) => {
     const end = sortedBoundaries[index + 1] ?? pageText.length
     const fieldSource = Boolean(fieldRange && start >= fieldRange.start && end <= fieldRange.end)
-    const searchResult = searchRanges.some(range => start >= range.start && end <= range.end)
+    const searchResult = searchRanges.some((range) => start >= range.start && end <= range.end)
     const activeSearchResult = Boolean(
-      activeSearchMatch.value
-      && activeSearchMatch.value.pageIndex === currentPageIndex.value
-      && start >= activeSearchMatch.value.start
-      && end <= activeSearchMatch.value.end
+      activeSearchMatch.value &&
+      activeSearchMatch.value.pageIndex === currentPageIndex.value &&
+      start >= activeSearchMatch.value.start &&
+      end <= activeSearchMatch.value.end,
     )
 
     return {
@@ -471,9 +426,12 @@ function fieldCardClass(field: ContractField): string {
   if (field.reviewState === 'verified') return 'border-violet-300 bg-violet-50'
 
   switch (field.confidence) {
-    case 'high': return 'border-green-200 bg-green-50'
-    case 'medium': return 'border-amber-300 bg-amber-50'
-    case 'low': return 'border-red-300 bg-red-50'
+    case 'high':
+      return 'border-green-200 bg-green-50'
+    case 'medium':
+      return 'border-amber-300 bg-amber-50'
+    case 'low':
+      return 'border-red-300 bg-red-50'
   }
 }
 
@@ -501,7 +459,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
 
   if (field.id === 'rent' && moneyValue) {
     insertedValue = replaceFirstInPages(
-      /(月租金\s*[：:為]?\s*(?:新臺幣|新台幣|NT\$?)?\s*)[0-9０-９,，]+(\s*元)/,
+      /((?:租金每個月|每月租金|月租金|租金\s*[：:]?\s*每月)\s*[：:為]?\s*(?:新臺幣|新台幣|NT\$?)?\s*)[0-9０-９,，零〇○一二三四五六七八九十百千萬万億亿壹貳贰參叁肆伍陸陆柒捌玖拾佰仟兩两]+(\s*元)/,
       `$1${moneyValue}$2`,
     )
     if (insertedValue !== null) field.sourceValue = moneyValue
@@ -510,7 +468,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
 
   if (field.id === 'deposit' && moneyValue) {
     insertedValue = replaceFirstInPages(
-      /(押金[^\r\n]{0,60}?(?:新臺幣|新台幣|NT\$?)\s*)[0-9０-９,，]+(\s*元)/,
+      /((?:押租保證金|押金|保證金)[^\r\n]{0,60}?(?:新臺幣|新台幣|NT\$?)\s*)[0-9０-９,，零〇○一二三四五六七八九十百千萬万億亿壹貳贰參叁肆伍陸陆柒捌玖拾佰仟兩两]+(\s*元)/,
       `$1${moneyValue}$2`,
     )
     if (insertedValue !== null) field.sourceValue = moneyValue
@@ -550,7 +508,8 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
     const sourceIndex = pageText.indexOf(field.sourceValue)
     if (sourceIndex < 0) continue
 
-    ocrPages.value[pageIndex] = `${pageText.slice(0, sourceIndex)}${newValue}${pageText.slice(sourceIndex + field.sourceValue.length)}`
+    ocrPages.value[pageIndex] =
+      `${pageText.slice(0, sourceIndex)}${newValue}${pageText.slice(sourceIndex + field.sourceValue.length)}`
     field.sourceValue = newValue
     return true
   }
@@ -599,15 +558,18 @@ function persistContract(): boolean {
     pageCount: pageCount.value,
     pageTexts: [...ocrPages.value],
     fieldReviews: Object.fromEntries(
-      fields.value.map(field => [field.id, {
-        value: field.value,
-        sourceValue: field.sourceValue,
-        confidence: field.confidence,
-        reviewState: field.reviewState,
-        sourcePageIndex: field.sourcePageIndex,
-        sourceStart: field.sourceStart,
-        sourceEnd: field.sourceEnd,
-      } satisfies ContractFieldReview]),
+      fields.value.map((field) => [
+        field.id,
+        {
+          value: field.value,
+          sourceValue: field.sourceValue,
+          confidence: field.confidence,
+          reviewState: field.reviewState,
+          sourcePageIndex: field.sourcePageIndex,
+          sourceStart: field.sourceStart,
+          sourceEnd: field.sourceEnd,
+        } satisfies ContractFieldReview,
+      ]),
     ),
   }
 
@@ -633,7 +595,8 @@ async function goToPage(pageIndex: number): Promise<void> {
   currentPageIndex.value = pageIndex
 
   await nextTick()
-  const activePageButton = pageNumberScrollRef.value?.querySelector<HTMLElement>('[aria-current="page"]')
+  const activePageButton =
+    pageNumberScrollRef.value?.querySelector<HTMLElement>('[aria-current="page"]')
   activePageButton?.scrollIntoView({
     block: 'nearest',
     inline: 'center',
@@ -688,9 +651,12 @@ async function moveToSearchResult(direction: 1 | -1): Promise<void> {
   }
 
   const currentIndex = activeSearchMatchIndex.value
-  activeSearchMatchIndex.value = currentIndex < 0
-    ? direction === 1 ? 0 : matches.length - 1
-    : (currentIndex + direction + matches.length) % matches.length
+  activeSearchMatchIndex.value =
+    currentIndex < 0
+      ? direction === 1
+        ? 0
+        : matches.length - 1
+      : (currentIndex + direction + matches.length) % matches.length
 
   const match = matches[activeSearchMatchIndex.value]
   if (!match) return
@@ -745,7 +711,9 @@ function returnToOcr(): void {
     >
       <div class="flex items-center gap-3">
         <AlertTriangle class="shrink-0 text-red-600" :size="20" />
-        <span class="text-sm text-red-800">找不到 OCR 辨識結果，請返回契約辨識頁重新上傳文件。</span>
+        <span class="text-sm text-red-800"
+          >找不到 OCR 辨識結果，請返回契約辨識頁重新上傳文件。</span
+        >
       </div>
       <Button size="sm" variant="outline" @click="returnToOcr">返回 OCR</Button>
     </div>
@@ -778,13 +746,21 @@ function returnToOcr(): void {
         </div>
       </div>
 
-      <div class="review-progress-track" role="progressbar" aria-label="契約校對完成度" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="reviewProgress">
+      <div
+        class="review-progress-track"
+        role="progressbar"
+        aria-label="契約校對完成度"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-valuenow="reviewProgress"
+      >
         <div class="review-progress-bar" :style="{ width: `${reviewProgress}%` }" />
       </div>
 
       <div class="review-summary-footer">
         <p v-if="requiredRemainingCount">
-          尚有 <strong>{{ requiredRemainingCount }}</strong> 個必填欄位需要確認，完成後才能進入下一步。
+          尚有
+          <strong>{{ requiredRemainingCount }}</strong> 個必填欄位需要確認，完成後才能進入下一步。
         </p>
         <p v-else>所有必填欄位皆已確認，可以開始 AI 契約分析。</p>
         <Button :disabled="!canStartAnalysis" @click="completeReviewAndAnalyze">
@@ -794,11 +770,7 @@ function returnToOcr(): void {
       </div>
     </section>
 
-    <div
-      v-if="saveError"
-      class="editor-notice editor-notice--error"
-      role="alert"
-    >
+    <div v-if="saveError" class="editor-notice editor-notice--error" role="alert">
       <div class="flex items-center gap-3">
         <AlertTriangle class="shrink-0 text-red-600" :size="20" />
         <span class="text-sm text-red-800">{{ saveError }}</span>
@@ -877,11 +849,7 @@ function returnToOcr(): void {
                 <ChevronLeft :size="17" />
               </button>
 
-              <div
-                ref="pageNumberScrollRef"
-                class="page-number-scroll"
-                aria-label="契約頁碼"
-              >
+              <div ref="pageNumberScrollRef" class="page-number-scroll" aria-label="契約頁碼">
                 <button
                   v-for="(_, pageIndex) in ocrPages"
                   :key="pageIndex"
@@ -923,7 +891,10 @@ function returnToOcr(): void {
               />
               <div v-else class="pdf-page-text">
                 <template v-if="currentPageText">
-                  <template v-for="(segment, segmentIndex) in highlightedPageSegments" :key="segmentIndex">
+                  <template
+                    v-for="(segment, segmentIndex) in highlightedPageSegments"
+                    :key="segmentIndex"
+                  >
                     <mark
                       v-if="segment.highlighted"
                       class="reader-highlight"
@@ -931,9 +902,11 @@ function returnToOcr(): void {
                         'reader-highlight--field': segment.fieldSource,
                         'reader-highlight--search': segment.searchResult,
                         'reader-highlight--active-search': segment.activeSearchResult,
-                        'reader-highlight--target': segment.fieldSource || segment.activeSearchResult,
+                        'reader-highlight--target':
+                          segment.fieldSource || segment.activeSearchResult,
                       }"
-                    >{{ segment.text }}</mark>
+                      >{{ segment.text }}</mark
+                    >
                     <span v-else>{{ segment.text }}</span>
                   </template>
                 </template>
@@ -960,11 +933,22 @@ function returnToOcr(): void {
                 <div class="field-status-popover">
                   <p class="field-status-popover-title">欄位狀態說明</p>
                   <div class="field-status-legend">
-                    <div><span class="status-dot status-dot--good" />辨識結果良好 — 仍請核對原始契約</div>
-                    <div><span class="status-dot status-dot--medium" />建議確認 — 系統擷取結果需再次確認</div>
-                    <div><span class="status-dot status-dot--low" />需要人工確認 — 請查看原始內容</div>
-                    <div><span class="status-dot status-dot--verified" />已確認 — 使用者已完成核對</div>
-                    <div><span class="status-dot status-dot--edited" />已修正 — 修改已同步至左側契約</div>
+                    <div>
+                      <span class="status-dot status-dot--good" />辨識結果良好 — 仍請核對原始契約
+                    </div>
+                    <div>
+                      <span class="status-dot status-dot--medium" />建議確認 —
+                      系統擷取結果需再次確認
+                    </div>
+                    <div>
+                      <span class="status-dot status-dot--low" />需要人工確認 — 請查看原始內容
+                    </div>
+                    <div>
+                      <span class="status-dot status-dot--verified" />已確認 — 使用者已完成核對
+                    </div>
+                    <div>
+                      <span class="status-dot status-dot--edited" />已修正 — 修改已同步至左側契約
+                    </div>
                   </div>
                 </div>
               </details>
@@ -1013,11 +997,7 @@ function returnToOcr(): void {
                   <span v-else class="field-source-page field-source-page--missing">
                     來源未定位
                   </span>
-                  <Badge
-                    variant="secondary"
-                    class="text-xs"
-                    :class="fieldStatus(field).class"
-                  >
+                  <Badge variant="secondary" class="text-xs" :class="fieldStatus(field).class">
                     {{ fieldStatus(field).text }}
                   </Badge>
                 </div>
@@ -1029,7 +1009,12 @@ function returnToOcr(): void {
                   class="flex-1 rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   @keyup.enter="confirmFieldEdit(field)"
                 />
-                <Button size="sm" variant="ghost" aria-label="確認欄位修改" @click="confirmFieldEdit(field)">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label="確認欄位修改"
+                  @click="confirmFieldEdit(field)"
+                >
                   <CheckCircle :size="16" class="text-green-600" />
                 </Button>
               </div>
@@ -1049,9 +1034,7 @@ function returnToOcr(): void {
                 </div>
               </div>
             </div>
-            <p v-if="!filteredFields.length" class="field-filter-empty">
-              目前沒有符合此狀態的欄位
-            </p>
+            <p v-if="!filteredFields.length" class="field-filter-empty">目前沒有符合此狀態的欄位</p>
           </CardContent>
         </Card>
       </div>
