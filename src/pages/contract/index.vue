@@ -72,6 +72,10 @@ const defaultLanguageHints = ['zh-TW', 'en']
 const maxFileSize = 20 * 1024 * 1024
 const maxTotalSize = 80 * 1024 * 1024
 const maxFileCount = 20
+const contractFileNameCollator = new Intl.Collator('zh-Hant-TW', {
+  numeric: true,
+  sensitivity: 'base',
+})
 const supportedExtensions = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif']
 const supportedMimeTypes = [
   'application/pdf',
@@ -290,6 +294,12 @@ function validateFiles(files: File[]): string | null {
   return null
 }
 
+function sortContractFiles(files: File[]): File[] {
+  return [...files].sort((firstFile, secondFile) =>
+    contractFileNameCollator.compare(firstFile.name, secondFile.name),
+  )
+}
+
 function prepareFiles(files: File[], preserveExistingOnError = false): void {
   const validationError = validateFiles(files)
 
@@ -301,7 +311,7 @@ function prepareFiles(files: File[], preserveExistingOnError = false): void {
     return
   }
 
-  selectedFiles.value = files
+  selectedFiles.value = sortContractFiles(files)
   resetOcrState(true)
 }
 
