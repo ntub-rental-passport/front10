@@ -2,7 +2,14 @@
 import { computed, ref } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card/index'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card/index'
 import { Progress } from '@/components/ui/progress/index'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
 import { useRouter } from 'vue-router'
@@ -44,7 +51,7 @@ const router = useRouter()
 type RecognitionMode = 'quick' | 'standard' | 'precise'
 
 const fileInput = ref<HTMLInputElement | null>(null)
-const selectedFile = ref<File | null>(null)
+const selectedFiles = ref<File[]>([])
 const isUploading = ref(false)
 const isDragOver = ref(false)
 const uploadProgress = ref(0)
@@ -56,8 +63,19 @@ const recognitionMode = ref<RecognitionMode>('standard')
 const ocrResult = ref<ContractOcrResult | null>(null)
 
 const defaultLanguageHints = ['zh-TW', 'en']
-const maxFileSize = 80 * 1024 * 1024
+const maxFileSize = 20 * 1024 * 1024
+const maxTotalSize = 80 * 1024 * 1024
+const maxFileCount = 20
 const supportedExtensions = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif']
+const supportedMimeTypes = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/bmp',
+  'image/tiff',
+]
 
 type RecognitionModeOption = {
   id: RecognitionMode
@@ -103,23 +121,32 @@ const usageSteps = [
 const faqItems = [
   {
     question: '哪些檔案格式可以上傳？',
-    answer: '目前支援 PDF、PNG、JPG、JPEG、WEBP、BMP 與 TIFF，單一檔案上限為 80MB。PDF 建議先以 5 頁內的租賃契約進行辨識。',
+    answer:
+      '支援單一 PDF，或一次最多 20 張 PNG、JPG、JPEG、WEBP、BMP、TIFF 圖片。單檔上限 20MB、全部檔案合計 80MB；MP4、MP3 與其他格式都會被拒絕。',
   },
   {
     question: '應該選擇哪一種辨識品質？',
-    answer: '一般手機拍攝或掃描的租約可使用「標準」。文件非常清晰且頁數少時可選「快速」；若有小字、表格、印章或低畫質內容，建議使用「精細」。',
+    answer:
+      '一般手機拍攝或掃描的租約可使用「標準」。文件非常清晰且頁數少時可選「快速」；若有小字、表格、印章或低畫質內容，建議使用「精細」。',
   },
   {
     question: '上傳後會立刻進行 OCR 嗎？',
     answer: '不會。選擇檔案後，你仍可檢查檔名與辨識品質，按下「開始 OCR 辨識」後才會送出檔案。',
   },
   {
+    question: '上傳的照片會儲存在哪裡？',
+    answer:
+      '目前原始圖片與 PDF 只會在 OCR 伺服器記憶體中暫存，辨識請求結束後不會寫入本機磁碟、資料庫或 Google Cloud Storage；瀏覽器只暫存 OCR 文字結果。',
+  },
+  {
     question: '辨識結果可以做什麼？',
-    answer: 'OCR 結果可供你預覽、複製與進入契約編輯，後續也能銜接條文切段、租賃法規比對、風險標註與 AI 溝通建議。',
+    answer:
+      'OCR 結果可供你預覽、複製與進入契約編輯，後續也能銜接條文切段、租賃法規比對、風險標註與 AI 溝通建議。',
   },
   {
     question: '可以辨識手寫文字嗎？',
-    answer: '系統可嘗試辨識掃描文件中的手寫內容，但實際結果仍會受到字跡、光線、傾斜與影像清晰度影響。重要欄位請在辨識後再次確認。',
+    answer:
+      '系統可嘗試辨識掃描文件中的手寫內容，但實際結果仍會受到字跡、光線、傾斜與影像清晰度影響。重要欄位請在辨識後再次確認。',
   },
 ]
 
@@ -136,8 +163,8 @@ const benefits = [
   },
   {
     icon: LockKeyhole,
-    title: '送出前可確認',
-    description: '檔案不會在選取後立即上傳，使用者可先確認檔案與辨識模式。',
+    title: '原始檔不留存',
+    description: '檔案只在 OCR 處理期間暫存於伺服器記憶體，不會寫入磁碟或雲端儲存空間。',
   },
   {
     icon: WandSparkles,
@@ -146,13 +173,12 @@ const benefits = [
   },
 ]
 
-const selectedMode = computed(() => (
-  recognitionModes.find(mode => mode.id === recognitionMode.value) ?? standardRecognitionMode
-))
+const selectedMode = computed(
+  () =>
+    recognitionModes.find((mode) => mode.id === recognitionMode.value) ?? standardRecognitionMode,
+)
 
-const uploadButtonLabel = computed(() => (
-  selectedFile.value ? '更換檔案' : '選擇檔案'
-))
+const uploadButtonLabel = computed(() => (selectedFiles.value.length ? '重新選擇' : '選擇檔案'))
 
 const startButtonLabel = computed(() => {
   if (isUploading.value) return 'OCR 辨識中...'
@@ -160,7 +186,11 @@ const startButtonLabel = computed(() => {
 })
 
 const canAnalyze = computed(() => Boolean(ocrResult.value?.text))
-const canStartRecognition = computed(() => Boolean(selectedFile.value) && !isUploading.value)
+const canStartRecognition = computed(() => selectedFiles.value.length > 0 && !isUploading.value)
+const selectedTotalSize = computed(() =>
+  selectedFiles.value.reduce((total, file) => total + file.size, 0),
+)
+const selectedFileNames = computed(() => selectedFiles.value.map((file) => file.name).join('、'))
 
 function formatFileSize(size: number): string {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
@@ -176,44 +206,67 @@ function resetOcrState(keepFile = true): void {
   ocrResult.value = null
   uploadError.value = ''
   uploadProgress.value = 0
-  uploadStatus.value = keepFile && selectedFile.value
-    ? '檔案已就緒，選擇辨識品質後即可開始'
-    : '尚未選擇檔案'
+  uploadStatus.value =
+    keepFile && selectedFiles.value.length ? '檔案已就緒，選擇辨識品質後即可開始' : '尚未選擇檔案'
   copySuccess.value = false
 }
 
-function removeSelectedFile(): void {
-  selectedFile.value = null
-  resetOcrState(false)
-  if (fileInput.value) fileInput.value.value = ''
+function removeSelectedFile(index: number): void {
+  selectedFiles.value = selectedFiles.value.filter((_, fileIndex) => fileIndex !== index)
+  resetOcrState(selectedFiles.value.length > 0)
 }
 
-function validateFile(file: File): string | null {
-  const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
+function validateFiles(files: File[]): string | null {
+  if (!files.length) return '請至少選擇一個檔案。'
+  if (files.length > maxFileCount) return `一次最多上傳 ${maxFileCount} 張圖片。`
 
-  if (!supportedExtensions.includes(extension)) {
-    return '不支援此檔案格式，請上傳 PDF、PNG、JPG、WEBP、BMP 或 TIFF。'
+  const pdfFiles = files.filter((file) => file.name.toLowerCase().endsWith('.pdf'))
+  if (pdfFiles.length && files.length > 1) {
+    return 'PDF 請單獨上傳；多檔上傳僅支援契約圖片。'
   }
 
-  if (file.size > maxFileSize) {
-    return '檔案大小超過 80MB，請壓縮或拆分文件後再試。'
+  for (const file of files) {
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
+
+    if (
+      extension === 'mp4' ||
+      extension === 'mp3' ||
+      file.type.startsWith('video/') ||
+      file.type.startsWith('audio/')
+    ) {
+      return '禁止上傳 MP4 影片或 MP3 音樂檔案。'
+    }
+
+    if (
+      !supportedExtensions.includes(extension) ||
+      (file.type && !supportedMimeTypes.includes(file.type))
+    ) {
+      return `「${file.name}」格式不支援，請上傳 PDF、PNG、JPG、WEBP、BMP 或 TIFF。`
+    }
+
+    if (file.size > maxFileSize) {
+      return `「${file.name}」超過單檔 20MB 上限，請壓縮後再試。`
+    }
   }
+
+  const totalSize = files.reduce((total, file) => total + file.size, 0)
+  if (totalSize > maxTotalSize) return '全部檔案合計不可超過 80MB。'
 
   return null
 }
 
-function prepareFile(file: File): void {
-  const validationError = validateFile(file)
+function prepareFiles(files: File[]): void {
+  const validationError = validateFiles(files)
 
   if (validationError) {
-    selectedFile.value = null
+    selectedFiles.value = []
     uploadError.value = validationError
     uploadStatus.value = '檔案無法使用'
     uploadProgress.value = 0
     return
   }
 
-  selectedFile.value = file
+  selectedFiles.value = files
   resetOcrState(true)
 }
 
@@ -227,7 +280,7 @@ async function copyRecognizedText(): Promise<void> {
   }, 1800)
 }
 
-async function sendToOcr(file: File): Promise<void> {
+async function sendToOcr(files: File[]): Promise<void> {
   uploadError.value = ''
   ocrResult.value = null
   copySuccess.value = false
@@ -236,16 +289,17 @@ async function sendToOcr(file: File): Promise<void> {
   uploadStatus.value = '檔案已送出，正在準備 OCR 辨識'
 
   const formData = new FormData()
-  formData.append('file', file)
+  files.forEach((file) => formData.append('files', file))
   formData.append('languageHints', JSON.stringify(defaultLanguageHints))
   formData.append('recognitionMode', recognitionMode.value)
   formData.append('dpi', String(selectedMode.value.dpi))
 
   try {
     uploadProgress.value = 45
-    uploadStatus.value = file.type === 'application/pdf'
-      ? '正在辨識 PDF 文件與頁面文字'
-      : '正在辨識圖片文字與版面'
+    uploadStatus.value =
+      files[0]?.type === 'application/pdf'
+        ? '正在辨識 PDF 文件與頁面文字'
+        : `正在辨識 ${files.length} 張圖片的文字與版面`
 
     const response = await fetch('/api/ocr', {
       method: 'POST',
@@ -266,7 +320,7 @@ async function sendToOcr(file: File): Promise<void> {
     }
 
     // 瀏覽器的 File.name 保留使用者選取時的正確 Unicode 檔名。
-    result.fileName = file.name
+    result.fileName = files.map((file) => file.name).join('、')
 
     ocrResult.value = result
     saveContractOcrResult(result)
@@ -280,8 +334,8 @@ async function sendToOcr(file: File): Promise<void> {
 }
 
 async function startOcrRecognition(): Promise<void> {
-  if (!selectedFile.value || isUploading.value) return
-  await sendToOcr(selectedFile.value)
+  if (!selectedFiles.value.length || isUploading.value) return
+  await sendToOcr(selectedFiles.value)
 }
 
 async function enterContractEditor(): Promise<void> {
@@ -297,10 +351,10 @@ async function enterContractEditor(): Promise<void> {
 
 function onFileChange(event: Event): void {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+  const files = Array.from(input.files ?? [])
 
-  if (!file) return
-  prepareFile(file)
+  if (!files.length) return
+  prepareFiles(files)
   input.value = ''
 }
 
@@ -308,10 +362,10 @@ function onDrop(event: DragEvent): void {
   event.preventDefault()
   isDragOver.value = false
 
-  const file = event.dataTransfer?.files?.[0]
-  if (!file) return
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (!files.length) return
 
-  prepareFile(file)
+  prepareFiles(files)
 }
 
 function onDragOver(event: DragEvent): void {
@@ -386,22 +440,23 @@ function onDragLeave(): void {
           <h2>上傳租屋契約</h2>
           <p>選擇檔案與辨識品質後，再由 Google Cloud Vision OCR 進行文字擷取。</p>
         </div>
-        <Badge variant="outline" class="workspace-badge">單檔上限 80MB</Badge>
+        <Badge variant="outline" class="workspace-badge">單檔 20MB・合計 80MB</Badge>
       </div>
 
       <input
         ref="fileInput"
         type="file"
         accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff,.tif"
+        multiple
         class="sr-only"
         @change="onFileChange"
-      >
+      />
 
       <div
         class="upload-dropzone"
         :class="{
           'upload-dropzone--active': isDragOver,
-          'upload-dropzone--selected': selectedFile,
+          'upload-dropzone--selected': selectedFiles.length,
         }"
         role="button"
         tabindex="0"
@@ -412,36 +467,52 @@ function onDragLeave(): void {
         @dragover="onDragOver"
         @dragleave="onDragLeave"
       >
-        <template v-if="selectedFile">
+        <template v-if="selectedFiles.length">
           <div class="selected-file-icon"><FileCheck2 /></div>
-          <div class="selected-file-copy">
-            <p class="selected-file-name">{{ selectedFile.name }}</p>
-            <p>{{ selectedFile.type || '未知格式' }} ・ {{ formatFileSize(selectedFile.size) }}</p>
+          <div class="selected-file-list">
+            <div
+              v-for="(file, index) in selectedFiles"
+              :key="`${file.name}-${file.size}-${file.lastModified}`"
+              class="selected-file-row"
+            >
+              <div class="selected-file-copy">
+                <p class="selected-file-name">{{ file.name }}</p>
+                <p>{{ file.type || '未知格式' }} ・ {{ formatFileSize(file.size) }}</p>
+              </div>
+              <button
+                type="button"
+                class="remove-file-button"
+                :disabled="isUploading"
+                :aria-label="`移除 ${file.name}`"
+                @click.stop="removeSelectedFile(index)"
+              >
+                <X />
+              </button>
+            </div>
+            <p class="selected-file-total">
+              已選 {{ selectedFiles.length }} 個檔案・合計 {{ formatFileSize(selectedTotalSize) }}
+            </p>
           </div>
           <div class="selected-file-actions" @click.stop>
             <Button variant="outline" size="sm" :disabled="isUploading" @click="openFilePicker">
               <RefreshCcw />
-              更換檔案
+              重新選擇
             </Button>
-            <button
-              type="button"
-              class="remove-file-button"
-              :disabled="isUploading"
-              aria-label="移除已選擇的檔案"
-              @click="removeSelectedFile"
-            >
-              <X />
-            </button>
           </div>
         </template>
 
         <template v-else>
           <div class="upload-icon"><Upload /></div>
           <div class="upload-copy">
-            <h3>拖放檔案到這裡，或點擊選擇</h3>
-            <p>支援 PDF、PNG、JPG、WEBP、BMP、TIFF，單一檔案最大 80MB</p>
+            <h3>拖放多張契約圖片，或選擇一個 PDF</h3>
+            <p>最多 20 張圖片；單檔 20MB、合計 80MB；禁止 MP4、MP3</p>
           </div>
-          <Button type="button" variant="outline" class="select-file-button" @click.stop="openFilePicker">
+          <Button
+            type="button"
+            variant="outline"
+            class="select-file-button"
+            @click.stop="openFilePicker"
+          >
             <Upload />
             {{ uploadButtonLabel }}
           </Button>
@@ -488,11 +559,15 @@ function onDragLeave(): void {
         <p>選取檔案不會立即上傳，按下開始辨識後才會送出。</p>
       </div>
 
-      <div v-if="selectedFile || uploadError || isUploading || ocrResult" class="recognition-status" aria-live="polite">
+      <div
+        v-if="selectedFiles.length || uploadError || isUploading || ocrResult"
+        class="recognition-status"
+        aria-live="polite"
+      >
         <div class="status-heading">
           <div>
             <p>{{ uploadStatus }}</p>
-            <small v-if="selectedFile">{{ selectedFile.name }}</small>
+            <small v-if="selectedFiles.length">{{ selectedFileNames }}</small>
           </div>
           <strong>{{ uploadProgress }}%</strong>
         </div>
@@ -503,7 +578,11 @@ function onDragLeave(): void {
           <span>{{ uploadError }}</span>
         </div>
 
-        <div v-for="warning in ocrResult?.warnings || []" :key="warning" class="status-message status-message--warning">
+        <div
+          v-for="warning in ocrResult?.warnings || []"
+          :key="warning"
+          class="status-message status-message--warning"
+        >
           <AlertTriangle />
           <span>{{ warning }}</span>
         </div>
@@ -534,7 +613,9 @@ function onDragLeave(): void {
               <FileSearch />
               OCR 辨識結果
             </CardTitle>
-            <CardDescription>辨識完成後可進入契約編輯器，依頁碼逐頁校對文字，再進行後續契約分析。</CardDescription>
+            <CardDescription
+              >辨識完成後可進入契約編輯器，依頁碼逐頁校對文字，再進行後續契約分析。</CardDescription
+            >
           </CardHeader>
           <CardContent class="result-content">
             <div class="result-metrics">
@@ -585,7 +666,9 @@ function onDragLeave(): void {
               </CardTitle>
             </CardHeader>
             <CardContent class="analysis-copy">
-              <p>目前系統已將契約轉成可分析文字，下一步可進行條號切段、法規比對、風險標註與摘要說明。</p>
+              <p>
+                目前系統已將契約轉成可分析文字，下一步可進行條號切段、法規比對、風險標註與摘要說明。
+              </p>
               <div>
                 <strong>建議流程</strong>
                 <span>1. 依條號切段</span>
@@ -603,7 +686,8 @@ function onDragLeave(): void {
               </CardTitle>
             </CardHeader>
             <CardContent class="analysis-copy">
-              印章、手寫欄位、模糊影像與表格內容可能存在誤差。進入 AI 分析前，請優先確認租金、押金、日期與地址。
+              印章、手寫欄位、模糊影像與表格內容可能存在誤差。進入 AI
+              分析前，請優先確認租金、押金、日期與地址。
             </CardContent>
           </Card>
         </div>

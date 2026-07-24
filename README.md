@@ -67,4 +67,6 @@ npm run format
 
 `src/pages/contract.vue` 會上傳檔案到本機 OCR API，再由後端串接 Google Cloud Vision。請先在 Google Cloud 啟用 Cloud Vision API，建立 service account，並把 JSON 金鑰路徑設定到 `GOOGLE_APPLICATION_CREDENTIALS`。
 
-支援的圖片格式包含 PNG、JPG、JPEG、WEBP、BMP。PDF、TIFF、GIF 目前不在前端 MVP 支援範圍內。
+上傳端支援單一 PDF，或最多 20 張 PNG、JPG、JPEG、WEBP、BMP、TIFF 圖片；預設單檔 20MB、合計 80MB。MP3、MP4 與非允許格式會在前端及 API 兩端拒絕。原始檔由 Multer 暫存在伺服器記憶體，OCR 請求完成後不寫入磁碟、資料庫或 Google Cloud Storage；瀏覽器工作階段只保存 OCR 文字結果。可透過 `OCR_MAX_FILE_SIZE_MB`、`OCR_MAX_TOTAL_SIZE_MB`、`OCR_MAX_FILE_COUNT` 調整限制。
+
+支援格式包含 PDF、PNG、JPG、JPEG、WEBP、BMP、TIFF；GIF 與其他未列出的格式目前不支援。

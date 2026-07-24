@@ -121,7 +121,10 @@
   background: var(--contract-surface);
   padding: 20px;
   box-shadow: 0 3px 8px rgb(18 23 47 / 6%);
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
 }
 
 .capability-card:hover {
@@ -251,7 +254,10 @@
   background: #fbfbfe;
   padding: 28px;
   text-align: center;
-  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .upload-dropzone:hover,
@@ -264,7 +270,8 @@
 }
 
 .upload-dropzone--selected {
-  min-height: 112px;
+  min-height: 132px;
+  align-items: flex-start;
   justify-content: flex-start;
   border-style: solid;
   background: #fafaff;
@@ -348,6 +355,42 @@
 .selected-file-copy {
   min-width: 0;
   flex: 1 1 auto;
+}
+
+.selected-file-list {
+  display: flex;
+  min-width: 0;
+  max-height: 260px;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.selected-file-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--contract-border);
+  padding: 2px 4px 9px 0;
+}
+
+.selected-file-row:last-of-type {
+  border-bottom: 0;
+}
+
+.selected-file-row .remove-file-button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+}
+
+.selected-file-total {
+  margin: 2px 0 0;
+  color: var(--contract-primary);
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .selected-file-name {
@@ -443,7 +486,10 @@
   padding: 16px;
   color: var(--contract-ink);
   text-align: left;
-  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .quality-option:hover:not(:disabled) {
