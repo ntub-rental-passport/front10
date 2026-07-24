@@ -28,6 +28,7 @@ import {
   ChevronDown,
   CircleHelp,
   Clock3,
+  Ellipsis,
   FileCheck2,
   FileSearch,
   FileText,
@@ -41,6 +42,7 @@ import {
   Scale,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Upload,
   WandSparkles,
   X,
@@ -53,6 +55,7 @@ type RecognitionMode = 'quick' | 'standard' | 'precise'
 type FilePickerMode = 'replace' | 'append'
 
 const fileInput = ref<HTMLInputElement | null>(null)
+const fileActionsMenu = ref<HTMLDetailsElement | null>(null)
 const selectedFiles = ref<File[]>([])
 const filePickerMode = ref<FilePickerMode>('replace')
 const isUploading = ref(false)
@@ -223,6 +226,29 @@ function resetOcrState(keepFile = true): void {
 function removeSelectedFile(index: number): void {
   selectedFiles.value = selectedFiles.value.filter((_, fileIndex) => fileIndex !== index)
   resetOcrState(selectedFiles.value.length > 0)
+}
+
+function closeFileActionsMenu(): void {
+  if (fileActionsMenu.value) fileActionsMenu.value.open = false
+}
+
+function replaceAllFiles(): void {
+  closeFileActionsMenu()
+  openFilePicker('replace')
+}
+
+function clearAllFiles(): void {
+  selectedFiles.value = []
+  if (fileInput.value) fileInput.value.value = ''
+  closeFileActionsMenu()
+  resetOcrState(false)
+}
+
+function onFileActionsFocusOut(event: FocusEvent): void {
+  const nextTarget = event.relatedTarget
+  if (!(nextTarget instanceof Node) || !fileActionsMenu.value?.contains(nextTarget)) {
+    closeFileActionsMenu()
+  }
 }
 
 function validateFiles(files: File[]): string | null {
@@ -488,23 +514,23 @@ function onDragLeave(): void {
           'upload-dropzone--active': isDragOver,
           'upload-dropzone--selected': selectedFiles.length,
         }"
-        role="button"
-        tabindex="0"
-        @click="openFilePicker()"
-        @keydown.enter.prevent="openFilePicker()"
-        @keydown.space.prevent="openFilePicker()"
+        :role="selectedFiles.length ? undefined : 'button'"
+        :tabindex="selectedFiles.length ? undefined : 0"
+        @click="!selectedFiles.length && openFilePicker()"
+        @keydown.enter.prevent="!selectedFiles.length && openFilePicker()"
+        @keydown.space.prevent="!selectedFiles.length && openFilePicker()"
         @drop="onDrop"
         @dragover="onDragOver"
         @dragleave="onDragLeave"
       >
         <template v-if="selectedFiles.length">
-          <div class="selected-file-icon"><FileCheck2 /></div>
           <div class="selected-file-list">
             <div
               v-for="(file, index) in selectedFiles"
               :key="`${file.name}-${file.size}-${file.lastModified}`"
               class="selected-file-row"
             >
+              <div class="selected-file-row-icon"><FileCheck2 /></div>
               <div class="selected-file-copy">
                 <p class="selected-file-name">{{ file.name }}</p>
                 <p>{{ file.type || '未知格式' }} ・ {{ formatFileSize(file.size) }}</p>
@@ -519,35 +545,57 @@ function onDragLeave(): void {
                 <X />
               </button>
             </div>
-            <p class="selected-file-total">
-              已選 {{ selectedFiles.length }} 個檔案・合計 {{ formatFileSize(selectedTotalSize) }}
-            </p>
-          </div>
-          <div class="selected-file-actions" @click.stop>
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
+              class="append-files-button"
               :disabled="isUploading || !canAppendFiles"
               :title="
                 canAppendFiles
                   ? '保留現有檔案並加入更多圖片'
                   : 'PDF 必須單獨上傳，或圖片已達 20 張上限'
               "
-              @click="openFilePicker('append')"
+              @click.stop="openFilePicker('append')"
             >
-              <Plus />
-              新增檔案
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="isUploading"
-              @click="openFilePicker('replace')"
-            >
-              <RefreshCcw />
-              重新選擇
-            </Button>
+              <span><Plus />新增其他檔案</span>
+              <small>拖放檔案或點擊選擇，將追加至清單</small>
+            </button>
+            <p class="selected-file-total">
+              已選 {{ selectedFiles.length }} 個檔案・合計 {{ formatFileSize(selectedTotalSize) }}
+            </p>
           </div>
+          <details
+            ref="fileActionsMenu"
+            class="file-actions-menu"
+            :class="{ 'file-actions-menu--disabled': isUploading }"
+            @click.stop
+            @focusout="onFileActionsFocusOut"
+            @keydown.esc.prevent="closeFileActionsMenu"
+          >
+            <summary :aria-label="'更多檔案操作'" :aria-disabled="isUploading">
+              <Ellipsis />
+            </summary>
+            <div class="file-actions-popover">
+              <button type="button" :disabled="isUploading" @click="replaceAllFiles">
+                <RefreshCcw />
+                <span>
+                  <strong>重新選擇全部</strong>
+                  <small>將取代目前所有檔案</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="file-actions-danger"
+                :disabled="isUploading"
+                @click="clearAllFiles"
+              >
+                <Trash2 />
+                <span>
+                  <strong>清除全部檔案</strong>
+                  <small>清空目前清單</small>
+                </span>
+              </button>
+            </div>
+          </details>
         </template>
 
         <template v-else>
