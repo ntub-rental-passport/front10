@@ -444,9 +444,6 @@ function onDragLeave(): void {
         <div>
           <p class="eyebrow">RENTMATE SMART CONTRACT</p>
           <h1>契約分析</h1>
-          <p class="hero-description">
-            上傳租賃契約圖片或 PDF，先將文件轉成可分析文字，再進行條文切段、風險標註與白話解析。
-          </p>
         </div>
       </div>
       <div class="hero-trust-badge">
