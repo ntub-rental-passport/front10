@@ -441,9 +441,9 @@ function onDragLeave(): void {
         <div class="hero-icon" aria-hidden="true">
           <FileSearch />
         </div>
-        <div>
-          <p class="eyebrow">RENTMATE SMART CONTRACT</p>
+        <div class="hero-title-row">
           <h1>契約分析</h1>
+          <p class="eyebrow">RENTMATE SMART CONTRACT</p>
         </div>
       </div>
       <div class="hero-trust-badge">
