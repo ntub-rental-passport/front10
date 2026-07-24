@@ -494,7 +494,6 @@ function onDragLeave(): void {
         <div>
           <p class="section-kicker">UPLOAD & RECOGNIZE</p>
           <h2>上傳租屋契約</h2>
-          <p>選擇檔案與辨識品質後，再由 Google Cloud Vision OCR 進行文字擷取。</p>
         </div>
         <Badge variant="outline" class="workspace-badge">單檔 20MB・合計 80MB</Badge>
       </div>
