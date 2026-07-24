@@ -443,7 +443,7 @@ function onDragLeave(): void {
         </div>
         <div class="hero-title-row">
           <h1>契約分析</h1>
-          <p class="eyebrow">RENTMATE SMART CONTRACT</p>
+          <p class="eyebrow">AI CONTRACT REVIEW</p>
         </div>
       </div>
       <div class="hero-trust-badge">
