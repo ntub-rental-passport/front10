@@ -357,13 +357,16 @@
 
 .selected-file-list {
   display: flex;
+  width: calc(100% - 52px);
   min-width: 0;
+  max-width: calc(100% - 52px);
   max-height: 260px;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   gap: 8px;
-  padding-right: 52px;
+  padding-right: 8px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .selected-file-row {
@@ -1191,8 +1194,9 @@
   }
 
   .selected-file-list {
-    width: 100%;
-    padding-right: 0;
+    width: calc(100% - 52px);
+    max-width: calc(100% - 52px);
+    padding-right: 8px;
     padding-top: 46px;
   }
 
