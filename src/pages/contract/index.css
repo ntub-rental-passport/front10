@@ -43,39 +43,26 @@
 .hero-copy {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
-  gap: 16px;
+  align-items: flex-end;
+  gap: 12px;
 }
 
 .hero-icon {
   display: grid;
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
-  margin-top: 0;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  margin-bottom: 2px;
   place-items: center;
-  border-radius: 14px;
+  border-radius: 12px;
   background: linear-gradient(145deg, #6559d7, #443aa5);
   color: #fff;
-  box-shadow: 0 10px 24px rgb(81 70 184 / 24%);
+  box-shadow: 0 8px 18px rgb(81 70 184 / 20%);
 }
 
 .hero-icon svg {
-  width: 24px;
-  height: 24px;
-}
-
-.hero-title-row {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 16px;
-}
-
-.hero-title-row .eyebrow {
-  margin: 0;
-  white-space: nowrap;
+  width: 20px;
+  height: 20px;
 }
 
 .eyebrow,

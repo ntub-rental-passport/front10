@@ -441,9 +441,9 @@ function onDragLeave(): void {
         <div class="hero-icon" aria-hidden="true">
           <FileSearch />
         </div>
-        <div class="hero-title-row">
-          <h1>契約分析</h1>
+        <div>
           <p class="eyebrow">AI CONTRACT REVIEW</p>
+          <h1>契約分析</h1>
         </div>
       </div>
       <div class="hero-trust-badge">
