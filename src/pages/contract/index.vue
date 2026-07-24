@@ -36,6 +36,7 @@ import {
   Languages,
   LockKeyhole,
   PenLine,
+  Plus,
   RefreshCcw,
   Scale,
   ShieldCheck,
@@ -49,9 +50,11 @@ import {
 const router = useRouter()
 
 type RecognitionMode = 'quick' | 'standard' | 'precise'
+type FilePickerMode = 'replace' | 'append'
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFiles = ref<File[]>([])
+const filePickerMode = ref<FilePickerMode>('replace')
 const isUploading = ref(false)
 const isDragOver = ref(false)
 const uploadProgress = ref(0)
@@ -191,13 +194,19 @@ const selectedTotalSize = computed(() =>
   selectedFiles.value.reduce((total, file) => total + file.size, 0),
 )
 const selectedFileNames = computed(() => selectedFiles.value.map((file) => file.name).join('、'))
+const canAppendFiles = computed(
+  () =>
+    selectedFiles.value.length < maxFileCount &&
+    !selectedFiles.value.some((file) => file.name.toLowerCase().endsWith('.pdf')),
+)
 
 function formatFileSize(size: number): string {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
   return `${(size / (1024 * 1024)).toFixed(2)} MB`
 }
 
-function openFilePicker(): void {
+function openFilePicker(mode: FilePickerMode = 'replace'): void {
+  filePickerMode.value = mode
   fileInput.value?.click()
 }
 
@@ -255,11 +264,11 @@ function validateFiles(files: File[]): string | null {
   return null
 }
 
-function prepareFiles(files: File[]): void {
+function prepareFiles(files: File[], preserveExistingOnError = false): void {
   const validationError = validateFiles(files)
 
   if (validationError) {
-    selectedFiles.value = []
+    if (!preserveExistingOnError) selectedFiles.value = []
     uploadError.value = validationError
     uploadStatus.value = '檔案無法使用'
     uploadProgress.value = 0
@@ -268,6 +277,23 @@ function prepareFiles(files: File[]): void {
 
   selectedFiles.value = files
   resetOcrState(true)
+}
+
+function appendFiles(files: File[]): void {
+  const existingFileKeys = new Set(
+    selectedFiles.value.map((file) => `${file.name}-${file.size}-${file.lastModified}`),
+  )
+  const newFiles = files.filter(
+    (file) => !existingFileKeys.has(`${file.name}-${file.size}-${file.lastModified}`),
+  )
+
+  if (!newFiles.length) {
+    uploadError.value = '選取的檔案已經在清單中。'
+    uploadStatus.value = '沒有新增檔案'
+    return
+  }
+
+  prepareFiles([...selectedFiles.value, ...newFiles], true)
 }
 
 async function copyRecognizedText(): Promise<void> {
@@ -354,7 +380,10 @@ function onFileChange(event: Event): void {
   const files = Array.from(input.files ?? [])
 
   if (!files.length) return
-  prepareFiles(files)
+  if (filePickerMode.value === 'append') appendFiles(files)
+  else prepareFiles(files)
+
+  filePickerMode.value = 'replace'
   input.value = ''
 }
 
@@ -365,7 +394,8 @@ function onDrop(event: DragEvent): void {
   const files = Array.from(event.dataTransfer?.files ?? [])
   if (!files.length) return
 
-  prepareFiles(files)
+  if (selectedFiles.value.length) appendFiles(files)
+  else prepareFiles(files)
 }
 
 function onDragOver(event: DragEvent): void {
@@ -460,9 +490,9 @@ function onDragLeave(): void {
         }"
         role="button"
         tabindex="0"
-        @click="openFilePicker"
-        @keydown.enter.prevent="openFilePicker"
-        @keydown.space.prevent="openFilePicker"
+        @click="openFilePicker()"
+        @keydown.enter.prevent="openFilePicker()"
+        @keydown.space.prevent="openFilePicker()"
         @drop="onDrop"
         @dragover="onDragOver"
         @dragleave="onDragLeave"
@@ -494,7 +524,26 @@ function onDragLeave(): void {
             </p>
           </div>
           <div class="selected-file-actions" @click.stop>
-            <Button variant="outline" size="sm" :disabled="isUploading" @click="openFilePicker">
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="isUploading || !canAppendFiles"
+              :title="
+                canAppendFiles
+                  ? '保留現有檔案並加入更多圖片'
+                  : 'PDF 必須單獨上傳，或圖片已達 20 張上限'
+              "
+              @click="openFilePicker('append')"
+            >
+              <Plus />
+              新增檔案
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="isUploading"
+              @click="openFilePicker('replace')"
+            >
               <RefreshCcw />
               重新選擇
             </Button>
@@ -511,7 +560,7 @@ function onDragLeave(): void {
             type="button"
             variant="outline"
             class="select-file-button"
-            @click.stop="openFilePicker"
+            @click.stop="openFilePicker()"
           >
             <Upload />
             {{ uploadButtonLabel }}
@@ -642,7 +691,7 @@ function onDragLeave(): void {
             </div>
           </CardContent>
           <CardFooter class="result-footer">
-            <Button variant="outline" @click="openFilePicker">重新選擇檔案</Button>
+            <Button variant="outline" @click="openFilePicker()">重新選擇檔案</Button>
             <div>
               <Button variant="outline" @click="copyRecognizedText">
                 {{ copySuccess ? '已複製文字' : '複製辨識結果' }}

@@ -323,7 +323,7 @@
 }
 
 .select-file-button:hover:not(:disabled),
-.selected-file-actions button:first-child:hover:not(:disabled) {
+.selected-file-actions button:hover:not(:disabled) {
   border-color: #b9adff !important;
   background: #f3f0ff !important;
   color: #4b35d6 !important;
@@ -331,7 +331,7 @@
 }
 
 .select-file-button:focus-visible,
-.selected-file-actions button:first-child:focus-visible {
+.selected-file-actions button:focus-visible {
   border-color: #8c7cff !important;
   background: #f7f5ff !important;
   color: #4b35d6 !important;
@@ -339,7 +339,7 @@
 }
 
 .select-file-button:active:not(:disabled),
-.selected-file-actions button:first-child:active:not(:disabled) {
+.selected-file-actions button:active:not(:disabled) {
   background: #ede9ff !important;
   box-shadow: none;
 }
@@ -410,7 +410,7 @@
   gap: 8px;
 }
 
-.selected-file-actions button:first-child {
+.selected-file-actions button {
   display: inline-flex;
   align-items: center;
   gap: 7px;
