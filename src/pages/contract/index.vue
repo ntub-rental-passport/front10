@@ -17,6 +17,7 @@ import {
   clearContractOcrResult,
   normalizeContractOcrResult,
   saveContractOcrResult,
+  type ContractAiReviewJob,
   type ContractOcrResult,
 } from '@/src/utils/contract-ocr'
 import {
@@ -362,8 +363,8 @@ async function sendToOcr(files: File[]): Promise<void> {
     uploadProgress.value = 45
     uploadStatus.value =
       files[0]?.type === 'application/pdf'
-        ? '正在使用 Google OCR 辨識 PDF，接著由本機 AI 校對欄位'
-        : `正在使用 Google OCR 辨識 ${files.length} 張圖片，接著由本機 AI 看圖複核；CPU 模式可能需要 3–8 分鐘`
+        ? '正在使用 Google OCR 辨識 PDF，接著執行規則式欄位抽取'
+        : `正在使用 Google OCR 辨識 ${files.length} 張圖片，接著執行規則式欄位抽取`
 
     progressTimer = window.setInterval(() => {
       uploadProgress.value = Math.min(92, uploadProgress.value + 1)
@@ -381,7 +382,6 @@ async function sendToOcr(files: File[]): Promise<void> {
     }
 
     uploadProgress.value = 100
-    uploadStatus.value = 'AI OCR 完成，可以檢視契約文字與欄位校對結果'
     const result = normalizeContractOcrResult(payload as Partial<ContractOcrResult>)
     if (!result) {
       throw new Error('OCR 回傳資料缺少可用的逐頁文字，請重新辨識文件。')
@@ -391,14 +391,91 @@ async function sendToOcr(files: File[]): Promise<void> {
     result.fileName = files.map((file) => file.name).join('、')
 
     ocrResult.value = result
+    uploadStatus.value = result.aiReview?.status === 'pending'
+      ? '分級 OCR 完成，規則結果已可使用；低信心欄位正在背景複核'
+      : '分級 OCR 完成，可以檢視契約文字與規則抽取結果'
     saveContractOcrResult(result)
     activeTab.value = 'preview'
+    if (result.aiReview?.status === 'pending' && result.aiReview.jobId) {
+      void pollAiReview(result.aiReview.jobId)
+    }
   } catch (error) {
     uploadError.value = error instanceof Error ? error.message : 'OCR 服務發生未知錯誤。'
     uploadStatus.value = '辨識失敗，請確認檔案後重新嘗試'
   } finally {
     if (progressTimer) window.clearInterval(progressTimer)
     isUploading.value = false
+  }
+}
+
+function waitFor(milliseconds: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, milliseconds))
+}
+
+function formatProcessingTime(milliseconds: number | undefined): string {
+  const value = Number(milliseconds) || 0
+  return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} 秒`
+}
+
+async function pollAiReview(jobId: string): Promise<void> {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await waitFor(3000)
+    if (ocrResult.value?.aiReview?.jobId !== jobId) return
+
+    try {
+      const response = await fetch(`/api/ocr/review/${encodeURIComponent(jobId)}`)
+      if (!response.ok) {
+        if (response.status === 404) return
+        continue
+      }
+
+      const reviewJob = await response.json() as ContractAiReviewJob
+      if (reviewJob.status === 'pending') continue
+      const currentResult = ocrResult.value
+      if (!currentResult || currentResult.aiReview?.jobId !== jobId) return
+
+      currentResult.fieldReviews = {
+        ...(currentResult.fieldReviews ?? {}),
+        ...Object.fromEntries(
+          Object.entries(reviewJob.fieldReviews ?? {}).map(([fieldId, review]) => [
+            fieldId,
+            {
+              ...(currentResult.fieldReviews?.[fieldId] ?? {}),
+              ...review,
+              reviewSource: 'ai' as const,
+            },
+          ]),
+        ),
+      }
+      currentResult.cropRegions = reviewJob.cropRegions ?? []
+      currentResult.warnings = [
+        ...new Set([...(currentResult.warnings ?? []), ...(reviewJob.warnings ?? [])]),
+      ]
+      currentResult.timings = {
+        googleVisionMs: currentResult.timings?.googleVisionMs ?? 0,
+        normalizationMs: currentResult.timings?.normalizationMs ?? 0,
+        ruleExtractionMs: currentResult.timings?.ruleExtractionMs ?? 0,
+        cropGenerationMs: reviewJob.timings?.cropGenerationMs ?? 0,
+        ollamaMs: reviewJob.timings?.ollamaMs ?? 0,
+      }
+      currentResult.aiReview = {
+        ...currentResult.aiReview,
+        status: reviewJob.status,
+        model: reviewJob.model,
+        fieldCount: Object.keys(reviewJob.fieldReviews ?? {}).length,
+        cropCount: reviewJob.cropCount,
+        mode: reviewJob.mode,
+        durationMs: reviewJob.durationMs,
+        performanceMetrics: reviewJob.performanceMetrics,
+      }
+      uploadStatus.value = reviewJob.status === 'completed'
+        ? '背景 AI 複核完成，已更新需要校對的欄位'
+        : '背景 AI 複核未完成，規則式欄位結果仍可正常使用'
+      saveContractOcrResult(currentResult)
+      return
+    } catch {
+      // 暫時性網路錯誤由下一輪輪詢重試，不阻塞規則式 OCR 結果。
+    }
   }
 }
 
@@ -747,7 +824,7 @@ function onDragLeave(): void {
               </div>
               <div v-if="ocrResult?.aiReview">
                 <span>
-                  {{ ocrResult.aiReview.mode === 'multimodal' ? 'AI 圖片複核' : 'AI 文字校對' }}
+                  {{ ocrResult.aiReview.status === 'pending' ? '分級 AI 背景複核' : '欄位抽取' }}
                 </span>
                 <strong v-if="ocrResult.aiReview.status === 'completed'">
                   {{ ocrResult.aiReview.model }} · {{ ocrResult.aiReview.fieldCount }} 個欄位
@@ -755,7 +832,29 @@ function onDragLeave(): void {
                     · {{ ocrResult.aiReview.cropCount }} 個裁切區域
                   </template>
                 </strong>
-                <strong v-else>未完成，已保留 Google OCR 結果</strong>
+                <strong v-else-if="ocrResult.aiReview.status === 'pending'">
+                  已先取得 {{ ocrResult.aiReview.ruleFieldCount }} 個規則欄位，背景複核
+                  {{ ocrResult.aiReview.targetFieldIds.length }} 個低信心欄位
+                </strong>
+                <strong v-else-if="ocrResult.aiReview.status === 'skipped'">
+                  規則式抽取 · {{ ocrResult.aiReview.ruleFieldCount }} 個欄位
+                </strong>
+                <strong v-else>AI 未完成，已採用規則式欄位結果</strong>
+              </div>
+              <div v-if="ocrResult?.timings">
+                <span>第一、二層耗時</span>
+                <strong>
+                  Google {{ formatProcessingTime(ocrResult.timings.googleVisionMs) }} · 規則
+                  {{ formatProcessingTime(ocrResult.timings.ruleExtractionMs) }}
+                </strong>
+              </div>
+              <div v-if="ocrResult?.aiReview?.performanceMetrics">
+                <span>背景 AI 效能</span>
+                <strong>
+                  Prompt
+                  {{ formatProcessingTime(ocrResult.aiReview.performanceMetrics.promptEvalMs) }} ·
+                  {{ ocrResult.aiReview.performanceMetrics.tokensPerSecond }} tokens/s
+                </strong>
               </div>
             </div>
 

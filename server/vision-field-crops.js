@@ -165,10 +165,14 @@ async function cropImageBuffer(sourceBuffer, page, cropBox) {
 
 export async function buildFieldImageCrops(visionPages, sourceFiles, options = {}) {
   const maxCrops = Number.isFinite(options.maxCrops) ? Math.max(0, options.maxCrops) : 6
+  const targetFieldIds = Array.isArray(options.fieldIds) ? new Set(options.fieldIds) : null
   const crops = []
 
   for (const definition of FIELD_CROP_DEFINITIONS) {
     if (crops.length >= maxCrops) break
+    if (targetFieldIds && !definition.fieldIds.some((fieldId) => targetFieldIds.has(fieldId))) {
+      continue
+    }
 
     let selected = null
     for (const page of visionPages) {

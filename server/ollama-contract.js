@@ -25,8 +25,9 @@ const CONTRACT_FIELD_LABELS = {
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434'
 const DEFAULT_OLLAMA_MODEL = 'gemma4:e2b'
 const DEFAULT_TIMEOUT_MS = 300_000
-const DEFAULT_CONTEXT_LENGTH = 4096
-const DEFAULT_MAX_OCR_CHARS = 12_000
+const DEFAULT_CONTEXT_LENGTH = 2048
+const DEFAULT_MAX_OCR_CHARS = 2_500
+const DEFAULT_NUM_PREDICT = 220
 
 const FIELD_RESULT_SCHEMA = {
   type: 'object',
@@ -40,21 +41,26 @@ const FIELD_RESULT_SCHEMA = {
   },
 }
 
-export const CONTRACT_FIELD_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['fields'],
-  properties: {
-    fields: {
-      type: 'object',
-      additionalProperties: false,
-      required: CONTRACT_FIELD_IDS,
-      properties: Object.fromEntries(
-        CONTRACT_FIELD_IDS.map((fieldId) => [fieldId, FIELD_RESULT_SCHEMA]),
-      ),
+export function createFieldSchema(fieldIds) {
+  const validFieldIds = fieldIds.filter((fieldId) => CONTRACT_FIELD_IDS.includes(fieldId))
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['fields'],
+    properties: {
+      fields: {
+        type: 'object',
+        additionalProperties: false,
+        required: validFieldIds,
+        properties: Object.fromEntries(
+          validFieldIds.map((fieldId) => [fieldId, FIELD_RESULT_SCHEMA]),
+        ),
+      },
     },
-  },
+  }
 }
+
+export const CONTRACT_FIELD_SCHEMA = createFieldSchema(CONTRACT_FIELD_IDS)
 
 function positiveInteger(rawValue, fallback) {
   const value = Number(rawValue)
@@ -69,6 +75,7 @@ export function getOllamaConfig(env = process.env) {
     timeoutMs: positiveInteger(env.OLLAMA_OCR_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
     contextLength: positiveInteger(env.OLLAMA_OCR_CONTEXT_LENGTH, DEFAULT_CONTEXT_LENGTH),
     maxOcrChars: positiveInteger(env.OLLAMA_OCR_MAX_CHARS, DEFAULT_MAX_OCR_CHARS),
+    numPredict: positiveInteger(env.OLLAMA_OCR_NUM_PREDICT, DEFAULT_NUM_PREDICT),
   }
 }
 
@@ -88,13 +95,22 @@ export function buildOllamaPrompt(
   pageTexts,
   maxChars = DEFAULT_MAX_OCR_CHARS,
   imageCrops = [],
+  targetFieldIds = CONTRACT_FIELD_IDS,
+  snippets = [],
 ) {
-  const labelledPages = pageTexts
-    .map((pageText, index) => `--- 第 ${index + 1} 頁（sourcePageIndex: ${index}）---\n${pageText}`)
-    .join('\n\n')
+  const labelledPages = snippets.length
+    ? snippets
+        .map(
+          (snippet) =>
+            `--- ${snippet.fieldId}／第 ${snippet.pageIndex + 1} 頁／${snippet.keyword} ---\n${snippet.text}`,
+        )
+        .join('\n\n')
+    : pageTexts
+        .map((pageText, index) => `--- 第 ${index + 1} 頁（sourcePageIndex: ${index}）---\n${pageText}`)
+        .join('\n\n')
 
   const ocrText = truncateOcrText(labelledPages, maxChars)
-  const fieldList = CONTRACT_FIELD_IDS.map(
+  const fieldList = targetFieldIds.map(
     (fieldId) => `- ${fieldId}: ${CONTRACT_FIELD_LABELS[fieldId]}`,
   ).join('\n')
   const imageList = imageCrops.length
@@ -118,7 +134,7 @@ ${fieldList}
 4. sourcePageIndex 使用標題或圖片清單提供的零起算頁碼；找不到證據時填 null。
 5. 遮蔽、塗黑、模糊或無法確認時，value 與 sourceValue 都填空字串，sourcePageIndex 填 null，evidenceType 填 none。
 6. 不要把日期當成金額，也不要把租金、押金與違約金互相混用。
-7. fields 必須包含全部 9 個固定鍵；找不到的欄位使用空字串，不可省略鍵。
+7. fields 只需包含本次列出的欄位；找不到的欄位使用空字串，不可省略列出的鍵。
 8. 只輸出符合指定 JSON schema 的資料，不要輸出解說文字。
 
 欄位裁切區域（聯絡表由上到下依 Region 編號排列）：
@@ -212,7 +228,11 @@ export function normalizeOllamaFieldReviews(payload, pageTexts, options = {}) {
   const imageCrops = Array.isArray(options.imageCrops) ? options.imageCrops : []
   const reviews = {}
 
-  for (const fieldId of CONTRACT_FIELD_IDS) {
+  const targetFieldIds = Array.isArray(options.targetFieldIds)
+    ? options.targetFieldIds
+    : CONTRACT_FIELD_IDS
+
+  for (const fieldId of targetFieldIds) {
     const field = fields[fieldId]
     if (!field || typeof field !== 'object') continue
 
@@ -260,6 +280,9 @@ function parseOllamaContent(content) {
 
 export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
   const config = { ...getOllamaConfig(), ...options }
+  const targetFieldIds = Array.isArray(config.targetFieldIds)
+    ? config.targetFieldIds.filter((fieldId) => CONTRACT_FIELD_IDS.includes(fieldId))
+    : CONTRACT_FIELD_IDS
   const imageCrops = Array.isArray(config.imageCrops) ? config.imageCrops : []
   const reviewImages = Array.isArray(config.reviewImages)
     ? config.reviewImages
@@ -271,6 +294,25 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
       fieldReviews: {},
       durationMs: 0,
       warning: 'AI OCR 模式目前已停用，僅保留 Google OCR 結果。',
+    }
+  }
+  if (!targetFieldIds.length) {
+    return {
+      status: 'skipped',
+      model: config.model,
+      fieldReviews: {},
+      cropCount: 0,
+      durationMs: 0,
+      warning: '',
+      performanceMetrics: {
+        totalMs: 0,
+        loadMs: 0,
+        promptEvalMs: 0,
+        generationMs: 0,
+        promptTokens: 0,
+        outputTokens: 0,
+        tokensPerSecond: 0,
+      },
     }
   }
 
@@ -287,11 +329,17 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
         model: config.model,
         stream: false,
         think: false,
-        format: CONTRACT_FIELD_SCHEMA,
+        format: createFieldSchema(targetFieldIds),
         messages: [
           {
             role: 'user',
-            content: buildOllamaPrompt(pageTexts, config.maxOcrChars, imageCrops),
+            content: buildOllamaPrompt(
+              pageTexts,
+              config.maxOcrChars,
+              imageCrops,
+              targetFieldIds,
+              config.snippets,
+            ),
             ...(reviewImages.length
               ? { images: reviewImages }
               : {}),
@@ -300,7 +348,7 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
         options: {
           temperature: 0,
           num_ctx: config.contextLength,
-          num_predict: 512,
+          num_predict: config.numPredict,
         },
       }),
     })
@@ -312,7 +360,11 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
 
     const result = await response.json()
     const payload = parseOllamaContent(result?.message?.content)
-    const fieldReviews = normalizeOllamaFieldReviews(payload, pageTexts, { imageCrops })
+    const fieldReviews = normalizeOllamaFieldReviews(payload, pageTexts, {
+      imageCrops,
+      targetFieldIds,
+    })
+    const performanceMetrics = createPerformanceMetrics(result)
 
     return {
       status: 'completed',
@@ -320,6 +372,7 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
       fieldReviews,
       cropCount: imageCrops.length,
       durationMs: Date.now() - startedAt,
+      performanceMetrics,
       warning: Object.keys(fieldReviews).length
         ? ''
         : 'AI 已完成校對，但沒有找到具備 OCR 原文證據的欄位；請人工確認。',
@@ -335,11 +388,40 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
       fieldReviews: {},
       cropCount: imageCrops.length,
       durationMs: Date.now() - startedAt,
+      performanceMetrics: {
+        totalMs: 0,
+        loadMs: 0,
+        promptEvalMs: 0,
+        generationMs: 0,
+        promptTokens: 0,
+        outputTokens: 0,
+        tokensPerSecond: 0,
+      },
       warning: isTimeout
         ? '本機 AI 欄位校對逾時，已保留 Google OCR 結果，請稍後再試。'
         : '本機 AI 暫時無法完成欄位校對，已保留 Google OCR 結果。',
     }
   } finally {
     clearTimeout(timeout)
+  }
+}
+
+function nsToMs(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? Math.round(number / 1_000_000) : 0
+}
+
+export function createPerformanceMetrics(result) {
+  const evalDuration = Number(result.eval_duration) || 0
+  const evalCount = Number(result.eval_count) || 0
+  return {
+    totalMs: nsToMs(result.total_duration),
+    loadMs: nsToMs(result.load_duration),
+    promptEvalMs: nsToMs(result.prompt_eval_duration),
+    generationMs: nsToMs(result.eval_duration),
+    promptTokens: Number(result.prompt_eval_count) || 0,
+    outputTokens: evalCount,
+    tokensPerSecond:
+      evalDuration > 0 ? Number((evalCount / (evalDuration / 1_000_000_000)).toFixed(2)) : 0,
   }
 }

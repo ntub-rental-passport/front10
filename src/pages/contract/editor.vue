@@ -50,6 +50,10 @@ interface ContractField {
   sourcePageIndex: number | null
   sourceStart: number
   sourceEnd: number
+  googleConfidence: number | null
+  formatValid: boolean | null
+  labelDistanceNormal: boolean | null
+  reviewSource: 'rules' | 'ai' | null
 }
 
 type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
@@ -108,6 +112,10 @@ function makeField(
     sourcePageIndex: null,
     sourceStart: -1,
     sourceEnd: -1,
+    googleConfidence: null,
+    formatValid: null,
+    labelDistanceNormal: null,
+    reviewSource: null,
   }
 }
 
@@ -230,6 +238,10 @@ const fields = ref<ContractField[]>(
         sourcePageIndex: savedReview.sourcePageIndex ?? field.sourcePageIndex,
         sourceStart: savedReview.sourceStart ?? field.sourceStart,
         sourceEnd: savedReview.sourceEnd ?? field.sourceEnd,
+        googleConfidence: savedReview.googleConfidence ?? null,
+        formatValid: savedReview.formatValid ?? null,
+        labelDistanceNormal: savedReview.labelDistanceNormal ?? null,
+        reviewSource: savedReview.reviewSource ?? null,
       },
       ocrPages.value,
     )
@@ -568,6 +580,10 @@ function persistContract(): boolean {
           sourcePageIndex: field.sourcePageIndex,
           sourceStart: field.sourceStart,
           sourceEnd: field.sourceEnd,
+          googleConfidence: field.googleConfidence ?? undefined,
+          formatValid: field.formatValid ?? undefined,
+          labelDistanceNormal: field.labelDistanceNormal ?? undefined,
+          reviewSource: field.reviewSource ?? undefined,
         } satisfies ContractFieldReview,
       ]),
     ),
@@ -1032,6 +1048,15 @@ function returnToOcr(): void {
                     修改
                   </button>
                 </div>
+              </div>
+              <div
+                v-if="field.googleConfidence !== null"
+                class="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-current/10 pt-2 text-[11px] text-muted-foreground"
+              >
+                <span>Google confidence：{{ Math.round(field.googleConfidence * 100) }}%</span>
+                <span>格式驗證：{{ field.formatValid ? '通過' : '需確認' }}</span>
+                <span>標籤距離：{{ field.labelDistanceNormal ? '正常' : '需確認' }}</span>
+                <span>來源：{{ field.reviewSource === 'ai' ? 'AI 複核' : '規則抽取' }}</span>
               </div>
             </div>
             <p v-if="!filteredFields.length" class="field-filter-empty">目前沒有符合此狀態的欄位</p>

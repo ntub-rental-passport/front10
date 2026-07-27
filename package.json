@@ -17,6 +17,7 @@
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "test:contract-fields": "tsx scripts/verify-contract-extraction.ts",
+    "test:contract-gate": "node scripts/verify-contract-field-gate.js",
     "test:ollama-fields": "node scripts/verify-ollama-contract.js",
     "test:vision-annotation": "node scripts/verify-vision-annotation.js",
     "test:vision-crops": "node scripts/verify-vision-field-crops.js",

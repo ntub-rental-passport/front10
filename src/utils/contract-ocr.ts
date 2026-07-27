@@ -11,16 +11,41 @@ export type ContractOcrResult = {
   visionPages?: ContractVisionPage[]
   cropRegions?: ContractCropRegion[]
   fieldReviews?: Record<string, ContractFieldReview>
+  fieldDecisions?: Record<string, ContractFieldDecision>
+  timings?: ContractOcrTimings
   aiReview?: ContractAiReview
 }
 
 export type ContractAiReview = {
-  status: 'completed' | 'failed' | 'skipped'
+  status: 'pending' | 'completed' | 'failed' | 'skipped'
+  jobId: string
   model: string
   fieldCount: number
+  ruleFieldCount: number
+  unresolvedFieldCount: number
+  targetFieldIds: string[]
   cropCount: number
-  mode: 'text' | 'multimodal'
+  mode: 'rules' | 'selective' | 'text' | 'multimodal'
   durationMs: number
+  performanceMetrics: ContractAiPerformanceMetrics | null
+}
+
+export type ContractAiPerformanceMetrics = {
+  totalMs: number
+  loadMs: number
+  promptEvalMs: number
+  generationMs: number
+  promptTokens: number
+  outputTokens: number
+  tokensPerSecond: number
+}
+
+export type ContractOcrTimings = {
+  googleVisionMs: number
+  normalizationMs: number
+  ruleExtractionMs: number
+  cropGenerationMs: number
+  ollamaMs: number
 }
 
 export type ContractVisionPoint = {
@@ -93,6 +118,36 @@ export type ContractFieldReview = {
   sourceEnd?: number
   evidenceType?: 'ocr_text' | 'image'
   sourceBoundingBox?: ContractVisionBoundingBox
+  googleConfidence?: number
+  formatValid?: boolean
+  labelDistanceNormal?: boolean
+  candidateCount?: number
+  reviewReasons?: string[]
+  reviewSource?: 'rules' | 'ai'
+}
+
+export type ContractFieldDecision = {
+  confidence: 'high' | 'medium' | 'low'
+  googleConfidence: number
+  formatValid: boolean
+  labelDistanceNormal: boolean
+  candidateCount: number
+  reasons: string[]
+}
+
+export type ContractAiReviewJob = {
+  jobId: string
+  status: 'pending' | 'completed' | 'failed' | 'skipped'
+  model: string
+  fieldReviews: Record<string, ContractFieldReview>
+  targetFieldIds: string[]
+  cropCount: number
+  cropRegions: ContractCropRegion[]
+  mode: 'selective' | 'text' | 'multimodal'
+  durationMs: number
+  performanceMetrics: ContractAiPerformanceMetrics | null
+  timings: Pick<ContractOcrTimings, 'cropGenerationMs' | 'ollamaMs'>
+  warnings: string[]
 }
 
 const CONTRACT_OCR_STORAGE_KEY = 'rentmate:contract-ocr-result'
@@ -281,26 +336,80 @@ export function normalizeContractOcrResult(
             sourceBoundingBox: review.sourceBoundingBox
               ? normalizeBoundingBox(review.sourceBoundingBox)
               : undefined,
+            googleConfidence: Number.isFinite(review.googleConfidence)
+              ? Math.min(1, Math.max(0, Number(review.googleConfidence)))
+              : undefined,
+            formatValid:
+              typeof review.formatValid === 'boolean' ? review.formatValid : undefined,
+            labelDistanceNormal:
+              typeof review.labelDistanceNormal === 'boolean'
+                ? review.labelDistanceNormal
+                : undefined,
+            candidateCount: Number.isFinite(review.candidateCount)
+              ? Math.max(0, Math.trunc(Number(review.candidateCount)))
+              : undefined,
+            reviewReasons: Array.isArray(review.reviewReasons)
+              ? review.reviewReasons.map(String).filter(Boolean)
+              : undefined,
+            reviewSource: review.reviewSource === 'ai' ? 'ai' : 'rules',
           }]),
       ) as Record<string, ContractFieldReview>
     : undefined
 
   const aiReview = input.aiReview && typeof input.aiReview === 'object'
     ? {
-        status: ['completed', 'failed', 'skipped'].includes(input.aiReview.status)
+        status: ['pending', 'completed', 'failed', 'skipped'].includes(input.aiReview.status)
           ? input.aiReview.status
           : 'failed',
+        jobId: typeof input.aiReview.jobId === 'string' ? input.aiReview.jobId : '',
         model: typeof input.aiReview.model === 'string' ? input.aiReview.model : '',
         fieldCount: Number.isFinite(input.aiReview.fieldCount)
           ? Math.max(0, Math.trunc(Number(input.aiReview.fieldCount)))
           : 0,
+        ruleFieldCount: Number.isFinite(input.aiReview.ruleFieldCount)
+          ? Math.max(0, Math.trunc(Number(input.aiReview.ruleFieldCount)))
+          : 0,
+        unresolvedFieldCount: Number.isFinite(input.aiReview.unresolvedFieldCount)
+          ? Math.max(0, Math.trunc(Number(input.aiReview.unresolvedFieldCount)))
+          : 0,
+        targetFieldIds: Array.isArray(input.aiReview.targetFieldIds)
+          ? input.aiReview.targetFieldIds.map(String).filter(Boolean)
+          : [],
         cropCount: Number.isFinite(input.aiReview.cropCount)
           ? Math.max(0, Math.trunc(Number(input.aiReview.cropCount)))
           : 0,
-        mode: input.aiReview.mode === 'multimodal' ? 'multimodal' : 'text',
+        mode: ['rules', 'selective', 'text', 'multimodal'].includes(input.aiReview.mode)
+          ? input.aiReview.mode
+          : 'rules',
         durationMs: Number.isFinite(input.aiReview.durationMs)
           ? Math.max(0, Math.trunc(Number(input.aiReview.durationMs)))
           : 0,
+        performanceMetrics: input.aiReview.performanceMetrics
+          ? {
+              totalMs: Math.max(0, finiteNumber(input.aiReview.performanceMetrics.totalMs)),
+              loadMs: Math.max(0, finiteNumber(input.aiReview.performanceMetrics.loadMs)),
+              promptEvalMs: Math.max(
+                0,
+                finiteNumber(input.aiReview.performanceMetrics.promptEvalMs),
+              ),
+              generationMs: Math.max(
+                0,
+                finiteNumber(input.aiReview.performanceMetrics.generationMs),
+              ),
+              promptTokens: Math.max(
+                0,
+                Math.trunc(finiteNumber(input.aiReview.performanceMetrics.promptTokens)),
+              ),
+              outputTokens: Math.max(
+                0,
+                Math.trunc(finiteNumber(input.aiReview.performanceMetrics.outputTokens)),
+              ),
+              tokensPerSecond: Math.max(
+                0,
+                finiteNumber(input.aiReview.performanceMetrics.tokensPerSecond),
+              ),
+            }
+          : null,
       } as ContractAiReview
     : undefined
 
@@ -320,6 +429,19 @@ export function normalizeContractOcrResult(
       : [],
     visionPages: normalizeVisionPages(input.visionPages),
     cropRegions: normalizeCropRegions(input.cropRegions),
+    fieldDecisions:
+      input.fieldDecisions && typeof input.fieldDecisions === 'object'
+        ? (input.fieldDecisions as Record<string, ContractFieldDecision>)
+        : undefined,
+    timings: input.timings
+      ? {
+          googleVisionMs: Math.max(0, finiteNumber(input.timings.googleVisionMs)),
+          normalizationMs: Math.max(0, finiteNumber(input.timings.normalizationMs)),
+          ruleExtractionMs: Math.max(0, finiteNumber(input.timings.ruleExtractionMs)),
+          cropGenerationMs: Math.max(0, finiteNumber(input.timings.cropGenerationMs)),
+          ollamaMs: Math.max(0, finiteNumber(input.timings.ollamaMs)),
+        }
+      : undefined,
     fieldReviews,
     aiReview,
   }

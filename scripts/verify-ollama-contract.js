@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import {
   buildOllamaPrompt,
+  createFieldSchema,
+  createPerformanceMetrics,
   getOllamaConfig,
   normalizeOllamaFieldReviews,
 } from '../server/ollama-contract.js'
@@ -77,6 +79,34 @@ assert.equal(imageReviews.deposit.evidenceType, 'image')
 const prompt = buildOllamaPrompt(pageTexts)
 assert.match(prompt, /sourcePageIndex: 0/)
 assert.match(prompt, /不可使用常識補寫、猜測或虛構內容/)
+
+const targetedSchema = createFieldSchema(['landlord', 'start_date'])
+assert.deepEqual(targetedSchema.properties.fields.required, ['landlord', 'start_date'])
+assert.equal(targetedSchema.properties.fields.properties.rent, undefined)
+
+const targetedPrompt = buildOllamaPrompt(
+  pageTexts,
+  2500,
+  [],
+  ['landlord'],
+  [{ fieldId: 'landlord', pageIndex: 0, keyword: '出租人', text: '出租人：王小明' }],
+)
+assert.match(targetedPrompt, /landlord: 出租人姓名/)
+assert.doesNotMatch(targetedPrompt, /deposit: 押租保證金/)
+assert.doesNotMatch(targetedPrompt, /承租人：李小華/)
+
+const metrics = createPerformanceMetrics({
+  total_duration: 4_200_000_000,
+  load_duration: 480_000_000,
+  prompt_eval_duration: 1_670_000_000,
+  eval_duration: 2_000_000_000,
+  prompt_eval_count: 420,
+  eval_count: 64,
+})
+assert.equal(metrics.totalMs, 4200)
+assert.equal(metrics.promptEvalMs, 1670)
+assert.equal(metrics.promptTokens, 420)
+assert.equal(metrics.tokensPerSecond, 32)
 
 const disabledConfig = getOllamaConfig({ OLLAMA_OCR_ENABLED: 'false' })
 assert.equal(disabledConfig.enabled, false)

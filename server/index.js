@@ -1,11 +1,14 @@
 import 'dotenv/config'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { performance } from 'node:perf_hooks'
 import process from 'node:process'
 import express from 'express'
 import multer from 'multer'
 import { PDFDocument } from 'pdf-lib'
 import vision from '@google-cloud/vision'
 import { getOllamaConfig, reviewContractFieldsWithOllama } from './ollama-contract.js'
+import { analyzeContractFields, collectRelevantSnippets } from './contract-field-gate.js'
 import {
   createVisionPagePlaceholder,
   normalizeVisionAnnotation,
@@ -22,7 +25,22 @@ const port = Number(process.env.OCR_API_PORT || 8787)
 const maxFileSizeMb = Number(process.env.OCR_MAX_FILE_SIZE_MB || 20)
 const maxTotalSizeMb = Number(process.env.OCR_MAX_TOTAL_SIZE_MB || 80)
 const maxFileCount = Number(process.env.OCR_MAX_FILE_COUNT || 20)
+const visionConcurrency = Math.max(1, Number(process.env.OCR_VISION_CONCURRENCY || 4))
 const ollamaConfig = getOllamaConfig()
+const aiReviewJobs = new Map()
+const AI_REVIEW_JOB_TTL_MS = 15 * 60 * 1000
+const MAX_AI_REVIEW_FIELDS = 3
+const AI_FIELD_PRIORITY = [
+  'landlord',
+  'tenant',
+  'start_date',
+  'end_date',
+  'rent',
+  'deposit',
+  'address',
+  'due_day',
+  'penalty',
+]
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -228,7 +246,10 @@ async function recognizeImage(buffer, languageHints, sourceFileIndex) {
     imageContext: languageHints.length ? { languageHints } : undefined,
   }
 
+  let startedAt = performance.now()
   const [result] = await imageClient.documentTextDetection(request)
+  const googleVisionMs = performance.now() - startedAt
+  startedAt = performance.now()
   const annotation = normalizeVisionAnnotation(result.fullTextAnnotation, { sourceFileIndex })
   const text = annotation.text
   const pageTexts = annotation.pages.length
@@ -236,6 +257,7 @@ async function recognizeImage(buffer, languageHints, sourceFileIndex) {
     : text
       ? [text]
       : []
+  const normalizationMs = performance.now() - startedAt
 
   return {
     text,
@@ -243,6 +265,7 @@ async function recognizeImage(buffer, languageHints, sourceFileIndex) {
     pageTexts,
     visionPages: alignVisionPages(pageTexts, annotation.pages, sourceFileIndex),
     warnings: [],
+    timings: { googleVisionMs, normalizationMs },
     engine: 'DOCUMENT_TEXT_DETECTION',
   }
 }
@@ -261,6 +284,8 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
   let pageTexts = []
   let visionPages = []
   let sourcePageCount = 0
+  let googleVisionMs = 0
+  let normalizationMs = 0
 
   if (mimeType === 'application/pdf') {
     const pdfDocument = await PDFDocument.load(buffer, {
@@ -272,14 +297,18 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
 
     // 每次明確指定一頁，避免 Vision 將整份 PDF 全文放進第一個 response。
     for (let pageNumber = 1; pageNumber <= pagesToRecognize; pageNumber += 1) {
+      let startedAt = performance.now()
       const [pageResult] = await fileClient.batchAnnotateFiles({
         requests: [createFileRequest([pageNumber])],
       })
+      googleVisionMs += performance.now() - startedAt
       const pageResponses = pageResult.responses?.[0]?.responses ?? []
+      startedAt = performance.now()
       const normalized = normalizeVisionResponses(pageResponses, {
         sourceFileIndex,
         sourcePageIndexOffset: pageNumber - 1,
       })
+      normalizationMs += performance.now() - startedAt
       const pageText = normalized.pageTexts.find(Boolean) ?? ''
       pageTexts.push(pageText)
       visionPages.push(
@@ -292,11 +321,15 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
       )
     }
   } else {
+    let startedAt = performance.now()
     const [result] = await fileClient.batchAnnotateFiles({
       requests: [createFileRequest(undefined)],
     })
+    googleVisionMs += performance.now() - startedAt
     const responses = result.responses?.[0]?.responses ?? []
+    startedAt = performance.now()
     const normalized = normalizeVisionResponses(responses, { sourceFileIndex })
+    normalizationMs += performance.now() - startedAt
     pageTexts = normalized.pageTexts
     visionPages = alignVisionPages(pageTexts, normalized.pages, sourceFileIndex)
     sourcePageCount = pageTexts.length
@@ -328,10 +361,120 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
     pageTexts,
     visionPages,
     warnings,
+    timings: { googleVisionMs, normalizationMs },
     engine:
       mimeType === 'application/pdf'
         ? 'batchAnnotateFiles(DOCUMENT_TEXT_DETECTION, PER_PAGE)'
         : 'batchAnnotateFiles(DOCUMENT_TEXT_DETECTION)',
+  }
+}
+
+function roundTimings(timings) {
+  return Object.fromEntries(
+    Object.entries(timings).map(([key, value]) => [key, Math.max(0, Math.round(value))]),
+  )
+}
+
+function selectAiReviewFields(unresolvedFieldIds) {
+  const unresolved = new Set(unresolvedFieldIds)
+  return AI_FIELD_PRIORITY.filter((fieldId) => unresolved.has(fieldId)).slice(
+    0,
+    MAX_AI_REVIEW_FIELDS,
+  )
+}
+
+function saveAiReviewJob(jobId, result) {
+  aiReviewJobs.set(jobId, result)
+  setTimeout(() => aiReviewJobs.delete(jobId), AI_REVIEW_JOB_TTL_MS).unref()
+}
+
+async function recognizeUploadedFiles(files, languageHints) {
+  const recognizedFiles = new Array(files.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < files.length) {
+      const sourceFileIndex = nextIndex
+      nextIndex += 1
+      const file = files[sourceFileIndex]
+      const result = DOCUMENT_MIME_TYPES.has(file.mimetype)
+        ? await recognizeDocument(file.buffer, file.mimetype, languageHints, sourceFileIndex)
+        : await recognizeImage(file.buffer, languageHints, sourceFileIndex)
+      recognizedFiles[sourceFileIndex] = { file, result }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(files.length, visionConcurrency) }, () => worker()),
+  )
+  return recognizedFiles
+}
+
+async function runAiReviewJob({ jobId, files, visionPages, pageTexts, targetFieldIds }) {
+  const timings = { cropGenerationMs: 0, ollamaMs: 0 }
+  const warnings = []
+
+  try {
+    let startedAt = performance.now()
+    const fieldImageCrops = await buildFieldImageCrops(visionPages, files, {
+      fieldIds: targetFieldIds,
+      maxCrops: 2,
+    })
+    timings.cropGenerationMs = performance.now() - startedAt
+
+    let reviewImages = []
+    if (fieldImageCrops.length) {
+      try {
+        reviewImages = await buildOllamaReviewImages(fieldImageCrops)
+      } catch (error) {
+        console.warn('[AI OCR] Failed to build selective review contact sheet:', error)
+        warnings.push('無法建立低信心欄位裁切圖，本次 AI 改用附近文字校對。')
+      }
+    }
+
+    const reviewCrops = reviewImages.length ? fieldImageCrops : []
+    const snippets = collectRelevantSnippets(pageTexts, targetFieldIds)
+    startedAt = performance.now()
+    const aiReview = await reviewContractFieldsWithOllama(pageTexts, {
+      ...ollamaConfig,
+      targetFieldIds,
+      snippets,
+      imageCrops: reviewCrops,
+      reviewImages,
+    })
+    timings.ollamaMs = performance.now() - startedAt
+    if (aiReview.warning) warnings.push(aiReview.warning)
+
+    saveAiReviewJob(jobId, {
+      jobId,
+      status: aiReview.status,
+      model: aiReview.model,
+      fieldReviews: aiReview.fieldReviews,
+      targetFieldIds,
+      cropCount: aiReview.cropCount ?? reviewCrops.length,
+      cropRegions: serializeCropMetadata(fieldImageCrops),
+      mode: reviewImages.length ? 'multimodal' : 'text',
+      durationMs: aiReview.durationMs,
+      performanceMetrics: aiReview.performanceMetrics,
+      timings: roundTimings(timings),
+      warnings,
+    })
+  } catch (error) {
+    console.error('[AI OCR] Background review failed:', error)
+    saveAiReviewJob(jobId, {
+      jobId,
+      status: 'failed',
+      model: ollamaConfig.model,
+      fieldReviews: {},
+      targetFieldIds,
+      cropCount: 0,
+      cropRegions: [],
+      mode: 'text',
+      durationMs: Math.round(timings.ollamaMs),
+      performanceMetrics: null,
+      timings: roundTimings(timings),
+      warnings: ['背景 AI 複核未完成，已保留規則式欄位結果。'],
+    })
   }
 }
 
@@ -348,6 +491,12 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
+app.get('/api/ocr/review/:jobId', (req, res) => {
+  const job = aiReviewJobs.get(req.params.jobId)
+  if (!job) return res.status(404).json({ error: '找不到這次 AI 複核工作，可能已逾期。' })
+  return res.json(job)
+})
+
 app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
   try {
     const files = Array.isArray(req.files) ? req.files : []
@@ -355,15 +504,9 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
     if (validationError) return res.status(400).json({ error: validationError })
 
     const languageHints = parseLanguageHints(req.body.languageHints)
-    const recognizedFiles = []
-
-    for (const [sourceFileIndex, file] of files.entries()) {
-      const result = DOCUMENT_MIME_TYPES.has(file.mimetype)
-        ? await recognizeDocument(file.buffer, file.mimetype, languageHints, sourceFileIndex)
-        : await recognizeImage(file.buffer, languageHints, sourceFileIndex)
-
-      recognizedFiles.push({ file, result })
-    }
+    const visionStageStartedAt = performance.now()
+    const recognizedFiles = await recognizeUploadedFiles(files, languageHints)
+    const googleVisionStageMs = performance.now() - visionStageStartedAt
 
     const pageTexts = recognizedFiles.flatMap(({ result }) => result.pageTexts)
     const visionPages = reindexVisionPages(
@@ -392,25 +535,42 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
         files.length > 1 ? `${decodeUploadedFileName(file.originalname)}：${warning}` : warning,
       ),
     )
-    const fieldImageCrops = ollamaConfig.enabled
-      ? await buildFieldImageCrops(visionPages, files)
+    let startedAt = performance.now()
+    const ruleAnalysis = analyzeContractFields({ text, pageTexts, visionPages })
+    const ruleExtractionMs = performance.now() - startedAt
+    const targetFieldIds = ollamaConfig.enabled
+      ? selectAiReviewFields(ruleAnalysis.unresolvedFieldIds)
       : []
-    let ollamaReviewImages = []
-    if (ollamaConfig.enabled && fieldImageCrops.length) {
-      try {
-        ollamaReviewImages = await buildOllamaReviewImages(fieldImageCrops)
-      } catch (error) {
-        console.warn('[AI OCR] Failed to build review contact sheet:', error)
-        warnings.push('無法建立 AI 圖片複核聯絡表，這次已改用 OCR 文字校對。')
-      }
+    const jobId = targetFieldIds.length ? randomUUID() : ''
+
+    if (jobId) {
+      aiReviewJobs.set(jobId, {
+        jobId,
+        status: 'pending',
+        model: ollamaConfig.model,
+        fieldReviews: {},
+        targetFieldIds,
+        cropCount: 0,
+        cropRegions: [],
+        mode: 'selective',
+        durationMs: 0,
+        performanceMetrics: null,
+        timings: { cropGenerationMs: 0, ollamaMs: 0 },
+        warnings: [],
+      })
+      void runAiReviewJob({ jobId, files, visionPages, pageTexts, targetFieldIds })
     }
-    const reviewCrops = ollamaReviewImages.length ? fieldImageCrops : []
-    const aiReview = await reviewContractFieldsWithOllama(pageTexts, {
-      ...ollamaConfig,
-      imageCrops: reviewCrops,
-      reviewImages: ollamaReviewImages,
+
+    const timings = roundTimings({
+      googleVisionMs: googleVisionStageMs,
+      normalizationMs: recognizedFiles.reduce(
+        (sum, item) => sum + item.result.timings.normalizationMs,
+        0,
+      ),
+      ruleExtractionMs,
+      cropGenerationMs: 0,
+      ollamaMs: 0,
     })
-    if (aiReview.warning) warnings.push(aiReview.warning)
     const baseEngine =
       files.length === 1
         ? recognizedFiles[0].result.engine
@@ -425,19 +585,26 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
       pageCount: pageTexts.length,
       pageTexts,
       warnings,
-      engine: aiReview.status === 'completed' ? `${baseEngine} + ${aiReview.model}` : baseEngine,
+      engine: `${baseEngine} + RULE_GATE`,
       files: fileDetails,
       storage: 'temporary-memory',
       visionPages,
-      cropRegions: serializeCropMetadata(fieldImageCrops),
-      fieldReviews: aiReview.fieldReviews,
+      cropRegions: [],
+      fieldReviews: ruleAnalysis.fieldReviews,
+      fieldDecisions: ruleAnalysis.decisions,
+      timings,
       aiReview: {
-        status: aiReview.status,
-        model: aiReview.model,
-        fieldCount: Object.keys(aiReview.fieldReviews).length,
-        cropCount: aiReview.cropCount ?? reviewCrops.length,
-        mode: ollamaReviewImages.length ? 'multimodal' : 'text',
-        durationMs: aiReview.durationMs,
+        status: jobId ? 'pending' : 'skipped',
+        jobId,
+        model: ollamaConfig.model,
+        fieldCount: 0,
+        ruleFieldCount: Object.keys(ruleAnalysis.fieldReviews).length,
+        unresolvedFieldCount: ruleAnalysis.unresolvedFieldIds.length,
+        targetFieldIds,
+        cropCount: 0,
+        mode: jobId ? 'selective' : 'rules',
+        durationMs: 0,
+        performanceMetrics: null,
       },
     })
   } catch (error) {
