@@ -42,14 +42,37 @@ function normalizePersonName(rawValue) {
   return /^[\p{Script=Han}·‧]{2,20}$/u.test(value) ? value : ''
 }
 
+function extractPersonNearHeading(text, role) {
+  const lines = String(text ?? '')
+    .split(/\r?\n/)
+    .map((line) => cleanSource(line))
+  const escapedRole = role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const headingPattern = new RegExp(
+    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?${escapedRole}(?:\\s*[（(][^）)]*[）)])?\\s*$`,
+  )
+  const anyPartyHeadingPattern = /^(?:[0-9０-９]+\s*[.．、]?\s*)?(?:出租人|承租人|連帶保證人)(?:\s*[（(][^）)]*[）)])?\s*$/
+  const namePattern = /^(?:[oO○●•·▪]\s*)?姓名\s*[：:]\s*(.+)$/
+
+  for (let headingIndex = 0; headingIndex < lines.length; headingIndex += 1) {
+    if (!headingPattern.test(lines[headingIndex] ?? '')) continue
+
+    for (const line of lines.slice(headingIndex + 1, headingIndex + 8)) {
+      if (anyPartyHeadingPattern.test(line)) break
+      const name = cleanSource(line.match(namePattern)?.[1])
+      if (name) return name
+    }
+  }
+  return ''
+}
+
 function extractPerson(text, role) {
   const escapedRole = role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const rawValue = captureFirst(text, [
-    new RegExp(`${escapedRole}\\s*[（(][^\\r\\n）)]*[）)]\\s*[：:]\\s*([^\\r\\n]+)`),
-    new RegExp(`${escapedRole}姓名\\s*[：:]\\s*([^\\r\\n]+)`),
-    new RegExp(`${escapedRole}\\s*[：:]\\s*([^\\r\\n，,。]{1,30})`),
-    new RegExp(`${escapedRole}[^\\r\\n]*[\\r\\n]+(?:[^\\r\\n]*[\\r\\n]+){0,2}\\s*(?:[o○•]\\s*)?姓名\\s*[：:]\\s*([^\\r\\n]+)`),
-  ])
+  const rawValue = extractPersonNearHeading(text, role)
+    || captureFirst(text, [
+      new RegExp(`${escapedRole}\\s*[（(][^\\r\\n）)]*[）)]\\s*[：:]\\s*([^\\r\\n]+)`),
+      new RegExp(`${escapedRole}姓名\\s*[：:]\\s*([^\\r\\n]+)`),
+      new RegExp(`${escapedRole}\\s*[：:]\\s*([^\\r\\n，,。]{1,30})`),
+    ])
   if (/遮蔽/.test(rawValue)) return candidate('影像遮蔽，請人工輸入', rawValue, 'low')
   const value = normalizePersonName(rawValue)
   return value ? candidate(value, rawValue, 'medium') : { ...EMPTY_CANDIDATE }

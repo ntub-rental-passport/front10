@@ -84,4 +84,26 @@ assert.equal(modernContract.dueDay.value, '每月 5 日前')
 assert.equal(modernContract.deposit.value, 'NT$36,000')
 assert.equal(modernContract.penalty.value, 'NT$18,000')
 
+const pdfTemplateParties = extractContractFieldCandidates(
+  [
+    '住宅租賃契約書（測試用範例）',
+    '承租人聲明：已充分瞭解本契約全部內容',
+    '二、立約雙方',
+    '1. 出租人（房東）',
+    'o 姓名：王房東',
+    'o 身分證字號：A123456789',
+    'o 戶籍地址：臺北市中正區康康街 1 號 5 樓',
+    '2. 承租人（房客）',
+    'o 姓名：林小明',
+    'o 身分證字號：F987654321',
+    '立約人簽章',
+    '出租人：（簽章）',
+    '承租人：（簽章）',
+  ].join('\n'),
+)
+assert.equal(pdfTemplateParties.landlord.value, '王房東')
+assert.equal(pdfTemplateParties.landlord.sourceValue, '王房東')
+assert.equal(pdfTemplateParties.tenant.value, '林小明')
+assert.equal(pdfTemplateParties.tenant.sourceValue, '林小明')
+
 console.log('Contract field extraction regression checks passed.')
