@@ -32,12 +32,18 @@ function writeJson(key: string, value: unknown): void {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
-export function createAdminCollection<T>(name: string, seed: () => T): Ref<T> {
+export function createAdminCollection<T>(
+  name: string,
+  seed: () => T,
+  migrate?: (raw: T) => T,
+): Ref<T> {
   const existing = registry.get(name)
   if (existing) return existing.target as Ref<T>
 
   const key = `${STORAGE_PREFIX}${name}`
-  const target = ref(readJson<T>(key) ?? seed()) as Ref<T>
+  const stored = readJson<T>(key)
+  const initial = stored === null ? seed() : (migrate ? migrate(stored) : stored)
+  const target = ref(initial) as Ref<T>
   writeJson(key, target.value)
   watch(target, (value) => writeJson(key, value), { deep: true })
   registry.set(name, { target: target as Ref<unknown>, seed })
