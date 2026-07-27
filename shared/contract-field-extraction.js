@@ -1,3 +1,5 @@
+import { resolveTaiwanAddress } from './taiwan-address-resolver.js'
+
 const EMPTY_CANDIDATE = { value: '', sourceValue: '', confidence: 'low' }
 
 const FINANCIAL_DIGITS = {
@@ -110,11 +112,16 @@ function extractAddress(text) {
     /坐落於\s*([^\r\n，。]+?)(?:之房屋|，|。)/,
   ])
   if (!rawValue) return { ...EMPTY_CANDIDATE }
-  const area = rawValue.match(/([\p{Script=Han}]{1,6}[縣市][\p{Script=Han}]{1,8}(?:鄉|鎮|市|區)[\p{Script=Han}]{1,8}(?:村|里)?)/u)?.[1]
-  const value = area && rawValue.length <= area.length + 2
+  const addressResolution = resolveTaiwanAddress(rawValue, { contractText: text })
+  const normalizedAddress = addressResolution.normalizedAddress || rawValue
+  const area = normalizedAddress.match(/([\p{Script=Han}]{1,6}[縣市][\p{Script=Han}]{1,8}(?:鄉|鎮|市|區)[\p{Script=Han}]{1,8}(?:村|里)?)/u)?.[1]
+  const value = area && normalizedAddress.length <= area.length + 2
     ? `${area}［地址不完整，後段待確認］`
-    : rawValue
-  return candidate(value, rawValue, 'medium')
+    : normalizedAddress
+  return {
+    ...candidate(value, rawValue, addressResolution.confidence),
+    addressResolution,
+  }
 }
 
 function formatRocDate(yearText, monthText, dayText) {

@@ -181,6 +181,17 @@ export function analyzeContractFields({ text, pageTexts, visionPages }) {
     if (!formatValid) reasons.push('format_validation_failed')
     if (!labelDistanceNormal) reasons.push('label_distance_unverified')
     if (candidateCount > 1) reasons.push('multiple_candidates')
+    if (fieldId === 'address' && candidate.addressResolution?.status === 'inferred') {
+      reasons.push(candidate.addressResolution.evidenceType === 'road_inference'
+        ? 'county_inferred_from_road'
+        : 'county_inferred_from_district')
+    }
+    if (fieldId === 'address' && candidate.addressResolution?.status === 'ambiguous') {
+      reasons.push('administrative_division_ambiguous')
+    }
+    if (fieldId === 'address' && candidate.addressResolution?.status === 'conflict') {
+      reasons.push('administrative_division_conflict')
+    }
 
     const confidence = reasons.length === 0
       ? 'high'
@@ -198,7 +209,9 @@ export function analyzeContractFields({ text, pageTexts, visionPages }) {
         sourcePageIndex: source?.pageIndex ?? null,
         sourceStart: source?.sourceStart ?? -1,
         sourceEnd: source?.sourceEnd ?? -1,
-        evidenceType: 'ocr_text',
+        evidenceType: fieldId === 'address'
+          ? candidate.addressResolution?.evidenceType ?? 'ocr_text'
+          : 'ocr_text',
         sourceBoundingBox,
         googleConfidence: Number(googleConfidence.toFixed(4)),
         formatValid,
@@ -206,6 +219,9 @@ export function analyzeContractFields({ text, pageTexts, visionPages }) {
         candidateCount,
         reviewReasons: reasons,
         reviewSource: 'rules',
+        ...(fieldId === 'address' && candidate.addressResolution
+          ? { addressResolution: candidate.addressResolution }
+          : {}),
       }
     }
     decisions[fieldId] = {

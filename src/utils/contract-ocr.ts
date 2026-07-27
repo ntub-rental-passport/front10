@@ -116,7 +116,7 @@ export type ContractFieldReview = {
   sourcePageIndex?: number | null
   sourceStart?: number
   sourceEnd?: number
-  evidenceType?: 'ocr_text' | 'image'
+  evidenceType?: 'ocr_text' | 'image' | 'administrative_inference' | 'road_inference'
   sourceBoundingBox?: ContractVisionBoundingBox
   googleConfidence?: number
   formatValid?: boolean
@@ -124,6 +124,17 @@ export type ContractFieldReview = {
   candidateCount?: number
   reviewReasons?: string[]
   reviewSource?: 'rules' | 'ai'
+  addressResolution?: {
+    rawText: string
+    normalizedAddress: string
+    county: { value: string; source: string } | null
+    district: { value: string; source: string } | null
+    status: 'accepted' | 'inferred' | 'ambiguous' | 'conflict' | 'unresolved'
+    confidence: 'high' | 'medium' | 'low'
+    evidenceType: 'ocr_text' | 'administrative_inference' | 'road_inference'
+    referenceDate: string | null
+    warnings: string[]
+  }
 }
 
 export type ContractFieldDecision = {
@@ -330,7 +341,12 @@ export function normalizeContractOcrResult(
             sourceEnd: Number.isInteger(review.sourceEnd)
               ? Math.max(-1, Number(review.sourceEnd))
               : -1,
-            evidenceType: ['ocr_text', 'image'].includes(review.evidenceType ?? '')
+            evidenceType: [
+              'ocr_text',
+              'image',
+              'administrative_inference',
+              'road_inference',
+            ].includes(review.evidenceType ?? '')
               ? review.evidenceType
               : undefined,
             sourceBoundingBox: review.sourceBoundingBox
@@ -352,6 +368,10 @@ export function normalizeContractOcrResult(
               ? review.reviewReasons.map(String).filter(Boolean)
               : undefined,
             reviewSource: review.reviewSource === 'ai' ? 'ai' : 'rules',
+            addressResolution: review.addressResolution
+              && typeof review.addressResolution.normalizedAddress === 'string'
+              ? review.addressResolution
+              : undefined,
           }]),
       ) as Record<string, ContractFieldReview>
     : undefined

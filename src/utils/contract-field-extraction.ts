@@ -6,6 +6,24 @@ export interface ContractFieldCandidate {
   value: string
   sourceValue: string
   confidence: FieldConfidence
+  addressResolution?: AddressResolution
+}
+
+export interface AddressResolutionPart {
+  value: string
+  source: 'google_ocr' | 'administrative_inference' | 'road_inference'
+}
+
+export interface AddressResolution {
+  rawText: string
+  normalizedAddress: string
+  county: AddressResolutionPart | null
+  district: AddressResolutionPart | null
+  status: 'accepted' | 'inferred' | 'ambiguous' | 'conflict' | 'unresolved'
+  confidence: FieldConfidence
+  evidenceType: 'ocr_text' | 'administrative_inference' | 'road_inference'
+  referenceDate: string | null
+  warnings: string[]
 }
 
 export interface ContractFieldCandidates {

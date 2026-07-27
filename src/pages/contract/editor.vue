@@ -54,6 +54,8 @@ interface ContractField {
   formatValid: boolean | null
   labelDistanceNormal: boolean | null
   reviewSource: 'rules' | 'ai' | null
+  evidenceType: 'ocr_text' | 'image' | 'administrative_inference' | 'road_inference' | null
+  addressResolution: ContractFieldReview['addressResolution'] | null
 }
 
 type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
@@ -116,6 +118,8 @@ function makeField(
     formatValid: null,
     labelDistanceNormal: null,
     reviewSource: null,
+    evidenceType: captured.addressResolution?.evidenceType ?? null,
+    addressResolution: captured.addressResolution ?? null,
   }
 }
 
@@ -242,6 +246,8 @@ const fields = ref<ContractField[]>(
         formatValid: savedReview.formatValid ?? null,
         labelDistanceNormal: savedReview.labelDistanceNormal ?? null,
         reviewSource: savedReview.reviewSource ?? null,
+        evidenceType: savedReview.evidenceType ?? field.evidenceType,
+        addressResolution: savedReview.addressResolution ?? field.addressResolution,
       },
       ocrPages.value,
     )
@@ -584,6 +590,8 @@ function persistContract(): boolean {
           formatValid: field.formatValid ?? undefined,
           labelDistanceNormal: field.labelDistanceNormal ?? undefined,
           reviewSource: field.reviewSource ?? undefined,
+          evidenceType: field.evidenceType ?? undefined,
+          addressResolution: field.addressResolution ?? undefined,
         } satisfies ContractFieldReview,
       ]),
     ),
@@ -1056,7 +1064,17 @@ function returnToOcr(): void {
                 <span>Google confidence：{{ Math.round(field.googleConfidence * 100) }}%</span>
                 <span>格式驗證：{{ field.formatValid ? '通過' : '需確認' }}</span>
                 <span>標籤距離：{{ field.labelDistanceNormal ? '正常' : '需確認' }}</span>
-                <span>來源：{{ field.reviewSource === 'ai' ? 'AI 複核' : '規則抽取' }}</span>
+                <span>
+                  來源：{{
+                    field.reviewSource === 'ai'
+                      ? 'AI 複核'
+                      : field.evidenceType === 'administrative_inference'
+                        ? '依行政區補全'
+                        : field.evidenceType === 'road_inference'
+                          ? '依道路推測'
+                          : '規則抽取'
+                  }}
+                </span>
               </div>
             </div>
             <p v-if="!filteredFields.length" class="field-filter-empty">目前沒有符合此狀態的欄位</p>
