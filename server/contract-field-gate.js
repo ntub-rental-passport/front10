@@ -192,6 +192,9 @@ export function analyzeContractFields({ text, pageTexts, visionPages }) {
     if (fieldId === 'address' && candidate.addressResolution?.status === 'conflict') {
       reasons.push('administrative_division_conflict')
     }
+    if (fieldId === 'address' && candidate.addressResolution?.warnings?.includes('address_incomplete')) {
+      reasons.push('address_incomplete')
+    }
 
     const confidence = reasons.length === 0
       ? 'high'

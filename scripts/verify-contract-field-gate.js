@@ -71,6 +71,11 @@ const inferredAddressAnalysis = analyzeContractFields({
 })
 assert.equal(inferredAddressAnalysis.fieldReviews.address.value, '新北市淡水區自強路10號')
 assert.equal(inferredAddressAnalysis.fieldReviews.address.evidenceType, 'administrative_inference')
+assert.equal(inferredAddressAnalysis.fieldReviews.address.addressResolution.rawText, '淡水區自強路10號')
+assert.equal(
+  inferredAddressAnalysis.fieldReviews.address.addressResolution.warnings.includes('address_incomplete'),
+  false,
+)
 assert.equal(
   inferredAddressAnalysis.fieldReviews.address.reviewReasons.includes('county_inferred_from_district'),
   true,

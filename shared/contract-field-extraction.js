@@ -112,14 +112,18 @@ function extractAddress(text) {
     /坐落於\s*([^\r\n，。]+?)(?:之房屋|，|。)/,
   ])
   if (!rawValue) return { ...EMPTY_CANDIDATE }
-  const addressResolution = resolveTaiwanAddress(rawValue, { contractText: text })
-  const normalizedAddress = addressResolution.normalizedAddress || rawValue
-  const area = normalizedAddress.match(/([\p{Script=Han}]{1,6}[縣市][\p{Script=Han}]{1,8}(?:鄉|鎮|市|區)[\p{Script=Han}]{1,8}(?:村|里)?)/u)?.[1]
-  const value = area && normalizedAddress.length <= area.length + 2
-    ? `${area}［地址不完整，後段待確認］`
-    : normalizedAddress
+  const resolvedAddress = resolveTaiwanAddress(rawValue, { contractText: text })
+  const normalizedAddress = resolvedAddress.normalizedAddress || rawValue
+  const warnings = new Set(resolvedAddress.warnings)
+  if (!/(?:大道|路|街|段|巷|弄|號|樓)/.test(normalizedAddress)) {
+    warnings.add('address_incomplete')
+  }
+  const addressResolution = {
+    ...resolvedAddress,
+    warnings: [...warnings],
+  }
   return {
-    ...candidate(value, rawValue, addressResolution.confidence),
+    ...candidate(normalizedAddress, rawValue, addressResolution.confidence),
     addressResolution,
   }
 }

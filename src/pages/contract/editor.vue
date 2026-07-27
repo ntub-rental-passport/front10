@@ -550,6 +550,10 @@ function confirmFieldEdit(field: ContractField): void {
       return
     }
     Object.assign(field, locateFieldSource(field, ocrPages.value))
+    if (field.id === 'address') {
+      field.addressResolution = null
+      field.evidenceType = 'ocr_text'
+    }
     field.reviewState = 'edited'
   } else {
     field.reviewState = 'verified'
@@ -1043,9 +1047,17 @@ function returnToOcr(): void {
                 </Button>
               </div>
               <div v-else class="field-value-row">
-                <span class="text-sm font-semibold text-foreground">
-                  {{ field.value }}
-                </span>
+                <div class="field-value-content">
+                  <span
+                    v-if="field.id === 'address' && field.addressResolution"
+                    class="field-value-caption"
+                  >
+                    系統建議值
+                  </span>
+                  <span class="text-sm font-semibold text-foreground">
+                    {{ field.value }}
+                  </span>
+                </div>
                 <div class="field-actions">
                   <button type="button" class="field-action-button" @click="verifyField(field)">
                     <CheckCircle :size="14" />
@@ -1055,6 +1067,33 @@ function returnToOcr(): void {
                     <PenLine :size="14" />
                     修改
                   </button>
+                </div>
+              </div>
+              <div
+                v-if="!field.editing && field.id === 'address' && field.addressResolution"
+                class="address-evidence"
+              >
+                <div class="address-evidence-row">
+                  <span>OCR 原文</span>
+                  <strong>{{ field.addressResolution.rawText || field.sourceValue }}</strong>
+                </div>
+                <div
+                  v-if="field.addressResolution.county?.source !== 'google_ocr'"
+                  class="address-evidence-row"
+                >
+                  <span>
+                    {{ field.evidenceType === 'road_inference' ? '道路推測' : '行政區補全' }}
+                  </span>
+                  <strong>
+                    縣市：{{ field.addressResolution.county?.value || '尚無法判定' }}（系統推論）
+                  </strong>
+                </div>
+                <div
+                  v-if="field.addressResolution.warnings.includes('address_incomplete')"
+                  class="address-evidence-warning"
+                >
+                  <AlertTriangle :size="13" />
+                  <span>完整度：缺少道路或門牌，請對照契約人工確認</span>
                 </div>
               </div>
               <div
