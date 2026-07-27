@@ -9,6 +9,8 @@
     "start:api": "node server/index.js",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist",
     "lint": "run-s lint:*",
     "lint:types": "vue-tsc --noEmit",
@@ -60,6 +62,7 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vite-plugin-vue-devtools": "^8.1.2",
+    "vitest": "^3.2.7",
     "vue-tsc": "^2.2.0"
   }
 }
