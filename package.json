@@ -17,6 +17,7 @@
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "test:contract-fields": "tsx scripts/verify-contract-extraction.ts",
+    "test:ollama-fields": "node scripts/verify-ollama-contract.js",
     "format": "prettier --write --experimental-cli src/ components/ lib/ server/"
   },
   "dependencies": {

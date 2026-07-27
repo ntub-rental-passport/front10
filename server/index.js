@@ -5,12 +5,14 @@ import express from 'express'
 import multer from 'multer'
 import { PDFDocument } from 'pdf-lib'
 import vision from '@google-cloud/vision'
+import { getOllamaConfig, reviewContractFieldsWithOllama } from './ollama-contract.js'
 
 const app = express()
 const port = Number(process.env.OCR_API_PORT || 8787)
 const maxFileSizeMb = Number(process.env.OCR_MAX_FILE_SIZE_MB || 20)
 const maxTotalSizeMb = Number(process.env.OCR_MAX_TOTAL_SIZE_MB || 80)
 const maxFileCount = Number(process.env.OCR_MAX_FILE_COUNT || 20)
+const ollamaConfig = getOllamaConfig()
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -328,6 +330,11 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     service: 'rentmate-ocr-api',
     credentialsConfigured: Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS),
+    aiOcr: {
+      enabled: ollamaConfig.enabled,
+      model: ollamaConfig.model,
+      url: ollamaConfig.baseUrl,
+    },
   })
 })
 
@@ -371,6 +378,12 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
         files.length > 1 ? `${decodeUploadedFileName(file.originalname)}：${warning}` : warning,
       ),
     )
+    const aiReview = await reviewContractFieldsWithOllama(pageTexts, ollamaConfig)
+    if (aiReview.warning) warnings.push(aiReview.warning)
+    const baseEngine =
+      files.length === 1
+        ? recognizedFiles[0].result.engine
+        : `DOCUMENT_TEXT_DETECTION (${files.length} images)`
 
     return res.json({
       fileName: fileDetails.map((file) => file.fileName).join('、'),
@@ -381,12 +394,16 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
       pageCount: pageTexts.length,
       pageTexts,
       warnings,
-      engine:
-        files.length === 1
-          ? recognizedFiles[0].result.engine
-          : `DOCUMENT_TEXT_DETECTION (${files.length} images)`,
+      engine: aiReview.status === 'completed' ? `${baseEngine} + ${aiReview.model}` : baseEngine,
       files: fileDetails,
       storage: 'temporary-memory',
+      fieldReviews: aiReview.fieldReviews,
+      aiReview: {
+        status: aiReview.status,
+        model: aiReview.model,
+        fieldCount: Object.keys(aiReview.fieldReviews).length,
+        durationMs: aiReview.durationMs,
+      },
     })
   } catch (error) {
     console.error('[OCR] failed:', error)

@@ -52,6 +52,7 @@ copy .env.example .env.local
 GOOGLE_APPLICATION_CREDENTIALS="C:\\path\\to\\service-account.json"
 OCR_API_PORT="8787"
 VITE_OCR_API_URL="http://localhost:8787"
+OLLAMA_OCR_MODEL="gemma4:e2b"
 ```
 
 ## Scripts
@@ -65,7 +66,9 @@ npm run format
 
 ## OCR Notes
 
-`src/pages/contract.vue` 會上傳檔案到本機 OCR API，再由後端串接 Google Cloud Vision。請先在 Google Cloud 啟用 Cloud Vision API，建立 service account，並把 JSON 金鑰路徑設定到 `GOOGLE_APPLICATION_CREDENTIALS`。
+`src/pages/contract/index.vue` 會上傳檔案到本機 OCR API，再由後端串接 Google Cloud Vision。請先在 Google Cloud 啟用 Cloud Vision API，建立 service account，並把 JSON 金鑰路徑設定到 `GOOGLE_APPLICATION_CREDENTIALS`。
+
+Google OCR 完成後，OCR API 會呼叫本機 Ollama `gemma4:e2b`，以固定 JSON 校對出租人、承租人、地址、租期、租金、繳費日、押金與違約金。只有能在 Google OCR 原文中找到證據的 AI 欄位才會帶入編輯器；Ollama 未啟動或逾時時會自動保留純 Google OCR 結果。安裝模型後可用 `ollama list` 確認，並透過 `OLLAMA_OCR_ENABLED=false` 暫時關閉 AI 校對。
 
 上傳端支援單一 PDF，或最多 20 張 PNG、JPG、JPEG、WEBP、BMP、TIFF 圖片；預設單檔 20MB、合計 80MB。MP3、MP4 與非允許格式會在前端及 API 兩端拒絕。原始檔由 Multer 暫存在伺服器記憶體，OCR 請求完成後不寫入磁碟、資料庫或 Google Cloud Storage；瀏覽器工作階段只保存 OCR 文字結果。可透過 `OCR_MAX_FILE_SIZE_MB`、`OCR_MAX_TOTAL_SIZE_MB`、`OCR_MAX_FILE_COUNT` 調整限制。
 

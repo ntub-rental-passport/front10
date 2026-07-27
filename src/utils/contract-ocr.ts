@@ -9,6 +9,14 @@ export type ContractOcrResult = {
   languageHints: string[]
   warnings: string[]
   fieldReviews?: Record<string, ContractFieldReview>
+  aiReview?: ContractAiReview
+}
+
+export type ContractAiReview = {
+  status: 'completed' | 'failed' | 'skipped'
+  model: string
+  fieldCount: number
+  durationMs: number
 }
 
 export type ContractFieldReview = {
@@ -95,6 +103,21 @@ export function normalizeContractOcrResult(
       ) as Record<string, ContractFieldReview>
     : undefined
 
+  const aiReview = input.aiReview && typeof input.aiReview === 'object'
+    ? {
+        status: ['completed', 'failed', 'skipped'].includes(input.aiReview.status)
+          ? input.aiReview.status
+          : 'failed',
+        model: typeof input.aiReview.model === 'string' ? input.aiReview.model : '',
+        fieldCount: Number.isFinite(input.aiReview.fieldCount)
+          ? Math.max(0, Math.trunc(Number(input.aiReview.fieldCount)))
+          : 0,
+        durationMs: Number.isFinite(input.aiReview.durationMs)
+          ? Math.max(0, Math.trunc(Number(input.aiReview.durationMs)))
+          : 0,
+      } as ContractAiReview
+    : undefined
+
   return {
     engine: typeof input.engine === 'string' ? input.engine : '',
     fileName: typeof input.fileName === 'string' ? input.fileName : '',
@@ -110,6 +133,7 @@ export function normalizeContractOcrResult(
       ? input.warnings.map(item => String(item)).filter(Boolean)
       : [],
     fieldReviews,
+    aiReview,
   }
 }
 

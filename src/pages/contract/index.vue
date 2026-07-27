@@ -348,7 +348,7 @@ async function sendToOcr(files: File[]): Promise<void> {
   copySuccess.value = false
   isUploading.value = true
   uploadProgress.value = 15
-  uploadStatus.value = '檔案已送出，正在準備 OCR 辨識'
+  uploadStatus.value = '檔案已送出，正在準備 AI OCR 辨識'
 
   const formData = new FormData()
   files.forEach((file) => formData.append('files', file))
@@ -360,8 +360,8 @@ async function sendToOcr(files: File[]): Promise<void> {
     uploadProgress.value = 45
     uploadStatus.value =
       files[0]?.type === 'application/pdf'
-        ? '正在辨識 PDF 文件與頁面文字'
-        : `正在辨識 ${files.length} 張圖片的文字與版面`
+        ? '正在使用 Google OCR 辨識 PDF，接著由本機 AI 校對欄位'
+        : `正在使用 Google OCR 辨識 ${files.length} 張圖片，接著由本機 AI 校對欄位`
 
     const response = await fetch('/api/ocr', {
       method: 'POST',
@@ -375,7 +375,7 @@ async function sendToOcr(files: File[]): Promise<void> {
     }
 
     uploadProgress.value = 100
-    uploadStatus.value = '辨識完成，可以檢視契約文字與進入後續分析'
+    uploadStatus.value = 'AI OCR 完成，可以檢視契約文字與欄位校對結果'
     const result = normalizeContractOcrResult(payload as Partial<ContractOcrResult>)
     if (!result) {
       throw new Error('OCR 回傳資料缺少可用的逐頁文字，請重新辨識文件。')
@@ -737,6 +737,13 @@ function onDragLeave(): void {
               <div>
                 <span>OCR 引擎</span>
                 <strong>{{ ocrResult?.engine }}</strong>
+              </div>
+              <div v-if="ocrResult?.aiReview">
+                <span>AI 欄位校對</span>
+                <strong v-if="ocrResult.aiReview.status === 'completed'">
+                  {{ ocrResult.aiReview.model }} · {{ ocrResult.aiReview.fieldCount }} 個欄位
+                </strong>
+                <strong v-else>未完成，已保留 Google OCR 結果</strong>
               </div>
             </div>
 
