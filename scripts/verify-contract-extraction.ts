@@ -46,6 +46,23 @@ assert.equal(noisyVerticalAddress.address.value, '臺北市中正區林森南路
 assert.equal(noisyVerticalAddress.address.addressResolution?.evidenceType, 'road_inference')
 assert.equal(noisyVerticalAddress.address.addressResolution?.warnings.includes('address_incomplete'), true)
 
+const noisyLabelWithValidAddress = extractContractFieldCandidates(
+  [
+    '第 一 條：甲方 店店 屋所在地及使用範圍',
+    '新北市淡水區自强路',
+    '第 二 條：租賃期限經甲乙雙方洽訂',
+  ].join('\n'),
+)
+assert.equal(noisyLabelWithValidAddress.address.sourceValue, '新北市淡水區自强路')
+assert.equal(noisyLabelWithValidAddress.address.value, '新北市淡水區自强路')
+assert.equal(noisyLabelWithValidAddress.address.addressResolution?.status, 'accepted')
+assert.equal(noisyLabelWithValidAddress.address.addressResolution?.warnings.includes('address_incomplete'), true)
+
+const missingLabelWithValidAddress = extractContractFieldCandidates(
+  '甲乙雙方協議\n新北市淡水區自强路\n租賃期限為一年',
+)
+assert.equal(missingLabelWithValidAddress.address.value, '新北市淡水區自强路')
+
 const modernContract = extractContractFieldCandidates(
   [
     '出租人（甲方）：王小明',

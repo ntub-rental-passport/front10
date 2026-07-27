@@ -108,7 +108,9 @@ function extractAddressNearContractLabel(text) {
   const lines = String(text ?? '')
     .split(/\r?\n/)
     .map((line) => cleanSource(line))
-  const labelIndex = lines.findIndex((line) => /(?:房|店)屋所在地及使用範圍/.test(line))
+  const labelIndex = lines.findIndex((line) =>
+    /(?:房|店){1,3}\s*屋所在地及使用範圍/.test(line),
+  )
   if (labelIndex < 0) return ''
 
   for (const line of lines.slice(labelIndex + 1, labelIndex + 14)) {
@@ -123,13 +125,41 @@ function extractAddressNearContractLabel(text) {
   return ''
 }
 
+function extractStandaloneAddressLine(text) {
+  const lines = String(text ?? '')
+    .split(/\r?\n/)
+    .map((line) => cleanSource(line))
+    .filter((line) => line.length >= 5 && line.length <= 100)
+
+  const candidates = lines
+    .map((line) => ({ line, resolution: resolveTaiwanAddress(line, { contractText: text }) }))
+    .filter(({ line, resolution }) =>
+      resolution.county
+      && resolution.district
+      && ['accepted', 'inferred'].includes(resolution.status)
+      && /(?:大道|路|街|村|里)/.test(line)
+      && !/以下簡稱|出租人|承租人|保證人|租金|押金/.test(line),
+    )
+    .sort((left, right) => {
+      const leftScore = (left.resolution.county?.source === 'google_ocr' ? 2 : 0)
+        + (/(?:大道|路|街)/.test(left.line) ? 1 : 0)
+      const rightScore = (right.resolution.county?.source === 'google_ocr' ? 2 : 0)
+        + (/(?:大道|路|街)/.test(right.line) ? 1 : 0)
+      return rightScore - leftScore
+    })
+
+  return candidates[0]?.line ?? ''
+}
+
 function extractAddress(text) {
-  const rawValue = extractAddressNearContractLabel(text) || captureFirst(text, [
-    /(?:甲方)?房屋所在地及使用範圍\s*[：:]?\s*([^\r\n。]{3,100})/,
-    /租賃住宅地址[\s\S]{0,100}?(?:位置\s*)?[：:]\s*([^\r\n]+)/,
-    /(?:租屋地址|房屋地址|租賃標的地址)\s*[：:]\s*([^\r\n]+)/,
-    /坐落於\s*([^\r\n，。]+?)(?:之房屋|，|。)/,
-  ])
+  const rawValue = extractAddressNearContractLabel(text)
+    || captureFirst(text, [
+      /(?:甲方)?房屋所在地及使用範圍\s*[：:]?\s*([^\r\n。]{3,100})/,
+      /租賃住宅地址[\s\S]{0,100}?(?:位置\s*)?[：:]\s*([^\r\n]+)/,
+      /(?:租屋地址|房屋地址|租賃標的地址)\s*[：:]\s*([^\r\n]+)/,
+      /坐落於\s*([^\r\n，。]+?)(?:之房屋|，|。)/,
+    ])
+    || extractStandaloneAddressLine(text)
   if (!rawValue) return { ...EMPTY_CANDIDATE }
   const resolvedAddress = resolveTaiwanAddress(rawValue, { contractText: text })
   const normalizedAddress = resolvedAddress.normalizedAddress || rawValue
