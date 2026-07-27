@@ -1,4 +1,5 @@
 import { extractContractFieldCandidates as extractSharedCandidates } from '@/shared/contract-field-extraction.js'
+import { validateTaiwanAddressInput as validateSharedTaiwanAddressInput } from '@/shared/taiwan-address-resolver.js'
 
 export type FieldConfidence = 'high' | 'medium' | 'low'
 
@@ -26,6 +27,17 @@ export interface AddressResolution {
   warnings: string[]
 }
 
+export interface TaiwanAddressValidationResult {
+  valid: boolean
+  code:
+    | 'valid'
+    | 'county_district_conflict'
+    | 'administrative_division_ambiguous'
+    | 'administrative_division_not_found'
+  message: string
+  resolution: AddressResolution
+}
+
 export interface ContractFieldCandidates {
   landlord: ContractFieldCandidate
   tenant: ContractFieldCandidate
@@ -40,4 +52,11 @@ export interface ContractFieldCandidates {
 
 export function extractContractFieldCandidates(text: string): ContractFieldCandidates {
   return extractSharedCandidates(text) as ContractFieldCandidates
+}
+
+export function validateTaiwanAddressInput(
+  value: string,
+  options: { contractText?: string; referenceDate?: string } = {},
+): TaiwanAddressValidationResult {
+  return validateSharedTaiwanAddressInput(value, options) as TaiwanAddressValidationResult
 }

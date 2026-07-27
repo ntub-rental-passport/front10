@@ -104,8 +104,27 @@ function extractMoney(text, contextPatterns) {
   return { ...EMPTY_CANDIDATE }
 }
 
+function extractAddressNearContractLabel(text) {
+  const lines = String(text ?? '')
+    .split(/\r?\n/)
+    .map((line) => cleanSource(line))
+  const labelIndex = lines.findIndex((line) => /(?:房|店)屋所在地及使用範圍/.test(line))
+  if (labelIndex < 0) return ''
+
+  for (const line of lines.slice(labelIndex + 1, labelIndex + 14)) {
+    if (/第\s*二\s*條/.test(line)) break
+    if (
+      /(?:縣|市|區|鄉|鎮).*(?:大道|路|街|村|里)/.test(line)
+      && !/以下簡稱|出租人|承租人|保證人/.test(line)
+    ) {
+      return line
+    }
+  }
+  return ''
+}
+
 function extractAddress(text) {
-  const rawValue = captureFirst(text, [
+  const rawValue = extractAddressNearContractLabel(text) || captureFirst(text, [
     /(?:甲方)?房屋所在地及使用範圍\s*[：:]?\s*([^\r\n。]{3,100})/,
     /租賃住宅地址[\s\S]{0,100}?(?:位置\s*)?[：:]\s*([^\r\n]+)/,
     /(?:租屋地址|房屋地址|租賃標的地址)\s*[：:]\s*([^\r\n]+)/,
@@ -115,7 +134,12 @@ function extractAddress(text) {
   const resolvedAddress = resolveTaiwanAddress(rawValue, { contractText: text })
   const normalizedAddress = resolvedAddress.normalizedAddress || rawValue
   const warnings = new Set(resolvedAddress.warnings)
-  if (!/(?:大道|路|街|段|巷|弄|號|樓)/.test(normalizedAddress)) {
+  const hasRoad = /(?:大道|路|街)/.test(normalizedAddress)
+  const hasNumberedDoor = /(?:[0-9０-９]+|[〇○零一二三四五六七八九十百]+)\s*號/.test(normalizedAddress)
+  if (
+    (!hasRoad && !/(?:段|巷|弄|號|樓)/.test(normalizedAddress))
+    || (hasRoad && !hasNumberedDoor)
+  ) {
     warnings.add('address_incomplete')
   }
   const addressResolution = {

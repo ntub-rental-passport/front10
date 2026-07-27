@@ -59,9 +59,19 @@ function uniqueLocations(locations) {
 
 function replaceLocationPrefix(rawText, county, district, matchedCounty, matchedDistrict) {
   let remainder = String(rawText ?? '').trim()
+  let locationEnd = -1
   for (const token of [matchedCounty, matchedDistrict].filter(Boolean)) {
     const pattern = new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/臺/g, '[臺台]'), 'g')
-    remainder = remainder.replace(pattern, '')
+    const match = pattern.exec(remainder)
+    if (match) locationEnd = Math.max(locationEnd, (match.index ?? 0) + match[0].length)
+  }
+  if (locationEnd >= 0) {
+    remainder = remainder.slice(locationEnd)
+  } else {
+    for (const token of [matchedCounty, matchedDistrict].filter(Boolean)) {
+      const pattern = new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/臺/g, '[臺台]'), 'g')
+      remainder = remainder.replace(pattern, '')
+    }
   }
   remainder = remainder.replace(/^[\s,，。．、:：-]+/, '')
   return `${county}${district}${remainder}`
@@ -120,7 +130,7 @@ export function resolveTaiwanAddress(rawText, options = {}) {
       rawText: originalText,
       normalizedAddress: originalText,
       county: { value: countyMatches[0].county, source: 'google_ocr' },
-      district: null,
+      district: { value: districtMatches[0].district, source: 'google_ocr' },
       status: 'conflict',
       confidence: 'low',
       evidenceType: 'ocr_text',
@@ -182,6 +192,50 @@ export function resolveTaiwanAddress(rawText, options = {}) {
     evidenceType: 'ocr_text',
     referenceDate,
     warnings,
+  }
+}
+
+export function validateTaiwanAddressInput(rawText, options = {}) {
+  const resolution = resolveTaiwanAddress(rawText, options)
+
+  if (resolution.status === 'conflict') {
+    const county = resolution.county?.value ?? '輸入的縣市'
+    const district = resolution.district?.value ?? '輸入的行政區'
+    return {
+      valid: false,
+      code: 'county_district_conflict',
+      message: `縣市與行政區不相符：「${county}」不包含「${district}」，請確認後再儲存。`,
+      resolution,
+    }
+  }
+
+  if (resolution.status === 'ambiguous') {
+    return {
+      valid: false,
+      code: 'administrative_division_ambiguous',
+      message: '行政區名稱在多個縣市重複，請補上正確縣市後再儲存。',
+      resolution,
+    }
+  }
+
+  if (
+    !resolution.county
+    || !resolution.district
+    || !['accepted', 'inferred'].includes(resolution.status)
+  ) {
+    return {
+      valid: false,
+      code: 'administrative_division_not_found',
+      message: '找不到可驗證的縣市與行政區，請至少輸入正確的縣市及行政區。',
+      resolution,
+    }
+  }
+
+  return {
+    valid: true,
+    code: 'valid',
+    message: '',
+    resolution,
   }
 }
 

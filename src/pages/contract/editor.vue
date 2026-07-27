@@ -10,6 +10,7 @@ import {
 } from '@/src/utils/contract-ocr'
 import {
   extractContractFieldCandidates,
+  validateTaiwanAddressInput,
   type ContractFieldCandidate,
 } from '@/src/utils/contract-field-extraction'
 import {
@@ -56,6 +57,7 @@ interface ContractField {
   reviewSource: 'rules' | 'ai' | null
   evidenceType: 'ocr_text' | 'image' | 'administrative_inference' | 'road_inference' | null
   addressResolution: ContractFieldReview['addressResolution'] | null
+  validationError: string
 }
 
 type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
@@ -120,6 +122,7 @@ function makeField(
     reviewSource: null,
     evidenceType: captured.addressResolution?.evidenceType ?? null,
     addressResolution: captured.addressResolution ?? null,
+    validationError: '',
   }
 }
 
@@ -456,6 +459,8 @@ function fieldCardClass(field: ContractField): string {
 function startFieldEdit(field: ContractField): void {
   field.editStartValue = field.value === '尚未辨識' ? '' : field.value
   field.value = field.editStartValue
+  field.validationError = ''
+  saveError.value = ''
   field.editing = true
 }
 
@@ -544,6 +549,18 @@ function confirmFieldEdit(field: ContractField): void {
     return
   }
 
+  if (field.id === 'address') {
+    const validation = validateTaiwanAddressInput(nextValue, {
+      contractText: ocrFullText.value,
+    })
+    if (!validation.valid) {
+      field.validationError = validation.message
+      saveError.value = validation.message
+      return
+    }
+    field.validationError = ''
+  }
+
   if (nextValue !== field.editStartValue) {
     if (!syncFieldToContract(field, nextValue)) {
       saveError.value = `無法在契約全文定位「${field.label}」的原始文字，請先在左側編輯模式中修正。`
@@ -573,6 +590,26 @@ function verifyField(field: ContractField): void {
 
 function persistContract(): boolean {
   if (!storedOcrResult.value || !ocrFullText.value.trim()) return false
+
+  const activeEdit = fields.value.find((field) => field.editing)
+  if (activeEdit) {
+    activeEdit.validationError = '請先完成此欄位的修改與驗證，再儲存契約。'
+    saveError.value = activeEdit.validationError
+    return false
+  }
+
+  const addressField = fields.value.find((field) => field.id === 'address')
+  if (addressField && addressField.value !== '尚未辨識') {
+    const validation = validateTaiwanAddressInput(addressField.value, {
+      contractText: ocrFullText.value,
+    })
+    if (!validation.valid) {
+      addressField.validationError = validation.message
+      saveError.value = validation.message
+      return false
+    }
+    addressField.validationError = ''
+  }
 
   const updatedResult: ContractOcrResult = {
     ...storedOcrResult.value,
@@ -1034,7 +1071,11 @@ function returnToOcr(): void {
               <div v-if="field.editing" class="field-edit-row">
                 <input
                   v-model="field.value"
-                  class="flex-1 rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  class="flex-1 rounded border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  :class="field.validationError ? 'border-red-500 focus:ring-red-400' : 'border-border'"
+                  :aria-invalid="Boolean(field.validationError)"
+                  :aria-describedby="field.validationError ? `${field.id}-validation-error` : undefined"
+                  @input="field.validationError = ''"
                   @keyup.enter="confirmFieldEdit(field)"
                 />
                 <Button
@@ -1045,6 +1086,15 @@ function returnToOcr(): void {
                 >
                   <CheckCircle :size="16" class="text-green-600" />
                 </Button>
+              </div>
+              <div
+                v-if="field.validationError"
+                :id="`${field.id}-validation-error`"
+                class="field-validation-error"
+                role="alert"
+              >
+                <AlertTriangle :size="14" />
+                <span>{{ field.validationError }}</span>
               </div>
               <div v-else class="field-value-row">
                 <div class="field-value-content">

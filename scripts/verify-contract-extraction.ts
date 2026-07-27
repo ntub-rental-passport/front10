@@ -31,6 +31,21 @@ assert.equal(
 const pollutedDeposit = extractContractFieldCandidates('押租保證金民國102年萬仟元')
 assert.equal(pollutedDeposit.deposit.value, '')
 
+const noisyVerticalAddress = extractContractFieldCandidates(
+  [
+    '第 一 條：甲方店屋所在地及使用範圍',
+    '（以下簡稱為甲方）',
+    '（以下簡稱為乙方）',
+    '（以下簡稱為丙方）',
+    '長千中正區林森南路號3提',
+    '第 二 條：租賃期限',
+  ].join('\n'),
+)
+assert.equal(noisyVerticalAddress.address.sourceValue, '長千中正區林森南路號3提')
+assert.equal(noisyVerticalAddress.address.value, '臺北市中正區林森南路號3提')
+assert.equal(noisyVerticalAddress.address.addressResolution?.evidenceType, 'road_inference')
+assert.equal(noisyVerticalAddress.address.addressResolution?.warnings.includes('address_incomplete'), true)
+
 const modernContract = extractContractFieldCandidates(
   [
     '出租人（甲方）：王小明',
