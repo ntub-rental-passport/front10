@@ -24,18 +24,19 @@ const CONTRACT_FIELD_LABELS = {
 
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434'
 const DEFAULT_OLLAMA_MODEL = 'gemma4:e2b'
-const DEFAULT_TIMEOUT_MS = 180_000
+const DEFAULT_TIMEOUT_MS = 300_000
 const DEFAULT_CONTEXT_LENGTH = 4096
 const DEFAULT_MAX_OCR_CHARS = 12_000
 
 const FIELD_RESULT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['value', 'sourceValue', 'sourcePageIndex'],
+  required: ['value', 'sourceValue', 'sourcePageIndex', 'evidenceType'],
   properties: {
     value: { type: 'string', maxLength: 120 },
     sourceValue: { type: 'string', maxLength: 160 },
     sourcePageIndex: { type: ['integer', 'null'], minimum: 0 },
+    evidenceType: { type: 'string', enum: ['ocr_text', 'image', 'none'] },
   },
 }
 
@@ -83,7 +84,11 @@ function truncateOcrText(text, maxChars) {
   ].join('')
 }
 
-export function buildOllamaPrompt(pageTexts, maxChars = DEFAULT_MAX_OCR_CHARS) {
+export function buildOllamaPrompt(
+  pageTexts,
+  maxChars = DEFAULT_MAX_OCR_CHARS,
+  imageCrops = [],
+) {
   const labelledPages = pageTexts
     .map((pageText, index) => `--- 第 ${index + 1} 頁（sourcePageIndex: ${index}）---\n${pageText}`)
     .join('\n\n')
@@ -92,6 +97,14 @@ export function buildOllamaPrompt(pageTexts, maxChars = DEFAULT_MAX_OCR_CHARS) {
   const fieldList = CONTRACT_FIELD_IDS.map(
     (fieldId) => `- ${fieldId}: ${CONTRACT_FIELD_LABELS[fieldId]}`,
   ).join('\n')
+  const imageList = imageCrops.length
+    ? imageCrops
+        .map(
+          (crop, index) =>
+            `- Region ${index + 1}: ${crop.label}；可校對 ${crop.fieldIds.join('、')}；sourcePageIndex: ${crop.pageIndex}`,
+        )
+        .join('\n')
+    : '本次沒有可用的欄位裁切圖片，只能使用 OCR 原文。'
 
   return `你是臺灣房屋租賃契約欄位校對器。Google Cloud Vision 已先完成 OCR，你只能根據下方 OCR 原文提取欄位，不可使用常識補寫、猜測或虛構內容。
 
@@ -100,12 +113,16 @@ ${fieldList}
 
 規則：
 1. value 是適合顯示的正規化結果；金額使用 NT$12,000，民國日期使用「民國 113 年 1 月 1 日」。
-2. sourceValue 必須逐字複製自同一頁 OCR 原文，作為可核對的證據，不可自行改寫。
-3. sourcePageIndex 使用標題提供的零起算頁碼；找不到證據時填 null。
-4. 遮蔽、塗黑、模糊或無法確認時，value 與 sourceValue 都填空字串，sourcePageIndex 填 null。
-5. 不要把日期當成金額，也不要把租金、押金與違約金互相混用。
-6. fields 必須包含全部 9 個固定鍵；找不到的欄位使用空字串，不可省略鍵。
-7. 只輸出符合指定 JSON schema 的資料，不要輸出解說文字。
+2. 優先使用 OCR 原文。若 sourceValue 可逐字在 OCR 原文找到，evidenceType 填 ocr_text。
+3. 只有對應欄位列有 Region 時，才可直接看聯絡表中相同編號的裁切區域校正；此時 sourceValue 填圖片中實際看到的原始文字，evidenceType 填 image。
+4. sourcePageIndex 使用標題或圖片清單提供的零起算頁碼；找不到證據時填 null。
+5. 遮蔽、塗黑、模糊或無法確認時，value 與 sourceValue 都填空字串，sourcePageIndex 填 null，evidenceType 填 none。
+6. 不要把日期當成金額，也不要把租金、押金與違約金互相混用。
+7. fields 必須包含全部 9 個固定鍵；找不到的欄位使用空字串，不可省略鍵。
+8. 只輸出符合指定 JSON schema 的資料，不要輸出解說文字。
+
+欄位裁切區域（聯絡表由上到下依 Region 編號排列）：
+${imageList}
 
 Google OCR 原文：
 ${ocrText}`
@@ -182,8 +199,17 @@ function isPlausibleFieldValue(fieldId, value) {
   }
 }
 
-export function normalizeOllamaFieldReviews(payload, pageTexts) {
+function findImageEvidence(imageCrops, fieldId, requestedPageIndex) {
+  return imageCrops.find(
+    (crop) =>
+      crop.fieldIds.includes(fieldId) &&
+      (!Number.isInteger(requestedPageIndex) || crop.pageIndex === requestedPageIndex),
+  )
+}
+
+export function normalizeOllamaFieldReviews(payload, pageTexts, options = {}) {
   const fields = payload?.fields && typeof payload.fields === 'object' ? payload.fields : {}
+  const imageCrops = Array.isArray(options.imageCrops) ? options.imageCrops : []
   const reviews = {}
 
   for (const fieldId of CONTRACT_FIELD_IDS) {
@@ -194,17 +220,26 @@ export function normalizeOllamaFieldReviews(payload, pageTexts) {
     const sourceValue = cleanModelText(field.sourceValue, 160)
     if (!isPlausibleFieldValue(fieldId, value)) continue
 
-    const evidence = findEvidence(pageTexts, sourceValue, field.sourcePageIndex)
-    if (!evidence) continue
+    const ocrEvidence =
+      field.evidenceType === 'ocr_text'
+        ? findEvidence(pageTexts, sourceValue, field.sourcePageIndex)
+        : null
+    const imageEvidence =
+      field.evidenceType === 'image'
+        ? findImageEvidence(imageCrops, fieldId, field.sourcePageIndex)
+        : null
+    if (!ocrEvidence && (!imageEvidence || !sourceValue)) continue
 
     reviews[fieldId] = {
       value,
-      sourceValue: evidence.sourceValue,
-      confidence: 'medium',
+      sourceValue: ocrEvidence?.sourceValue ?? sourceValue,
+      confidence: ocrEvidence ? 'medium' : 'low',
       reviewState: 'unreviewed',
-      sourcePageIndex: evidence.pageIndex,
-      sourceStart: evidence.sourceStart,
-      sourceEnd: evidence.sourceEnd,
+      sourcePageIndex: ocrEvidence?.pageIndex ?? imageEvidence.pageIndex,
+      sourceStart: ocrEvidence?.sourceStart ?? -1,
+      sourceEnd: ocrEvidence?.sourceEnd ?? -1,
+      evidenceType: ocrEvidence ? 'ocr_text' : 'image',
+      sourceBoundingBox: imageEvidence?.visionBoundingBox,
     }
   }
 
@@ -225,6 +260,10 @@ function parseOllamaContent(content) {
 
 export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
   const config = { ...getOllamaConfig(), ...options }
+  const imageCrops = Array.isArray(config.imageCrops) ? config.imageCrops : []
+  const reviewImages = Array.isArray(config.reviewImages)
+    ? config.reviewImages
+    : imageCrops.map((crop) => crop.base64)
   if (!config.enabled) {
     return {
       status: 'skipped',
@@ -252,7 +291,10 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
         messages: [
           {
             role: 'user',
-            content: buildOllamaPrompt(pageTexts, config.maxOcrChars),
+            content: buildOllamaPrompt(pageTexts, config.maxOcrChars, imageCrops),
+            ...(reviewImages.length
+              ? { images: reviewImages }
+              : {}),
           },
         ],
         options: {
@@ -270,12 +312,13 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
 
     const result = await response.json()
     const payload = parseOllamaContent(result?.message?.content)
-    const fieldReviews = normalizeOllamaFieldReviews(payload, pageTexts)
+    const fieldReviews = normalizeOllamaFieldReviews(payload, pageTexts, { imageCrops })
 
     return {
       status: 'completed',
       model: config.model,
       fieldReviews,
+      cropCount: imageCrops.length,
       durationMs: Date.now() - startedAt,
       warning: Object.keys(fieldReviews).length
         ? ''
@@ -290,6 +333,7 @@ export async function reviewContractFieldsWithOllama(pageTexts, options = {}) {
       status: 'failed',
       model: config.model,
       fieldReviews: {},
+      cropCount: imageCrops.length,
       durationMs: Date.now() - startedAt,
       warning: isTimeout
         ? '本機 AI 欄位校對逾時，已保留 Google OCR 結果，請稍後再試。'

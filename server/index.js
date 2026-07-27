@@ -6,6 +6,16 @@ import multer from 'multer'
 import { PDFDocument } from 'pdf-lib'
 import vision from '@google-cloud/vision'
 import { getOllamaConfig, reviewContractFieldsWithOllama } from './ollama-contract.js'
+import {
+  createVisionPagePlaceholder,
+  normalizeVisionAnnotation,
+  reindexVisionPages,
+} from './vision-annotation.js'
+import {
+  buildFieldImageCrops,
+  buildOllamaReviewImages,
+  serializeCropMetadata,
+} from './vision-field-crops.js'
 
 const app = express()
 const port = Number(process.env.OCR_API_PORT || 8787)
@@ -180,80 +190,64 @@ function decodeUploadedFileName(fileName) {
   return decodedFileName.includes('\uFFFD') ? fileName : decodedFileName
 }
 
-async function recognizeImage(buffer, languageHints) {
+function alignVisionPages(pageTexts, visionPages, sourceFileIndex) {
+  return pageTexts.map((pageText, sourcePageIndex) =>
+    visionPages[sourcePageIndex]
+      ? {
+          ...visionPages[sourcePageIndex],
+          sourceFileIndex,
+          sourcePageIndex,
+          text: visionPages[sourcePageIndex].text || pageText,
+        }
+      : createVisionPagePlaceholder({ sourceFileIndex, sourcePageIndex, text: pageText }),
+  )
+}
+
+function normalizeVisionResponses(responses, metadata = {}) {
+  const pages = []
+  const fallbackPageTexts = []
+
+  for (const response of responses) {
+    const annotation = normalizeVisionAnnotation(response.fullTextAnnotation, {
+      sourceFileIndex: metadata.sourceFileIndex,
+      sourcePageIndexOffset: (metadata.sourcePageIndexOffset ?? 0) + pages.length,
+    })
+    fallbackPageTexts.push(annotation.text)
+    pages.push(...annotation.pages)
+  }
+
+  return {
+    pages,
+    pageTexts: pages.length ? pages.map((page) => page.text) : fallbackPageTexts,
+  }
+}
+
+async function recognizeImage(buffer, languageHints, sourceFileIndex) {
   const request = {
     image: { content: buffer },
     imageContext: languageHints.length ? { languageHints } : undefined,
   }
 
   const [result] = await imageClient.documentTextDetection(request)
-  const text = result.fullTextAnnotation?.text?.trim() || ''
+  const annotation = normalizeVisionAnnotation(result.fullTextAnnotation, { sourceFileIndex })
+  const text = annotation.text
+  const pageTexts = annotation.pages.length
+    ? annotation.pages.map((page) => page.text || text)
+    : text
+      ? [text]
+      : []
 
   return {
     text,
-    pageCount: text ? 1 : 0,
-    pageTexts: text ? [text] : [],
+    pageCount: pageTexts.length,
+    pageTexts,
+    visionPages: alignVisionPages(pageTexts, annotation.pages, sourceFileIndex),
     warnings: [],
     engine: 'DOCUMENT_TEXT_DETECTION',
   }
 }
 
-function getDetectedBreakText(breakType) {
-  switch (breakType) {
-    case 'SPACE':
-    case 'SURE_SPACE':
-    case 1:
-    case 2:
-      return ' '
-    case 'EOL_SURE_SPACE':
-    case 'LINE_BREAK':
-    case 3:
-    case 5:
-      return '\n'
-    case 'HYPHEN':
-    case 4:
-      return '-\n'
-    default:
-      return ''
-  }
-}
-
-function extractVisionPageText(page) {
-  const paragraphs = []
-
-  for (const block of page?.blocks ?? []) {
-    for (const paragraph of block.paragraphs ?? []) {
-      let paragraphText = ''
-
-      for (const word of paragraph.words ?? []) {
-        for (const symbol of word.symbols ?? []) {
-          paragraphText += symbol.text ?? ''
-          paragraphText += getDetectedBreakText(symbol.property?.detectedBreak?.type)
-        }
-      }
-
-      const normalizedParagraph = paragraphText.replace(/[ \t]+\n/g, '\n').trim()
-      if (normalizedParagraph) paragraphs.push(normalizedParagraph)
-    }
-  }
-
-  return paragraphs.join('\n').trim()
-}
-
-function extractDocumentPageTexts(responses) {
-  const annotationPages = responses.flatMap((response) => response.fullTextAnnotation?.pages ?? [])
-
-  // Vision 有時只在第一個 response.text 放入整份 PDF；pages 才是真正逐頁資料。
-  if (annotationPages.length > 1) {
-    return annotationPages.map(extractVisionPageText)
-  }
-
-  return responses.map(
-    (response) => response.fullTextAnnotation?.text?.replace(/\r\n?/g, '\n').trim() || '',
-  )
-}
-
-async function recognizeDocument(buffer, mimeType, languageHints) {
+async function recognizeDocument(buffer, mimeType, languageHints, sourceFileIndex) {
   const createFileRequest = (pages) => ({
     inputConfig: {
       mimeType,
@@ -265,6 +259,7 @@ async function recognizeDocument(buffer, mimeType, languageHints) {
   })
 
   let pageTexts = []
+  let visionPages = []
   let sourcePageCount = 0
 
   if (mimeType === 'application/pdf') {
@@ -281,15 +276,29 @@ async function recognizeDocument(buffer, mimeType, languageHints) {
         requests: [createFileRequest([pageNumber])],
       })
       const pageResponses = pageResult.responses?.[0]?.responses ?? []
-      const recognizedPageTexts = extractDocumentPageTexts(pageResponses)
-      pageTexts.push(recognizedPageTexts.find(Boolean) ?? '')
+      const normalized = normalizeVisionResponses(pageResponses, {
+        sourceFileIndex,
+        sourcePageIndexOffset: pageNumber - 1,
+      })
+      const pageText = normalized.pageTexts.find(Boolean) ?? ''
+      pageTexts.push(pageText)
+      visionPages.push(
+        normalized.pages[0] ??
+          createVisionPagePlaceholder({
+            sourceFileIndex,
+            sourcePageIndex: pageNumber - 1,
+            text: pageText,
+          }),
+      )
     }
   } else {
     const [result] = await fileClient.batchAnnotateFiles({
       requests: [createFileRequest(undefined)],
     })
     const responses = result.responses?.[0]?.responses ?? []
-    pageTexts = extractDocumentPageTexts(responses)
+    const normalized = normalizeVisionResponses(responses, { sourceFileIndex })
+    pageTexts = normalized.pageTexts
+    visionPages = alignVisionPages(pageTexts, normalized.pages, sourceFileIndex)
     sourcePageCount = pageTexts.length
   }
 
@@ -317,6 +326,7 @@ async function recognizeDocument(buffer, mimeType, languageHints) {
       .trim(),
     pageCount: pageTexts.length,
     pageTexts,
+    visionPages,
     warnings,
     engine:
       mimeType === 'application/pdf'
@@ -347,15 +357,18 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
     const languageHints = parseLanguageHints(req.body.languageHints)
     const recognizedFiles = []
 
-    for (const file of files) {
+    for (const [sourceFileIndex, file] of files.entries()) {
       const result = DOCUMENT_MIME_TYPES.has(file.mimetype)
-        ? await recognizeDocument(file.buffer, file.mimetype, languageHints)
-        : await recognizeImage(file.buffer, languageHints)
+        ? await recognizeDocument(file.buffer, file.mimetype, languageHints, sourceFileIndex)
+        : await recognizeImage(file.buffer, languageHints, sourceFileIndex)
 
       recognizedFiles.push({ file, result })
     }
 
     const pageTexts = recognizedFiles.flatMap(({ result }) => result.pageTexts)
+    const visionPages = reindexVisionPages(
+      recognizedFiles.flatMap(({ result }) => result.visionPages),
+    )
     const text = pageTexts
       .map((pageText) => pageText.trimEnd())
       .join('\n\n')
@@ -372,13 +385,31 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
       mimeType: file.mimetype,
       size: file.size,
       pageCount: result.pageCount,
+      wordCount: result.visionPages.reduce((count, page) => count + page.words.length, 0),
     }))
     const warnings = recognizedFiles.flatMap(({ file, result }) =>
       result.warnings.map((warning) =>
         files.length > 1 ? `${decodeUploadedFileName(file.originalname)}：${warning}` : warning,
       ),
     )
-    const aiReview = await reviewContractFieldsWithOllama(pageTexts, ollamaConfig)
+    const fieldImageCrops = ollamaConfig.enabled
+      ? await buildFieldImageCrops(visionPages, files)
+      : []
+    let ollamaReviewImages = []
+    if (ollamaConfig.enabled && fieldImageCrops.length) {
+      try {
+        ollamaReviewImages = await buildOllamaReviewImages(fieldImageCrops)
+      } catch (error) {
+        console.warn('[AI OCR] Failed to build review contact sheet:', error)
+        warnings.push('無法建立 AI 圖片複核聯絡表，這次已改用 OCR 文字校對。')
+      }
+    }
+    const reviewCrops = ollamaReviewImages.length ? fieldImageCrops : []
+    const aiReview = await reviewContractFieldsWithOllama(pageTexts, {
+      ...ollamaConfig,
+      imageCrops: reviewCrops,
+      reviewImages: ollamaReviewImages,
+    })
     if (aiReview.warning) warnings.push(aiReview.warning)
     const baseEngine =
       files.length === 1
@@ -397,11 +428,15 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
       engine: aiReview.status === 'completed' ? `${baseEngine} + ${aiReview.model}` : baseEngine,
       files: fileDetails,
       storage: 'temporary-memory',
+      visionPages,
+      cropRegions: serializeCropMetadata(fieldImageCrops),
       fieldReviews: aiReview.fieldReviews,
       aiReview: {
         status: aiReview.status,
         model: aiReview.model,
         fieldCount: Object.keys(aiReview.fieldReviews).length,
+        cropCount: aiReview.cropCount ?? reviewCrops.length,
+        mode: ollamaReviewImages.length ? 'multimodal' : 'text',
         durationMs: aiReview.durationMs,
       },
     })

@@ -356,12 +356,18 @@ async function sendToOcr(files: File[]): Promise<void> {
   formData.append('recognitionMode', recognitionMode.value)
   formData.append('dpi', String(selectedMode.value.dpi))
 
+  let progressTimer: number | undefined
+
   try {
     uploadProgress.value = 45
     uploadStatus.value =
       files[0]?.type === 'application/pdf'
         ? '正在使用 Google OCR 辨識 PDF，接著由本機 AI 校對欄位'
-        : `正在使用 Google OCR 辨識 ${files.length} 張圖片，接著由本機 AI 校對欄位`
+        : `正在使用 Google OCR 辨識 ${files.length} 張圖片，接著由本機 AI 看圖複核；CPU 模式可能需要 3–8 分鐘`
+
+    progressTimer = window.setInterval(() => {
+      uploadProgress.value = Math.min(92, uploadProgress.value + 1)
+    }, 5000)
 
     const response = await fetch('/api/ocr', {
       method: 'POST',
@@ -391,6 +397,7 @@ async function sendToOcr(files: File[]): Promise<void> {
     uploadError.value = error instanceof Error ? error.message : 'OCR 服務發生未知錯誤。'
     uploadStatus.value = '辨識失敗，請確認檔案後重新嘗試'
   } finally {
+    if (progressTimer) window.clearInterval(progressTimer)
     isUploading.value = false
   }
 }
@@ -739,9 +746,14 @@ function onDragLeave(): void {
                 <strong>{{ ocrResult?.engine }}</strong>
               </div>
               <div v-if="ocrResult?.aiReview">
-                <span>AI 欄位校對</span>
+                <span>
+                  {{ ocrResult.aiReview.mode === 'multimodal' ? 'AI 圖片複核' : 'AI 文字校對' }}
+                </span>
                 <strong v-if="ocrResult.aiReview.status === 'completed'">
                   {{ ocrResult.aiReview.model }} · {{ ocrResult.aiReview.fieldCount }} 個欄位
+                  <template v-if="ocrResult.aiReview.cropCount">
+                    · {{ ocrResult.aiReview.cropCount }} 個裁切區域
+                  </template>
                 </strong>
                 <strong v-else>未完成，已保留 Google OCR 結果</strong>
               </div>
