@@ -8,11 +8,13 @@ import {
   resolveRoleHome,
   type AuthRole,
 } from '@/src/composables/useAuth'
+import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: () => import('@/src/pages/home.vue') },
+    { path: '/maintenance', component: () => import('@/src/pages/maintenance.vue') },
     { path: '/login', component: () => import('@/src/pages/auth/login.vue') },
     { path: '/register', component: () => import('@/src/pages/auth/register.vue') },
     { path: '/verify-email', component: () => import('@/src/pages/auth/verify-code.vue') },
@@ -33,6 +35,7 @@ const router = createRouter({
         { path: 'ai-quality', component: () => import('@/src/pages/admin/ai-quality.vue') },
         { path: 'subscription', component: () => import('@/src/pages/admin/subscription.vue') },
         { path: 'audit', component: () => import('@/src/pages/admin/audit.vue') },
+        { path: 'settings', component: () => import('@/src/pages/admin/settings.vue') },
       ],
     },
     {
@@ -113,6 +116,14 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  const maintenanceOn = adminSettings.value.maintenanceMode
+  if (maintenanceOn && !to.path.startsWith('/admin') && to.path !== '/maintenance') {
+    return '/maintenance'
+  }
+  if (!maintenanceOn && to.path === '/maintenance') {
+    return '/'
+  }
+
   const session = getAuthSession()
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth)
   const pendingRegistration = getPendingRegistration()

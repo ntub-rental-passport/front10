@@ -7,6 +7,7 @@ import {
   CreditCard,
   LayoutDashboard,
   ScrollText,
+  Settings,
   ShieldCheck,
   Sparkles,
   Users,
@@ -23,6 +24,7 @@ const adminNavItems = [
   { label: 'AI 品質監控', path: '/admin/ai-quality', icon: Sparkles },
   { label: '訂閱與容量', path: '/admin/subscription', icon: CreditCard },
   { label: '稽核紀錄', path: '/admin/audit', icon: ScrollText },
+  { label: '系統設定', path: '/admin/settings', icon: Settings },
 ]
 
 function isActive(path: string): boolean {
