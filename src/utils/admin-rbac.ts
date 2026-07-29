@@ -37,6 +37,7 @@ export const adminNavGroups: AdminNavGroup[] = [
       { label: '內容管理', path: '/admin/content', roles: ['super', 'content'] },
       { label: '法規知識庫', path: '/admin/knowledge', roles: ['super', 'content'] },
       { label: 'AI 品質監控', path: '/admin/ai-quality', roles: ['super', 'content'] },
+      { label: '通知模板', path: '/admin/notifications', roles: ['super', 'content'] },
     ],
   },
   {

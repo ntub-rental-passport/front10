@@ -1,5 +1,6 @@
 import { computed, type Component } from 'vue'
 import {
+  Bell,
   BookOpen,
   ClipboardCheck,
   CreditCard,
@@ -27,6 +28,7 @@ const navIcons: Record<string, Component> = {
   '/admin/content': Megaphone,
   '/admin/knowledge': BookOpen,
   '/admin/ai-quality': Sparkles,
+  '/admin/notifications': Bell,
   '/admin/audit': ScrollText,
   '/admin/settings': Settings,
 }

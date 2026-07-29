@@ -17,6 +17,7 @@ const MATRIX: Record<string, Record<AdminRole, boolean>> = {
   '/admin/content': { super: true, ops: false, content: true },
   '/admin/knowledge': { super: true, ops: false, content: true },
   '/admin/ai-quality': { super: true, ops: false, content: true },
+  '/admin/notifications': { super: true, ops: false, content: true },
   '/admin/audit': { super: true, ops: true, content: false },
   '/admin/settings': { super: true, ops: false, content: false },
 }
@@ -78,16 +79,16 @@ describe('visibleNavGroupsFor', () => {
     return visibleNavGroupsFor(role).reduce((sum, g) => sum + g.items.length, 0)
   }
 
-  it('super 可看到全部 9 個項目', () => {
-    expect(totalItems('super')).toBe(9)
+  it('super 可看到全部 10 個項目', () => {
+    expect(totalItems('super')).toBe(10)
   })
 
   it('ops 可看到 5 個項目', () => {
     expect(totalItems('ops')).toBe(5)
   })
 
-  it('content 可看到 5 個項目', () => {
-    expect(totalItems('content')).toBe(5)
+  it('content 可看到 6 個項目', () => {
+    expect(totalItems('content')).toBe(6)
   })
 
   it('不會回傳空群組（每個群組至少有一個項目）', () => {
@@ -106,9 +107,9 @@ describe('visibleNavGroupsFor', () => {
 })
 
 describe('adminNavGroups', () => {
-  it('定義了三個群組，共 9 個項目', () => {
+  it('定義了三個群組，共 10 個項目', () => {
     const total = adminNavGroups.reduce((sum, g) => sum + g.items.length, 0)
     expect(adminNavGroups.length).toBe(3)
-    expect(total).toBe(9)
+    expect(total).toBe(10)
   })
 })
