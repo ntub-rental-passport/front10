@@ -9,6 +9,8 @@ import {
   type AuthRole,
 } from '@/src/composables/useAuth'
 import { adminSettings } from '@/src/composables/admin/useAdminSettings'
+import { canAdminAccessPath } from '@/src/utils/admin-rbac'
+import { getCurrentAdminRole } from '@/src/composables/admin/useAdminRbac'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -149,6 +151,10 @@ router.beforeEach((to) => {
 
   if (requiredRoles && !requiredRoles.includes(session.role)) {
     return resolveRoleHome(session.role)
+  }
+
+  if (to.path.startsWith('/admin') && !canAdminAccessPath(getCurrentAdminRole(), to.path)) {
+    return '/admin'
   }
 
   if (to.path !== '/welcome' && needsNicknameSetup(session)) {
