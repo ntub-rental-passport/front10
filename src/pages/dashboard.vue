@@ -31,6 +31,7 @@ import {
   formatOptionalAmount,
 } from '@/src/utils/rent-format'
 import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
+import BannerCarousel from '@/src/components/BannerCarousel.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 
 const { activeAnnouncements } = useAdminContent()
@@ -77,6 +78,8 @@ const {
         :announcement="item"
       />
     </div>
+
+    <BannerCarousel />
 
     <!-- ── 頁面標題 ─────────────────────────────────────────────────────────── -->
     <header class="space-y-1">

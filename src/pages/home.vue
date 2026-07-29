@@ -13,7 +13,6 @@ import {
   UserRoundPlus,
 } from 'lucide-vue-next'
 import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
-import HomeBannerCarousel from '@/src/components/HomeBannerCarousel.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 
 const { activeAnnouncements } = useAdminContent()
@@ -80,8 +79,6 @@ const featureCards = [
           :announcement="item"
         />
       </div>
-
-      <HomeBannerCarousel class="mb-10" />
 
       <section class="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-center">
         <div class="space-y-8">
