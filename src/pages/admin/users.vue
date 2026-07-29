@@ -29,10 +29,11 @@ import {
 } from '@/components/ui/table/index'
 import { Search } from 'lucide-vue-next'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
+import { ADMIN_ROLES, adminRoleLabels as rbacRoleLabels } from '@/src/utils/admin-rbac'
 import { formatDate } from '@/src/utils/admin-format'
-import type { AdminUser, AdminUserRole } from '@/src/mocks/admin-seed'
+import type { AdminRole, AdminUser, AdminUserRole } from '@/src/mocks/admin-seed'
 
-const { users, setStatus, setRole } = useAdminUsers()
+const { users, setStatus, setRole, setAdminRole } = useAdminUsers()
 
 const keyword = ref('')
 const roleFilter = ref<'all' | AdminUserRole>('all')
@@ -61,6 +62,10 @@ function toggleStatus(user: AdminUser): void {
 
 function handleRoleChange(user: AdminUser, value: unknown): void {
   setRole(user.id, value as AdminUserRole)
+}
+
+function handleAdminRoleChange(user: AdminUser, value: unknown): void {
+  setAdminRole(user.id, value as AdminRole)
 }
 </script>
 
@@ -107,6 +112,7 @@ function handleRoleChange(user: AdminUser, value: unknown): void {
               <TableHead>Email</TableHead>
               <TableHead>暱稱</TableHead>
               <TableHead>角色</TableHead>
+              <TableHead>權限角色</TableHead>
               <TableHead>狀態</TableHead>
               <TableHead>註冊日</TableHead>
               <TableHead>Email 驗證</TableHead>
@@ -118,6 +124,23 @@ function handleRoleChange(user: AdminUser, value: unknown): void {
               <TableCell class="font-medium">{{ user.email }}</TableCell>
               <TableCell>{{ user.nickname ?? '—' }}</TableCell>
               <TableCell>{{ adminRoleLabels[user.role] }}</TableCell>
+              <TableCell>
+                <Select
+                  v-if="user.role === 'admin'"
+                  :model-value="user.adminRole ?? 'super'"
+                  @update:model-value="(value) => handleAdminRoleChange(user, value)"
+                >
+                  <SelectTrigger class="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="role in ADMIN_ROLES" :key="role" :value="role">
+                      {{ rbacRoleLabels[role] }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <span v-else class="text-muted-foreground">—</span>
+              </TableCell>
               <TableCell>
                 <Badge :variant="user.status === 'active' ? 'default' : 'destructive'">
                   {{ user.status === 'active' ? '正常' : '停用' }}
@@ -139,7 +162,7 @@ function handleRoleChange(user: AdminUser, value: unknown): void {
               </TableCell>
             </TableRow>
             <TableRow v-if="filteredUsers.length === 0">
-              <TableCell colspan="7" class="py-8 text-center text-muted-foreground">
+              <TableCell colspan="8" class="py-8 text-center text-muted-foreground">
                 沒有符合條件的使用者。
               </TableCell>
             </TableRow>

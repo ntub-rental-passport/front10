@@ -6,6 +6,7 @@ import {
   type AdminUserRole,
   type AdminUserStatus,
 } from '@/src/mocks/admin-seed'
+import { adminRoleLabels as rbacRoleLabels, type AdminRole } from '@/src/utils/admin-rbac'
 
 export const adminUsersCollection = createAdminCollection<AdminUser[]>('users', seedAdminUsers)
 const users = adminUsersCollection
@@ -34,5 +35,12 @@ export function useAdminUsers() {
     logAction('使用者管理', user.email, `角色由「${previous}」變更為「${adminRoleLabels[role]}」`)
   }
 
-  return { users, setStatus, setRole }
+  function setAdminRole(id: string, adminRole: AdminRole): void {
+    const user = users.value.find((item) => item.id === id)
+    if (!user || user.role !== 'admin' || user.adminRole === adminRole) return
+    user.adminRole = adminRole
+    logAction('使用者管理', user.email, `權限角色變更為「${rbacRoleLabels[adminRole]}」`)
+  }
+
+  return { users, setStatus, setRole, setAdminRole }
 }
