@@ -15,6 +15,9 @@ npm install
 ```sh
 npm run dev
 ```
+啟動後端：
+
+uvicorn main:app --reload
 
 啟動 OCR API：
 

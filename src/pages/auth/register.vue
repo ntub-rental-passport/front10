@@ -190,24 +190,65 @@ function validateGoogleRegistration(): boolean {
   errorMessage.value = ''
   return true
 }
+async function registerToFastAPI(emailValue: string, passwordValue: string) {
+  const response = await fetch('http://127.0.0.1:8000/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: emailValue,
+      password: passwordValue,
+    }),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    // 抓取後端傳回的錯誤訊息（例如：此 Email 已被註冊）
+    throw new Error(data.detail || '註冊失敗，請重新嘗試')
+  }
+
+  return data
+}
 
 async function handleRegister(): Promise<void> {
+  console.log('1. 按鈕被點擊了！')
   hasSubmitted.value = true
-  if (!validateRegistrationForm()) return
+  errorMessage.value = ''
 
-  const pendingRegistration = startEmailRegistration(
-    form.value.email || 'new-user@rentmate.tw',
-    form.value.password || 'Password123!',
-    selectedOption.value.authRole,
-  )
+  // 1. 前端表單與條款驗證
+  if (!validateRegistrationForm()) {
+    console.log('2. 卡在表單驗證了！', {
+      emailState: emailState.value,
+      passwordState: passwordState.value,
+      confirmPasswordState: confirmPasswordState.value,
+      agreeToTerms: agreeToTerms.value,
+      errorMessage: errorMessage.value
+    }) // 👈 加這行
+    return
+  }
+  console.log('3. 準備發送 API 給後端...')
+  try {
+    // 2. 打 API 真正寫入 MySQL 資料庫
+    await registerToFastAPI(form.value.email, form.value.password)
 
-  await router.push({
-    path: '/verify-email',
-    query: {
-      email: pendingRegistration.email,
-      role: selectedIdentity.value,
-    },
-  })
+    // 3. 註冊成功後，紀錄 pending 狀態並跳轉至驗證頁或登入頁
+    const pendingRegistration = startEmailRegistration(
+      form.value.email,
+      form.value.password,
+      selectedOption.value.authRole,
+    )
+
+    await router.push({
+      path: '/verify-email',
+      query: {
+        email: pendingRegistration.email,
+        role: selectedIdentity.value,
+      },
+    })
+  } catch (err: any) {
+    // 4. 若後端傳回「Email已被註冊」等錯誤，顯示在底部的 errorMessage 紅字
+    errorMessage.value = err.message || '註冊失敗，請稍後再試'
+  }
 }
 
 async function handleGoogleRegister(): Promise<void> {
@@ -417,7 +458,7 @@ async function handleGoogleRegister(): Promise<void> {
         <div class="auth-legal-card">
           <label class="auth-checkbox-row auth-checkbox-row--start">
             <Checkbox v-model:checked="agreeToTerms" class="auth-checkbox auth-checkbox--offset" />
-            <span>
+            <span @click="agreeToTerms = !agreeToTerms">
               我已閱讀並同意
               <span class="auth-inline-accent">服務條款</span>
               與

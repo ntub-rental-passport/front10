@@ -21,6 +21,7 @@ import {
   needsNicknameSetup,
   registerWithGoogle,
   resolveRoleHome,
+  signIn,
   signInWithEmail,
   type EmailSignInError,
 } from '@/src/composables/useAuth'
@@ -91,6 +92,26 @@ const emailMessage = computed(() => {
 const passwordMessage = computed(() =>
   passwordState.value === 'error' ? '請先輸入密碼。' : '',
 )
+// 連線至 FastAPI + MySQL 後端的 API
+async function loginToFastAPI(emailValue: string, passwordValue: string, roleValue: string) {
+  const response = await fetch('http://127.0.0.1:8000/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: emailValue,
+      password: passwordValue,
+      role: roleValue,
+    }),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data.detail || '登入失敗，請確認帳號或密碼')
+  }
+
+  return data
+}
 
 function getInputStateClass(state: FieldState): string {
   if (state === 'error') return 'auth-input--error'
@@ -107,15 +128,28 @@ const loginErrorMessages: Record<EmailSignInError, string> = {
 async function handleLogin(): Promise<void> {
   hasSubmitted.value = true
   loginError.value = ''
+  
+  // 1. 前端格式檢查（若欄位沒填或格式錯則直接擋下）
   if (emailState.value === 'error' || passwordState.value === 'error') return
 
-  const result = signInWithEmail(email.value, password.value, selectedOption.value.authRole)
-  if ('error' in result) {
-    loginError.value = loginErrorMessages[result.error]
-    return
-  }
+  try {
+    // 2. 連線至 FastAPI 進行 MySQL 驗證
+    const apiResult = await loginToFastAPI(
+      email.value,
+      password.value,
+      selectedOption.value.authRole
+    )
 
-  await router.push(getPostLoginTarget())
+    // 3. 驗證通過，寫入 Session
+    signIn(selectedOption.value.authRole, apiResult.user?.email || email.value)
+
+    // 4. 跳轉目標頁面
+    await router.push(getPostLoginTarget())
+
+  } catch (err: any) {
+    // 5. 若後端傳回帳密錯誤，顯示在 UI 紅字上
+    loginError.value = err.message || '登入失敗，請確認帳號密碼'
+  }
 }
 
 async function handleGoogleLogin(): Promise<void> {
