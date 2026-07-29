@@ -1,33 +1,12 @@
 ﻿<script setup lang="ts">
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import {
-  BookOpen,
-  Building2,
-  ClipboardCheck,
-  CreditCard,
-  LayoutDashboard,
-  Megaphone,
-  ScrollText,
-  Settings,
-  ShieldCheck,
-  Sparkles,
-  Users,
-} from 'lucide-vue-next'
+import { Building2, ShieldCheck } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
+import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 
 const route = useRoute()
 
-const adminNavItems = [
-  { label: '後台總覽', path: '/admin', icon: LayoutDashboard },
-  { label: '使用者管理', path: '/admin/users', icon: Users },
-  { label: '物件與評價審核', path: '/admin/review', icon: ClipboardCheck },
-  { label: '內容管理', path: '/admin/content', icon: Megaphone },
-  { label: '法規知識庫', path: '/admin/knowledge', icon: BookOpen },
-  { label: 'AI 品質監控', path: '/admin/ai-quality', icon: Sparkles },
-  { label: '訂閱與容量', path: '/admin/subscription', icon: CreditCard },
-  { label: '稽核紀錄', path: '/admin/audit', icon: ScrollText },
-  { label: '系統設定', path: '/admin/settings', icon: Settings },
-]
+const { visibleNavGroups } = useAdminRbac()
 
 function isActive(path: string): boolean {
   if (path === '/admin') return route.path === '/admin'
@@ -69,21 +48,26 @@ function isActive(path: string): boolean {
           </div>
         </div>
 
-        <nav class="space-y-1">
-          <RouterLink
-            v-for="item in adminNavItems"
-            :key="item.path"
-            :to="item.path"
-            :class="cn(
-              'flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors',
-              isActive(item.path)
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            )"
-          >
-            <component :is="item.icon" class="h-4 w-4" />
-            {{ item.label }}
-          </RouterLink>
+        <nav class="space-y-4">
+          <div v-for="group in visibleNavGroups" :key="group.label" class="space-y-1">
+            <p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {{ group.label }}
+            </p>
+            <RouterLink
+              v-for="item in group.items"
+              :key="item.path"
+              :to="item.path"
+              :class="cn(
+                'flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors',
+                isActive(item.path)
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )"
+            >
+              <component :is="item.icon" class="h-4 w-4" />
+              {{ item.label }}
+            </RouterLink>
+          </div>
         </nav>
       </aside>
 
