@@ -30,6 +30,10 @@ import {
   formatDate,
   formatOptionalAmount,
 } from '@/src/utils/rent-format'
+import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
+import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+
+const { activeAnnouncements } = useAdminContent()
 
 const {
   accentStyles,
@@ -66,6 +70,14 @@ const {
 
 <template>
   <div class="flex min-h-full min-w-0 flex-col gap-5 pb-6">
+    <div v-if="activeAnnouncements.length > 0" class="flex flex-col gap-3">
+      <AnnouncementBanner
+        v-for="item in activeAnnouncements"
+        :key="item.id"
+        :announcement="item"
+      />
+    </div>
+
     <!-- ── 頁面標題 ─────────────────────────────────────────────────────────── -->
     <header class="space-y-1">
       <h1 class="text-3xl font-bold tracking-tight text-slate-900">租屋總覽</h1>

@@ -31,6 +31,7 @@ const router = createRouter({
         { path: '', component: () => import('@/src/pages/admin/index.vue') },
         { path: 'users', component: () => import('@/src/pages/admin/users.vue') },
         { path: 'review', component: () => import('@/src/pages/admin/review.vue') },
+        { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
         { path: 'knowledge', component: () => import('@/src/pages/admin/knowledge.vue') },
         { path: 'ai-quality', component: () => import('@/src/pages/admin/ai-quality.vue') },
         { path: 'subscription', component: () => import('@/src/pages/admin/subscription.vue') },
