@@ -45,7 +45,31 @@ export function createAdminCollection<T>(
   const initial = stored === null ? seed() : (migrate ? migrate(stored) : stored)
   const target = ref(initial) as Ref<T>
   writeJson(key, target.value)
-  watch(target, (value) => writeJson(key, value), { deep: true })
+
+  watch(
+    target,
+    (value) => {
+      // 值與 localStorage 相同時不重複寫入：跨分頁同步後若又寫回，
+      // 會再觸發對方的 storage 事件而形成無限來回。
+      if (canUseStorage() && window.localStorage.getItem(key) === JSON.stringify(value)) return
+      writeJson(key, value)
+    },
+    { deep: true },
+  )
+
+  // 其他分頁改動同一份資料時，storage 事件會在本分頁觸發，藉此同步記憶體狀態
+  if (canUseStorage()) {
+    window.addEventListener('storage', (event) => {
+      if (event.key !== key || event.newValue === null) return
+      try {
+        const next = JSON.parse(event.newValue) as T
+        target.value = migrate ? migrate(next) : next
+      } catch {
+        // 解析失敗就保留目前狀態，不影響使用中的畫面
+      }
+    })
+  }
+
   registry.set(name, { target: target as Ref<unknown>, seed })
   return target
 }
