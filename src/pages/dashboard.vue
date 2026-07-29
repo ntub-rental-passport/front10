@@ -71,6 +71,8 @@ const {
 
 <template>
   <div class="flex min-h-full min-w-0 flex-col gap-5 pb-6">
+    <BannerCarousel />
+
     <div v-if="activeAnnouncements.length > 0" class="flex flex-col gap-3">
       <AnnouncementBanner
         v-for="item in activeAnnouncements"
@@ -78,8 +80,6 @@ const {
         :announcement="item"
       />
     </div>
-
-    <BannerCarousel />
 
     <!-- ── 頁面標題 ─────────────────────────────────────────────────────────── -->
     <header class="space-y-1">

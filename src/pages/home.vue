@@ -12,10 +12,6 @@ import {
   ScanSearch,
   UserRoundPlus,
 } from 'lucide-vue-next'
-import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
-import { useAdminContent } from '@/src/composables/admin/useAdminContent'
-
-const { activeAnnouncements } = useAdminContent()
 
 const heroHighlights = [
   'AI 契約辨識與風險分析',
@@ -72,14 +68,6 @@ const featureCards = [
     </header>
 
     <main class="flex-1 mx-auto max-w-7xl px-6 pt-6 pb-12 lg:px-10 lg:pt-8 lg:pb-20">
-      <div v-if="activeAnnouncements.length > 0" class="mb-8 flex flex-col gap-3">
-        <AnnouncementBanner
-          v-for="item in activeAnnouncements"
-          :key="item.id"
-          :announcement="item"
-        />
-      </div>
-
       <section class="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-center">
         <div class="space-y-8">
           <div class="relative space-y-5">
