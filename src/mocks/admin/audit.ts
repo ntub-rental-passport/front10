@@ -13,6 +13,7 @@ export type AuditActionType =
   | '內容管理'
   | '權限'
   | '通知模板'
+  | '通知管理'
 
 export interface AuditEvent {
   id: string
