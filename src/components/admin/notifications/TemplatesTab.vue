@@ -150,11 +150,20 @@ const sendVariableNames = computed(() =>
   sendTarget.value ? extractVariables(`${sendTarget.value.title} ${sendTarget.value.body}`) : [],
 )
 
+// 只把「有填」的變數交給 renderTemplate；留空的會保留 {{變數}} 原樣，方便看出遺漏
+const filledVars = computed<Record<string, string>>(() => {
+  const result: Record<string, string> = {}
+  for (const [name, value] of Object.entries(sendVars.value)) {
+    if (value.trim() !== '') result[name] = value
+  }
+  return result
+})
+
 const previewTitle = computed(() =>
-  sendTarget.value ? renderTemplate(sendTarget.value.title, sendVars.value) : '',
+  sendTarget.value ? renderTemplate(sendTarget.value.title, filledVars.value) : '',
 )
 const previewBody = computed(() =>
-  sendTarget.value ? renderTemplate(sendTarget.value.body, sendVars.value) : '',
+  sendTarget.value ? renderTemplate(sendTarget.value.body, filledVars.value) : '',
 )
 
 const canSend = computed(() => {
@@ -180,7 +189,7 @@ function submitSend(): void {
   const kind = recipientKind.value
   const recipient: NotifRecipient =
     kind === 'single' ? { kind: 'user', email: recipientEmail.value } : { kind: 'role', role: kind }
-  const count = sendFromTemplate(target.id, sendVars.value, recipient)
+  const count = sendFromTemplate(target.id, filledVars.value, recipient)
   sentMessage.value = `已成功發送給 ${count} 位使用者。`
   sendTarget.value = null
 }
