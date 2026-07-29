@@ -96,6 +96,7 @@ const router = createRouter({
           ],
         },
         { path: 'account', component: () => import('@/src/pages/account.vue') },
+        { path: 'notifications', component: () => import('@/src/pages/notifications.vue') },
       ],
     },
     { path: '/contract', redirect: '/app/contract' },

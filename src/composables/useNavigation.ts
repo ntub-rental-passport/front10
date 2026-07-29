@@ -1,4 +1,5 @@
 import {
+  Bell,
   CheckSquare,
   ClipboardList,
   FileText,
@@ -25,6 +26,7 @@ export function useNavigation() {
     { icon: CheckSquare, label: '點交清單', path: '/app/handover' },
     { icon: Zap, label: '停電通報', path: '/app/outage' },
     { icon: ClipboardList, label: '備忘錄', path: '/app/notes' },
+    { icon: Bell, label: '通知中心', path: '/app/notifications' },
   ]
 
   const accountItem: NavItem = { icon: User, label: '我的帳戶', path: '/app/account' }
