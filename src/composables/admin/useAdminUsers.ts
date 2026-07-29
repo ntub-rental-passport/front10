@@ -7,7 +7,8 @@ import {
   type AdminUserStatus,
 } from '@/src/mocks/admin-seed'
 
-const users = createAdminCollection<AdminUser[]>('users', seedAdminUsers)
+export const adminUsersCollection = createAdminCollection<AdminUser[]>('users', seedAdminUsers)
+const users = adminUsersCollection
 
 export const adminRoleLabels: Record<AdminUserRole, string> = {
   user: '租客',
