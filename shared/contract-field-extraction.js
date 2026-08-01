@@ -123,7 +123,9 @@ function partySection(text, role) {
 
   const section = [lines[start]]
   for (const line of lines.slice(start + 1, start + 14)) {
-    if (otherRolePattern.test(line) || /^第?[一二三四五六七八九十]+[、.．]/.test(line)) break
+    // 多欄 PDF 的 OCR 閱讀順序可能把下一章標題插入當事人資料中間。
+    // 當事人標籤本身已足夠明確，因此只以另一位當事人的標題作為區段終點。
+    if (otherRolePattern.test(line)) break
     section.push(line)
   }
   return section.join('\n')

@@ -101,8 +101,12 @@ const pdfTemplateParties = extractContractFieldCandidates(
     'o 身分證字號：A123456789',
     'o 戶籍地址：臺北市中正區康康街 1 號 5 樓',
     '2. 承租人（房客）',
+    '三、租賃標的',
     'o 姓名：林小明',
     'o 身分證字號：F987654321',
+    'o 戶籍地址：新北市板橋區示範路 99 號 8 樓',
+    'o 通訊地址：同戶籍地址',
+    'o 聯絡電話：0987-111-222',
     '立約人簽章',
     '出租人：（簽章）',
     '承租人：（簽章）',
@@ -115,6 +119,9 @@ assert.equal(pdfTemplateParties.tenant.sourceValue, '林小明')
 assert.equal(pdfTemplateParties.landlord_id.value, 'A123456789')
 assert.equal(pdfTemplateParties.landlord_registered_address.value, '臺北市中正區康康街 1 號 5 樓')
 assert.equal(pdfTemplateParties.tenant_id.value, 'F987654321')
+assert.equal(pdfTemplateParties.tenant_registered_address.value, '新北市板橋區示範路 99 號 8 樓')
+assert.equal(pdfTemplateParties.tenant_mailing_address.value, '新北市板橋區示範路 99 號 8 樓')
+assert.equal(pdfTemplateParties.tenant_phone.value, '0987-111-222')
 
 const statutoryFields = extractContractFieldCandidates(
   [

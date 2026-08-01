@@ -255,6 +255,12 @@ const fields = ref<ContractField[]>(
     const savedReview = storedOcrResult.value?.fieldReviews?.[field.id]
     if (!savedReview) return field
 
+    const savedHasValue = Boolean(
+      savedReview.value?.trim() && savedReview.value.trim() !== '尚未辨識',
+    )
+    // 未確認的空白舊資料不可覆蓋新版抽取結果；使用者已確認或修改的內容仍優先保留。
+    if (!savedHasValue && savedReview.reviewState === 'unreviewed') return field
+
     return locateFieldSource(
       {
         ...field,
@@ -319,6 +325,14 @@ function isFieldCompleted(field: ContractField): boolean {
 const applicableFields = computed(() => fields.value.filter((field) => field.applicable))
 const requiredFields = computed(() => applicableFields.value.filter((field) => field.required))
 const extractedCount = computed(() => applicableFields.value.filter(isFieldPopulated).length)
+const recommendedFieldCount = computed(
+  () => applicableFields.value.filter((field) => !field.required).length,
+)
+const extractionProgress = computed(() =>
+  applicableFields.value.length
+    ? Math.round((extractedCount.value / applicableFields.value.length) * 100)
+    : 0,
+)
 const completedRequiredCount = computed(() => requiredFields.value.filter(isFieldCompleted).length)
 const reviewProgress = computed(() =>
   requiredFields.value.length
@@ -346,11 +360,19 @@ const filteredFields = computed(() =>
   activeGroupFields.value.filter((field) => {
     switch (activeFieldFilter.value) {
       case 'good':
-        return field.confidence === 'high' && field.reviewState === 'unreviewed'
+        return (
+          isFieldPopulated(field) &&
+          field.confidence === 'high' &&
+          field.reviewState === 'unreviewed'
+        )
       case 'medium':
-        return field.confidence === 'medium' && field.reviewState === 'unreviewed'
+        return (
+          isFieldPopulated(field) &&
+          field.confidence !== 'high' &&
+          field.reviewState === 'unreviewed'
+        )
       case 'low':
-        return field.confidence === 'low' && field.reviewState === 'unreviewed'
+        return !isFieldPopulated(field)
       case 'reviewed':
         return field.reviewState !== 'unreviewed'
       default:
@@ -363,24 +385,28 @@ const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: num
   { id: 'all', label: '本類全部', count: activeGroupFields.value.length },
   {
     id: 'good',
-    label: '辨識良好',
+    label: '高信心待確認',
     count: activeGroupFields.value.filter(
-      (field) => field.confidence === 'high' && field.reviewState === 'unreviewed',
+      (field) =>
+        isFieldPopulated(field) &&
+        field.confidence === 'high' &&
+        field.reviewState === 'unreviewed',
     ).length,
   },
   {
     id: 'medium',
     label: '建議確認',
     count: activeGroupFields.value.filter(
-      (field) => field.confidence === 'medium' && field.reviewState === 'unreviewed',
+      (field) =>
+        isFieldPopulated(field) &&
+        field.confidence !== 'high' &&
+        field.reviewState === 'unreviewed',
     ).length,
   },
   {
     id: 'low',
-    label: '人工確認',
-    count: activeGroupFields.value.filter(
-      (field) => field.confidence === 'low' && field.reviewState === 'unreviewed',
-    ).length,
+    label: '缺少資料',
+    count: activeGroupFields.value.filter((field) => !isFieldPopulated(field)).length,
   },
   {
     id: 'reviewed',
@@ -407,6 +433,18 @@ const activeFieldGroup = computed(
   () =>
     fieldGroups.value.find((group) => group.id === activeFieldGroupId.value) ??
     fieldGroups.value[0],
+)
+
+const batchConfirmableFields = computed(() =>
+  activeGroupFields.value.filter(
+    (field) =>
+      isFieldPopulated(field) &&
+      field.reviewState === 'unreviewed' &&
+      field.confidence === 'high' &&
+      field.formatValid !== false &&
+      field.labelDistanceNormal !== false &&
+      !validateLegalField(field),
+  ),
 )
 
 function selectFieldGroup(groupId: string): void {
@@ -500,10 +538,13 @@ function fieldStatus(field: ContractField): { text: string; class: string } {
   if (field.reviewState === 'verified') {
     return { text: '已確認', class: 'bg-violet-100 text-violet-700' }
   }
+  if (!isFieldPopulated(field)) {
+    return { text: '缺少資料', class: 'bg-red-100 text-red-700' }
+  }
 
   switch (field.confidence) {
     case 'high':
-      return { text: '辨識結果良好', class: 'bg-green-100 text-green-700' }
+      return { text: '待確認・高信心', class: 'bg-emerald-100 text-emerald-700' }
     case 'medium':
       return { text: '建議確認', class: 'bg-amber-100 text-amber-700' }
     case 'low':
@@ -514,6 +555,7 @@ function fieldStatus(field: ContractField): { text: string; class: string } {
 function fieldCardClass(field: ContractField): string {
   if (field.reviewState === 'edited') return 'border-blue-300 bg-blue-50'
   if (field.reviewState === 'verified') return 'border-violet-300 bg-violet-50'
+  if (!isFieldPopulated(field)) return 'border-red-300 bg-red-50'
 
   switch (field.confidence) {
     case 'high':
@@ -691,6 +733,15 @@ function verifyField(field: ContractField): void {
   field.validationError = ''
   saveError.value = ''
   field.reviewState = 'verified'
+}
+
+function confirmActiveGroupHighConfidence(): void {
+  if (!batchConfirmableFields.value.length) return
+  batchConfirmableFields.value.forEach((field) => {
+    field.validationError = ''
+    field.reviewState = 'verified'
+  })
+  saveError.value = ''
 }
 
 function persistContract(): boolean {
@@ -903,17 +954,22 @@ function returnToOcr(): void {
           <p class="review-summary-kicker">OCR 辨識完成</p>
           <h2 id="review-summary-title">契約校對摘要</h2>
         </div>
-        <strong class="review-progress-value">{{ reviewProgress }}%</strong>
+        <div class="review-progress-display">
+          <span>必填人工校對</span>
+          <strong class="review-progress-value">{{ reviewProgress }}%</strong>
+        </div>
       </div>
 
       <div class="review-stat-grid">
         <div class="review-stat">
-          <span>已擷取欄位</span>
+          <span>OCR 資料擷取</span>
           <strong>{{ extractedCount }} / {{ applicableFields.length }}</strong>
+          <small>{{ extractionProgress }}% 已找到內容</small>
         </div>
         <div class="review-stat">
-          <span>法定必填已完成</span>
+          <span>必填人工校對</span>
           <strong>{{ completedRequiredCount }} / {{ requiredFields.length }}</strong>
+          <small>確認或修正後才計入</small>
         </div>
         <div class="review-stat review-stat--warning">
           <span>已有值、待確認</span>
@@ -937,11 +993,18 @@ function returnToOcr(): void {
       </div>
 
       <div class="review-summary-footer">
-        <p v-if="requiredRemainingCount">
-          尚缺 <strong>{{ missingRequiredCount }}</strong> 個必填資料，另有
-          <strong>{{ pendingRequiredReviewCount }}</strong> 個欄位待確認。
-        </p>
-        <p v-else>所有必填欄位皆已確認，可以開始 AI 契約分析。</p>
+        <div class="review-summary-copy">
+          <p>
+            本契約適用 {{ applicableFields.length }} 個欄位：{{ requiredFields.length }} 個必填、{{
+              recommendedFieldCount
+            }} 個建議填寫。
+          </p>
+          <p v-if="requiredRemainingCount">
+            尚缺 <strong>{{ missingRequiredCount }}</strong> 個必填資料，另有
+            <strong>{{ pendingRequiredReviewCount }}</strong> 個欄位待確認。
+          </p>
+          <p v-else>所有必填欄位皆已確認，可以開始 AI 契約分析。</p>
+        </div>
         <Button :disabled="!canStartAnalysis" @click="completeReviewAndAnalyze">
           完成校對並開始 AI 契約分析
           <ArrowRight data-icon="inline-end" />
@@ -1113,14 +1176,14 @@ function returnToOcr(): void {
                   <p class="field-status-popover-title">欄位狀態說明</p>
                   <div class="field-status-legend">
                     <div>
-                      <span class="status-dot status-dot--good" />辨識結果良好 — 仍請核對原始契約
+                      <span class="status-dot status-dot--good" />待確認・高信心 — 可批次確認
                     </div>
                     <div>
                       <span class="status-dot status-dot--medium" />建議確認 —
                       系統擷取結果需再次確認
                     </div>
                     <div>
-                      <span class="status-dot status-dot--low" />需要人工確認 — 請查看原始內容
+                      <span class="status-dot status-dot--low" />缺少資料／人工確認 — 請填寫或核對
                     </div>
                     <div>
                       <span class="status-dot status-dot--verified" />已確認 — 使用者已完成核對
@@ -1153,7 +1216,8 @@ function returnToOcr(): void {
               <span class="field-group-label">
                 <strong>{{ group.shortTitle }}</strong>
                 <small v-if="group.requiredCount">
-                  {{ group.completedCount }}/{{ group.requiredCount }} 已完成
+                  <template v-if="group.missingCount">缺 {{ group.missingCount }} 項</template>
+                  <template v-else>{{ group.completedCount }}/{{ group.requiredCount }} 已校對</template>
                 </small>
                 <small v-else>{{ group.conditional ? '未偵測適用情境' : '建議確認' }}</small>
               </span>
@@ -1166,13 +1230,24 @@ function returnToOcr(): void {
               <strong>{{ activeFieldGroup?.title }}</strong>
               <p>{{ activeFieldGroup?.description }}</p>
             </div>
-            <Badge
-              v-if="activeFieldGroup?.missingCount"
-              variant="secondary"
-              class="group-missing-badge"
-            >
-              缺 {{ activeFieldGroup.missingCount }} 項
-            </Badge>
+            <div class="active-field-group-tools">
+              <button
+                v-if="batchConfirmableFields.length"
+                type="button"
+                class="group-batch-confirm"
+                @click="confirmActiveGroupHighConfidence"
+              >
+                <CheckCircle :size="14" />
+                確認本類 {{ batchConfirmableFields.length }} 個高信心欄位
+              </button>
+              <Badge
+                v-if="activeFieldGroup?.missingCount"
+                variant="secondary"
+                class="group-missing-badge"
+              >
+                缺 {{ activeFieldGroup.missingCount }} 項
+              </Badge>
+            </div>
           </div>
 
           <div v-if="activeGroupFields.length" class="field-filter-bar" aria-label="依欄位狀態篩選">
@@ -1194,7 +1269,7 @@ function returnToOcr(): void {
             <div
               v-for="field in filteredFields"
               :key="field.id"
-              class="contract-field-card rounded-lg border p-3 transition-colors"
+              class="contract-field-card rounded-lg border transition-colors"
               :class="fieldCardClass(field)"
             >
               <div class="field-card-header">
@@ -1268,13 +1343,18 @@ function returnToOcr(): void {
                   </span>
                 </div>
                 <div class="field-actions">
-                  <button type="button" class="field-action-button" @click="verifyField(field)">
+                  <button
+                    v-if="isFieldPopulated(field)"
+                    type="button"
+                    class="field-action-button"
+                    @click="verifyField(field)"
+                  >
                     <CheckCircle :size="14" />
                     確認
                   </button>
                   <button type="button" class="field-action-button" @click="startFieldEdit(field)">
                     <PenLine :size="14" />
-                    修改
+                    {{ isFieldPopulated(field) ? '修改' : '填寫' }}
                   </button>
                 </div>
               </div>
@@ -1305,25 +1385,28 @@ function returnToOcr(): void {
                   <span>完整度：缺少道路或門牌，請對照契約人工確認</span>
                 </div>
               </div>
-              <div
+              <details
                 v-if="field.googleConfidence !== null"
-                class="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-current/10 pt-2 text-[11px] text-muted-foreground"
+                class="field-evidence-details"
               >
-                <span>Google confidence：{{ Math.round(field.googleConfidence * 100) }}%</span>
-                <span>格式驗證：{{ field.formatValid ? '通過' : '需確認' }}</span>
-                <span>標籤距離：{{ field.labelDistanceNormal ? '正常' : '需確認' }}</span>
-                <span>
-                  來源：{{
-                    field.reviewSource === 'ai'
-                      ? 'AI 複核'
-                      : field.evidenceType === 'administrative_inference'
-                        ? '依行政區補全'
-                        : field.evidenceType === 'road_inference'
-                          ? '依道路推測'
-                          : '規則抽取'
-                  }}
-                </span>
-              </div>
+                <summary>辨識詳情</summary>
+                <div class="field-evidence-metadata">
+                  <span>Google confidence：{{ Math.round(field.googleConfidence * 100) }}%</span>
+                  <span>格式驗證：{{ field.formatValid ? '通過' : '需確認' }}</span>
+                  <span>標籤距離：{{ field.labelDistanceNormal ? '正常' : '需確認' }}</span>
+                  <span>
+                    來源：{{
+                      field.reviewSource === 'ai'
+                        ? 'AI 複核'
+                        : field.evidenceType === 'administrative_inference'
+                          ? '依行政區補全'
+                          : field.evidenceType === 'road_inference'
+                            ? '依道路推測'
+                            : '規則抽取'
+                    }}
+                  </span>
+                </div>
+              </details>
             </div>
             <p
               v-if="!activeGroupFields.length"
