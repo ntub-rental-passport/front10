@@ -184,6 +184,10 @@
   @apply space-y-3;
 }
 
+.auth-staff-hint {
+  @apply pt-1 text-center text-xs text-muted-foreground;
+}
+
 .auth-divider {
   @apply flex items-center gap-3 text-xs text-muted-foreground;
 }

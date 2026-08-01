@@ -296,6 +296,11 @@ async function handleGoogleLogin(): Promise<void> {
             使用 Google 帳號登入
           </Button>
         </div>
+
+        <p class="auth-staff-hint">
+          RentMate 內部人員？
+          <RouterLink to="/staff-login" class="auth-inline-link">前往內部人員登入</RouterLink>
+        </p>
             </section>
           </form>
         </div>

@@ -26,7 +26,7 @@ import {
   startEmailRegistration,
 } from '@/src/composables/useAuth'
 import {
-  registerIdentityOptions,
+  authIdentityOptions,
   getAuthIdentity,
   type AuthIdentity,
 } from '@/src/constants/auth-identity'
@@ -58,13 +58,12 @@ const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 const errorMessage = ref('')
 const hasSubmitted = ref(false)
-const initialIdentity = getAuthIdentity(route.query.role)
-const selectedIdentity = ref<AuthIdentity>(initialIdentity === 'admin' ? 'tenant' : initialIdentity)
+const selectedIdentity = ref<AuthIdentity>(getAuthIdentity(route.query.role))
 
 const selectedOption = computed(
   () =>
-    registerIdentityOptions.find((option) => option.value === selectedIdentity.value) ??
-    registerIdentityOptions[0],
+    authIdentityOptions.find((option) => option.value === selectedIdentity.value) ??
+    authIdentityOptions[0],
 )
 
 const loginLink = computed(() => ({
@@ -280,7 +279,7 @@ async function handleGoogleRegister(): Promise<void> {
         <div class="auth-role-section">
           <div class="auth-role-grid">
             <button
-              v-for="option in registerIdentityOptions"
+              v-for="option in authIdentityOptions"
               :key="option.value"
               type="button"
               :aria-pressed="selectedIdentity === option.value"

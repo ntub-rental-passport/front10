@@ -1,6 +1,7 @@
 import type { AuthRole } from '@/src/composables/useAuth'
 
-export type AuthIdentity = 'tenant' | 'landlord' | 'admin'
+// 對外開放的登入/註冊身分。管理員與審核人員屬內部角色，一律走 /staff-login。
+export type AuthIdentity = 'tenant' | 'landlord'
 
 export interface AuthIdentityOption {
   value: AuthIdentity
@@ -34,24 +35,9 @@ export const authIdentityOptions: AuthIdentityOption[] = [
     registerFooterNote: '註冊後將建立你的 RentMate 帳號並進入房東管理工作區。',
     registerButtonLabel: '以房東身分建立帳號',
   },
-  {
-    value: 'admin',
-    label: '管理員登入',
-    description: '平台營運與後台管理',
-    helper: '適合平台營運人員：使用者管理、內容審核與系統監控。',
-    authRole: 'admin',
-    loginFooterNote: '登入後將進入系統管理員後台。',
-    registerFooterNote: '管理員帳號不開放註冊。',
-    registerButtonLabel: '不開放註冊',
-  },
 ]
-
-export const registerIdentityOptions: AuthIdentityOption[] = authIdentityOptions.filter(
-  (option) => option.value !== 'admin',
-)
 
 export function getAuthIdentity(value: unknown): AuthIdentity {
   if (value === 'landlord') return 'landlord'
-  if (value === 'admin') return 'admin'
   return 'tenant'
 }
