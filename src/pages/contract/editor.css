@@ -161,6 +161,12 @@
   font-size: 0.625rem;
 }
 
+.recommended-mark {
+  margin-left: 0.3rem;
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+}
+
 .field-edit-row,
 .field-value-row,
 .field-actions {
@@ -284,7 +290,7 @@
 .editor-layout {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 3fr) minmax(20rem, 2fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(34rem, 1fr);
   align-items: start;
   gap: 1rem;
 }
@@ -373,6 +379,137 @@
   line-height: 1.4;
 }
 
+.field-group-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--muted) 28%, var(--background));
+}
+
+.field-group-button {
+  display: flex;
+  min-width: 0;
+  min-height: 3.4rem;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--background);
+  padding: 0.55rem 0.65rem;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.field-group-button:hover {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: color-mix(in srgb, var(--primary) 4%, var(--background));
+}
+
+.field-group-button.is-active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 7%, var(--background));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.field-group-button.is-inactive {
+  border-style: dashed;
+  color: var(--muted-foreground);
+}
+
+.field-group-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  outline-offset: 2px;
+}
+
+.field-group-index {
+  display: grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex: 0 0 1.55rem;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--muted));
+  color: var(--primary);
+  font-size: 0.6875rem;
+  font-weight: 800;
+}
+
+.field-group-button.has-missing:not(.is-active) .field-group-index {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.field-group-label {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.field-group-label strong,
+.field-group-label small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-group-label strong {
+  font-size: 0.75rem;
+}
+
+.field-group-label small {
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+}
+
+.active-field-group-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--border);
+  padding: 0.85rem 1rem;
+}
+
+.active-field-group-heading > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.15rem 0.5rem;
+}
+
+.active-field-group-heading span {
+  align-self: center;
+  color: var(--primary);
+  font-size: 0.6875rem;
+  font-weight: 800;
+}
+
+.active-field-group-heading strong {
+  font-size: 0.9rem;
+}
+
+.active-field-group-heading p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.group-missing-badge {
+  flex: 0 0 auto;
+  background: #fef2f2 !important;
+  color: #dc2626 !important;
+}
+
 .status-dot {
   width: 0.65rem;
   height: 0.65rem;
@@ -458,17 +595,27 @@
 }
 
 .field-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 0.75rem;
   padding-top: 1rem;
 }
 
 .field-filter-empty {
+  grid-column: 1 / -1;
   margin: 1.25rem 0;
   color: var(--muted-foreground);
   font-size: 0.8125rem;
   text-align: center;
+}
+
+.field-filter-empty--conditional {
+  border: 1px dashed var(--border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--muted) 35%, var(--background));
+  padding: 1rem;
+  line-height: 1.65;
 }
 
 .contract-document-card {
@@ -836,9 +983,7 @@
   }
 
   .editor-side-column {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.55fr);
-    align-items: start;
+    display: flex;
   }
 }
 
@@ -872,6 +1017,10 @@
 
   .editor-side-column {
     display: flex;
+  }
+
+  .field-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .pdf-file-info strong {
@@ -920,6 +1069,10 @@
 
   .review-stat-grid {
     grid-template-columns: 1fr;
+  }
+
+  .field-group-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .field-value-row {

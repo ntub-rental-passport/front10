@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { extractContractFieldCandidates } from '../src/utils/contract-field-extraction'
+import { detectContractConditions } from '../shared/contract-field-schema.js'
 
 const reportReferenceText = [
   '出租人：[已遮蔽]，以下簡稱甲方',
@@ -44,7 +45,10 @@ const noisyVerticalAddress = extractContractFieldCandidates(
 assert.equal(noisyVerticalAddress.address.sourceValue, '長千中正區林森南路號3提')
 assert.equal(noisyVerticalAddress.address.value, '臺北市中正區林森南路號3提')
 assert.equal(noisyVerticalAddress.address.addressResolution?.evidenceType, 'road_inference')
-assert.equal(noisyVerticalAddress.address.addressResolution?.warnings.includes('address_incomplete'), true)
+assert.equal(
+  noisyVerticalAddress.address.addressResolution?.warnings.includes('address_incomplete'),
+  true,
+)
 
 const noisyLabelWithValidAddress = extractContractFieldCandidates(
   [
@@ -56,7 +60,10 @@ const noisyLabelWithValidAddress = extractContractFieldCandidates(
 assert.equal(noisyLabelWithValidAddress.address.sourceValue, '新北市淡水區自强路')
 assert.equal(noisyLabelWithValidAddress.address.value, '新北市淡水區自强路')
 assert.equal(noisyLabelWithValidAddress.address.addressResolution?.status, 'accepted')
-assert.equal(noisyLabelWithValidAddress.address.addressResolution?.warnings.includes('address_incomplete'), true)
+assert.equal(
+  noisyLabelWithValidAddress.address.addressResolution?.warnings.includes('address_incomplete'),
+  true,
+)
 
 const missingLabelWithValidAddress = extractContractFieldCandidates(
   '甲乙雙方協議\n新北市淡水區自强路\n租賃期限為一年',
@@ -105,5 +112,68 @@ assert.equal(pdfTemplateParties.landlord.value, '王房東')
 assert.equal(pdfTemplateParties.landlord.sourceValue, '王房東')
 assert.equal(pdfTemplateParties.tenant.value, '林小明')
 assert.equal(pdfTemplateParties.tenant.sourceValue, '林小明')
+assert.equal(pdfTemplateParties.landlord_id.value, 'A123456789')
+assert.equal(pdfTemplateParties.landlord_registered_address.value, '臺北市中正區康康街 1 號 5 樓')
+assert.equal(pdfTemplateParties.tenant_id.value, 'F987654321')
+
+const statutoryFields = extractContractFieldCandidates(
+  [
+    '本契約於民國114年1月2日經承租人攜回審閱3日。',
+    '出租人簽章：王房東',
+    '承租人簽章：林小明',
+    '租賃住宅地址：臺北市中正區忠孝東路一段1號',
+    '基地坐落中正段一小段123地號',
+    '專有部分建號：456建號，面積共計30平方公尺',
+    '租賃住宅部分：第2層第3室，租賃範圍面積15平方公尺',
+    '租金支付方式：轉帳繳付，金融機構：第一銀行，戶名：王房東，帳號：123-456',
+    '每期應繳納1個月租金',
+    '押金約定為2個月租金，押金新臺幣36,000元',
+    '管理費：由承租人負擔，每月1,000元',
+    '水費：由承租人負擔',
+    '電費：以用電度數計費，每度電費不得超過當期每度平均電價',
+  ].join('\n'),
+)
+assert.equal(statutoryFields.review_date.value, '民國 114 年 1 月 2 日')
+assert.equal(statutoryFields.review_days.value, '3 日')
+assert.equal(statutoryFields.landlord_review_signature.value.includes('已載明'), true)
+assert.equal(statutoryFields.land_number.value, '中正段一小段123地號')
+assert.equal(statutoryFields.building_number.value, '456建號')
+assert.equal(statutoryFields.exclusive_area.value, '30 平方公尺')
+assert.equal(statutoryFields.rental_scope.value, '部分')
+assert.equal(statutoryFields.rental_area.value, '15 平方公尺')
+assert.equal(statutoryFields.payment_period.value, '1 個月')
+assert.equal(statutoryFields.payment_method.value, '轉帳')
+assert.equal(statutoryFields.bank_account.value.includes('帳號：123-456'), true)
+assert.equal(statutoryFields.deposit_months.value, '2 個月租金')
+assert.equal(statutoryFields.management_fee.value.includes('管理費'), true)
+assert.equal(statutoryFields.electricity_billing.value.includes('電費'), true)
+
+const uncheckedTemplateOptions = extractContractFieldCandidates(
+  [
+    '租賃住宅□全部□部分：第__層□房間__間□第__室',
+    '租金支付方式：□現金繳付□轉帳繳付：金融機構：__，帳號：__',
+    '(一)管理費：',
+    '□由出租人負擔。',
+    '□由承租人負擔。',
+    '(二)水費：',
+    '□由出租人負擔。',
+    '□由承租人負擔。',
+  ].join('\n'),
+)
+assert.equal(uncheckedTemplateOptions.rental_scope.value, '')
+assert.equal(uncheckedTemplateOptions.payment_method.value, '')
+assert.equal(uncheckedTemplateOptions.management_fee.value, '')
+assert.equal(uncheckedTemplateOptions.water_fee.value, '')
+
+assert.deepEqual(detectContractConditions('出租人委託代理人簽約，並檢附授權書'), {
+  agent: true,
+  sublease: false,
+  transfer: false,
+  door_number: true,
+  no_door_number: false,
+  partial_scope: false,
+})
+assert.equal(detectContractConditions('無門牌，房屋稅籍編號：123').door_number, false)
+assert.equal(detectContractConditions('租賃住宅部分：第2層第3室').partial_scope, true)
 
 console.log('Contract field extraction regression checks passed.')

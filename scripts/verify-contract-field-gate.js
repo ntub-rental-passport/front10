@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict'
-import {
-  analyzeContractFields,
-  collectRelevantSnippets,
-} from '../server/contract-field-gate.js'
+import { analyzeContractFields, collectRelevantSnippets } from '../server/contract-field-gate.js'
 
 const pageText = [
   '出租人：王小明',
@@ -45,39 +42,59 @@ assert.equal(analysis.decisions.rent.formatValid, true)
 assert.equal(analysis.unresolvedFieldIds.includes('rent'), false)
 assert.equal(analysis.fieldReviews.landlord.confidence, 'medium')
 assert.equal(analysis.unresolvedFieldIds.includes('landlord'), true)
+assert.equal(Object.hasOwn(analysis.decisions, 'review_days'), true)
+assert.equal(Object.hasOwn(analysis.decisions, 'landlord_id'), true)
 
 const snippets = collectRelevantSnippets([pageText], ['landlord', 'rent'])
-assert.equal(snippets.some((snippet) => snippet.fieldId === 'landlord'), true)
-assert.equal(snippets.some((snippet) => snippet.fieldId === 'rent'), true)
-assert.equal(snippets.every((snippet) => snippet.text.length < 500), true)
+assert.equal(
+  snippets.some((snippet) => snippet.fieldId === 'landlord'),
+  true,
+)
+assert.equal(
+  snippets.some((snippet) => snippet.fieldId === 'rent'),
+  true,
+)
+assert.equal(
+  snippets.every((snippet) => snippet.text.length < 500),
+  true,
+)
 
 const inferredAddressText = '甲方房屋所在地及使用範圍：\n淡水區自強路10號'
 const inferredAddressAnalysis = analyzeContractFields({
   text: inferredAddressText,
   pageTexts: [inferredAddressText],
-  visionPages: [{
-    pageIndex: 0,
-    width: 1000,
-    height: 1400,
-    words: [
-      {
-        wordIndex: 0,
-        text: '淡水區自強路10號',
-        confidence: 0.95,
-        boundingBox: { left: 100, top: 100, right: 400, bottom: 140, width: 300, height: 40 },
-      },
-    ],
-  }],
+  visionPages: [
+    {
+      pageIndex: 0,
+      width: 1000,
+      height: 1400,
+      words: [
+        {
+          wordIndex: 0,
+          text: '淡水區自強路10號',
+          confidence: 0.95,
+          boundingBox: { left: 100, top: 100, right: 400, bottom: 140, width: 300, height: 40 },
+        },
+      ],
+    },
+  ],
 })
 assert.equal(inferredAddressAnalysis.fieldReviews.address.value, '新北市淡水區自強路10號')
 assert.equal(inferredAddressAnalysis.fieldReviews.address.evidenceType, 'administrative_inference')
-assert.equal(inferredAddressAnalysis.fieldReviews.address.addressResolution.rawText, '淡水區自強路10號')
 assert.equal(
-  inferredAddressAnalysis.fieldReviews.address.addressResolution.warnings.includes('address_incomplete'),
+  inferredAddressAnalysis.fieldReviews.address.addressResolution.rawText,
+  '淡水區自強路10號',
+)
+assert.equal(
+  inferredAddressAnalysis.fieldReviews.address.addressResolution.warnings.includes(
+    'address_incomplete',
+  ),
   false,
 )
 assert.equal(
-  inferredAddressAnalysis.fieldReviews.address.reviewReasons.includes('county_inferred_from_district'),
+  inferredAddressAnalysis.fieldReviews.address.reviewReasons.includes(
+    'county_inferred_from_district',
+  ),
   true,
 )
 

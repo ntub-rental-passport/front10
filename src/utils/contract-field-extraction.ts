@@ -38,7 +38,7 @@ export interface TaiwanAddressValidationResult {
   resolution: AddressResolution
 }
 
-export interface ContractFieldCandidates {
+export interface ContractFieldCandidates extends Record<string, ContractFieldCandidate> {
   landlord: ContractFieldCandidate
   tenant: ContractFieldCandidate
   address: ContractFieldCandidate

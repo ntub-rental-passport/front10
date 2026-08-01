@@ -1,31 +1,22 @@
 import { extractContractFieldCandidates } from '../shared/contract-field-extraction.js'
+import { CONTRACT_FIELD_DEFINITIONS } from '../shared/contract-field-schema.js'
 
-export const FIELD_KEYWORDS = {
-  landlord: ['出租人姓名', '出租人'],
-  tenant: ['承租人姓名', '承租人'],
-  address: ['租賃住宅地址', '房屋所在地', '租屋地址', '房屋地址'],
-  start_date: ['租賃期間', '租賃期限', '租期自'],
-  end_date: ['租賃期間', '租賃期限', '至民國'],
-  rent: ['每月租金', '月租金', '租金每個月'],
-  due_day: ['每月', '租金應於', '繳納'],
-  deposit: ['押租保證金', '押金'],
-  penalty: ['違約金', '提前終止', '提前解約'],
-}
+export const FIELD_KEYWORDS = Object.fromEntries(
+  CONTRACT_FIELD_DEFINITIONS.map((definition) => [definition.id, definition.keywords]),
+)
 
-const CANDIDATE_KEYS = {
-  landlord: 'landlord',
-  tenant: 'tenant',
-  address: 'address',
-  start_date: 'startDate',
-  end_date: 'endDate',
-  rent: 'rent',
-  due_day: 'dueDay',
-  deposit: 'deposit',
-  penalty: 'penalty',
-}
+const FIELD_DEFINITION_BY_ID = new Map(
+  CONTRACT_FIELD_DEFINITIONS.map((definition) => [definition.id, definition]),
+)
+
+const CANDIDATE_KEYS = Object.fromEntries(
+  CONTRACT_FIELD_DEFINITIONS.map((definition) => [definition.id, definition.candidateKey]),
+)
 
 function normalizeText(value) {
-  return String(value ?? '').replace(/\s+/g, '').replace(/[：:，,。．；;（）()]/g, '')
+  return String(value ?? '')
+    .replace(/\s+/g, '')
+    .replace(/[：:，,。．；;（）()]/g, '')
 }
 
 function findSource(pageTexts, sourceValue) {
@@ -106,13 +97,34 @@ function isLabelDistanceNormal(page, fieldId, sourceBox) {
 
 function isFormatValid(fieldId, value) {
   if (!value || /待確認|人工輸入/.test(value)) return false
-  if (fieldId === 'rent' || fieldId === 'deposit') return /^NT\$[0-9,]+$/.test(value)
-  if (fieldId === 'start_date' || fieldId === 'end_date') {
-    return /^民國\s+\d+\s+年\s+\d+\s+月\s+\d+\s+日$/.test(value)
+  const format = FIELD_DEFINITION_BY_ID.get(fieldId)?.format ?? 'text'
+
+  switch (format) {
+    case 'money':
+      return /^NT\$[0-9,]+$/.test(value)
+    case 'date':
+      return /^民國\s+\d+\s+年\s+\d+\s+月\s+\d+\s+日$/.test(value)
+    case 'name':
+      return /^[\p{Script=Han}·‧]{2,40}$/u.test(value)
+    case 'id':
+      return /^(?:[A-Z][12]\d{8}|\d{8}|[A-Z0-9-]{6,20})$/i.test(value.replace(/\s/g, ''))
+    case 'phone':
+      return /\d{6,}/.test(value.replace(/\D/g, ''))
+    case 'address':
+      return value.length >= 6 && !/不完整|待確認/.test(value)
+    case 'days': {
+      const days = Number(value.match(/\d+/)?.[0] ?? 0)
+      return days >= 3
+    }
+    case 'months': {
+      const months = Number(value.match(/\d+/)?.[0] ?? 0)
+      return months > 0 && months <= 2
+    }
+    case 'area':
+      return /\d/.test(value) && /平方公尺|坪/.test(value)
+    default:
+      return value.length > 0
   }
-  if (fieldId === 'landlord' || fieldId === 'tenant') return /^[\p{Script=Han}·‧]{2,20}$/u.test(value)
-  if (fieldId === 'address') return value.length >= 6 && !/不完整|待確認/.test(value)
-  return value.length > 0
 }
 
 function countSourceCandidates(pageTexts, sourceValue) {
@@ -182,9 +194,11 @@ export function analyzeContractFields({ text, pageTexts, visionPages }) {
     if (!labelDistanceNormal) reasons.push('label_distance_unverified')
     if (candidateCount > 1) reasons.push('multiple_candidates')
     if (fieldId === 'address' && candidate.addressResolution?.status === 'inferred') {
-      reasons.push(candidate.addressResolution.evidenceType === 'road_inference'
-        ? 'county_inferred_from_road'
-        : 'county_inferred_from_district')
+      reasons.push(
+        candidate.addressResolution.evidenceType === 'road_inference'
+          ? 'county_inferred_from_road'
+          : 'county_inferred_from_district',
+      )
     }
     if (fieldId === 'address' && candidate.addressResolution?.status === 'ambiguous') {
       reasons.push('administrative_division_ambiguous')
@@ -192,15 +206,19 @@ export function analyzeContractFields({ text, pageTexts, visionPages }) {
     if (fieldId === 'address' && candidate.addressResolution?.status === 'conflict') {
       reasons.push('administrative_division_conflict')
     }
-    if (fieldId === 'address' && candidate.addressResolution?.warnings?.includes('address_incomplete')) {
+    if (
+      fieldId === 'address' &&
+      candidate.addressResolution?.warnings?.includes('address_incomplete')
+    ) {
       reasons.push('address_incomplete')
     }
 
-    const confidence = reasons.length === 0
-      ? 'high'
-      : candidate.value && source && googleConfidence >= 0.65 && formatValid
-        ? 'medium'
-        : 'low'
+    const confidence =
+      reasons.length === 0
+        ? 'high'
+        : candidate.value && source && googleConfidence >= 0.65 && formatValid
+          ? 'medium'
+          : 'low'
     if (confidence !== 'high') unresolvedFieldIds.push(fieldId)
 
     if (candidate.value) {
@@ -212,9 +230,10 @@ export function analyzeContractFields({ text, pageTexts, visionPages }) {
         sourcePageIndex: source?.pageIndex ?? null,
         sourceStart: source?.sourceStart ?? -1,
         sourceEnd: source?.sourceEnd ?? -1,
-        evidenceType: fieldId === 'address'
-          ? candidate.addressResolution?.evidenceType ?? 'ocr_text'
-          : 'ocr_text',
+        evidenceType:
+          fieldId === 'address'
+            ? (candidate.addressResolution?.evidenceType ?? 'ocr_text')
+            : 'ocr_text',
         sourceBoundingBox,
         googleConfidence: Number(googleConfidence.toFixed(4)),
         formatValid,

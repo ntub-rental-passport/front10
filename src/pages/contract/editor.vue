@@ -14,6 +14,11 @@ import {
   type ContractFieldCandidate,
 } from '@/src/utils/contract-field-extraction'
 import {
+  CONTRACT_FIELD_DEFINITIONS,
+  CONTRACT_FIELD_GROUPS,
+  detectContractConditions,
+} from '@/shared/contract-field-schema.js'
+import {
   Card,
   CardContent,
   CardHeader,
@@ -40,12 +45,16 @@ import {
 
 interface ContractField {
   id: string
+  groupId: string
   label: string
   value: string
   sourceValue: string
   confidence: 'high' | 'medium' | 'low'
   reviewState: 'unreviewed' | 'verified' | 'edited'
   required: boolean
+  requirement: 'required' | 'conditional' | 'recommended'
+  condition: string | null
+  applicable: boolean
   editing: boolean
   editStartValue: string
   sourcePageIndex: number | null
@@ -98,19 +107,34 @@ const currentPageText = computed({
 const hasOcrData = computed(() => Boolean(ocrFullText.value.trim()))
 
 function makeField(
-  id: string,
-  label: string,
+  definition: {
+    id: string
+    groupId: string
+    label: string
+    requirement: 'required' | 'conditional' | 'recommended'
+    condition: string | null
+  },
   captured: ContractFieldCandidate,
-  required = true,
+  conditions: Record<string, boolean>,
 ): ContractField {
+  const conditionApplies = !definition.condition || Boolean(conditions[definition.condition])
+  const applicable = definition.requirement !== 'conditional' || conditionApplies
+  const required =
+    definition.requirement === 'required' ||
+    (definition.requirement === 'conditional' && conditionApplies)
+
   return {
-    id,
-    label,
+    id: definition.id,
+    groupId: definition.groupId,
+    label: definition.label,
     value: captured.value || '尚未辨識',
     sourceValue: captured.sourceValue,
     confidence: captured.value ? captured.confidence : 'low',
     reviewState: 'unreviewed',
     required,
+    requirement: definition.requirement,
+    condition: definition.condition,
+    applicable,
     editing: false,
     editStartValue: captured.value || '',
     sourcePageIndex: null,
@@ -214,18 +238,15 @@ function locateFieldSource(field: ContractField, pages: string[]): ContractField
 
 function extractContractFields(text: string): ContractField[] {
   const extracted = extractContractFieldCandidates(text)
+  const conditions = detectContractConditions(text) as Record<string, boolean>
 
-  return [
-    makeField('landlord', '出租人（甲方）', extracted.landlord),
-    makeField('tenant', '承租人（乙方）', extracted.tenant),
-    makeField('address', '租屋地址', extracted.address),
-    makeField('start_date', '租期起始', extracted.startDate),
-    makeField('end_date', '租期結束', extracted.endDate),
-    makeField('rent', '每月租金', extracted.rent),
-    makeField('due_day', '繳租日', extracted.dueDay),
-    makeField('deposit', '押金', extracted.deposit),
-    makeField('penalty', '違約金', extracted.penalty, false),
-  ]
+  return CONTRACT_FIELD_DEFINITIONS.map((definition) =>
+    makeField(
+      definition as Parameters<typeof makeField>[0],
+      extracted[definition.candidateKey] ?? { value: '', sourceValue: '', confidence: 'low' },
+      conditions,
+    ),
+  )
 }
 
 const fields = ref<ContractField[]>(
@@ -263,6 +284,7 @@ const isDirty = ref(false)
 const saveError = ref('')
 const pageNumberScrollRef = ref<HTMLElement | null>(null)
 const activeFieldFilter = ref<FieldFilter>('all')
+const activeFieldGroupId = ref(CONTRACT_FIELD_GROUPS[0]?.id ?? 'review')
 const searchQuery = ref('')
 const activeSearchMatchIndex = ref(-1)
 const activeFieldHighlight = ref<TextMatch | null>(null)
@@ -286,42 +308,42 @@ watch(
   },
 )
 
-const extractedCount = computed(
-  () => fields.value.filter((field) => field.value !== '尚未辨識').length,
+function isFieldPopulated(field: ContractField): boolean {
+  return Boolean(field.value.trim() && field.value !== '尚未辨識')
+}
+
+function isFieldCompleted(field: ContractField): boolean {
+  return isFieldPopulated(field) && field.reviewState !== 'unreviewed'
+}
+
+const applicableFields = computed(() => fields.value.filter((field) => field.applicable))
+const requiredFields = computed(() => applicableFields.value.filter((field) => field.required))
+const extractedCount = computed(() => applicableFields.value.filter(isFieldPopulated).length)
+const completedRequiredCount = computed(() => requiredFields.value.filter(isFieldCompleted).length)
+const reviewProgress = computed(() =>
+  requiredFields.value.length
+    ? Math.round((completedRequiredCount.value / requiredFields.value.length) * 100)
+    : 0,
 )
-const verifiedCount = computed(
-  () => fields.value.filter((field) => field.reviewState !== 'unreviewed').length,
+const missingRequiredCount = computed(
+  () => requiredFields.value.filter((field) => !isFieldPopulated(field)).length,
 )
-const mediumConfidenceCount = computed(
+const pendingRequiredReviewCount = computed(
   () =>
-    fields.value.filter(
-      (field) => field.confidence === 'medium' && field.reviewState === 'unreviewed',
+    requiredFields.value.filter(
+      (field) => isFieldPopulated(field) && field.reviewState === 'unreviewed',
     ).length,
 )
-const lowConfidenceCount = computed(
-  () =>
-    fields.value.filter((field) => field.confidence === 'low' && field.reviewState === 'unreviewed')
-      .length,
-)
-const reviewProgress = computed(() =>
-  fields.value.length ? Math.round((verifiedCount.value / fields.value.length) * 100) : 0,
-)
 const requiredRemainingCount = computed(
-  () => fields.value.filter((field) => field.required && field.reviewState === 'unreviewed').length,
+  () => requiredFields.value.filter((field) => !isFieldCompleted(field)).length,
 )
 const canStartAnalysis = computed(() => hasOcrData.value && requiredRemainingCount.value === 0)
 
-const goodConfidenceCount = computed(
-  () =>
-    fields.value.filter(
-      (field) => field.confidence === 'high' && field.reviewState === 'unreviewed',
-    ).length,
-)
-const reviewedFieldCount = computed(
-  () => fields.value.filter((field) => field.reviewState !== 'unreviewed').length,
+const activeGroupFields = computed(() =>
+  applicableFields.value.filter((field) => field.groupId === activeFieldGroupId.value),
 )
 const filteredFields = computed(() =>
-  fields.value.filter((field) => {
+  activeGroupFields.value.filter((field) => {
     switch (activeFieldFilter.value) {
       case 'good':
         return field.confidence === 'high' && field.reviewState === 'unreviewed'
@@ -338,12 +360,59 @@ const filteredFields = computed(() =>
 )
 
 const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: number }>>(() => [
-  { id: 'all', label: '全部', count: fields.value.length },
-  { id: 'good', label: '辨識良好', count: goodConfidenceCount.value },
-  { id: 'medium', label: '建議確認', count: mediumConfidenceCount.value },
-  { id: 'low', label: '人工確認', count: lowConfidenceCount.value },
-  { id: 'reviewed', label: '已處理', count: reviewedFieldCount.value },
+  { id: 'all', label: '本類全部', count: activeGroupFields.value.length },
+  {
+    id: 'good',
+    label: '辨識良好',
+    count: activeGroupFields.value.filter(
+      (field) => field.confidence === 'high' && field.reviewState === 'unreviewed',
+    ).length,
+  },
+  {
+    id: 'medium',
+    label: '建議確認',
+    count: activeGroupFields.value.filter(
+      (field) => field.confidence === 'medium' && field.reviewState === 'unreviewed',
+    ).length,
+  },
+  {
+    id: 'low',
+    label: '人工確認',
+    count: activeGroupFields.value.filter(
+      (field) => field.confidence === 'low' && field.reviewState === 'unreviewed',
+    ).length,
+  },
+  {
+    id: 'reviewed',
+    label: '已處理',
+    count: activeGroupFields.value.filter((field) => field.reviewState !== 'unreviewed').length,
+  },
 ])
+
+const fieldGroups = computed(() =>
+  CONTRACT_FIELD_GROUPS.map((group) => {
+    const groupFields = applicableFields.value.filter((field) => field.groupId === group.id)
+    const groupRequiredFields = groupFields.filter((field) => field.required)
+    return {
+      ...group,
+      active: groupFields.length > 0,
+      completedCount: groupRequiredFields.filter(isFieldCompleted).length,
+      requiredCount: groupRequiredFields.length,
+      missingCount: groupRequiredFields.filter((field) => !isFieldPopulated(field)).length,
+    }
+  }),
+)
+
+const activeFieldGroup = computed(
+  () =>
+    fieldGroups.value.find((group) => group.id === activeFieldGroupId.value) ??
+    fieldGroups.value[0],
+)
+
+function selectFieldGroup(groupId: string): void {
+  activeFieldGroupId.value = groupId
+  activeFieldFilter.value = 'all'
+}
 
 const searchMatches = computed<TextMatch[]>(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase()
@@ -464,6 +533,39 @@ function startFieldEdit(field: ContractField): void {
   field.editing = true
 }
 
+function parseNumericValue(value: string): number {
+  return Number(value.replace(/[^0-9]/g, '')) || 0
+}
+
+function validateLegalField(field: ContractField, value = field.value.trim()): string {
+  if (!value || value === '尚未辨識') return field.required ? `請補上「${field.label}」。` : ''
+
+  if (field.id === 'review_days' && parseNumericValue(value) < 3) {
+    return '契約審閱期間不得少於 3 日。'
+  }
+  if (field.id === 'deposit_months' && parseNumericValue(value) > 2) {
+    return '押金最高不得超過 2 個月租金。'
+  }
+  if (field.id === 'deposit') {
+    const rentField = fields.value.find((item) => item.id === 'rent')
+    const rentAmount = rentField ? parseNumericValue(rentField.value) : 0
+    const depositAmount = parseNumericValue(value)
+    if (rentAmount && depositAmount > rentAmount * 2) {
+      return `押金金額不得超過 2 個月租金（目前上限 NT$${(rentAmount * 2).toLocaleString('en-US')}）。`
+    }
+  }
+  if (/(?:landlord|tenant|agent)_id$/.test(field.id)) {
+    const normalized = value.replace(/\s/g, '')
+    if (!/^(?:[A-Z][12]\d{8}|\d{8}|[A-Z0-9-]{6,20})$/i.test(normalized)) {
+      return '請確認身分證明文件編號或統一編號格式。'
+    }
+  }
+  if (/(?:landlord|tenant)_phone$/.test(field.id) && value.replace(/\D/g, '').length < 7) {
+    return '聯絡電話格式不完整。'
+  }
+  return ''
+}
+
 function replaceFirstInPages(pattern: RegExp, replacement: string): string | null {
   for (let pageIndex = 0; pageIndex < ocrPages.value.length; pageIndex += 1) {
     const pageText = ocrPages.value[pageIndex] ?? ''
@@ -478,10 +580,9 @@ function replaceFirstInPages(pattern: RegExp, replacement: string): string | nul
 function syncFieldToContract(field: ContractField, newValue: string): boolean {
   const moneyValue = newValue.replace(/[^0-9０-９,，]/g, '')
   const dayValue = newValue.match(/[0-9０-９]{1,2}/)?.[0] ?? ''
-  let insertedValue: string | null = null
 
   if (field.id === 'rent' && moneyValue) {
-    insertedValue = replaceFirstInPages(
+    const insertedValue = replaceFirstInPages(
       /((?:租金每個月|每月租金|月租金|租金\s*[：:]?\s*每月)\s*[：:為]?\s*(?:新臺幣|新台幣|NT\$?)?\s*)[0-9０-９,，零〇○一二三四五六七八九十百千萬万億亿壹貳贰參叁肆伍陸陆柒捌玖拾佰仟兩两]+(\s*元)/,
       `$1${moneyValue}$2`,
     )
@@ -490,7 +591,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
   }
 
   if (field.id === 'deposit' && moneyValue) {
-    insertedValue = replaceFirstInPages(
+    const insertedValue = replaceFirstInPages(
       /((?:押租保證金|押金|保證金)[^\r\n]{0,60}?(?:新臺幣|新台幣|NT\$?)\s*)[0-9０-９,，零〇○一二三四五六七八九十百千萬万億亿壹貳贰參叁肆伍陸陆柒捌玖拾佰仟兩两]+(\s*元)/,
       `$1${moneyValue}$2`,
     )
@@ -498,19 +599,8 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
     return insertedValue !== null
   }
 
-  if (field.id === 'penalty' && moneyValue) {
-    insertedValue = replaceFirstInPages(
-      /(違約金\s*(?:新臺幣|新台幣|NT\$?)\s*)[0-9０-９,，]+(\s*元)/,
-      `$1${moneyValue}$2`,
-    )
-    if (insertedValue !== null) {
-      field.sourceValue = moneyValue
-      return true
-    }
-  }
-
   if (field.id === 'due_day' && dayValue) {
-    insertedValue = replaceFirstInPages(
+    const insertedValue = replaceFirstInPages(
       /((?:租金\s*)?每月\s*)[0-9０-９]{1,2}(\s*日\s*前)/,
       `$1${dayValue}$2`,
     )
@@ -546,6 +636,13 @@ function confirmFieldEdit(field: ContractField): void {
     field.value = '尚未辨識'
     field.reviewState = 'unreviewed'
     field.editing = false
+    return
+  }
+
+  const legalValidationError = validateLegalField(field, nextValue)
+  if (legalValidationError) {
+    field.validationError = legalValidationError
+    saveError.value = legalValidationError
     return
   }
 
@@ -585,6 +682,14 @@ function verifyField(field: ContractField): void {
     startFieldEdit(field)
     return
   }
+  const legalValidationError = validateLegalField(field)
+  if (legalValidationError) {
+    field.validationError = legalValidationError
+    saveError.value = legalValidationError
+    return
+  }
+  field.validationError = ''
+  saveError.value = ''
   field.reviewState = 'verified'
 }
 
@@ -609,6 +714,15 @@ function persistContract(): boolean {
       return false
     }
     addressField.validationError = ''
+  }
+
+  for (const field of applicableFields.value.filter((item) => item.required)) {
+    const validationError = validateLegalField(field)
+    if (!validationError) continue
+    field.validationError = validationError
+    activeFieldGroupId.value = field.groupId
+    saveError.value = validationError
+    return false
   }
 
   const updatedResult: ContractOcrResult = {
@@ -795,19 +909,19 @@ function returnToOcr(): void {
       <div class="review-stat-grid">
         <div class="review-stat">
           <span>已擷取欄位</span>
-          <strong>{{ extractedCount }} / {{ fields.length }}</strong>
+          <strong>{{ extractedCount }} / {{ applicableFields.length }}</strong>
         </div>
         <div class="review-stat">
-          <span>已確認或修正</span>
-          <strong>{{ verifiedCount }}</strong>
+          <span>法定必填已完成</span>
+          <strong>{{ completedRequiredCount }} / {{ requiredFields.length }}</strong>
         </div>
         <div class="review-stat review-stat--warning">
-          <span>建議確認</span>
-          <strong>{{ mediumConfidenceCount }}</strong>
+          <span>已有值、待確認</span>
+          <strong>{{ pendingRequiredReviewCount }}</strong>
         </div>
         <div class="review-stat review-stat--danger">
-          <span>需要人工確認</span>
-          <strong>{{ lowConfidenceCount }}</strong>
+          <span>缺少必填資料</span>
+          <strong>{{ missingRequiredCount }}</strong>
         </div>
       </div>
 
@@ -824,8 +938,8 @@ function returnToOcr(): void {
 
       <div class="review-summary-footer">
         <p v-if="requiredRemainingCount">
-          尚有
-          <strong>{{ requiredRemainingCount }}</strong> 個必填欄位需要確認，完成後才能進入下一步。
+          尚缺 <strong>{{ missingRequiredCount }}</strong> 個必填資料，另有
+          <strong>{{ pendingRequiredReviewCount }}</strong> 個欄位待確認。
         </p>
         <p v-else>所有必填欄位皆已確認，可以開始 AI 契約分析。</p>
         <Button :disabled="!canStartAnalysis" @click="completeReviewAndAnalyze">
@@ -1018,10 +1132,50 @@ function returnToOcr(): void {
                 </div>
               </details>
             </div>
-            <CardDescription>系統自動擷取的欄位，點擊可修改</CardDescription>
+            <CardDescription>依現行住宅租賃規範分類，逐組補齊並確認</CardDescription>
           </CardHeader>
 
-          <div class="field-filter-bar" aria-label="依欄位狀態篩選">
+          <nav class="field-group-nav" aria-label="法規欄位分類">
+            <button
+              v-for="group in fieldGroups"
+              :key="group.id"
+              type="button"
+              class="field-group-button"
+              :class="{
+                'is-active': activeFieldGroupId === group.id,
+                'is-inactive': !group.active,
+                'has-missing': group.missingCount > 0,
+              }"
+              :aria-current="activeFieldGroupId === group.id ? 'step' : undefined"
+              @click="selectFieldGroup(group.id)"
+            >
+              <span class="field-group-index">{{ group.order }}</span>
+              <span class="field-group-label">
+                <strong>{{ group.shortTitle }}</strong>
+                <small v-if="group.requiredCount">
+                  {{ group.completedCount }}/{{ group.requiredCount }} 已完成
+                </small>
+                <small v-else>{{ group.conditional ? '未偵測適用情境' : '建議確認' }}</small>
+              </span>
+            </button>
+          </nav>
+
+          <div class="active-field-group-heading">
+            <div>
+              <span>第 {{ activeFieldGroup?.order }} 類</span>
+              <strong>{{ activeFieldGroup?.title }}</strong>
+              <p>{{ activeFieldGroup?.description }}</p>
+            </div>
+            <Badge
+              v-if="activeFieldGroup?.missingCount"
+              variant="secondary"
+              class="group-missing-badge"
+            >
+              缺 {{ activeFieldGroup.missingCount }} 項
+            </Badge>
+          </div>
+
+          <div v-if="activeGroupFields.length" class="field-filter-bar" aria-label="依欄位狀態篩選">
             <button
               v-for="filter in fieldFilters"
               :key="filter.id"
@@ -1047,6 +1201,7 @@ function returnToOcr(): void {
                 <span class="text-xs font-medium text-muted-foreground">
                   {{ field.label }}
                   <span v-if="field.required" class="required-mark">必填</span>
+                  <span v-else class="recommended-mark">建議</span>
                 </span>
                 <div class="field-card-badges">
                   <button
@@ -1072,9 +1227,13 @@ function returnToOcr(): void {
                 <input
                   v-model="field.value"
                   class="flex-1 rounded border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  :class="field.validationError ? 'border-red-500 focus:ring-red-400' : 'border-border'"
+                  :class="
+                    field.validationError ? 'border-red-500 focus:ring-red-400' : 'border-border'
+                  "
                   :aria-invalid="Boolean(field.validationError)"
-                  :aria-describedby="field.validationError ? `${field.id}-validation-error` : undefined"
+                  :aria-describedby="
+                    field.validationError ? `${field.id}-validation-error` : undefined
+                  "
                   @input="field.validationError = ''"
                   @keyup.enter="confirmFieldEdit(field)"
                 />
@@ -1166,7 +1325,15 @@ function returnToOcr(): void {
                 </span>
               </div>
             </div>
-            <p v-if="!filteredFields.length" class="field-filter-empty">目前沒有符合此狀態的欄位</p>
+            <p
+              v-if="!activeGroupFields.length"
+              class="field-filter-empty field-filter-empty--conditional"
+            >
+              目前未在契約中偵測到代理或轉租情境，因此本類別不列入必填完整度。若實際由代理人或二房東簽約，請先在左側補上相關內容後重新辨識。
+            </p>
+            <p v-else-if="!filteredFields.length" class="field-filter-empty">
+              目前沒有符合此狀態的欄位
+            </p>
           </CardContent>
         </Card>
       </div>
