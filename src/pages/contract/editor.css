@@ -707,14 +707,16 @@
 }
 
 .document-reader-heading {
+  gap: 0.35rem;
   border-bottom: 1px solid var(--border);
+  padding: 1rem 1.25rem;
 }
 
 .pdf-search-bar {
   display: flex;
-  width: clamp(12rem, 24vw, 17rem);
-  min-width: 12rem;
-  flex: 0 1 17rem;
+  width: clamp(10.5rem, 18vw, 13.5rem);
+  min-width: 10.5rem;
+  flex: 0 1 13.5rem;
   align-items: center;
   gap: 0.2rem;
   border: 1px solid var(--border);
@@ -736,6 +738,10 @@
   color: var(--foreground);
   font-size: 0.8125rem;
   outline: none;
+}
+
+.pdf-search-bar.has-query .pdf-search-input {
+  min-width: 3.5rem;
 }
 
 .pdf-search-input::placeholder {
@@ -795,11 +801,11 @@
 .pdf-reader-toolbar {
   display: flex;
   min-width: 0;
-  min-height: 4rem;
+  min-height: 3.75rem;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.875rem 1rem;
+  padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--border);
   background: var(--background);
 }
@@ -837,24 +843,19 @@
 .page-number-scroll {
   display: flex;
   min-width: 0;
-  max-width: 100%;
-  overflow-x: auto;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.2rem 0.1rem 0.35rem;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
-  touch-action: pan-x;
-  -webkit-overflow-scrolling: touch;
 }
 
-.page-number-scroll::-webkit-scrollbar {
-  height: 0.35rem;
-}
-
-.page-number-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted-foreground) 32%, transparent);
+.page-number-ellipsis {
+  display: inline-grid;
+  width: 1.25rem;
+  height: 2rem;
+  flex: 0 0 1.25rem;
+  place-items: center;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 700;
 }
 
 .page-nav-button,
@@ -1129,7 +1130,7 @@
   }
 
   .page-number-scroll {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
   }
 
   .pdf-reader-canvas {

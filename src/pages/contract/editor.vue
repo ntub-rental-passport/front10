@@ -85,6 +85,12 @@ interface HighlightSegment {
   activeSearchResult: boolean
 }
 
+interface PaginationItem {
+  key: string
+  pageIndex: number | null
+  label: string
+}
+
 const storedOcrResult = ref<ContractOcrResult | null>(loadContractOcrResult())
 const initialPageTexts = storedOcrResult.value?.pageTexts.length
   ? storedOcrResult.value.pageTexts
@@ -95,6 +101,41 @@ const ocrPages = ref<string[]>([...initialPageTexts])
 const currentPageIndex = ref(0)
 const pageCount = computed(() => ocrPages.value.length)
 const currentPageNumber = computed(() => currentPageIndex.value + 1)
+const paginationItems = computed<PaginationItem[]>(() => {
+  const total = pageCount.value
+  const current = currentPageIndex.value
+  const pageItem = (pageIndex: number): PaginationItem => ({
+    key: `page-${pageIndex}`,
+    pageIndex,
+    label: String(pageIndex + 1),
+  })
+  const ellipsisItem = (position: 'start' | 'end'): PaginationItem => ({
+    key: `ellipsis-${position}`,
+    pageIndex: null,
+    label: '…',
+  })
+
+  if (total <= 5) return Array.from({ length: total }, (_, pageIndex) => pageItem(pageIndex))
+  if (current <= 2) {
+    return [pageItem(0), pageItem(1), pageItem(2), ellipsisItem('end'), pageItem(total - 1)]
+  }
+  if (current >= total - 3) {
+    return [
+      pageItem(0),
+      ellipsisItem('start'),
+      pageItem(total - 3),
+      pageItem(total - 2),
+      pageItem(total - 1),
+    ]
+  }
+  return [
+    pageItem(0),
+    ellipsisItem('start'),
+    pageItem(current),
+    ellipsisItem('end'),
+    pageItem(total - 1),
+  ]
+})
 const ocrFullText = computed(() => mergeContractPageTexts(ocrPages.value))
 const currentPageText = computed({
   get: () => ocrPages.value[currentPageIndex.value] ?? '',
@@ -288,7 +329,6 @@ const isEditing = ref(false)
 const isSaved = ref(false)
 const isDirty = ref(false)
 const saveError = ref('')
-const pageNumberScrollRef = ref<HTMLElement | null>(null)
 const activeFieldFilter = ref<FieldFilter>('all')
 const activeFieldGroupId = ref(CONTRACT_FIELD_GROUPS[0]?.id ?? 'review')
 const searchQuery = ref('')
@@ -823,15 +863,6 @@ function handleSave(): void {
 async function goToPage(pageIndex: number): Promise<void> {
   if (pageIndex < 0 || pageIndex >= pageCount.value) return
   currentPageIndex.value = pageIndex
-
-  await nextTick()
-  const activePageButton =
-    pageNumberScrollRef.value?.querySelector<HTMLElement>('[aria-current="page"]')
-  activePageButton?.scrollIntoView({
-    block: 'nearest',
-    inline: 'center',
-    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-  })
 }
 
 function goToPreviousPage(): void {
@@ -1035,7 +1066,11 @@ function returnToOcr(): void {
               <span>第 {{ currentPageNumber }} 頁，共 {{ pageCount }} 頁</span>
             </div>
 
-            <div class="pdf-search-bar" role="search">
+            <div
+              class="pdf-search-bar"
+              :class="{ 'has-query': searchQuery.trim() }"
+              role="search"
+            >
               <Search :size="15" class="pdf-search-icon" aria-hidden="true" />
               <input
                 v-model="searchQuery"
@@ -1050,6 +1085,7 @@ function returnToOcr(): void {
                 {{ searchResultPosition }}/{{ searchMatches.length }}
               </span>
               <button
+                v-if="searchQuery.trim()"
                 type="button"
                 class="pdf-search-button"
                 :disabled="!searchMatches.length"
@@ -1060,6 +1096,7 @@ function returnToOcr(): void {
                 <ChevronLeft :size="15" />
               </button>
               <button
+                v-if="searchQuery.trim()"
                 type="button"
                 class="pdf-search-button"
                 :disabled="!searchMatches.length"
@@ -1092,19 +1129,23 @@ function returnToOcr(): void {
                 <ChevronLeft :size="17" />
               </button>
 
-              <div ref="pageNumberScrollRef" class="page-number-scroll" aria-label="契約頁碼">
-                <button
-                  v-for="(_, pageIndex) in ocrPages"
-                  :key="pageIndex"
-                  type="button"
-                  class="page-number-button"
-                  :class="{ 'is-active': pageIndex === currentPageIndex }"
-                  :aria-current="pageIndex === currentPageIndex ? 'page' : undefined"
-                  :aria-label="`前往第 ${pageIndex + 1} 頁`"
-                  @click="goToPage(pageIndex)"
-                >
-                  {{ pageIndex + 1 }}
-                </button>
+              <div class="page-number-scroll" aria-label="契約頁碼">
+                <template v-for="item in paginationItems" :key="item.key">
+                  <span v-if="item.pageIndex === null" class="page-number-ellipsis" aria-hidden="true">
+                    {{ item.label }}
+                  </span>
+                  <button
+                    v-else
+                    type="button"
+                    class="page-number-button"
+                    :class="{ 'is-active': item.pageIndex === currentPageIndex }"
+                    :aria-current="item.pageIndex === currentPageIndex ? 'page' : undefined"
+                    :aria-label="`前往第 ${item.pageIndex + 1} 頁`"
+                    @click="goToPage(item.pageIndex)"
+                  >
+                    {{ item.label }}
+                  </button>
+                </template>
               </div>
 
               <button
