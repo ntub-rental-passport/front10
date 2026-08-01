@@ -294,43 +294,75 @@ async function copyRecognizedText(): Promise<void> {
   }, 1800)
 }
 
+type OcrStreamEvent =
+  | { type: 'progress'; progress: number; status: string }
+  | { type: 'result'; progress: 100; status: string; result: Partial<ContractOcrResult> }
+  | { type: 'error'; error: string }
+
+async function readOcrResponse(response: Response): Promise<Partial<ContractOcrResult>> {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/x-ndjson') || !response.body) {
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(payload?.error || 'OCR 服務發生錯誤，請稍後再試。')
+    return payload as Partial<ContractOcrResult>
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result: Partial<ContractOcrResult> | null = null
+  let streamError = ''
+
+  function processLine(line: string): void {
+    if (!line.trim()) return
+    const event = JSON.parse(line) as OcrStreamEvent
+
+    if (event.type === 'progress') {
+      uploadProgress.value = Math.max(uploadProgress.value, event.progress)
+      uploadStatus.value = event.status
+    } else if (event.type === 'result') {
+      uploadProgress.value = event.progress
+      uploadStatus.value = event.status
+      result = event.result
+    } else if (event.type === 'error') {
+      streamError = event.error
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    lines.forEach(processLine)
+    if (done) break
+  }
+
+  processLine(buffer)
+  if (streamError) throw new Error(streamError)
+  if (!result) throw new Error('OCR 串流回應未包含辨識結果，請重新嘗試。')
+  return result
+}
+
 async function sendToOcr(files: File[]): Promise<void> {
   uploadError.value = ''
   ocrResult.value = null
   copySuccess.value = false
   isUploading.value = true
-  uploadProgress.value = 15
-  uploadStatus.value = '檔案已送出，正在準備 AI OCR 辨識'
+  uploadProgress.value = 0
+  uploadStatus.value = '正在上傳檔案'
 
   const formData = new FormData()
   files.forEach((file) => formData.append('files', file))
   formData.append('languageHints', JSON.stringify(defaultLanguageHints))
-
-  let progressTimer: number | undefined
+  formData.append('progressStream', 'ndjson')
 
   try {
-    uploadProgress.value = 45
-    uploadStatus.value =
-      files[0]?.type === 'application/pdf'
-        ? '正在使用 Google OCR 辨識 PDF，接著執行規則式欄位抽取'
-        : `正在使用 Google OCR 辨識 ${files.length} 張圖片，接著執行規則式欄位抽取`
-
-    progressTimer = window.setInterval(() => {
-      uploadProgress.value = Math.min(92, uploadProgress.value + 1)
-    }, 5000)
-
     const response = await fetch('/api/ocr', {
       method: 'POST',
       body: formData,
     })
-
-    const payload = await response.json().catch(() => null)
-
-    if (!response.ok) {
-      throw new Error(payload?.error || 'OCR 服務發生錯誤，請稍後再試。')
-    }
-
-    uploadProgress.value = 100
+    const payload = await readOcrResponse(response)
     const result = normalizeContractOcrResult(payload as Partial<ContractOcrResult>)
     if (!result) {
       throw new Error('OCR 回傳資料缺少可用的逐頁文字，請重新辨識文件。')
@@ -340,9 +372,10 @@ async function sendToOcr(files: File[]): Promise<void> {
     result.fileName = files.map((file) => file.name).join('、')
 
     ocrResult.value = result
-    uploadStatus.value = result.aiReview?.status === 'pending'
-      ? '分級 OCR 完成，規則結果已可使用；低信心欄位正在背景複核'
-      : '分級 OCR 完成，可以檢視契約文字與規則抽取結果'
+    uploadStatus.value =
+      result.aiReview?.status === 'pending'
+        ? '分級 OCR 完成，規則結果已可使用；低信心欄位正在背景複核'
+        : '分級 OCR 完成，可以檢視契約文字與規則抽取結果'
     saveContractOcrResult(result)
     activeTab.value = 'preview'
     if (result.aiReview?.status === 'pending' && result.aiReview.jobId) {
@@ -352,13 +385,12 @@ async function sendToOcr(files: File[]): Promise<void> {
     uploadError.value = error instanceof Error ? error.message : 'OCR 服務發生未知錯誤。'
     uploadStatus.value = '辨識失敗，請確認檔案後重新嘗試'
   } finally {
-    if (progressTimer) window.clearInterval(progressTimer)
     isUploading.value = false
   }
 }
 
 function waitFor(milliseconds: number): Promise<void> {
-  return new Promise(resolve => window.setTimeout(resolve, milliseconds))
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
 function formatProcessingTime(milliseconds: number | undefined): string {
@@ -378,7 +410,7 @@ async function pollAiReview(jobId: string): Promise<void> {
         continue
       }
 
-      const reviewJob = await response.json() as ContractAiReviewJob
+      const reviewJob = (await response.json()) as ContractAiReviewJob
       if (reviewJob.status === 'pending') continue
       const currentResult = ocrResult.value
       if (!currentResult || currentResult.aiReview?.jobId !== jobId) return
@@ -417,9 +449,10 @@ async function pollAiReview(jobId: string): Promise<void> {
         durationMs: reviewJob.durationMs,
         performanceMetrics: reviewJob.performanceMetrics,
       }
-      uploadStatus.value = reviewJob.status === 'completed'
-        ? '背景 AI 複核完成，已更新需要校對的欄位'
-        : '背景 AI 複核未完成，規則式欄位結果仍可正常使用'
+      uploadStatus.value =
+        reviewJob.status === 'completed'
+          ? '背景 AI 複核完成，已更新需要校對的欄位'
+          : '背景 AI 複核未完成，規則式欄位結果仍可正常使用'
       saveContractOcrResult(currentResult)
       return
     } catch {

@@ -240,15 +240,17 @@ function normalizeVisionResponses(responses, metadata = {}) {
   }
 }
 
-async function recognizeImage(buffer, languageHints, sourceFileIndex) {
+async function recognizeImage(buffer, languageHints, sourceFileIndex, onProgress) {
   const request = {
     image: { content: buffer },
     imageContext: languageHints.length ? { languageHints } : undefined,
   }
 
+  onProgress?.(0.05, '圖片已送交 Google OCR，等待辨識結果')
   let startedAt = performance.now()
   const [result] = await imageClient.documentTextDetection(request)
   const googleVisionMs = performance.now() - startedAt
+  onProgress?.(0.9, 'Google OCR 已回傳圖片辨識結果，正在整理文字')
   startedAt = performance.now()
   const annotation = normalizeVisionAnnotation(result.fullTextAnnotation, { sourceFileIndex })
   const text = annotation.text
@@ -258,6 +260,7 @@ async function recognizeImage(buffer, languageHints, sourceFileIndex) {
       ? [text]
       : []
   const normalizationMs = performance.now() - startedAt
+  onProgress?.(1, '圖片文字整理完成')
 
   return {
     text,
@@ -270,7 +273,7 @@ async function recognizeImage(buffer, languageHints, sourceFileIndex) {
   }
 }
 
-async function recognizeDocument(buffer, mimeType, languageHints, sourceFileIndex) {
+async function recognizeDocument(buffer, mimeType, languageHints, sourceFileIndex, onProgress) {
   const createFileRequest = (pages) => ({
     inputConfig: {
       mimeType,
@@ -294,9 +297,14 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
     })
     sourcePageCount = pdfDocument.getPageCount()
     const pagesToRecognize = Math.min(sourcePageCount, 5)
+    onProgress?.(0.03, `PDF 解析完成，共 ${sourcePageCount} 頁`)
 
     // 每次明確指定一頁，避免 Vision 將整份 PDF 全文放進第一個 response。
     for (let pageNumber = 1; pageNumber <= pagesToRecognize; pageNumber += 1) {
+      onProgress?.(
+        (pageNumber - 1 + 0.08) / pagesToRecognize,
+        `Google OCR 正在辨識 PDF 第 ${pageNumber}／${pagesToRecognize} 頁`,
+      )
       let startedAt = performance.now()
       const [pageResult] = await fileClient.batchAnnotateFiles({
         requests: [createFileRequest([pageNumber])],
@@ -319,6 +327,10 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
             text: pageText,
           }),
       )
+      onProgress?.(
+        pageNumber / pagesToRecognize,
+        `Google OCR 已完成 PDF 第 ${pageNumber}／${pagesToRecognize} 頁`,
+      )
     }
   } else {
     let startedAt = performance.now()
@@ -333,6 +345,7 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
     pageTexts = normalized.pageTexts
     visionPages = alignVisionPages(pageTexts, normalized.pages, sourceFileIndex)
     sourcePageCount = pageTexts.length
+    onProgress?.(1, '文件文字辨識與整理完成')
   }
 
   const warnings = []
@@ -388,18 +401,38 @@ function saveAiReviewJob(jobId, result) {
   setTimeout(() => aiReviewJobs.delete(jobId), AI_REVIEW_JOB_TTL_MS).unref()
 }
 
-async function recognizeUploadedFiles(files, languageHints) {
+async function recognizeUploadedFiles(files, languageHints, onProgress) {
   const recognizedFiles = new Array(files.length)
+  const fileProgress = new Array(files.length).fill(0)
   let nextIndex = 0
+
+  function updateFileProgress(sourceFileIndex, progress, status) {
+    fileProgress[sourceFileIndex] = Math.max(
+      fileProgress[sourceFileIndex],
+      Math.min(1, Math.max(0, progress)),
+    )
+    onProgress?.({
+      ratio: fileProgress.reduce((sum, value) => sum + value, 0) / files.length,
+      status,
+    })
+  }
 
   async function worker() {
     while (nextIndex < files.length) {
       const sourceFileIndex = nextIndex
       nextIndex += 1
       const file = files[sourceFileIndex]
+      const updateProgress = (progress, status) =>
+        updateFileProgress(sourceFileIndex, progress, status)
       const result = DOCUMENT_MIME_TYPES.has(file.mimetype)
-        ? await recognizeDocument(file.buffer, file.mimetype, languageHints, sourceFileIndex)
-        : await recognizeImage(file.buffer, languageHints, sourceFileIndex)
+        ? await recognizeDocument(
+            file.buffer,
+            file.mimetype,
+            languageHints,
+            sourceFileIndex,
+            updateProgress,
+          )
+        : await recognizeImage(file.buffer, languageHints, sourceFileIndex, updateProgress)
       recognizedFiles[sourceFileIndex] = { file, result }
     }
   }
@@ -497,17 +530,68 @@ app.get('/api/ocr/review/:jobId', (req, res) => {
   return res.json(job)
 })
 
+function createOcrProgressResponse(req, res) {
+  const enabled = req.body.progressStream === 'ndjson'
+  let latestProgress = 0
+
+  if (enabled) {
+    res.status(200)
+    res.set({
+      'Cache-Control': 'no-cache, no-transform',
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'X-Accel-Buffering': 'no',
+    })
+    res.flushHeaders()
+  }
+
+  function write(event) {
+    if (!enabled || res.writableEnded) return
+    res.write(`${JSON.stringify(event)}\n`)
+  }
+
+  return {
+    enabled,
+    progress(progress, status) {
+      latestProgress = Math.max(latestProgress, Math.min(99, Math.round(progress)))
+      write({ type: 'progress', progress: latestProgress, status })
+    },
+    complete(result) {
+      if (!enabled) return res.json(result)
+      write({ type: 'result', progress: 100, status: 'OCR 辨識完成', result })
+      return res.end()
+    },
+    fail(error, status = 500) {
+      if (!enabled) return res.status(status).json({ error })
+      write({ type: 'error', error })
+      return res.end()
+    },
+  }
+}
+
 app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
+  let progressResponse
+
   try {
     const files = Array.isArray(req.files) ? req.files : []
     const validationError = validateUploadedFiles(files)
     if (validationError) return res.status(400).json({ error: validationError })
 
+    progressResponse = createOcrProgressResponse(req, res)
+    progressResponse.progress(8, '檔案上傳與內容驗證完成')
     const languageHints = parseLanguageHints(req.body.languageHints)
+    progressResponse.progress(12, '檔案驗證完成，準備呼叫 Google OCR')
     const visionStageStartedAt = performance.now()
-    const recognizedFiles = await recognizeUploadedFiles(files, languageHints)
+    progressResponse.progress(15, 'Google OCR 已開始辨識文件')
+    const recognizedFiles = await recognizeUploadedFiles(
+      files,
+      languageHints,
+      ({ ratio, status }) => {
+        progressResponse.progress(15 + ratio * 65, status)
+      },
+    )
     const googleVisionStageMs = performance.now() - visionStageStartedAt
 
+    progressResponse.progress(84, 'OCR 文字辨識完成，正在合併逐頁結果')
     const pageTexts = recognizedFiles.flatMap(({ result }) => result.pageTexts)
     const visionPages = reindexVisionPages(
       recognizedFiles.flatMap(({ result }) => result.visionPages),
@@ -518,9 +602,10 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
       .trim()
 
     if (!text) {
-      return res.status(422).json({
-        error: 'OCR 沒有辨識到可用文字，請改用更清晰的掃描檔或照片再試一次。',
-      })
+      return progressResponse.fail(
+        'OCR 沒有辨識到可用文字，請改用更清晰的掃描檔或照片再試一次。',
+        422,
+      )
     }
 
     const fileDetails = recognizedFiles.map(({ file, result }) => ({
@@ -535,9 +620,11 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
         files.length > 1 ? `${decodeUploadedFileName(file.originalname)}：${warning}` : warning,
       ),
     )
+    progressResponse.progress(88, '逐頁結果整理完成，正在抽取租約欄位')
     let startedAt = performance.now()
     const ruleAnalysis = analyzeContractFields({ text, pageTexts, visionPages })
     const ruleExtractionMs = performance.now() - startedAt
+    progressResponse.progress(95, '租約欄位抽取完成，正在建立辨識結果')
     const targetFieldIds = ollamaConfig.enabled
       ? selectAiReviewFields(ruleAnalysis.unresolvedFieldIds)
       : []
@@ -576,7 +663,7 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
         ? recognizedFiles[0].result.engine
         : `DOCUMENT_TEXT_DETECTION (${files.length} images)`
 
-    return res.json({
+    const result = {
       fileName: fileDetails.map((file) => file.fileName).join('、'),
       mimeType: files.length === 1 ? files[0].mimetype : 'multiple/images',
       size: files.reduce((sum, file) => sum + file.size, 0),
@@ -606,12 +693,14 @@ app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
         durationMs: 0,
         performanceMetrics: null,
       },
-    })
+    }
+    progressResponse.progress(98, '辨識結果整理完成，準備顯示')
+    return progressResponse.complete(result)
   } catch (error) {
     console.error('[OCR] failed:', error)
-    return res.status(500).json({
-      error: getUserFacingError(error),
-    })
+    const userFacingError = getUserFacingError(error)
+    if (progressResponse) return progressResponse.fail(userFacingError)
+    return res.status(500).json({ error: userFacingError })
   }
 })
 
