@@ -185,7 +185,7 @@
 }
 
 .auth-divider {
-  @apply flex items-center gap-3 text-xs text-muted-foreground;
+  @apply flex w-full items-center gap-3 text-xs text-muted-foreground;
 }
 
 .auth-divider-line {
@@ -193,11 +193,16 @@
 }
 
 .auth-google-button {
-  @apply h-12 w-full rounded-none border-border bg-white text-sm font-semibold text-foreground hover:bg-zinc-50;
+  @apply relative flex h-12 w-full items-center justify-center gap-3 border border-[#747775] bg-white px-3 text-sm font-medium text-[#1f1f1f] transition-colors hover:bg-zinc-50;
+  font-family: Arial, sans-serif;
 }
 
 .auth-google-icon {
-  @apply mr-2 h-5 w-5 shrink-0;
+  @apply h-[18px] w-[18px] shrink-0;
+}
+
+.auth-login-error {
+  @apply w-full text-center leading-5;
 }
 
 .register-promo {

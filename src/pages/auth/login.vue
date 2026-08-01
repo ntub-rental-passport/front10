@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
 import { Checkbox } from '@/components/ui/checkbox/index'
@@ -21,7 +21,7 @@ import {
   needsNicknameSetup,
   registerWithGoogle,
   resolveRoleHome,
-  signIn,
+  saveGoogleRegistrationContext,
   signInWithEmail,
   type EmailSignInError,
 } from '@/src/composables/useAuth'
@@ -34,6 +34,10 @@ import {
   isValidAuthEmail,
   type FieldState,
 } from '@/src/constants/auth-validation'
+import {
+  exchangeGoogleTicket,
+  getGoogleLoginUrl,
+} from '@/src/services/authApi'
 
 const email = ref('')
 const password = ref('')
@@ -41,6 +45,7 @@ const rememberMe = ref(false)
 const showPassword = ref(false)
 const hasSubmitted = ref(false)
 const loginError = ref('')
+const googleLoginPending = ref(false)
 const router = useRouter()
 const route = useRoute()
 const selectedIdentity = ref<AuthIdentity>(getAuthIdentity(route.query.role))
@@ -71,6 +76,10 @@ function getPostLoginTarget(): string {
   return redirectTarget || resolveRoleHome(selectedOption.value.authRole)
 }
 
+const googleLoginUrl = computed(() =>
+  getGoogleLoginUrl(selectedOption.value.authRole, getPostLoginTarget()),
+)
+
 const emailState = computed<FieldState>(() => {
   if (!hasSubmitted.value) return 'default'
   if (!email.value.trim() || !isValidAuthEmail(email.value)) return 'error'
@@ -92,26 +101,6 @@ const emailMessage = computed(() => {
 const passwordMessage = computed(() =>
   passwordState.value === 'error' ? '請先輸入密碼。' : '',
 )
-// 連線至 FastAPI + MySQL 後端的 API
-async function loginToFastAPI(emailValue: string, passwordValue: string, roleValue: string) {
-  const response = await fetch('http://127.0.0.1:8000/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: emailValue,
-      password: passwordValue,
-      role: roleValue,
-    }),
-  })
-
-  const data = await response.json()
-
-  if (!response.ok) {
-    throw new Error(data.detail || '登入失敗，請確認帳號或密碼')
-  }
-
-  return data
-}
 
 function getInputStateClass(state: FieldState): string {
   if (state === 'error') return 'auth-input--error'
@@ -123,44 +112,80 @@ const loginErrorMessages: Record<EmailSignInError, string> = {
   'invalid-password': '密碼不正確，請重新輸入。',
   'role-mismatch': '此帳號的租客／房東身分與目前選擇不符。',
   'email-not-verified': '此帳號尚未完成電子郵件驗證。',
+  'service-unavailable': '目前無法連線登入服務，請稍後再試。',
 }
 
 async function handleLogin(): Promise<void> {
   hasSubmitted.value = true
   loginError.value = ''
-  
-  // 1. 前端格式檢查（若欄位沒填或格式錯則直接擋下）
   if (emailState.value === 'error' || passwordState.value === 'error') return
 
+  const result = await signInWithEmail(email.value, password.value, selectedOption.value.authRole)
+  if ('error' in result) {
+    loginError.value = loginErrorMessages[result.error]
+    return
+  }
+
+  await router.push(getPostLoginTarget())
+}
+
+const googleOAuthErrorMessages: Record<string, string> = {
+  access_denied: '你已取消 Google 登入。',
+  invalid_state: 'Google 登入狀態已過期，請重新登入。',
+  missing_config: '後端尚未設定 Google Client Secret。',
+  verification_failed: 'Google 帳號驗證失敗，請稍後再試。',
+}
+
+async function clearGoogleOAuthQuery(): Promise<void> {
+  const nextQuery = { ...route.query }
+  delete nextQuery.google_ticket
+  delete nextQuery.google_error
+  await router.replace({ query: nextQuery })
+}
+
+async function handleGoogleOAuthReturn(): Promise<void> {
+  const oauthError = typeof route.query.google_error === 'string'
+    ? route.query.google_error
+    : null
+  const ticket = typeof route.query.google_ticket === 'string'
+    ? route.query.google_ticket
+    : null
+
+  if (oauthError) {
+    loginError.value = googleOAuthErrorMessages[oauthError] || 'Google 登入失敗，請重新嘗試。'
+    await clearGoogleOAuthQuery()
+    return
+  }
+  if (!ticket) return
+
+  googleLoginPending.value = true
+  loginError.value = ''
   try {
-    // 2. 連線至 FastAPI 進行 MySQL 驗證
-    const apiResult = await loginToFastAPI(
-      email.value,
-      password.value,
-      selectedOption.value.authRole
-    )
-
-    // 3. 驗證通過，寫入 Session
-    signIn(selectedOption.value.authRole, apiResult.user?.email || email.value)
-
-    // 4. 跳轉目標頁面
-    await router.push(getPostLoginTarget())
-
-  } catch (err: any) {
-    // 5. 若後端傳回帳密錯誤，顯示在 UI 紅字上
-    loginError.value = err.message || '登入失敗，請確認帳號密碼'
+    const account = await exchangeGoogleTicket(ticket)
+    if (account.registrationRequired === true) {
+      saveGoogleRegistrationContext(account)
+      await router.replace({
+        path: '/register',
+        query: { role: account.role, google: '1' },
+      })
+      return
+    }
+    const session = registerWithGoogle(account.email, account.role)
+    const target = needsNicknameSetup(session)
+      ? '/welcome'
+      : account.redirectPath || resolveRoleHome(session.role)
+    await router.replace(target)
+  } catch (error) {
+    loginError.value = error instanceof Error
+      ? error.message
+      : 'Google 登入失敗，請重新嘗試。'
+    await clearGoogleOAuthQuery()
+  } finally {
+    googleLoginPending.value = false
   }
 }
 
-async function handleGoogleLogin(): Promise<void> {
-  loginError.value = ''
-  const googleEmail = isValidAuthEmail(email.value)
-    ? email.value.trim().toLowerCase()
-    : `google-${selectedIdentity.value}@rentmate.tw`
-  const session = registerWithGoogle(googleEmail, selectedOption.value.authRole)
-
-  await router.push(needsNicknameSetup(session) ? '/welcome' : getPostLoginTarget())
-}
+onMounted(handleGoogleOAuthReturn)
 
 </script>
 
@@ -263,13 +288,9 @@ async function handleGoogleLogin(): Promise<void> {
         </div>
 
         <label class="auth-checkbox-row">
-          <Checkbox v-model:checked="rememberMe" class="auth-checkbox" />
+          <Checkbox v-model="rememberMe" class="auth-checkbox" />
           記住這個登入狀態
         </label>
-
-        <p v-if="loginError" class="auth-feedback auth-feedback--error" role="alert">
-          {{ loginError }}
-        </p>
 
         <div class="auth-login-actions">
           <Button type="submit" size="lg" class="auth-primary-button">
@@ -282,19 +303,28 @@ async function handleGoogleLogin(): Promise<void> {
             <span class="auth-divider-line" />
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
+          <a
+            :href="googleLoginUrl"
             class="auth-google-button"
-            @click="handleGoogleLogin"
+            :aria-busy="googleLoginPending"
+            :aria-disabled="googleLoginPending"
+            @click="googleLoginPending && $event.preventDefault()"
           >
             <img
-              src="https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/google/default.svg"
+              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
               alt=""
               class="auth-google-icon"
             />
-            使用 Google 帳號登入
-          </Button>
+            <span>{{ googleLoginPending ? '正在完成 Google 登入…' : '使用 Google 帳號登入' }}</span>
+          </a>
+
+          <p
+            v-if="loginError"
+            class="auth-feedback auth-feedback--error auth-login-error"
+            role="alert"
+          >
+            {{ loginError }}
+          </p>
         </div>
             </section>
           </form>

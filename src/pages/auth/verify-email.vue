@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { BadgeCheck, MailCheck } from 'lucide-vue-next'
-import { completeEmailVerification, getPendingRegistration, getVerificationHint } from '@/src/composables/useAuth'
+import { completeEmailVerification, getPendingRegistration } from '@/src/composables/useAuth'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,15 +18,14 @@ const email = computed(() =>
 )
 
 async function handleVerification(): Promise<void> {
-  const session = completeEmailVerification(code.value)
-
-  if (!session) {
-    errorMessage.value = '驗證碼不正確，請再試一次。'
-    return
+  try {
+    const session = await completeEmailVerification(code.value)
+    if (!session) throw new Error('找不到待驗證資料，請重新註冊。')
+    errorMessage.value = ''
+    await router.push('/welcome')
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '驗證失敗，請稍後再試。'
   }
-
-  errorMessage.value = ''
-  await router.push('/welcome')
 }
 </script>
 
@@ -46,8 +45,8 @@ async function handleVerification(): Promise<void> {
       <div class="flex items-start gap-3">
         <BadgeCheck class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <div class="space-y-1">
-          <p class="font-medium text-foreground">目前為示範流程</p>
-          <p>可使用驗證碼 <span class="font-semibold text-primary">{{ getVerificationHint() }}</span> 繼續。</p>
+          <p class="font-medium text-foreground">驗證碼有效時間為 2 分鐘</p>
+          <p>最多可輸入錯誤 3 次；達到上限後需要重新註冊。</p>
         </div>
       </div>
     </div>
