@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { extractContractFieldCandidates } from '../src/utils/contract-field-extraction'
 import { detectContractConditions } from '../shared/contract-field-schema.js'
+import {
+  isValidBuildingNumber,
+  isValidLandNumber,
+  isValidPersonOrEntityName,
+  isValidPositiveArea,
+  isValidRocDate,
+  isValidTaiwanBusinessNumber,
+  isValidTaiwanNationalId,
+} from '../shared/contract-field-validation.js'
 
 const reportReferenceText = [
   '出租人：[已遮蔽]，以下簡稱甲方',
@@ -123,6 +132,19 @@ assert.equal(pdfTemplateParties.tenant_registered_address.value, '新北市板�
 assert.equal(pdfTemplateParties.tenant_mailing_address.value, '新北市板橋區示範路 99 號 8 樓')
 assert.equal(pdfTemplateParties.tenant_phone.value, '0987-111-222')
 
+assert.equal(isValidRocDate('民國 114 年 7 月 14 日'), true)
+assert.equal(isValidRocDate('14天'), false)
+assert.equal(isValidPersonOrEntityName('王房東'), true)
+assert.equal(isValidPersonOrEntityName('123'), false)
+assert.equal(isValidTaiwanNationalId('A123456789'), true)
+assert.equal(isValidTaiwanNationalId('A123456788'), false)
+assert.equal(isValidTaiwanBusinessNumber('24536806'), true)
+assert.equal(isValidLandNumber('中正段一小段 123 地號'), true)
+assert.equal(isValidLandNumber('123'), false)
+assert.equal(isValidBuildingNumber('00649-000 建號'), true)
+assert.equal(isValidPositiveArea('30 平方公尺'), true)
+assert.equal(isValidPositiveArea('隨便填'), false)
+
 const statutoryFields = extractContractFieldCandidates(
   [
     '本契約於民國114年1月2日經承租人攜回審閱3日。',
@@ -155,6 +177,32 @@ assert.equal(statutoryFields.deposit_months.value, '2 個月租金')
 assert.equal(statutoryFields.management_fee.value.includes('管理費'), true)
 assert.equal(statutoryFields.electricity_billing.value.includes('電費'), true)
 
+const officialScopeFields = extractContractFieldCandidates(
+  [
+    '附屬建物用途：陽台，面積 5 平方公尺。',
+    '車位：☑有（汽車停車位 1 個、機車停車位 1 個）□無。',
+    '汽車停車位種類及編號：地下第 B1 層☑平面式停車位□機械式停車位，編號第 20 號。',
+    '機車停車位：地下第 B1 層，編號第 M12 號。',
+    '使用時間：☑全日□日間□夜間□其他。',
+    '租賃附屬設備：☑有□無附屬設備，若有，詳如附件一租賃標的現況確認書。',
+    '十九、遺留物之處理：承租人有遺留物，經催告屆期仍不取回時，視為拋棄其所有權。',
+    '因本契約涉訟時，以臺灣臺北地方法院為第一審管轄法院。',
+  ].join('\n'),
+)
+assert.equal(officialScopeFields.accessory_purpose.value, '陽台')
+assert.equal(officialScopeFields.accessory_available.value, '有')
+assert.equal(officialScopeFields.accessory_area.value, '5 平方公尺')
+assert.equal(officialScopeFields.parking_available.value, '有')
+assert.equal(officialScopeFields.car_parking_count.value, '1 個')
+assert.equal(officialScopeFields.car_parking_type.value, '平面式')
+assert.equal(officialScopeFields.car_parking_number.value, '第 20 號')
+assert.equal(officialScopeFields.motorcycle_parking_count.value, '1 個')
+assert.equal(officialScopeFields.motorcycle_parking_number.value, '第 M12 號')
+assert.equal(officialScopeFields.parking_usage_time.value, '全日')
+assert.equal(officialScopeFields.rental_equipment.value, '有')
+assert.equal(officialScopeFields.leftover_handling.value, '已載明遺留物處理條款')
+assert.equal(officialScopeFields.jurisdiction_court.value, '臺灣臺北地方法院')
+
 const uncheckedTemplateOptions = extractContractFieldCandidates(
   [
     '租賃住宅□全部□部分：第__層□房間__間□第__室',
@@ -179,6 +227,10 @@ assert.deepEqual(detectContractConditions('出租人委託代理人簽約，並�
   door_number: true,
   no_door_number: false,
   partial_scope: false,
+  has_parking: false,
+  has_car_parking: false,
+  has_motorcycle_parking: false,
+  has_accessory: false,
 })
 assert.equal(detectContractConditions('無門牌，房屋稅籍編號：123').door_number, false)
 assert.equal(detectContractConditions('租賃住宅部分：第2層第3室').partial_scope, true)

@@ -63,23 +63,42 @@ export const CONTRACT_FIELD_GROUPS = [
     shortTitle: '相關費用',
     description: '管理、水電、瓦斯、網路及其他費用約定。',
   },
+  {
+    id: 'clauses',
+    order: 10,
+    title: '其他重要條款',
+    shortTitle: '重要條款',
+    description: '遺留物處理及訴訟管轄等契約約定。',
+  },
 ]
 
 export const CONTRACT_FIELD_DEFINITIONS = [
-  field('review_date', 'review', '審閱日期', ['契約審閱期', '攜回審閱'], 'date'),
-  field('review_days', 'review', '審閱日數', ['審閱期間', '審閱'], 'days'),
+  field('review_date', 'review', '審閱日期', ['契約審閱期', '攜回審閱'], 'date', 'required', null, {
+    placeholder: '例如：民國 114 年 7 月 14 日',
+  }),
+  field('review_days', 'review', '審閱日數', ['審閱期間', '審閱'], 'days', 'required', null, {
+    placeholder: '例如：3 日',
+  }),
   field('landlord_review_signature', 'review', '出租人審閱簽章', ['出租人簽章'], 'presence'),
   field('tenant_review_signature', 'review', '承租人審閱簽章', ['承租人簽章'], 'presence'),
 
-  field('landlord', 'parties', '出租人姓名', ['出租人姓名', '出租人'], 'name'),
-  field('landlord_id', 'parties', '出租人統一編號', ['出租人', '身分證字號', '統一編號'], 'id'),
+  field('landlord', 'parties', '出租人姓名', ['出租人姓名', '出租人'], 'name', 'required', null, {
+    placeholder: '請輸入中文或英文姓名／名稱',
+  }),
+  field('tenant', 'parties', '承租人姓名', ['承租人姓名', '承租人'], 'name', 'required', null, {
+    placeholder: '請輸入中文或英文姓名／名稱',
+  }),
+  field('landlord_id', 'parties', '出租人統一編號', ['出租人', '身分證字號', '統一編號'], 'id', 'required', null, {
+    placeholder: '身分證字號或 8 碼統一編號',
+  }),
+  field('tenant_id', 'parties', '承租人統一編號', ['承租人', '身分證字號', '統一編號'], 'id', 'required', null, {
+    placeholder: '身分證字號或 8 碼統一編號',
+  }),
   field('landlord_registered_address', 'parties', '出租人戶籍地址', ['出租人', '戶籍地址'], 'text'),
-  field('landlord_mailing_address', 'parties', '出租人通訊地址', ['出租人', '通訊地址'], 'text'),
-  field('landlord_phone', 'parties', '出租人聯絡電話', ['出租人', '聯絡電話'], 'phone'),
-  field('tenant', 'parties', '承租人姓名', ['承租人姓名', '承租人'], 'name'),
-  field('tenant_id', 'parties', '承租人統一編號', ['承租人', '身分證字號', '統一編號'], 'id'),
   field('tenant_registered_address', 'parties', '承租人戶籍地址', ['承租人', '戶籍地址'], 'text'),
+  field('landlord_mailing_address', 'parties', '出租人通訊地址', ['出租人', '通訊地址'], 'text'),
   field('tenant_mailing_address', 'parties', '承租人通訊地址', ['承租人', '通訊地址'], 'text'),
+  field('landlord_phone', 'parties', '出租人聯絡電話', ['出租人', '聯絡電話'], 'phone'),
   field('tenant_phone', 'parties', '承租人聯絡電話', ['承租人', '聯絡電話'], 'phone'),
 
   field(
@@ -137,19 +156,50 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     'conditional',
     'no_door_number',
   ),
-  field('land_number', 'property', '基地地號', ['基地坐落', '地號'], 'text'),
-  field('building_number', 'property', '專有部分建號', ['專有部分建號', '建號'], 'text'),
-  field('exclusive_area', 'property', '專有部分面積', ['專有部分', '主建物面積'], 'area'),
+  field('land_number', 'property', '基地地號', ['基地坐落', '地號'], 'land_number', 'required', null, {
+    placeholder: '例如：中正段一小段 123 地號',
+  }),
+  field('building_number', 'property', '專有部分建號', ['專有部分建號', '建號'], 'building_number', 'required', null, {
+    placeholder: '例如：00649-000 建號',
+  }),
+  field('exclusive_area', 'property', '專有部分面積', ['專有部分', '主建物面積'], 'area', 'required', null, {
+    placeholder: '例如：30 平方公尺',
+  }),
+  field('accessory_available', 'property', '是否有附屬建物', ['附屬建物', '陽台', '平台', '花台', '露台', '雨遮'], 'choice', 'required', null, {
+    control: 'choice',
+    options: ['有', '無'],
+  }),
+  field(
+    'accessory_purpose',
+    'property',
+    '附屬建物用途',
+    ['附屬建物用途', '陽台', '平台', '花台', '露台', '雨遮'],
+    'purpose',
+    'conditional',
+    'has_accessory',
+    { placeholder: '例如：陽台、平台、花台、露台或雨遮' },
+  ),
   field(
     'accessory_area',
     'property',
     '附屬建物面積',
     ['附屬建物用途', '附屬建物面積'],
     'area',
-    'recommended',
+    'conditional',
+    'has_accessory',
+    { placeholder: '例如：5 平方公尺（約 1.51 坪）' },
   ),
 
-  field('rental_scope', 'scope', '住宅出租範圍', ['租賃範圍', '住宅全部', '住宅部分'], 'text'),
+  field(
+    'rental_scope',
+    'scope',
+    '住宅出租範圍',
+    ['租賃範圍', '住宅全部', '住宅部分'],
+    'choice',
+    'required',
+    null,
+    { control: 'choice', options: ['全部', '部分'] },
+  ),
   field(
     'rental_room',
     'scope',
@@ -168,14 +218,40 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     'conditional',
     'partial_scope',
   ),
-  field(
-    'parking_space',
-    'scope',
-    '車位種類及編號',
-    ['汽車停車位', '機車停車位', '車位編號'],
-    'text',
-    'recommended',
-  ),
+  field('parking_available', 'scope', '是否包含車位', ['車位', '汽車停車位', '機車停車位'], 'choice', 'required', null, {
+    control: 'choice',
+    options: ['有', '無'],
+  }),
+  field('car_parking_count', 'scope', '汽車停車位數量', ['汽車停車位'], 'count', 'conditional', 'has_parking', {
+    placeholder: '例如：1 個',
+  }),
+  field('car_parking_type', 'scope', '汽車停車位種類', ['平面式停車位', '機械式停車位'], 'choice', 'conditional', 'has_car_parking', {
+    control: 'choice',
+    options: ['平面式', '機械式'],
+  }),
+  field('car_parking_floor', 'scope', '汽車停車位樓層', ['汽車停車位', '地上', '地下'], 'floor', 'conditional', 'has_car_parking', {
+    placeholder: '例如：地下 B1 層',
+  }),
+  field('car_parking_number', 'scope', '汽車停車位編號', ['汽車停車位', '編號'], 'parking_number', 'conditional', 'has_car_parking', {
+    placeholder: '例如：第 20 號',
+  }),
+  field('motorcycle_parking_count', 'scope', '機車停車位數量', ['機車停車位'], 'count', 'conditional', 'has_parking', {
+    placeholder: '例如：1 個',
+  }),
+  field('motorcycle_parking_floor', 'scope', '機車停車位樓層', ['機車停車位', '地上', '地下'], 'floor', 'conditional', 'has_motorcycle_parking', {
+    placeholder: '例如：地下 B1 層',
+  }),
+  field('motorcycle_parking_number', 'scope', '機車停車位編號／位置', ['機車停車位', '編號', '位置示意圖'], 'parking_number', 'conditional', 'has_motorcycle_parking', {
+    placeholder: '例如：第 M12 號或附件位置示意圖',
+  }),
+  field('parking_usage_time', 'scope', '車位使用時間', ['使用時間', '全日', '日間', '夜間'], 'choice', 'conditional', 'has_parking', {
+    control: 'choice',
+    options: ['全日', '日間', '夜間', '其他'],
+  }),
+  field('rental_equipment', 'scope', '租賃附屬設備', ['租賃附屬設備', '附件一租賃標的現況確認書'], 'choice', 'required', null, {
+    control: 'choice',
+    options: ['有', '無'],
+  }),
 
   field('start_date', 'term', '租期起始', ['租賃期間', '租賃期限', '租期自'], 'date'),
   field('end_date', 'term', '租期結束', ['租賃期間', '租賃期限', '至民國'], 'date'),
@@ -232,6 +308,24 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     'text',
     'recommended',
   ),
+
+  field(
+    'leftover_handling',
+    'clauses',
+    '遺留物之處理',
+    ['遺留物之處理', '視為拋棄其所有權'],
+    'leftover_clause',
+  ),
+  field(
+    'jurisdiction_court',
+    'clauses',
+    '第一審管轄法院',
+    ['第一審管轄法院', '地方法院'],
+    'court',
+    'recommended',
+    null,
+    { placeholder: '例如：臺灣臺北地方法院（不得排除法定管轄）' },
+  ),
 ]
 
 function field(
@@ -242,8 +336,21 @@ function field(
   format = 'text',
   requirement = 'required',
   condition = null,
+  config = {},
 ) {
-  return { id, candidateKey: id, groupId, label, keywords, format, requirement, condition }
+  return {
+    id,
+    candidateKey: id,
+    groupId,
+    label,
+    keywords,
+    format,
+    requirement,
+    condition,
+    control: config.control ?? 'text',
+    options: config.options ?? [],
+    placeholder: config.placeholder ?? '',
+  }
 }
 
 export function detectContractConditions(text) {
@@ -258,5 +365,17 @@ export function detectContractConditions(text) {
       /住宅部分|租賃部分|分租|(?:租賃範圍|租賃住宅)[^\r\n]{0,60}(?:房間|第\s*[^\r\n]{0,12}\s*室)/.test(
         source,
       ),
+    has_parking:
+      /(?:車位[^\r\n]{0,30}?[■☑✓●◆]\s*有)|汽車停車位\s*\d+\s*個|機車停車位\s*\d+\s*個|平面式停車位|機械式停車位/.test(
+        source,
+      ) && !/(?:車位[^\r\n]{0,20}?[■☑✓●◆]\s*無)/.test(source),
+    has_car_parking:
+      /汽車停車位\s*[1-9]\d*\s*個|平面式停車位|機械式停車位/.test(source),
+    has_motorcycle_parking: /機車停車位\s*[1-9]\d*\s*個|機車停車位[^\r\n]{0,60}編號/.test(
+      source,
+    ),
+    has_accessory: /附屬建物(?:用途)?[^\r\n]{0,50}(?:平方公尺|陽台|平台|花台|露台|雨遮)/.test(
+      source,
+    ),
   }
 }

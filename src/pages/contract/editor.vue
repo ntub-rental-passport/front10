@@ -19,6 +19,14 @@ import {
   detectContractConditions,
 } from '@/shared/contract-field-schema.js'
 import {
+  isValidBuildingNumber,
+  isValidLandNumber,
+  isValidPersonOrEntityName,
+  isValidPositiveArea,
+  isValidRocDate,
+  isValidTaiwanIdentityNumber,
+} from '@/shared/contract-field-validation.js'
+import {
   Card,
   CardContent,
   CardHeader,
@@ -67,6 +75,9 @@ interface ContractField {
   evidenceType: 'ocr_text' | 'image' | 'administrative_inference' | 'road_inference' | null
   addressResolution: ContractFieldReview['addressResolution'] | null
   validationError: string
+  control: 'text' | 'choice'
+  options: string[]
+  placeholder: string
 }
 
 type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
@@ -154,6 +165,9 @@ function makeField(
     label: string
     requirement: 'required' | 'conditional' | 'recommended'
     condition: string | null
+    control?: 'text' | 'choice'
+    options?: string[]
+    placeholder?: string
   },
   captured: ContractFieldCandidate,
   conditions: Record<string, boolean>,
@@ -188,6 +202,9 @@ function makeField(
     evidenceType: captured.addressResolution?.evidenceType ?? null,
     addressResolution: captured.addressResolution ?? null,
     validationError: '',
+    control: definition.control ?? 'text',
+    options: definition.options ?? [],
+    placeholder: definition.placeholder ?? '',
   }
 }
 
@@ -323,6 +340,49 @@ const fields = ref<ContractField[]>(
       ocrPages.value,
     )
   }),
+)
+
+function refreshInteractiveConditions(): void {
+  const rentalScope = fields.value.find((field) => field.id === 'rental_scope')?.value
+  const parkingAvailable = fields.value.find((field) => field.id === 'parking_available')?.value
+  const carParkingCount = fields.value.find((field) => field.id === 'car_parking_count')?.value
+  const motorcycleParkingCount = fields.value.find(
+    (field) => field.id === 'motorcycle_parking_count',
+  )?.value
+  const accessoryAvailable = fields.value.find(
+    (field) => field.id === 'accessory_available',
+  )?.value
+
+  fields.value.forEach((field) => {
+    let applies: boolean | null = null
+    if (field.condition === 'partial_scope' && ['全部', '部分'].includes(rentalScope ?? '')) {
+      applies = rentalScope === '部分'
+    }
+    if (field.condition === 'has_parking' && ['有', '無'].includes(parkingAvailable ?? '')) {
+      applies = parkingAvailable === '有'
+    }
+    if (field.condition === 'has_car_parking' && /^\d+\s*個$/.test(carParkingCount ?? '')) {
+      applies = parseNumericValue(carParkingCount ?? '') > 0
+    }
+    if (
+      field.condition === 'has_motorcycle_parking' &&
+      /^\d+\s*個$/.test(motorcycleParkingCount ?? '')
+    ) {
+      applies = parseNumericValue(motorcycleParkingCount ?? '') > 0
+    }
+    if (field.condition === 'has_accessory' && ['有', '無'].includes(accessoryAvailable ?? '')) {
+      applies = accessoryAvailable === '有'
+    }
+    if (applies === null) return
+    field.applicable = applies
+    field.required = applies
+  })
+}
+
+watch(
+  () => fields.value.map((field) => `${field.id}:${field.value}`),
+  refreshInteractiveConditions,
+  { immediate: true },
 )
 
 const isEditing = ref(false)
@@ -619,11 +679,26 @@ function parseNumericValue(value: string): number {
   return Number(value.replace(/[^0-9]/g, '')) || 0
 }
 
+function areaInPing(value: string): string {
+  if (!/平方公尺/.test(value)) return ''
+  const squareMeters = Number(value.replace(/[^0-9.]/g, ''))
+  return squareMeters > 0 ? `約 ${(squareMeters * 0.3025).toFixed(2)} 坪` : ''
+}
+
 function validateLegalField(field: ContractField, value = field.value.trim()): string {
   if (!value || value === '尚未辨識') return field.required ? `請補上「${field.label}」。` : ''
 
-  if (field.id === 'review_days' && parseNumericValue(value) < 3) {
-    return '契約審閱期間不得少於 3 日。'
+  if (field.id === 'review_date' && !isValidRocDate(value)) {
+    return '審閱日期請填寫完整有效日期，例如「民國 114 年 7 月 14 日」。'
+  }
+  if (field.id === 'review_days' && (!/^\d+\s*日$/.test(value) || parseNumericValue(value) < 3)) {
+    return '審閱日數請填寫「3 日」以上的整數日數。'
+  }
+  if (/(?:landlord|tenant)_review_signature$/.test(field.id) && !/簽章|簽署|已簽/.test(value)) {
+    return '簽章欄位必須確認契約中已載明簽章或已完成簽署。'
+  }
+  if (['landlord', 'tenant', 'agent_name'].includes(field.id) && !isValidPersonOrEntityName(value)) {
+    return '姓名／名稱只能使用中文、英文字母及姓名常用符號，不得填寫純數字。'
   }
   if (field.id === 'deposit_months' && parseNumericValue(value) > 2) {
     return '押金最高不得超過 2 個月租金。'
@@ -637,13 +712,45 @@ function validateLegalField(field: ContractField, value = field.value.trim()): s
     }
   }
   if (/(?:landlord|tenant|agent)_id$/.test(field.id)) {
-    const normalized = value.replace(/\s/g, '')
-    if (!/^(?:[A-Z][12]\d{8}|\d{8}|[A-Z0-9-]{6,20})$/i.test(normalized)) {
-      return '請確認身分證明文件編號或統一編號格式。'
+    if (!isValidTaiwanIdentityNumber(value)) {
+      return '身分證字號或 8 碼統一編號檢核失敗，請確認英文字母、數字與檢查碼。'
     }
   }
   if (/(?:landlord|tenant)_phone$/.test(field.id) && value.replace(/\D/g, '').length < 7) {
     return '聯絡電話格式不完整。'
+  }
+  if (field.id === 'land_number' && !isValidLandNumber(value)) {
+    return '基地地號請完整填寫「段／小段／地號」，例如「中正段一小段 123 地號」。'
+  }
+  if (field.id === 'building_number' && !isValidBuildingNumber(value)) {
+    return '專有部分建號請填寫數字建號並以「建號」結尾，例如「00649-000 建號」。'
+  }
+  if (['exclusive_area', 'accessory_area', 'rental_area'].includes(field.id) && !isValidPositiveArea(value)) {
+    return '面積請填寫大於 0 的數字與單位，例如「30 平方公尺」。'
+  }
+  if (field.id === 'accessory_purpose' && !/^[\p{Script=Han}A-Za-z、，,／/\s]{2,30}$/u.test(value)) {
+    return '附屬建物用途請填寫陽台、平台、花台、露台、雨遮等文字用途。'
+  }
+  if (field.control === 'choice' && !field.options.includes(value)) {
+    return `請從指定選項中選擇「${field.label}」。`
+  }
+  if (/(?:car|motorcycle)_parking_count$/.test(field.id) && !/^\d+\s*個$/.test(value)) {
+    return '停車位數量請填寫整數，例如「1 個」。'
+  }
+  if (/(?:car|motorcycle)_parking_floor$/.test(field.id) && !/^(?:地上|地下)?\s*B?\d+\s*層$/i.test(value)) {
+    return '停車位樓層請填寫例如「地下 B1 層」或「地上 1 層」。'
+  }
+  if (/(?:car|motorcycle)_parking_number$/.test(field.id) && !/(?:第\s*)?[A-Za-z0-9-]+\s*號|位置示意圖/.test(value)) {
+    return '停車位編號請填寫例如「第 20 號」，或註明附件位置示意圖。'
+  }
+  if (field.id === 'leftover_handling' && !/遺留物/.test(value)) {
+    return '遺留物條款必須載明催告、逾期視為拋棄及處理費用約定。'
+  }
+  if (field.id === 'jurisdiction_court' && !/^臺灣[^，,。]{1,20}地方法院/.test(value)) {
+    return '法院名稱請填寫完整，例如「臺灣臺北地方法院」。'
+  }
+  if (['start_date', 'end_date'].includes(field.id) && !isValidRocDate(value)) {
+    return '租賃日期請填寫完整有效的民國年月日。'
   }
   return ''
 }
@@ -662,6 +769,14 @@ function replaceFirstInPages(pattern: RegExp, replacement: string): string | nul
 function syncFieldToContract(field: ContractField, newValue: string): boolean {
   const moneyValue = newValue.replace(/[^0-9０-９,，]/g, '')
   const dayValue = newValue.match(/[0-9０-９]{1,2}/)?.[0] ?? ''
+
+  if (field.control === 'choice') {
+    if (!ocrPages.value.length) return false
+    const supplementalText = `【人工校對補充】${field.label}：${newValue}`
+    ocrPages.value[0] = `${ocrPages.value[0]?.trimEnd() ?? ''}\n\n${supplementalText}`.trim()
+    field.sourceValue = newValue
+    return true
+  }
 
   if (field.id === 'rent' && moneyValue) {
     const insertedValue = replaceFirstInPages(
@@ -807,7 +922,7 @@ function persistContract(): boolean {
     addressField.validationError = ''
   }
 
-  for (const field of applicableFields.value.filter((item) => item.required)) {
+  for (const field of applicableFields.value) {
     const validationError = validateLegalField(field)
     if (!validationError) continue
     field.validationError = validationError
@@ -1307,7 +1422,10 @@ function returnToOcr(): void {
             </button>
           </div>
 
-          <CardContent class="field-list">
+          <CardContent
+            class="field-list"
+            :class="{ 'field-list--single': activeFieldGroupId === 'property' }"
+          >
             <div
               v-for="field in filteredFields"
               :key="field.id"
@@ -1340,7 +1458,36 @@ function returnToOcr(): void {
                 </div>
               </div>
 
-              <div v-if="field.editing" class="field-edit-row">
+              <div
+                v-if="field.editing && field.control === 'choice'"
+                class="field-choice-edit-row"
+                role="radiogroup"
+                :aria-label="field.label"
+              >
+                <div class="field-choice-options">
+                  <button
+                    v-for="option in field.options"
+                    :key="option"
+                    type="button"
+                    class="field-choice-option"
+                    :class="{ 'is-selected': field.value === option }"
+                    role="radio"
+                    :aria-checked="field.value === option"
+                    @click="field.value = option"
+                  >
+                    {{ option }}
+                  </button>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label="確認欄位選項"
+                  @click="confirmFieldEdit(field)"
+                >
+                  <CheckCircle :size="16" class="text-green-600" />
+                </Button>
+              </div>
+              <div v-else-if="field.editing" class="field-edit-row">
                 <input
                   v-model="field.value"
                   class="flex-1 rounded border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
@@ -1351,6 +1498,7 @@ function returnToOcr(): void {
                   :aria-describedby="
                     field.validationError ? `${field.id}-validation-error` : undefined
                   "
+                  :placeholder="field.placeholder"
                   @input="field.validationError = ''"
                   @keyup.enter="confirmFieldEdit(field)"
                 />
@@ -1382,6 +1530,12 @@ function returnToOcr(): void {
                   </span>
                   <span class="text-sm font-semibold text-foreground">
                     {{ field.value }}
+                  </span>
+                  <span
+                    v-if="['exclusive_area', 'accessory_area', 'rental_area'].includes(field.id) && areaInPing(field.value)"
+                    class="field-area-conversion"
+                  >
+                    {{ areaInPing(field.value) }}
                   </span>
                 </div>
                 <div class="field-actions">

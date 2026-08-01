@@ -221,6 +221,95 @@ function extractRentalScope(text) {
   return direct ? candidate(direct, line, 'medium') : { ...EMPTY_CANDIDATE }
 }
 
+function extractBinaryChoice(text, labels) {
+  const lines = String(text ?? '')
+    .split(/\r?\n/)
+    .map((line) => cleanSource(line))
+  const line = lines.find((item) => labels.some((label) => item.includes(label))) ?? ''
+  if (!line) return { ...EMPTY_CANDIDATE }
+  const checked = line.match(/[■☑✓●◆]\s*(有|無)/)?.[1]
+  if (checked) return candidate(checked, line, 'medium')
+  const direct = line.match(/(?:有無|是否)?\s*[：:]?\s*(有|無)(?:\s|$|，|。)/)?.[1]
+  return direct ? candidate(direct, line, 'low') : { ...EMPTY_CANDIDATE }
+}
+
+function extractParkingDetails(text) {
+  const parkingLine =
+    String(text ?? '')
+      .split(/\r?\n/)
+      .find((line) => /車位[：:]|汽車停車位|機車停車位/.test(line)) ?? ''
+  const checkedAvailability = parkingLine.match(/[■☑✓●◆]\s*(有|無)/)?.[1]
+  const directAvailability = parkingLine.match(/(?:車位|汽車位)\s*[：:]\s*(有|無)/)?.[1]
+  const hasParkingDetails = /平面式停車位|機械式停車位|編號第?\s*[A-Za-z0-9０-９-]+\s*號/.test(
+    text,
+  )
+  const parkingAvailable = checkedAvailability || directAvailability || (hasParkingDetails ? '有' : '')
+
+  const carContext = text.match(/汽車停車位[\s\S]{0,180}/)?.[0] ?? ''
+  const motorcycleLine =
+    String(text ?? '')
+      .split(/\r?\n/)
+      .find((line) => /機車停車位\s*[：:]/.test(line)) ?? ''
+  const motorcycleContext =
+    motorcycleLine || text.match(/機車停車位[\s\S]{0,140}/)?.[0] || ''
+  const carCount =
+    captureFirst(text, [/汽車停車位\s*([0-9０-９]+)\s*個/]) ||
+    captureFirst(carContext, [/停車位\s*([0-9０-９]+)\s*個/])
+  const motorcycleCount = captureFirst(text, [/機車停車位\s*([0-9０-９]+)\s*個/])
+  const carType =
+    carContext.match(/[■☑✓●◆]\s*(平面式|機械式)停車位/)?.[1] ||
+    carContext.match(/(?:種類[及與]編號[：:]?)?[^\r\n]{0,30}(平面式|機械式)停車位/)?.[1] ||
+    ''
+  const carFloor = captureFirst(carContext, [
+    /地上\s*第?\s*([0-9０-９]+)\s*層/,
+    /地下\s*第?\s*([A-Za-z0-9０-９-]+)\s*層/,
+    /地上\s*\(下\)\s*第?\s*([A-Za-z0-9０-９-]+)\s*層/,
+  ])
+  const motorcycleFloor = captureFirst(motorcycleContext, [
+    /地上\s*第?\s*([0-9０-９]+)\s*層/,
+    /地下\s*第?\s*([A-Za-z0-9０-９-]+)\s*層/,
+    /地上\s*\(下\)\s*第?\s*([A-Za-z0-9０-９-]+)\s*層/,
+  ])
+  const carNumber = captureFirst(carContext, [/編號\s*第?\s*([A-Za-z0-9０-９-]+)\s*號/])
+  const motorcycleNumber = captureFirst(motorcycleContext, [
+    /編號\s*第?\s*([A-Za-z0-9０-９-]+)\s*號/,
+  ])
+  const usageLine =
+    String(text ?? '')
+      .split(/\r?\n/)
+      .find((line) => /使用時間/.test(line)) ?? ''
+  const usage =
+    usageLine.match(/[■☑✓●◆]\s*(全日|日間|夜間|其他)/)?.[1] ||
+    usageLine.match(/使用時間\s*[：:]\s*(全日|日間|夜間|其他)/)?.[1] ||
+    ''
+
+  return {
+    parking_available: parkingAvailable
+      ? candidate(parkingAvailable, parkingLine, 'medium')
+      : { ...EMPTY_CANDIDATE },
+    car_parking_count: carCount
+      ? candidate(normalizeFullWidthDigits(carCount) + ' 個', carCount, 'medium')
+      : { ...EMPTY_CANDIDATE },
+    car_parking_type: carType ? candidate(carType, carContext, 'medium') : { ...EMPTY_CANDIDATE },
+    car_parking_floor: carFloor
+      ? candidate(normalizeFullWidthDigits(carFloor) + ' 層', carFloor, 'low')
+      : { ...EMPTY_CANDIDATE },
+    car_parking_number: carNumber
+      ? candidate('第 ' + normalizeFullWidthDigits(carNumber) + ' 號', carNumber, 'medium')
+      : { ...EMPTY_CANDIDATE },
+    motorcycle_parking_count: motorcycleCount
+      ? candidate(normalizeFullWidthDigits(motorcycleCount) + ' 個', motorcycleCount, 'medium')
+      : { ...EMPTY_CANDIDATE },
+    motorcycle_parking_floor: motorcycleFloor
+      ? candidate(normalizeFullWidthDigits(motorcycleFloor) + ' 層', motorcycleFloor, 'low')
+      : { ...EMPTY_CANDIDATE },
+    motorcycle_parking_number: motorcycleNumber
+      ? candidate('第 ' + normalizeFullWidthDigits(motorcycleNumber) + ' 號', motorcycleNumber, 'medium')
+      : { ...EMPTY_CANDIDATE },
+    parking_usage_time: usage ? candidate(usage, usageLine, 'medium') : { ...EMPTY_CANDIDATE },
+  }
+}
+
 function extractReviewFields(text) {
   const reviewed = text.match(
     new RegExp(
@@ -521,6 +610,18 @@ export function extractContractFieldCandidates(text) {
   const rentalRoomMatch = text.match(
     /第\s*([0-9０-９一二三四五六七八九十]+)\s*層[^\r\n]{0,40}?(?:第\s*)?([0-9０-９A-Za-z一二三四五六七八九十]*)\s*(房|室)/,
   )
+  const parking = extractParkingDetails(text)
+  const accessoryPurpose = captureFirst(text, [
+    /附屬建物用途\s*[：:]?\s*([^\r\n，,。]{1,30})/,
+    /附屬建物[：:]?\s*(陽台|平台|花台|露台|雨遮)/,
+  ])
+  const leftoverClause = text.match(
+    /(?:十九[、.．]\s*)?遺留物之處理[\s\S]{0,400}?(?:視為拋棄其所有權|請求給付不足之費用)/,
+  )?.[0]
+  const jurisdictionCourt = captureFirst(text, [
+    /以\s*(臺灣[^\r\n，,。]{1,20}地方法院)\s*為第一審管轄法院/,
+    /第一審管轄法院\s*[：:]?\s*(臺灣[^\r\n，,。]{1,20}地方法院)/,
+  ])
 
   return {
     ...review,
@@ -551,6 +652,12 @@ export function extractContractFieldCandidates(text) {
     land_number: extractLabeledText(text, [/(?:基地坐落|地號)\s*[：:]?\s*([^\r\n。]*?地號)/]),
     building_number: extractLabeledText(text, [/(?:專有部分)?建號\s*[：:]?\s*([^\r\n，,。]+)/]),
     exclusive_area: extractArea(text, ['專有部分', '主建物面積']),
+    accessory_available: accessoryPurpose || /附屬建物[^\r\n]{0,50}\d+\s*平方公尺/.test(text)
+      ? candidate('有', accessoryPurpose || '附屬建物', 'low')
+      : { ...EMPTY_CANDIDATE },
+    accessory_purpose: accessoryPurpose
+      ? candidate(accessoryPurpose, accessoryPurpose, 'medium')
+      : { ...EMPTY_CANDIDATE },
     accessory_area: extractArea(text, ['附屬建物面積', '附屬建物']),
     rental_scope: extractRentalScope(text),
     rental_room: rentalRoomMatch?.[0]
@@ -558,6 +665,8 @@ export function extractContractFieldCandidates(text) {
       : { ...EMPTY_CANDIDATE },
     rental_area: extractArea(text, ['租賃範圍']),
     parking_space: extractNearbyLine(text, ['汽車停車位', '機車停車位', '車位編號']),
+    ...parking,
+    rental_equipment: extractBinaryChoice(text, ['租賃附屬設備']),
     startDate: dates.startDate,
     endDate: dates.endDate,
     start_date: dates.startDate,
@@ -588,6 +697,12 @@ export function extractContractFieldCandidates(text) {
     gas_fee: extractExpenseAgreement(text, '瓦斯費'),
     internet_fee: extractExpenseAgreement(text, '網路費'),
     other_fee: extractExpenseAgreement(text, '其他費用'),
+    leftover_handling: leftoverClause
+      ? candidate('已載明遺留物處理條款', leftoverClause, 'medium')
+      : { ...EMPTY_CANDIDATE },
+    jurisdiction_court: jurisdictionCourt
+      ? candidate(jurisdictionCourt, jurisdictionCourt, 'medium')
+      : { ...EMPTY_CANDIDATE },
     penalty: extractPenalty(text),
   }
 }

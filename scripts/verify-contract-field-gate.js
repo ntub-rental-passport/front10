@@ -44,6 +44,8 @@ assert.equal(analysis.fieldReviews.landlord.confidence, 'medium')
 assert.equal(analysis.unresolvedFieldIds.includes('landlord'), true)
 assert.equal(Object.hasOwn(analysis.decisions, 'review_days'), true)
 assert.equal(Object.hasOwn(analysis.decisions, 'landlord_id'), true)
+assert.equal(Object.hasOwn(analysis.decisions, 'parking_available'), true)
+assert.equal(Object.hasOwn(analysis.decisions, 'leftover_handling'), true)
 
 const snippets = collectRelevantSnippets([pageText], ['landlord', 'rent'])
 assert.equal(

@@ -1,5 +1,13 @@
 import { extractContractFieldCandidates } from '../shared/contract-field-extraction.js'
 import { CONTRACT_FIELD_DEFINITIONS } from '../shared/contract-field-schema.js'
+import {
+  isValidBuildingNumber,
+  isValidLandNumber,
+  isValidPersonOrEntityName,
+  isValidPositiveArea,
+  isValidRocDate,
+  isValidTaiwanIdentityNumber,
+} from '../shared/contract-field-validation.js'
 
 export const FIELD_KEYWORDS = Object.fromEntries(
   CONTRACT_FIELD_DEFINITIONS.map((definition) => [definition.id, definition.keywords]),
@@ -103,11 +111,11 @@ function isFormatValid(fieldId, value) {
     case 'money':
       return /^NT\$[0-9,]+$/.test(value)
     case 'date':
-      return /^民國\s+\d+\s+年\s+\d+\s+月\s+\d+\s+日$/.test(value)
+      return isValidRocDate(value)
     case 'name':
-      return /^[\p{Script=Han}·‧]{2,40}$/u.test(value)
+      return isValidPersonOrEntityName(value)
     case 'id':
-      return /^(?:[A-Z][12]\d{8}|\d{8}|[A-Z0-9-]{6,20})$/i.test(value.replace(/\s/g, ''))
+      return isValidTaiwanIdentityNumber(value)
     case 'phone':
       return /\d{6,}/.test(value.replace(/\D/g, ''))
     case 'address':
@@ -121,7 +129,25 @@ function isFormatValid(fieldId, value) {
       return months > 0 && months <= 2
     }
     case 'area':
-      return /\d/.test(value) && /平方公尺|坪/.test(value)
+      return isValidPositiveArea(value)
+    case 'land_number':
+      return isValidLandNumber(value)
+    case 'building_number':
+      return isValidBuildingNumber(value)
+    case 'purpose':
+      return /^[\p{Script=Han}A-Za-z、，,／/\s]{2,30}$/u.test(value)
+    case 'choice':
+      return FIELD_DEFINITION_BY_ID.get(fieldId)?.options?.includes(value) ?? false
+    case 'count':
+      return /^\d+\s*個$/.test(value) && Number(value.match(/\d+/)?.[0]) >= 0
+    case 'floor':
+      return /^(?:地上|地下)?\s*(?:B?\d+)\s*層$/i.test(value)
+    case 'parking_number':
+      return /^(?:第\s*)?[A-Za-z0-9-]+\s*號$/.test(value) || /位置示意圖/.test(value)
+    case 'leftover_clause':
+      return /遺留物/.test(value)
+    case 'court':
+      return /^臺灣[^，,。]{1,20}地方法院/.test(value)
     default:
       return value.length > 0
   }
