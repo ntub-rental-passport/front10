@@ -19,6 +19,7 @@ import {
   detectContractConditions,
 } from '@/shared/contract-field-schema.js'
 import {
+  isValidContractFieldFormat,
   isValidBuildingNumber,
   isValidLandNumber,
   isValidPersonOrEntityName,
@@ -78,6 +79,14 @@ interface ContractField {
   control: 'text' | 'choice'
   options: string[]
   placeholder: string
+  format: string
+}
+
+interface FieldSection {
+  id: string
+  title: string
+  grouped: boolean
+  fields: ContractField[]
 }
 
 type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
@@ -168,6 +177,7 @@ function makeField(
     control?: 'text' | 'choice'
     options?: string[]
     placeholder?: string
+    format?: string
   },
   captured: ContractFieldCandidate,
   conditions: Record<string, boolean>,
@@ -205,6 +215,7 @@ function makeField(
     control: definition.control ?? 'text',
     options: definition.options ?? [],
     placeholder: definition.placeholder ?? '',
+    format: definition.format ?? 'text',
   }
 }
 
@@ -349,11 +360,25 @@ function refreshInteractiveConditions(): void {
   const motorcycleParkingCount = fields.value.find(
     (field) => field.id === 'motorcycle_parking_count',
   )?.value
+  const paymentMethod = fields.value.find((field) => field.id === 'payment_method')?.value
   const accessoryAvailable = fields.value.find(
     (field) => field.id === 'accessory_available',
   )?.value
 
   fields.value.forEach((field) => {
+    if (field.condition === 'has_car_parking') {
+      const parkingSelected = parkingAvailable === '有'
+      field.applicable = parkingSelected
+      field.required = parkingSelected && parseNumericValue(carParkingCount ?? '') > 0
+      return
+    }
+    if (field.condition === 'has_motorcycle_parking') {
+      const parkingSelected = parkingAvailable === '有'
+      field.applicable = parkingSelected
+      field.required = parkingSelected && parseNumericValue(motorcycleParkingCount ?? '') > 0
+      return
+    }
+
     let applies: boolean | null = null
     if (field.condition === 'partial_scope' && ['全部', '部分'].includes(rentalScope ?? '')) {
       applies = rentalScope === '部分'
@@ -361,17 +386,11 @@ function refreshInteractiveConditions(): void {
     if (field.condition === 'has_parking' && ['有', '無'].includes(parkingAvailable ?? '')) {
       applies = parkingAvailable === '有'
     }
-    if (field.condition === 'has_car_parking' && /^\d+\s*個$/.test(carParkingCount ?? '')) {
-      applies = parseNumericValue(carParkingCount ?? '') > 0
-    }
-    if (
-      field.condition === 'has_motorcycle_parking' &&
-      /^\d+\s*個$/.test(motorcycleParkingCount ?? '')
-    ) {
-      applies = parseNumericValue(motorcycleParkingCount ?? '') > 0
-    }
     if (field.condition === 'has_accessory' && ['有', '無'].includes(accessoryAvailable ?? '')) {
       applies = accessoryAvailable === '有'
+    }
+    if (field.condition === 'transfer' && paymentMethod) {
+      applies = /轉帳|匯款/.test(paymentMethod)
     }
     if (applies === null) return
     field.applicable = applies
@@ -480,6 +499,54 @@ const filteredFields = computed(() =>
     }
   }),
 )
+
+const fieldSections = computed<FieldSection[]>(() => {
+  if (activeFieldGroupId.value !== 'scope') {
+    return [{ id: 'default', title: '', grouped: false, fields: filteredFields.value }]
+  }
+
+  const visibleFields = new Map(filteredFields.value.map((field) => [field.id, field]))
+  const definitions = [
+    {
+      id: 'rental-scope',
+      title: '住宅出租範圍',
+      grouped: true,
+      fieldIds: ['rental_scope', 'rental_room', 'rental_area'],
+    },
+    {
+      id: 'parking-scope',
+      title: '是否包含車位',
+      grouped: true,
+      fieldIds: [
+        'parking_available',
+        'car_parking_count',
+        'car_parking_type',
+        'car_parking_floor',
+        'car_parking_number',
+        'motorcycle_parking_count',
+        'motorcycle_parking_floor',
+        'motorcycle_parking_number',
+        'parking_usage_time',
+      ],
+    },
+    {
+      id: 'scope-other',
+      title: '',
+      grouped: false,
+      fieldIds: ['rental_equipment'],
+    },
+  ]
+
+  return definitions
+    .map(({ fieldIds, ...section }) => ({
+      ...section,
+      fields: fieldIds.flatMap((fieldId) => {
+        const field = visibleFields.get(fieldId)
+        return field ? [field] : []
+      }),
+    }))
+    .filter((section) => section.fields.length > 0)
+})
 
 const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: number }>>(() => [
   { id: 'all', label: '本類全部', count: activeGroupFields.value.length },
@@ -743,7 +810,10 @@ function validateLegalField(field: ContractField, value = field.value.trim()): s
   if (/(?:car|motorcycle)_parking_number$/.test(field.id) && !/(?:第\s*)?[A-Za-z0-9-]+\s*號|位置示意圖/.test(value)) {
     return '停車位編號請填寫例如「第 20 號」，或註明附件位置示意圖。'
   }
-  if (field.id === 'leftover_handling' && !/遺留物/.test(value)) {
+  if (
+    field.id === 'leftover_handling' &&
+    !(/遺留物/.test(value) && /(?:催告|通知)/.test(value) && /(?:拋棄|處理)/.test(value))
+  ) {
     return '遺留物條款必須載明催告、逾期視為拋棄及處理費用約定。'
   }
   if (field.id === 'jurisdiction_court' && !/^臺灣[^，,。]{1,20}地方法院/.test(value)) {
@@ -751,6 +821,22 @@ function validateLegalField(field: ContractField, value = field.value.trim()): s
   }
   if (['start_date', 'end_date'].includes(field.id) && !isValidRocDate(value)) {
     return '租賃日期請填寫完整有效的民國年月日。'
+  }
+  if (!isValidContractFieldFormat(field.format, value, field.options)) {
+    const formatMessages: Record<string, string> = {
+      money: '金額請填寫正整數，例如「NT$18,000」。',
+      phone: '請填寫有效的臺灣手機或市內電話，例如「0912-345-678」。',
+      party_address: '請填寫完整地址，或填寫「同上／同戶籍地址」。',
+      tax_id: '房屋稅籍編號請填寫 6 至 30 碼數字。',
+      rental_room: '請填寫可辨識的樓層、房間或室號，例如「第 3 樓 A 室」。',
+      handover_time: '請填寫完整交屋日期，例如「民國 114 年 7 月 14 日」。',
+      payment_period: '每期繳納月數請填寫 1 至 12 個月，例如「1 個月」。',
+      due_day: '請填寫每月繳租期限，例如「每月 5 日前」或「每月底前」。',
+      payment_method: '支付方式請填寫「現金」、「轉帳」、「匯款」或具體其他方式。',
+      bank_account: '轉帳資料須包含銀行／金融機構、戶名及至少 6 碼帳號。',
+      expense: '費用約定須載明負擔人、計費基準、金額或依帳單繳納。',
+    }
+    return formatMessages[field.format] ?? `「${field.label}」格式不正確，請依欄位提示重新填寫。`
   }
   return ''
 }
@@ -1426,16 +1512,33 @@ function returnToOcr(): void {
             class="field-list"
             :class="{ 'field-list--single': activeFieldGroupId === 'property' }"
           >
-            <div
-              v-for="field in filteredFields"
-              :key="field.id"
-              class="contract-field-card rounded-lg border transition-colors"
-              :class="fieldCardClass(field)"
+            <section
+              v-for="section in fieldSections"
+              :key="section.id"
+              class="field-section"
+              :class="[
+                { 'field-section--grouped': section.grouped },
+                `field-section--${section.id}`,
+              ]"
             >
+              <header v-if="section.grouped" class="field-section-header">
+                <strong>{{ section.title }}</strong>
+                <span>相關明細會依你的選擇顯示</span>
+              </header>
+              <div class="field-section-grid">
+                <div
+                  v-for="field in section.fields"
+                  :key="field.id"
+                  class="contract-field-card rounded-lg border transition-colors"
+                  :class="fieldCardClass(field)"
+                >
               <div class="field-card-header">
                 <span class="text-xs font-medium text-muted-foreground">
                   {{ field.label }}
                   <span v-if="field.required" class="required-mark">必填</span>
+                  <span v-else-if="field.requirement === 'conditional'" class="conditional-mark">
+                    依條件
+                  </span>
                   <span v-else class="recommended-mark">建議</span>
                 </span>
                 <div class="field-card-badges">
@@ -1603,7 +1706,9 @@ function returnToOcr(): void {
                   </span>
                 </div>
               </details>
-            </div>
+                </div>
+              </div>
+            </section>
             <p
               v-if="!activeGroupFields.length"
               class="field-filter-empty field-filter-empty--conditional"

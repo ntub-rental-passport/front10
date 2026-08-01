@@ -1,13 +1,6 @@
 import { extractContractFieldCandidates } from '../shared/contract-field-extraction.js'
 import { CONTRACT_FIELD_DEFINITIONS } from '../shared/contract-field-schema.js'
-import {
-  isValidBuildingNumber,
-  isValidLandNumber,
-  isValidPersonOrEntityName,
-  isValidPositiveArea,
-  isValidRocDate,
-  isValidTaiwanIdentityNumber,
-} from '../shared/contract-field-validation.js'
+import { isValidContractFieldFormat } from '../shared/contract-field-validation.js'
 
 export const FIELD_KEYWORDS = Object.fromEntries(
   CONTRACT_FIELD_DEFINITIONS.map((definition) => [definition.id, definition.keywords]),
@@ -105,52 +98,8 @@ function isLabelDistanceNormal(page, fieldId, sourceBox) {
 
 function isFormatValid(fieldId, value) {
   if (!value || /待確認|人工輸入/.test(value)) return false
-  const format = FIELD_DEFINITION_BY_ID.get(fieldId)?.format ?? 'text'
-
-  switch (format) {
-    case 'money':
-      return /^NT\$[0-9,]+$/.test(value)
-    case 'date':
-      return isValidRocDate(value)
-    case 'name':
-      return isValidPersonOrEntityName(value)
-    case 'id':
-      return isValidTaiwanIdentityNumber(value)
-    case 'phone':
-      return /\d{6,}/.test(value.replace(/\D/g, ''))
-    case 'address':
-      return value.length >= 6 && !/不完整|待確認/.test(value)
-    case 'days': {
-      const days = Number(value.match(/\d+/)?.[0] ?? 0)
-      return days >= 3
-    }
-    case 'months': {
-      const months = Number(value.match(/\d+/)?.[0] ?? 0)
-      return months > 0 && months <= 2
-    }
-    case 'area':
-      return isValidPositiveArea(value)
-    case 'land_number':
-      return isValidLandNumber(value)
-    case 'building_number':
-      return isValidBuildingNumber(value)
-    case 'purpose':
-      return /^[\p{Script=Han}A-Za-z、，,／/\s]{2,30}$/u.test(value)
-    case 'choice':
-      return FIELD_DEFINITION_BY_ID.get(fieldId)?.options?.includes(value) ?? false
-    case 'count':
-      return /^\d+\s*個$/.test(value) && Number(value.match(/\d+/)?.[0]) >= 0
-    case 'floor':
-      return /^(?:地上|地下)?\s*(?:B?\d+)\s*層$/i.test(value)
-    case 'parking_number':
-      return /^(?:第\s*)?[A-Za-z0-9-]+\s*號$/.test(value) || /位置示意圖/.test(value)
-    case 'leftover_clause':
-      return /遺留物/.test(value)
-    case 'court':
-      return /^臺灣[^，,。]{1,20}地方法院/.test(value)
-    default:
-      return value.length > 0
-  }
+  const definition = FIELD_DEFINITION_BY_ID.get(fieldId)
+  return isValidContractFieldFormat(definition?.format ?? 'text', value, definition?.options)
 }
 
 function countSourceCandidates(pageTexts, sourceValue) {

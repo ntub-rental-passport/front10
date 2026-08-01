@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { extractContractFieldCandidates } from '../src/utils/contract-field-extraction'
 import { detectContractConditions } from '../shared/contract-field-schema.js'
 import {
+  isValidContractFieldFormat,
   isValidBuildingNumber,
   isValidLandNumber,
   isValidPersonOrEntityName,
@@ -10,6 +11,29 @@ import {
   isValidTaiwanBusinessNumber,
   isValidTaiwanNationalId,
 } from '../shared/contract-field-validation.js'
+
+assert.equal(isValidContractFieldFormat('money', 'NT$18,000'), true)
+assert.equal(isValidContractFieldFormat('money', '18,00'), false)
+assert.equal(isValidContractFieldFormat('phone', '0912-345-678'), true)
+assert.equal(isValidContractFieldFormat('phone', '123'), false)
+assert.equal(isValidContractFieldFormat('party_address', '臺北市中正區忠孝東路一段 1 號'), true)
+assert.equal(isValidContractFieldFormat('party_address', '123'), false)
+assert.equal(isValidContractFieldFormat('rental_room', '第 3 樓 A 室'), true)
+assert.equal(isValidContractFieldFormat('rental_room', '隨便填'), false)
+assert.equal(isValidContractFieldFormat('payment_period', '1 個月'), true)
+assert.equal(isValidContractFieldFormat('due_day', '每月 5 日前'), true)
+assert.equal(isValidContractFieldFormat('due_day', '每月 40 日前'), false)
+assert.equal(isValidContractFieldFormat('payment_method', '轉帳繳付'), true)
+assert.equal(
+  isValidContractFieldFormat('bank_account', '第一銀行，戶名：王小明，帳號：123456789'),
+  true,
+)
+assert.equal(isValidContractFieldFormat('expense', '由承租人依帳單繳納'), true)
+assert.equal(isValidContractFieldFormat('expense', '隨便填'), false)
+assert.equal(isValidContractFieldFormat('signature', '已完成簽章'), true)
+assert.equal(isValidContractFieldFormat('signature', '123'), false)
+assert.equal(isValidContractFieldFormat('authorization_evidence', '已檢附代理授權書'), true)
+assert.equal(isValidContractFieldFormat('sublease_evidence', '已檢附轉租同意書'), true)
 
 const reportReferenceText = [
   '出租人：[已遮蔽]，以下簡稱甲方',
