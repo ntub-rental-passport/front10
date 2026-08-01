@@ -21,45 +21,58 @@ withDefaults(
 </script>
 
 <template>
-  <div class="min-h-screen [background:var(--auth-background)]">
-    <div class="grid min-h-screen lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+  <div class="min-h-dvh [background:var(--auth-background)]">
+    <div
+      class="grid min-h-dvh lg:h-dvh lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:overflow-hidden"
+    >
+      <!-- 桌面版左側品牌區：固定於 viewport，不跟著右側表單滾動 -->
       <section
-        class="hidden flex-col justify-between border-r border-white/10 p-10 text-white lg:flex [background:var(--auth-panel-background)]"
+        class="hidden h-dvh flex-col justify-between overflow-hidden border-r border-white/10 p-7 text-white lg:flex xl:p-8 [background:var(--auth-panel-background)]"
       >
         <RouterLink to="/" class="flex items-center gap-3 font-bold text-white/92">
-          <img :src="authLogoIconWhite" alt="RentMate Logo" class="h-10 w-10 shrink-0 object-contain" />
-          <span class="text-lg">{{ brandName }}</span>
+          <img
+            :src="authLogoIconWhite"
+            alt="RentMate Logo"
+            class="h-9 w-9 shrink-0 object-contain xl:h-10 xl:w-10"
+          />
+          <span class="text-base xl:text-lg">{{ brandName }}</span>
         </RouterLink>
 
-        <div class="flex flex-1 items-center justify-center">
-          <div class="space-y-6 text-center">
-            <div class="mx-auto flex h-32 w-32 items-center justify-center rounded-[2rem] bg-white/10 p-5 shadow-[0_24px_60px_rgba(17,33,110,0.25)] backdrop-blur-sm">
+        <div class="flex flex-1 items-center justify-center py-4">
+          <div class="space-y-4 text-center">
+            <div
+              class="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-white/10 p-4 shadow-[0_24px_60px_rgba(17,33,110,0.25)] backdrop-blur-sm xl:h-24 xl:w-24"
+            >
               <img :src="authLogoIconWhite" alt="RentMate Logo" class="h-full w-full object-contain" />
             </div>
-            <div class="space-y-3">
-              <h1 class="text-3xl font-bold tracking-tight">{{ brandName }}</h1>
-              <p class="text-sm leading-7 text-white/82">{{ platformLineOne }}</p>
-              <p class="text-sm leading-7 text-white/82">{{ platformLineTwo }}</p>
+
+            <div class="space-y-2">
+              <h1 class="text-xl font-bold tracking-tight xl:text-2xl">{{ brandName }}</h1>
+              <p class="text-sm leading-6 text-white/82">{{ platformLineOne }}</p>
+              <p class="text-sm leading-6 text-white/82">{{ platformLineTwo }}</p>
             </div>
           </div>
         </div>
 
-        <div class="flex items-center gap-3 text-sm text-white/76">
-          <ShieldCheck class="h-4 w-4 text-white/92" />
-          {{ footerNote }}
+        <div class="flex items-center gap-3 text-xs text-white/76 xl:text-sm">
+          <ShieldCheck class="h-4 w-4 shrink-0 text-white/92" />
+          <span>{{ footerNote }}</span>
         </div>
       </section>
 
-      <section class="flex items-center justify-center px-6 py-8 lg:px-8">
-        <div :class="['w-full p-6 lg:p-7', contentWidthClass]">
-          <RouterLink to="/" class="inline-flex items-center gap-3 font-bold text-primary lg:hidden">
-            <img :src="authLogoIcon" alt="RentMate Logo" class="h-10 w-10 shrink-0 object-contain" />
-            <span class="text-xl">{{ brandName }}</span>
-          </RouterLink>
+      <!-- 右側表單區：內容過長時只滾動此區 -->
+      <main class="min-w-0 lg:h-dvh lg:overflow-y-auto lg:overscroll-contain">
+        <div class="flex min-h-full justify-center px-5 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-3 xl:px-10">
+          <div :class="['my-auto w-full py-1 sm:py-2', contentWidthClass]">
+            <RouterLink to="/" class="mb-6 inline-flex items-center gap-3 font-bold text-primary lg:hidden">
+              <img :src="authLogoIcon" alt="RentMate Logo" class="h-9 w-9 shrink-0 object-contain" />
+              <span class="text-lg">{{ brandName }}</span>
+            </RouterLink>
 
-          <slot />
+            <slot />
+          </div>
         </div>
-      </section>
+      </main>
     </div>
   </div>
 </template>

@@ -39,3 +39,6 @@ key/
 !key/
 key/*.json
 !key/vision-key.example.json
+
+__pycache__/
+*.pyc

@@ -1,4 +1,4 @@
-export type AuthRole = 'user' | 'landlord' | 'admin'
+export type AuthRole = 'tenant' | 'landlord' | 'admin' | 'reviewer'
 
 export interface AuthSession {
   email: string
@@ -19,9 +19,18 @@ interface UserProfile {
   email: string
   emailVerified: boolean
   nickname: string | null
+  password?: string
+  role?: AuthRole
 }
 
-const AUTH_STORAGE_KEY = 'rentmate-auth-session'
+export type EmailSignInError = 'account-not-found' | 'invalid-password' | 'role-mismatch' | 'email-not-verified'
+
+export type EmailSignInResult =
+  | { ok: true; session: AuthSession }
+  | { ok: false; error: EmailSignInError }
+
+// v2 invalidates legacy sessions where the old `admin` role represented landlords.
+const AUTH_STORAGE_KEY = 'rentmate-auth-session-v2'
 const USER_STORAGE_KEY = 'rentmate-user-profiles'
 const PENDING_REGISTRATION_KEY = 'rentmate-pending-registration'
 const DEMO_VERIFICATION_CODE = '123456'
@@ -59,8 +68,9 @@ function saveUserProfiles(profiles: Record<string, UserProfile>): void {
 
 function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserProfile {
   const profiles = getUserProfiles()
-  const currentProfile = profiles[email] ?? {
-    email,
+  const normalizedEmail = email.trim().toLowerCase()
+  const currentProfile = profiles[normalizedEmail] ?? {
+    email: normalizedEmail,
     emailVerified: false,
     nickname: null,
   }
@@ -68,10 +78,10 @@ function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserPr
   const nextProfile: UserProfile = {
     ...currentProfile,
     ...updates,
-    email,
+    email: normalizedEmail,
   }
 
-  profiles[email] = nextProfile
+  profiles[normalizedEmail] = nextProfile
   saveUserProfiles(profiles)
   return nextProfile
 }
@@ -101,7 +111,19 @@ export function signIn(role: AuthRole, email: string): AuthSession {
   return createSession(role, profile)
 }
 
-export function registerWithGoogle(email: string, role: AuthRole = 'user'): AuthSession {
+export function signInWithEmail(email: string, password: string, role: AuthRole): EmailSignInResult {
+  const normalizedEmail = email.trim().toLowerCase()
+  const profile = getUserProfiles()[normalizedEmail]
+
+  if (!profile || !profile.password) return { ok: false, error: 'account-not-found' }
+  if (!profile.emailVerified) return { ok: false, error: 'email-not-verified' }
+  if (profile.role && profile.role !== role) return { ok: false, error: 'role-mismatch' }
+  if (profile.password !== password) return { ok: false, error: 'invalid-password' }
+
+  return { ok: true, session: createSession(role, profile) }
+}
+
+export function registerWithGoogle(email: string, role: AuthRole = 'tenant'): AuthSession {
   const profile = upsertUserProfile(email, {
     emailVerified: true,
     nickname: null,
@@ -115,21 +137,28 @@ export function signOut(): void {
   window.localStorage.removeItem(AUTH_STORAGE_KEY)
 }
 
-export function resolveRoleHome(role: AuthRole): '/app' | '/admin' {
-  return role === 'admin' ? '/admin' : '/app'
+export function resolveRoleHome(role: AuthRole): '/app' | '/landlord' | '/admin' | '/reviewer' {
+  const roleHomes: Record<AuthRole, '/app' | '/landlord' | '/admin' | '/reviewer'> = {
+    tenant: '/app',
+    landlord: '/landlord',
+    admin: '/admin',
+    reviewer: '/reviewer',
+  }
+
+  return roleHomes[role]
 }
 
 export function needsNicknameSetup(session: AuthSession | null): boolean {
-  return Boolean(session?.isAuthenticated && session.role !== 'admin' && !session.nickname)
+  return Boolean(session?.isAuthenticated && session.role === 'tenant' && !session.nickname)
 }
 
 export function startEmailRegistration(
   email: string,
   password: string,
-  role: AuthRole = 'user',
+  role: AuthRole = 'tenant',
 ): PendingRegistration {
   const pendingRegistration: PendingRegistration = {
-    email,
+    email: email.trim().toLowerCase(),
     password,
     verificationCode: DEMO_VERIFICATION_CODE,
     role,
@@ -159,10 +188,12 @@ export function completeEmailVerification(code: string): AuthSession | null {
   const profile = upsertUserProfile(pendingRegistration.email, {
     emailVerified: true,
     nickname: null,
+    password: pendingRegistration.password,
+    role: pendingRegistration.role ?? 'tenant',
   })
 
   clearPendingRegistration()
-  return createSession(pendingRegistration.role ?? 'user', profile)
+  return createSession(pendingRegistration.role ?? 'tenant', profile)
 }
 
 export function finishNicknameSetup(nickname: string): AuthSession | null {
