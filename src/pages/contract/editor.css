@@ -715,6 +715,7 @@
 .pdf-search-bar {
   display: flex;
   width: clamp(10.5rem, 18vw, 13.5rem);
+  height: 2rem;
   min-width: 10.5rem;
   flex: 0 1 13.5rem;
   align-items: center;
@@ -722,7 +723,7 @@
   border: 1px solid var(--border);
   border-radius: 0.55rem;
   background: color-mix(in srgb, var(--muted) 35%, var(--background));
-  padding: 0.2rem 0.3rem 0.2rem 0.55rem;
+  padding: 0 0.3rem 0 0.55rem;
 }
 
 .pdf-search-icon {
@@ -731,12 +732,14 @@
 }
 
 .pdf-search-input {
+  height: 100%;
   min-width: 0;
   flex: 1 1 auto;
   border: 0;
   background: transparent;
   color: var(--foreground);
   font-size: 0.8125rem;
+  line-height: 1.25rem;
   outline: none;
 }
 
@@ -877,6 +880,13 @@
     color 150ms ease;
 }
 
+.page-nav-button {
+  width: 1.5rem;
+  flex-basis: 1.5rem;
+  border-color: transparent;
+  background: transparent;
+}
+
 .page-nav-button:not(:disabled),
 .page-number-button {
   cursor: pointer;
@@ -886,6 +896,11 @@
 .page-number-button:hover {
   border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
   background: color-mix(in srgb, var(--primary) 7%, var(--background));
+}
+
+.page-nav-button:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
 }
 
 .page-nav-button:disabled {
