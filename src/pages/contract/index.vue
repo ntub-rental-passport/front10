@@ -24,11 +24,9 @@ import {
   AlertTriangle,
   ArrowRight,
   Bot,
-  Check,
   CheckCircle2,
   ChevronDown,
   CircleHelp,
-  Clock3,
   Ellipsis,
   FileCheck2,
   FileSearch,
@@ -42,7 +40,6 @@ import {
   RefreshCcw,
   Scale,
   ShieldCheck,
-  Sparkles,
   Trash2,
   Upload,
   WandSparkles,
@@ -52,7 +49,6 @@ import {
 
 const router = useRouter()
 
-type RecognitionMode = 'quick' | 'standard' | 'precise'
 type FilePickerMode = 'replace' | 'append'
 
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -66,7 +62,6 @@ const uploadStatus = ref('尚未選擇檔案')
 const uploadError = ref('')
 const copySuccess = ref(false)
 const activeTab = ref('preview')
-const recognitionMode = ref<RecognitionMode>('standard')
 const ocrResult = ref<ContractOcrResult | null>(null)
 
 const defaultLanguageHints = ['zh-TW', 'en']
@@ -88,43 +83,9 @@ const supportedMimeTypes = [
   'image/tiff',
 ]
 
-type RecognitionModeOption = {
-  id: RecognitionMode
-  title: string
-  description: string
-  meta: string
-  dpi: number
-}
-
-const standardRecognitionMode: RecognitionModeOption = {
-  id: 'standard',
-  title: '標準',
-  description: '兼顧速度與辨識品質，推薦使用',
-  meta: '約 10–20 秒／頁',
-  dpi: 180,
-}
-
-const recognitionModes: RecognitionModeOption[] = [
-  {
-    id: 'quick',
-    title: '快速',
-    description: '適合頁數少、文字清晰的契約',
-    meta: '約 5–10 秒／頁',
-    dpi: 150,
-  },
-  standardRecognitionMode,
-  {
-    id: 'precise',
-    title: '精細',
-    description: '適合小字、表格或掃描品質較差的文件',
-    meta: '約 30–60 秒／頁',
-    dpi: 300,
-  },
-]
-
 const usageSteps = [
   '上傳租賃契約圖片或 PDF 檔案',
-  '依文件清晰度選擇辨識品質',
+  '確認檔名與上傳順序後開始辨識',
   '系統將契約轉換為可分析文字',
   '逐頁校對 OCR 內容並進入條款風險分析',
 ]
@@ -136,13 +97,8 @@ const faqItems = [
       '支援單一 PDF，或一次最多 20 張 PNG、JPG、JPEG、WEBP、BMP、TIFF 圖片。單檔上限 20MB、全部檔案合計 80MB；MP4、MP3 與其他格式都會被拒絕。',
   },
   {
-    question: '應該選擇哪一種辨識品質？',
-    answer:
-      '一般手機拍攝或掃描的租約可使用「標準」。文件非常清晰且頁數少時可選「快速」；若有小字、表格、印章或低畫質內容，建議使用「精細」。',
-  },
-  {
     question: '上傳後會立刻進行 OCR 嗎？',
-    answer: '不會。選擇檔案後，你仍可檢查檔名與辨識品質，按下「開始 OCR 辨識」後才會送出檔案。',
+    answer: '不會。選擇檔案後，你仍可檢查檔名與順序，按下「開始 OCR 辨識」後才會送出檔案。',
   },
   {
     question: '上傳的照片會儲存在哪裡？',
@@ -184,11 +140,6 @@ const benefits = [
   },
 ]
 
-const selectedMode = computed(
-  () =>
-    recognitionModes.find((mode) => mode.id === recognitionMode.value) ?? standardRecognitionMode,
-)
-
 const uploadButtonLabel = computed(() => (selectedFiles.value.length ? '重新選擇' : '選擇檔案'))
 
 const startButtonLabel = computed(() => {
@@ -224,7 +175,7 @@ function resetOcrState(keepFile = true): void {
   uploadError.value = ''
   uploadProgress.value = 0
   uploadStatus.value =
-    keepFile && selectedFiles.value.length ? '檔案已就緒，選擇辨識品質後即可開始' : '尚未選擇檔案'
+    keepFile && selectedFiles.value.length ? '檔案已就緒，可以開始辨識' : '尚未選擇檔案'
   copySuccess.value = false
 }
 
@@ -354,8 +305,6 @@ async function sendToOcr(files: File[]): Promise<void> {
   const formData = new FormData()
   files.forEach((file) => formData.append('files', file))
   formData.append('languageHints', JSON.stringify(defaultLanguageHints))
-  formData.append('recognitionMode', recognitionMode.value)
-  formData.append('dpi', String(selectedMode.value.dpi))
 
   let progressTimer: number | undefined
 
@@ -706,46 +655,6 @@ function onDragLeave(): void {
         </template>
       </div>
 
-      <div class="quality-section">
-        <div class="quality-heading">
-          <div>
-            <h3>辨識品質</h3>
-            <p>依文件清晰度選擇，通常建議使用「標準」。</p>
-          </div>
-          <span>{{ selectedMode.dpi }} DPI</span>
-        </div>
-
-        <div class="quality-grid" role="radiogroup" aria-label="辨識品質">
-          <button
-            v-for="mode in recognitionModes"
-            :key="mode.id"
-            type="button"
-            class="quality-option"
-            :class="{ 'quality-option--selected': recognitionMode === mode.id }"
-            role="radio"
-            :aria-checked="recognitionMode === mode.id"
-            :disabled="isUploading"
-            @click="recognitionMode = mode.id"
-          >
-            <span v-if="recognitionMode === mode.id" class="quality-check"><Check /></span>
-            <strong>{{ mode.title }}</strong>
-            <small>{{ mode.description }}</small>
-            <span class="quality-meta"><Clock3 />{{ mode.meta }}</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="recognition-summary">
-        <div>
-          <Sparkles />
-          <span>
-            <strong>{{ selectedMode.title }}模式</strong>
-            ・ DPI {{ selectedMode.dpi }} ・ 語言提示：繁體中文、英文
-          </span>
-        </div>
-        <p>選取檔案不會立即上傳，按下開始辨識後才會送出。</p>
-      </div>
-
       <div
         v-if="selectedFiles.length || uploadError || isUploading || ocrResult"
         class="recognition-status"
@@ -956,7 +865,7 @@ function onDragLeave(): void {
         <CircleHelp />
         <div>
           <h2>常見問題</h2>
-          <p>上傳前先了解檔案格式、辨識品質與後續用途。</p>
+          <p>上傳前先了解檔案格式、處理方式與後續用途。</p>
         </div>
       </div>
       <div class="faq-list">

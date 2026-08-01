@@ -199,7 +199,6 @@
 }
 
 .section-heading,
-.quality-heading,
 .status-heading {
   display: flex;
   min-width: 0;
@@ -611,151 +610,6 @@
   opacity: 0.5;
 }
 
-.quality-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.quality-heading h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 780;
-}
-
-.quality-heading p {
-  margin: 4px 0 0;
-  color: var(--contract-muted);
-  font-size: 13px;
-}
-
-.quality-heading > span {
-  border-radius: 999px;
-  background: var(--contract-primary-soft);
-  padding: 7px 11px;
-  color: var(--contract-primary);
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.quality-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.quality-option {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  min-height: 126px;
-  cursor: pointer;
-  flex-direction: column;
-  align-items: flex-start;
-  border: 1px solid var(--contract-border);
-  border-radius: 14px;
-  background: #fff;
-  padding: 16px;
-  color: var(--contract-ink);
-  text-align: left;
-  transition:
-    border-color 150ms ease,
-    background 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.quality-option:hover:not(:disabled) {
-  border-color: var(--contract-primary-border);
-  background: #faf9ff;
-}
-
-.quality-option--selected {
-  border-color: var(--contract-primary);
-  background: #f2f0ff;
-  box-shadow: 0 0 0 2px rgb(81 70 184 / 10%);
-}
-
-.quality-option:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
-}
-
-.quality-option strong {
-  font-size: 15px;
-  font-weight: 780;
-}
-
-.quality-option small {
-  margin-top: 5px;
-  color: var(--contract-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.quality-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: auto;
-  padding-top: 12px;
-  color: var(--contract-primary);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.quality-meta svg,
-.quality-check svg {
-  width: 13px;
-  height: 13px;
-}
-
-.quality-check {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: grid;
-  width: 21px;
-  height: 21px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--contract-primary);
-  color: #fff;
-}
-
-.recognition-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px solid #e2e3ea;
-  border-radius: 12px;
-  background: #f8f9fb;
-  padding: 11px 14px;
-  color: var(--contract-muted);
-  font-size: 12px;
-}
-
-.recognition-summary > div {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.recognition-summary svg {
-  flex: 0 0 auto;
-  color: var(--contract-primary);
-}
-
-.recognition-summary strong {
-  color: var(--contract-ink);
-}
-
-.recognition-summary p {
-  flex: 0 0 auto;
-  margin: 0;
-}
-
 .recognition-status {
   display: flex;
   flex-direction: column;
@@ -1165,7 +1019,6 @@
 @container contract-page (max-width: 760px) {
   .contract-hero,
   .section-heading,
-  .recognition-summary,
   .result-footer {
     align-items: stretch;
     flex-direction: column;
@@ -1176,7 +1029,6 @@
     align-self: flex-start;
   }
 
-  .quality-grid,
   .analysis-grid,
   .benefits-grid {
     grid-template-columns: 1fr;
@@ -1203,10 +1055,6 @@
   .file-actions-menu {
     top: 14px;
     right: 14px;
-  }
-
-  .recognition-summary p {
-    flex: 1 1 auto;
   }
 
   .result-footer > div {
@@ -1250,10 +1098,6 @@
 
   .upload-dropzone {
     padding: 22px 16px;
-  }
-
-  .quality-option {
-    min-height: 112px;
   }
 
   .usage-steps li {
