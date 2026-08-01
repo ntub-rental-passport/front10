@@ -1028,56 +1028,57 @@ function returnToOcr(): void {
           </CardTitle>
           <CardDescription>一次顯示一頁 OCR 內容，可使用頁碼切換與逐頁修改</CardDescription>
         </CardHeader>
-        <div class="pdf-search-bar" role="search">
-          <Search :size="16" class="pdf-search-icon" aria-hidden="true" />
-          <input
-            v-model="searchQuery"
-            type="search"
-            class="pdf-search-input"
-            placeholder="搜尋契約文字"
-            aria-label="搜尋契約全文"
-            @keydown.enter.prevent="moveToSearchResult($event.shiftKey ? -1 : 1)"
-            @keydown.esc="clearSearch"
-          />
-          <span v-if="searchQuery.trim()" class="pdf-search-count" aria-live="polite">
-            {{ searchResultPosition }} / {{ searchMatches.length }}
-          </span>
-          <button
-            type="button"
-            class="pdf-search-button"
-            :disabled="!searchMatches.length"
-            aria-label="上一個搜尋結果"
-            title="上一個搜尋結果（Shift + Enter）"
-            @click="moveToSearchResult(-1)"
-          >
-            <ChevronLeft :size="16" />
-          </button>
-          <button
-            type="button"
-            class="pdf-search-button"
-            :disabled="!searchMatches.length"
-            aria-label="下一個搜尋結果"
-            title="下一個搜尋結果（Enter）"
-            @click="moveToSearchResult(1)"
-          >
-            <ChevronRight :size="16" />
-          </button>
-          <button
-            v-if="searchQuery"
-            type="button"
-            class="pdf-search-button"
-            aria-label="清除搜尋"
-            title="清除搜尋"
-            @click="clearSearch"
-          >
-            <X :size="16" />
-          </button>
-        </div>
         <CardContent class="document-reader-content">
           <div v-if="pageCount" class="pdf-reader-toolbar">
             <div class="pdf-file-info">
               <strong>{{ storedOcrResult?.fileName || 'OCR 契約文件' }}</strong>
               <span>第 {{ currentPageNumber }} 頁，共 {{ pageCount }} 頁</span>
+            </div>
+
+            <div class="pdf-search-bar" role="search">
+              <Search :size="15" class="pdf-search-icon" aria-hidden="true" />
+              <input
+                v-model="searchQuery"
+                type="search"
+                class="pdf-search-input"
+                placeholder="搜尋契約文字"
+                aria-label="搜尋契約全文"
+                @keydown.enter.prevent="moveToSearchResult($event.shiftKey ? -1 : 1)"
+                @keydown.esc="clearSearch"
+              />
+              <span v-if="searchQuery.trim()" class="pdf-search-count" aria-live="polite">
+                {{ searchResultPosition }}/{{ searchMatches.length }}
+              </span>
+              <button
+                type="button"
+                class="pdf-search-button"
+                :disabled="!searchMatches.length"
+                aria-label="上一個搜尋結果"
+                title="上一個搜尋結果（Shift + Enter）"
+                @click="moveToSearchResult(-1)"
+              >
+                <ChevronLeft :size="15" />
+              </button>
+              <button
+                type="button"
+                class="pdf-search-button"
+                :disabled="!searchMatches.length"
+                aria-label="下一個搜尋結果"
+                title="下一個搜尋結果（Enter）"
+                @click="moveToSearchResult(1)"
+              >
+                <ChevronRight :size="15" />
+              </button>
+              <button
+                v-if="searchQuery"
+                type="button"
+                class="pdf-search-button"
+                aria-label="清除搜尋"
+                title="清除搜尋"
+                @click="clearSearch"
+              >
+                <X :size="15" />
+              </button>
             </div>
 
             <nav class="pdf-pagination" aria-label="契約頁面切換">
