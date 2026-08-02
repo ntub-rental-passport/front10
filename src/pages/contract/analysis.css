@@ -572,6 +572,23 @@
   line-height: 1.5;
 }
 
+.risk-legal-basis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.08rem;
+}
+
+.risk-legal-basis > span {
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--background));
+  padding: 0.18rem 0.42rem;
+  color: var(--primary);
+  font-size: 0.59rem;
+  font-weight: 750;
+}
+
 .risk-actions {
   justify-content: flex-end;
   border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
