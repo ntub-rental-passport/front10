@@ -742,6 +742,11 @@ function startFieldEdit(field: ContractField): void {
   field.editing = true
 }
 
+function clearFieldValidation(field: ContractField): void {
+  field.validationError = ''
+  saveError.value = ''
+}
+
 function parseNumericValue(value: string): number {
   return Number(value.replace(/[^0-9]/g, '')) || 0
 }
@@ -967,6 +972,8 @@ function verifyField(field: ContractField): void {
   }
   const legalValidationError = validateLegalField(field)
   if (legalValidationError) {
+    field.editStartValue = field.value
+    field.editing = true
     field.validationError = legalValidationError
     saveError.value = legalValidationError
     return
@@ -1602,7 +1609,7 @@ function returnToOcr(): void {
                     field.validationError ? `${field.id}-validation-error` : undefined
                   "
                   :placeholder="field.placeholder"
-                  @input="field.validationError = ''"
+                  @input="clearFieldValidation(field)"
                   @keyup.enter="confirmFieldEdit(field)"
                 />
                 <Button
@@ -1623,7 +1630,7 @@ function returnToOcr(): void {
                 <AlertTriangle :size="14" />
                 <span>{{ field.validationError }}</span>
               </div>
-              <div v-else class="field-value-row">
+              <div v-if="!field.editing" class="field-value-row">
                 <div class="field-value-content">
                   <span
                     v-if="field.id === 'address' && field.addressResolution"
