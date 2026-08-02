@@ -287,6 +287,12 @@
   box-shadow: 0 12px 32px rgb(15 23 42 / 6%);
 }
 
+.analysis-reader-card {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
 .analysis-right-column {
   display: grid;
   min-width: 0;
@@ -429,6 +435,8 @@
 
 .analysis-reader-canvas {
   display: grid;
+  box-sizing: border-box;
+  height: 100%;
   min-height: 50rem;
   place-items: start center;
   padding: 1rem;
@@ -437,8 +445,10 @@
 
 .analysis-pdf-page {
   position: relative;
+  box-sizing: border-box;
   width: min(100%, 42rem);
-  height: 48rem;
+  height: 100%;
+  min-height: 48rem;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 75%, #94a3b8);
   border-radius: 0.25rem;
@@ -1075,6 +1085,7 @@ textarea:focus-visible {
 
   .analysis-pdf-page {
     height: 38rem;
+    min-height: 38rem;
   }
 }
 
@@ -1132,6 +1143,7 @@ textarea:focus-visible {
 
   .analysis-pdf-page {
     height: 31rem;
+    min-height: 31rem;
   }
 
   .analysis-page-text {
