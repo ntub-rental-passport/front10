@@ -75,6 +75,37 @@ type SearchMatch = {
   end: number
 }
 
+const legalSourceScopes = [
+  {
+    id: 'civil-lease',
+    title: '民法・租賃',
+    range: '第 421 條至第 463-1 條',
+    description: '租賃成立、修繕、稅捐、返還與終止',
+    href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=B0000001',
+  },
+  {
+    id: 'civil-contract',
+    title: '民法・契約效力',
+    range: '第 245-1 條至第 270 條',
+    description: '締約責任、履行抗辯與契約效力',
+    href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=B0000001',
+  },
+  {
+    id: 'consumer-contract',
+    title: '消保法・定型化契約',
+    range: '第 11 條至第 17-1 條',
+    description: '審閱期、解釋原則與不公平條款',
+    href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=I0050001',
+  },
+  {
+    id: 'rental-housing',
+    title: '住宅租賃專法與契約規範',
+    range: '租賃住宅條例＋應記載／不得記載事項',
+    description: '住宅租賃關係、租賃服務業與強制規範',
+    href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=D0130038',
+  },
+] as const
+
 const router = useRouter()
 const ocrResult = loadContractOcrResult()
 const pages = ref<string[]>(
@@ -546,6 +577,32 @@ function copyMessage(message: ChatMessage): void {
         <div class="is-high"><span>高風險</span><strong>{{ highRiskCount }}</strong></div>
         <div class="is-medium"><span>中風險</span><strong>{{ mediumRiskCount }}</strong></div>
         <div class="is-low"><span>低風險</span><strong>{{ lowRiskCount }}</strong></div>
+      </div>
+    </section>
+
+    <section class="legal-scope-panel" aria-labelledby="legal-scope-title">
+      <div class="legal-scope-heading">
+        <div>
+          <strong id="legal-scope-title"><Scale :size="16" /> 法律依據範圍</strong>
+          <span>依契約條文比對適用法規，風險卡只顯示實際相關的條文。</span>
+        </div>
+        <span class="legal-scope-relation">住宅租賃依租賃住宅條例第 5 條視為具消費關係</span>
+      </div>
+      <div class="legal-scope-grid">
+        <a
+          v-for="source in legalSourceScopes"
+          :key="source.id"
+          :href="source.href"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span>
+            <strong>{{ source.title }}</strong>
+            <small>{{ source.range }}</small>
+          </span>
+          <span>{{ source.description }}</span>
+          <ExternalLink :size="13" aria-hidden="true" />
+        </a>
       </div>
     </section>
 
