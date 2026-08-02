@@ -453,9 +453,12 @@ const extractionProgress = computed(() =>
     : 0,
 )
 const completedRequiredCount = computed(() => requiredFields.value.filter(isFieldCompleted).length)
+const reviewableRequiredCount = computed(
+  () => requiredFields.value.filter(isFieldPopulated).length,
+)
 const reviewProgress = computed(() =>
-  requiredFields.value.length
-    ? Math.round((completedRequiredCount.value / requiredFields.value.length) * 100)
+  reviewableRequiredCount.value
+    ? Math.round((completedRequiredCount.value / reviewableRequiredCount.value) * 100)
     : 0,
 )
 const missingRequiredCount = computed(
@@ -467,10 +470,9 @@ const pendingRequiredReviewCount = computed(
       (field) => isFieldPopulated(field) && field.reviewState === 'unreviewed',
     ).length,
 )
-const requiredRemainingCount = computed(
-  () => requiredFields.value.filter((field) => !isFieldCompleted(field)).length,
+const canStartAnalysis = computed(
+  () => hasOcrData.value && pendingRequiredReviewCount.value === 0,
 )
-const canStartAnalysis = computed(() => hasOcrData.value && requiredRemainingCount.value === 0)
 
 const activeGroupFields = computed(() =>
   applicableFields.value.filter((field) => field.groupId === activeFieldGroupId.value),
@@ -1005,6 +1007,7 @@ function persistContract(): boolean {
   }
 
   for (const field of applicableFields.value) {
+    if (!isFieldPopulated(field)) continue
     const validationError = validateLegalField(field)
     if (!validationError) continue
     field.validationError = validationError
@@ -1183,7 +1186,7 @@ function returnToOcr(): void {
           <h2 id="review-summary-title">契約校對摘要</h2>
         </div>
         <div class="review-progress-display">
-          <span>必填人工校對</span>
+          <span>已辨識欄位校對</span>
           <strong class="review-progress-value">{{ reviewProgress }}%</strong>
         </div>
       </div>
@@ -1195,16 +1198,16 @@ function returnToOcr(): void {
           <small>{{ extractionProgress }}% 已找到內容</small>
         </div>
         <div class="review-stat">
-          <span>必填人工校對</span>
-          <strong>{{ completedRequiredCount }} / {{ requiredFields.length }}</strong>
+          <span>已辨識欄位校對</span>
+          <strong>{{ completedRequiredCount }} / {{ reviewableRequiredCount }}</strong>
           <small>確認或修正後才計入</small>
         </div>
         <div class="review-stat review-stat--warning">
           <span>已有值、待確認</span>
           <strong>{{ pendingRequiredReviewCount }}</strong>
         </div>
-        <div class="review-stat review-stat--danger">
-          <span>缺少必填資料</span>
+        <div class="review-stat review-stat--warning">
+          <span>留待風險分析</span>
           <strong>{{ missingRequiredCount }}</strong>
         </div>
       </div>
@@ -1227,11 +1230,15 @@ function returnToOcr(): void {
               recommendedFieldCount
             }} 個建議填寫。
           </p>
-          <p v-if="requiredRemainingCount">
-            尚缺 <strong>{{ missingRequiredCount }}</strong> 個必填資料，另有
-            <strong>{{ pendingRequiredReviewCount }}</strong> 個欄位待確認。
+          <p v-if="pendingRequiredReviewCount">
+            尚有 <strong>{{ pendingRequiredReviewCount }}</strong> 個已辨識欄位待確認；缺少的
+            <strong>{{ missingRequiredCount }}</strong> 個資料將留待 AI 風險分析提醒。
           </p>
-          <p v-else>所有必填欄位皆已確認，可以開始 AI 契約分析。</p>
+          <p v-else-if="missingRequiredCount">
+            已辨識欄位皆已完成校對；缺少的 <strong>{{ missingRequiredCount }}</strong>
+            個資料將由 AI 風險分析列出，不影響進入下一步。
+          </p>
+          <p v-else>所有已辨識欄位皆已確認，可以開始 AI 契約分析。</p>
         </div>
         <Button :disabled="!canStartAnalysis" @click="completeReviewAndAnalyze">
           完成校對並開始 AI 契約分析

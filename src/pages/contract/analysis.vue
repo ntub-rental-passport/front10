@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { loadContractOcrResult } from '@/src/utils/contract-ocr'
+import {
+  CONTRACT_FIELD_DEFINITIONS,
+  detectContractConditions,
+} from '@/shared/contract-field-schema.js'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card/index'
@@ -51,9 +56,36 @@ const risks = ref<RiskItem[]>([
 ])
 
 onMounted(() => {
+  const ocrResult = loadContractOcrResult()
   fullText.value =
+    ocrResult?.text ||
     sessionStorage.getItem('pending_contract_text') ||
     '目前沒有可分析的契約文字，請先回上一頁重新上傳檔案。'
+
+  if (!ocrResult) return
+
+  const conditions = detectContractConditions(ocrResult.text) as Record<string, boolean>
+  const missingLabels = CONTRACT_FIELD_DEFINITIONS.filter((definition) => {
+    const required =
+      definition.requirement === 'required' ||
+      (definition.requirement === 'conditional' &&
+        Boolean(definition.condition && conditions[definition.condition]))
+    if (!required) return false
+
+    const value = ocrResult.fieldReviews?.[definition.id]?.value?.trim() ?? ''
+    return !value || value === '尚未辨識'
+  }).map((definition) => definition.label)
+
+  if (!missingLabels.length) return
+
+  risks.value.unshift({
+    id: 0,
+    title: `契約資料不完整（${missingLabels.length} 項）`,
+    severity: 'medium',
+    law: '契約完整性提醒',
+    description: `目前尚未確認：${missingLabels.join('、')}。簽約前建議向房東確認並補充，避免日後對租賃標的、費用或雙方權利義務產生爭議。`,
+    aiAdvice: `想請協助確認並補充以下契約資料：${missingLabels.join('、')}。為避免日後發生認定爭議，希望能在簽約前將內容記載完整，謝謝。`,
+  })
 })
 
 function handleAIAssist(risk: RiskItem) {
