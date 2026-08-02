@@ -134,6 +134,7 @@ const chatOpen = ref(false)
 const chatPanelRef = ref<HTMLElement | null>(null)
 const chatPosition = reactive({ x: 24, y: 72 })
 const chatDragOffset = reactive({ x: 0, y: 0 })
+const chatDragging = ref(false)
 let chatHasBeenPositioned = false
 
 const pageCount = computed(() => pages.value.length)
@@ -484,7 +485,7 @@ const chatMessages = ref<ChatMessage[]>([
   {
     id: 1,
     role: 'assistant',
-    text: '你好，我是 RentMate 法律 GPT。你可以點選上方風險，或直接詢問如何與房東溝通。此頁目前為前端互動示意。',
+    text: '你好，我是 RentMate Law Chat。你可以點選風險項目，或直接詢問如何與房東溝通。此頁目前為前端互動示意。',
   },
   {
     id: 2,
@@ -599,17 +600,23 @@ function moveChatWindow(event: PointerEvent): void {
 }
 
 function endChatDrag(): void {
-  window.removeEventListener('pointermove', moveChatWindow)
-  window.removeEventListener('pointerup', endChatDrag)
+  chatDragging.value = false
+  document.body.style.removeProperty('cursor')
+  document.body.style.removeProperty('user-select')
+  document.removeEventListener('pointermove', moveChatWindow)
+  document.removeEventListener('pointerup', endChatDrag)
 }
 
 function beginChatDrag(event: PointerEvent): void {
   if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
   event.preventDefault()
+  chatDragging.value = true
   chatDragOffset.x = event.clientX - chatPosition.x
   chatDragOffset.y = event.clientY - chatPosition.y
-  window.addEventListener('pointermove', moveChatWindow)
-  window.addEventListener('pointerup', endChatDrag, { once: true })
+  document.body.style.cursor = 'grabbing'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('pointermove', moveChatWindow)
+  document.addEventListener('pointerup', endChatDrag, { once: true })
 }
 
 onBeforeUnmount(() => {
@@ -897,6 +904,7 @@ function copyMessage(message: ChatMessage): void {
           v-if="chatOpen"
           ref="chatPanelRef"
           class="legal-chat-panel"
+          :class="{ 'is-dragging': chatDragging }"
           role="dialog"
           aria-modal="false"
           aria-labelledby="legal-chat-title"
@@ -907,6 +915,7 @@ function copyMessage(message: ChatMessage): void {
             <div>
               <h2 id="legal-chat-title">AI 談判腳本 Law Chat</h2>
               <p>結合目前風險與契約內容，產生可直接使用的溝通建議。</p>
+              <small>拖曳標題列移動，右下角可調整視窗大小</small>
             </div>
             <span class="chat-demo-badge">前端 Demo</span>
             <button
