@@ -722,7 +722,7 @@ function copyMessage(message: ChatMessage): void {
               class="risk-card"
               :class="[`is-${risk.severity}`, { 'is-active': activeRiskId === risk.id }]"
             >
-              <button type="button" class="risk-card-main" @click="focusRisk(risk)">
+              <div class="risk-card-main">
                 <span class="risk-icon">
                   <CircleAlert v-if="risk.severity === 'high'" :size="17" />
                   <Database v-else-if="risk.source === 'rag'" :size="17" />
@@ -744,7 +744,7 @@ function copyMessage(message: ChatMessage): void {
                     <span v-for="basis in risk.legalBasis" :key="basis">{{ basis }}</span>
                   </span>
                 </span>
-              </button>
+              </div>
               <div class="risk-actions">
                 <button
                   v-if="risk.groupId"

@@ -565,7 +565,6 @@
   transition: 150ms ease;
 }
 
-.risk-card:hover,
 .risk-card.is-active {
   border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
   box-shadow: 0 5px 16px rgb(15 23 42 / 7%);
@@ -593,7 +592,7 @@
   padding: 0.75rem;
   color: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
 }
 
 .risk-icon {
