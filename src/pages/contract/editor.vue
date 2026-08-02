@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   loadContractOcrResult,
   mergeContractPageTexts,
@@ -112,6 +112,7 @@ interface PaginationItem {
 }
 
 const storedOcrResult = ref<ContractOcrResult | null>(loadContractOcrResult())
+const route = useRoute()
 const initialPageTexts = storedOcrResult.value?.pageTexts.length
   ? storedOcrResult.value.pageTexts
   : storedOcrResult.value?.text
@@ -409,7 +410,13 @@ const isSaved = ref(false)
 const isDirty = ref(false)
 const saveError = ref('')
 const activeFieldFilter = ref<FieldFilter>('all')
-const activeFieldGroupId = ref(CONTRACT_FIELD_GROUPS[0]?.id ?? 'review')
+const requestedGroupId = typeof route.query.group === 'string' ? route.query.group : ''
+const activeFieldGroupId = ref(
+  CONTRACT_FIELD_GROUPS.some((group) => group.id === requestedGroupId)
+    ? requestedGroupId
+    : (CONTRACT_FIELD_GROUPS[0]?.id ?? 'review'),
+)
+const linkedFieldId = ref(typeof route.query.field === 'string' ? route.query.field : '')
 const searchQuery = ref('')
 const activeSearchMatchIndex = ref(-1)
 const activeFieldHighlight = ref<TextMatch | null>(null)
@@ -583,6 +590,16 @@ const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: num
     count: activeGroupFields.value.filter((field) => field.reviewState !== 'unreviewed').length,
   },
 ])
+
+onMounted(async () => {
+  if (!linkedFieldId.value) return
+  activeFieldFilter.value = 'all'
+  await nextTick()
+  document.querySelector<HTMLElement>(`[data-field-id="${linkedFieldId.value}"]`)?.scrollIntoView({
+    block: 'center',
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  })
+})
 
 const fieldGroups = computed(() =>
   CONTRACT_FIELD_GROUPS.map((group) => {
@@ -1532,8 +1549,12 @@ function returnToOcr(): void {
                 <div
                   v-for="field in section.fields"
                   :key="field.id"
+                  :data-field-id="field.id"
                   class="contract-field-card rounded-lg border transition-colors"
-                  :class="fieldCardClass(field)"
+                  :class="[
+                    fieldCardClass(field),
+                    { 'is-linked-field': linkedFieldId === field.id },
+                  ]"
                 >
               <div class="field-card-header">
                 <span class="text-xs font-medium text-muted-foreground">
