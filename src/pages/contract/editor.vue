@@ -772,17 +772,6 @@ function validateLegalField(field: ContractField, value = field.value.trim()): s
   if (['landlord', 'tenant', 'agent_name'].includes(field.id) && !isValidPersonOrEntityName(value)) {
     return '姓名／名稱只能使用中文、英文字母及姓名常用符號，不得填寫純數字。'
   }
-  if (field.id === 'deposit_months' && parseNumericValue(value) > 2) {
-    return '押金最高不得超過 2 個月租金。'
-  }
-  if (field.id === 'deposit') {
-    const rentField = fields.value.find((item) => item.id === 'rent')
-    const rentAmount = rentField ? parseNumericValue(rentField.value) : 0
-    const depositAmount = parseNumericValue(value)
-    if (rentAmount && depositAmount > rentAmount * 2) {
-      return `押金金額不得超過 2 個月租金（目前上限 NT$${(rentAmount * 2).toLocaleString('en-US')}）。`
-    }
-  }
   if (/(?:landlord|tenant|agent)_id$/.test(field.id)) {
     if (!isValidTaiwanIdentityNumber(value)) {
       return '身分證字號或 8 碼統一編號檢核失敗，請確認英文字母、數字與檢查碼。'
@@ -861,12 +850,16 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
   const moneyValue = newValue.replace(/[^0-9０-９,，]/g, '')
   const dayValue = newValue.match(/[0-9０-９]{1,2}/)?.[0] ?? ''
 
-  if (field.control === 'choice') {
+  const appendManualCorrection = (): boolean => {
     if (!ocrPages.value.length) return false
     const supplementalText = `【人工校對補充】${field.label}：${newValue}`
     ocrPages.value[0] = `${ocrPages.value[0]?.trimEnd() ?? ''}\n\n${supplementalText}`.trim()
     field.sourceValue = newValue
     return true
+  }
+
+  if (field.control === 'choice') {
+    return appendManualCorrection()
   }
 
   if (field.id === 'rent' && moneyValue) {
@@ -875,7 +868,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
       `$1${moneyValue}$2`,
     )
     if (insertedValue !== null) field.sourceValue = moneyValue
-    return insertedValue !== null
+    if (insertedValue !== null) return true
   }
 
   if (field.id === 'deposit' && moneyValue) {
@@ -884,7 +877,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
       `$1${moneyValue}$2`,
     )
     if (insertedValue !== null) field.sourceValue = moneyValue
-    return insertedValue !== null
+    if (insertedValue !== null) return true
   }
 
   if (field.id === 'due_day' && dayValue) {
@@ -893,15 +886,11 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
       `$1${dayValue}$2`,
     )
     if (insertedValue !== null) field.sourceValue = dayValue
-    return insertedValue !== null
+    if (insertedValue !== null) return true
   }
 
   if (!field.sourceValue) {
-    if (!ocrPages.value.length) return false
-    const supplementalText = `【人工校對補充】${field.label}：${newValue}`
-    ocrPages.value[0] = `${ocrPages.value[0]?.trimEnd() ?? ''}\n\n${supplementalText}`.trim()
-    field.sourceValue = newValue
-    return true
+    return appendManualCorrection()
   }
 
   for (let pageIndex = 0; pageIndex < ocrPages.value.length; pageIndex += 1) {
@@ -915,7 +904,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
     return true
   }
 
-  return false
+  return appendManualCorrection()
 }
 
 function confirmFieldEdit(field: ContractField): void {
