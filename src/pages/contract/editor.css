@@ -328,6 +328,8 @@
 
 .field-panel-header {
   position: relative;
+  gap: 0.35rem;
+  padding: 1rem 1.25rem;
 }
 
 .field-panel-title-row {
