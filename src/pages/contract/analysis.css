@@ -565,6 +565,8 @@
   display: grid;
   min-height: 0;
   overflow-y: auto;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 0.55rem;
   padding: 0.75rem;
 }
