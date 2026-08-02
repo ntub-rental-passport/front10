@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
 import {
@@ -48,6 +48,13 @@ type RiskItem = {
   description: string
   advice: string
   legalBasis?: string[]
+  details?: RiskDetail[]
+}
+
+type RiskDetail = {
+  label: string
+  pageIndex: number | null
+  focusText: string
 }
 
 type LocatedClause = {
@@ -123,6 +130,11 @@ const activeRiskTab = ref<RiskTab>('field')
 const activeRiskId = ref<string | null>(null)
 const chatInput = ref('')
 const nextMessageId = ref(3)
+const chatOpen = ref(false)
+const chatPanelRef = ref<HTMLElement | null>(null)
+const chatPosition = reactive({ x: 24, y: 72 })
+const chatDragOffset = reactive({ x: 0, y: 0 })
+let chatHasBeenPositioned = false
 
 const pageCount = computed(() => pages.value.length)
 const currentPageText = computed(() => pages.value[currentPageIndex.value] ?? '')
@@ -252,6 +264,27 @@ function findPageByKeyword(keyword: string): number | null {
   return index >= 0 ? index : null
 }
 
+const groupPageKeywords: Record<string, string[]> = {
+  review: ['契約審閱', '審閱'],
+  parties: ['立約雙方', '出租人'],
+  agency: ['代理人', '轉租'],
+  property: ['租賃住宅標示', '租賃住宅地址', '租賃標的'],
+  scope: ['租賃範圍'],
+  term: ['租賃期間'],
+  rent: ['租金約定', '租金'],
+  deposit: ['押金約定', '押金'],
+  fees: ['相關費用', '水費', '電費'],
+  clauses: ['遺留物', '管轄法院'],
+}
+
+function findGroupPage(groupId: string): { pageIndex: number | null; focusText: string } {
+  for (const keyword of groupPageKeywords[groupId] ?? []) {
+    const pageIndex = findPageByKeyword(keyword)
+    if (pageIndex !== null) return { pageIndex, focusText: keyword }
+  }
+  return { pageIndex: null, focusText: '' }
+}
+
 function findClause(pattern: RegExp, focusText: string): LocatedClause | null {
   for (let pageIndex = 0; pageIndex < pages.value.length; pageIndex += 1) {
     const compactText = (pages.value[pageIndex] ?? '').replace(/\s+/g, ' ').trim()
@@ -287,6 +320,15 @@ function buildRisks(): RiskItem[] {
 
   missingByGroup.forEach((missingFields, groupId) => {
     const group = CONTRACT_FIELD_GROUPS.find((item) => item.id === groupId)
+    const groupLocation = findGroupPage(groupId)
+    const details = missingFields.map((field) => {
+      const review = ocrResult?.fieldReviews?.[field.id]
+      return {
+        label: field.label,
+        pageIndex: review?.sourcePageIndex ?? groupLocation.pageIndex,
+        focusText: review?.sourceValue || groupLocation.focusText,
+      }
+    })
     result.push({
       id: `missing-${groupId}`,
       title: `${group?.title ?? '契約資料'}缺少 ${missingFields.length} 項`,
@@ -296,11 +338,12 @@ function buildRisks(): RiskItem[] {
       groupId,
       groupLabel: group?.title ?? '契約資料',
       fieldIds: missingFields.map((field) => field.id),
-      pageIndex: null,
-      focusText: '',
+      pageIndex: details.find((detail) => detail.pageIndex !== null)?.pageIndex ?? null,
+      focusText: details.find((detail) => detail.focusText)?.focusText ?? '',
       clause: `未確認欄位：${missingFields.map((field) => field.label).join('、')}`,
       description: '契約缺少必要資訊，可能使租賃範圍、費用或權利義務難以認定。',
       advice: `請房東協助確認並補充：${missingFields.map((field) => field.label).join('、')}。`,
+      details,
     })
   })
 
@@ -494,6 +537,13 @@ function focusRisk(risk: RiskItem): void {
   void scrollToReaderHighlight()
 }
 
+function focusRiskDetail(detail: RiskDetail): void {
+  if (detail.pageIndex === null) return
+  riskFocusText.value = detail.focusText
+  goToPage(detail.pageIndex)
+  void scrollToReaderHighlight()
+}
+
 function openFieldEditor(risk: RiskItem): void {
   router.push({
     path: '/app/contract/editor',
@@ -506,6 +556,7 @@ function openFieldEditor(risk: RiskItem): void {
 
 function startNegotiation(risk: RiskItem): void {
   focusRisk(risk)
+  chatOpen.value = true
   chatMessages.value.push({
     id: nextMessageId.value++,
     role: 'assistant',
@@ -513,12 +564,57 @@ function startNegotiation(risk: RiskItem): void {
     sources: [risk.sourceLabel, risk.groupLabel, ...(risk.legalBasis ?? [])],
   })
   void nextTick(() => {
-    document.querySelector<HTMLElement>('.legal-chat-panel')?.scrollIntoView({
-      block: 'nearest',
-      behavior: 'smooth',
-    })
+    positionChatWindow()
+    const messages = chatPanelRef.value?.querySelector<HTMLElement>('.chat-messages')
+    messages?.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' })
   })
 }
+
+function clampChatPosition(x: number, y: number): { x: number; y: number } {
+  const panelWidth = chatPanelRef.value?.offsetWidth ?? Math.min(680, window.innerWidth - 24)
+  const panelHeight = chatPanelRef.value?.offsetHeight ?? Math.min(620, window.innerHeight - 24)
+  return {
+    x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - panelWidth - 8)),
+    y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - panelHeight - 8)),
+  }
+}
+
+function positionChatWindow(): void {
+  if (!chatOpen.value) return
+  const preferred = chatHasBeenPositioned
+    ? clampChatPosition(chatPosition.x, chatPosition.y)
+    : clampChatPosition(window.innerWidth - (chatPanelRef.value?.offsetWidth ?? 680) - 24, 72)
+  chatPosition.x = preferred.x
+  chatPosition.y = preferred.y
+  chatHasBeenPositioned = true
+}
+
+function moveChatWindow(event: PointerEvent): void {
+  const next = clampChatPosition(
+    event.clientX - chatDragOffset.x,
+    event.clientY - chatDragOffset.y,
+  )
+  chatPosition.x = next.x
+  chatPosition.y = next.y
+}
+
+function endChatDrag(): void {
+  window.removeEventListener('pointermove', moveChatWindow)
+  window.removeEventListener('pointerup', endChatDrag)
+}
+
+function beginChatDrag(event: PointerEvent): void {
+  if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+  event.preventDefault()
+  chatDragOffset.x = event.clientX - chatPosition.x
+  chatDragOffset.y = event.clientY - chatPosition.y
+  window.addEventListener('pointermove', moveChatWindow)
+  window.addEventListener('pointerup', endChatDrag, { once: true })
+}
+
+onBeforeUnmount(() => {
+  endChatDrag()
+})
 
 function sendChat(message = chatInput.value): void {
   const content = message.trim()
@@ -736,9 +832,30 @@ function copyMessage(message: ChatMessage): void {
                   <span class="risk-meta">
                     <span>{{ risk.sourceLabel }}</span>
                     <span>{{ risk.groupLabel }}</span>
-                    <span v-if="risk.pageIndex !== null">第 {{ risk.pageIndex + 1 }} 頁</span>
+                    <button
+                      v-if="risk.pageIndex !== null && !risk.details?.length"
+                      type="button"
+                      class="risk-page-button"
+                      @click="focusRisk(risk)"
+                    >
+                      <FileSearch :size="12" /> 第 {{ risk.pageIndex + 1 }} 頁
+                    </button>
                   </span>
-                  <span class="risk-clause">{{ risk.clause }}</span>
+                  <ul v-if="risk.details?.length" class="risk-detail-list">
+                    <li v-for="detail in risk.details" :key="detail.label">
+                      <span>{{ detail.label }}</span>
+                      <button
+                        v-if="detail.pageIndex !== null"
+                        type="button"
+                        class="risk-page-button"
+                        @click="focusRiskDetail(detail)"
+                      >
+                        <FileSearch :size="12" /> 第 {{ detail.pageIndex + 1 }} 頁
+                      </button>
+                      <small v-else>未定位</small>
+                    </li>
+                  </ul>
+                  <span v-else class="risk-clause">{{ risk.clause }}</span>
                   <span class="risk-description">{{ risk.description }}</span>
                   <span v-if="risk.legalBasis?.length" class="risk-legal-basis">
                     <span v-for="basis in risk.legalBasis" :key="basis">{{ basis }}</span>
@@ -763,7 +880,7 @@ function copyMessage(message: ChatMessage): void {
                   <FileSearch :size="14" /> 定位條文
                 </button>
                 <button type="button" class="risk-chat-button" @click="startNegotiation(risk)">
-                  <MessageSquareText :size="14" /> 詢問法律 GPT
+                  <MessageSquareText :size="14" /> 詢問法律
                 </button>
               </div>
             </article>
@@ -776,14 +893,30 @@ function copyMessage(message: ChatMessage): void {
           </div>
         </section>
 
-        <section class="legal-chat-panel" aria-labelledby="legal-chat-title">
-          <div class="chat-heading">
+        <section
+          v-if="chatOpen"
+          ref="chatPanelRef"
+          class="legal-chat-panel"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="legal-chat-title"
+          :style="{ left: `${chatPosition.x}px`, top: `${chatPosition.y}px` }"
+        >
+          <div class="chat-heading" @pointerdown="beginChatDrag">
             <span class="chat-bot-mark"><Bot :size="20" /></span>
             <div>
-              <h2 id="legal-chat-title">AI 談判腳本／法律 GPT</h2>
+              <h2 id="legal-chat-title">AI 談判腳本 Law Chat</h2>
               <p>結合目前風險與契約內容，產生可直接使用的溝通建議。</p>
             </div>
             <span class="chat-demo-badge">前端 Demo</span>
+            <button
+              type="button"
+              class="chat-close-button"
+              aria-label="關閉 AI 談判腳本 Law Chat"
+              @click="chatOpen = false"
+            >
+              <X :size="17" />
+            </button>
           </div>
 
           <div class="chat-messages" aria-live="polite">
