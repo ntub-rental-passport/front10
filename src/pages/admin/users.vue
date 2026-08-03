@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { Search } from 'lucide-vue-next'
+import { BadgeCheck, Search, ShieldAlert } from 'lucide-vue-next'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { ADMIN_ROLES, adminRoleLabels as rbacRoleLabels } from '@/src/utils/admin-rbac'
 import { formatDate } from '@/src/utils/admin-format'
@@ -110,20 +110,28 @@ function handleAdminRoleChange(user: AdminUser, value: unknown): void {
           <TableHeader>
             <TableRow>
               <TableHead>Email</TableHead>
-              <TableHead>暱稱</TableHead>
-              <TableHead>角色</TableHead>
-              <TableHead>權限角色</TableHead>
-              <TableHead>狀態</TableHead>
-              <TableHead>註冊日</TableHead>
-              <TableHead>Email 驗證</TableHead>
-              <TableHead class="text-right">操作</TableHead>
+              <TableHead class="whitespace-nowrap">角色</TableHead>
+              <TableHead class="whitespace-nowrap">權限角色</TableHead>
+              <TableHead class="whitespace-nowrap">狀態</TableHead>
+              <TableHead class="whitespace-nowrap">註冊日</TableHead>
+              <TableHead class="whitespace-nowrap text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow v-for="user in filteredUsers" :key="user.id">
-              <TableCell class="font-medium">{{ user.email }}</TableCell>
-              <TableCell>{{ user.nickname ?? '—' }}</TableCell>
-              <TableCell>{{ adminRoleLabels[user.role] }}</TableCell>
+              <TableCell>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-medium">{{ user.email }}</span>
+                  <!-- 驗證狀態改用圖示：獨立成欄時中文標題會在 1280px 被壓成直排 -->
+                  <span :title="user.emailVerified ? 'Email 已驗證' : 'Email 未驗證'">
+                    <BadgeCheck v-if="user.emailVerified" class="h-4 w-4 shrink-0 text-emerald-600" />
+                    <ShieldAlert v-else class="h-4 w-4 shrink-0 text-amber-600" />
+                    <span class="sr-only">{{ user.emailVerified ? 'Email 已驗證' : 'Email 未驗證' }}</span>
+                  </span>
+                </div>
+                <p class="text-sm text-muted-foreground">{{ user.nickname ?? '—' }}</p>
+              </TableCell>
+              <TableCell class="whitespace-nowrap">{{ adminRoleLabels[user.role] }}</TableCell>
               <TableCell>
                 <Select
                   v-if="user.role === 'admin'"
@@ -142,14 +150,16 @@ function handleAdminRoleChange(user: AdminUser, value: unknown): void {
                 <span v-else class="text-muted-foreground">—</span>
               </TableCell>
               <TableCell>
-                <Badge :variant="user.status === 'active' ? 'default' : 'destructive'">
+                <Badge
+                  class="whitespace-nowrap"
+                  :variant="user.status === 'active' ? 'default' : 'destructive'"
+                >
                   {{ user.status === 'active' ? '正常' : '停用' }}
                 </Badge>
               </TableCell>
-              <TableCell>{{ formatDate(user.registeredAt) }}</TableCell>
-              <TableCell>{{ user.emailVerified ? '已驗證' : '未驗證' }}</TableCell>
+              <TableCell class="whitespace-nowrap">{{ formatDate(user.registeredAt) }}</TableCell>
               <TableCell class="text-right">
-                <div class="flex justify-end gap-2">
+                <div class="flex justify-end gap-2 whitespace-nowrap">
                   <Button variant="outline" size="sm" @click="detailUser = user">詳情</Button>
                   <Button
                     :variant="user.status === 'active' ? 'destructive' : 'default'"
@@ -162,7 +172,7 @@ function handleAdminRoleChange(user: AdminUser, value: unknown): void {
               </TableCell>
             </TableRow>
             <TableRow v-if="filteredUsers.length === 0">
-              <TableCell colspan="8" class="py-8 text-center text-muted-foreground">
+              <TableCell colspan="6" class="py-8 text-center text-muted-foreground">
                 沒有符合條件的使用者。
               </TableCell>
             </TableRow>
