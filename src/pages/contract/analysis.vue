@@ -23,6 +23,7 @@ import {
   FileText,
   MessageSquareText,
   Search,
+  Scale,
   Send,
   Sparkles,
   UserRound,
@@ -800,7 +801,7 @@ function copyMessage(message: ChatMessage): void {
           <div class="analysis-panel-heading risk-panel-heading">
             <div>
               <h2 id="risk-panel-title"><AlertTriangle :size="19" /> 偵測到的風險項次</h2>
-              <p>依來源分類，可回到欄位修改或定位契約條文。</p>
+              <p>依來源分類；點擊頁碼即可定位條文，亦可返回欄位修改。</p>
             </div>
           </div>
 
@@ -843,6 +844,7 @@ function copyMessage(message: ChatMessage): void {
                       v-if="risk.pageIndex !== null && !risk.details?.length"
                       type="button"
                       class="risk-page-button"
+                      :aria-label="`前往第 ${risk.pageIndex + 1} 頁查看 ${risk.title}`"
                       @click="focusRisk(risk)"
                     >
                       <FileSearch :size="12" /> 第 {{ risk.pageIndex + 1 }} 頁
@@ -855,6 +857,7 @@ function copyMessage(message: ChatMessage): void {
                         v-if="detail.pageIndex !== null"
                         type="button"
                         class="risk-page-button"
+                        :aria-label="`前往第 ${detail.pageIndex + 1} 頁查看 ${detail.label}`"
                         @click="focusRiskDetail(detail)"
                       >
                         <FileSearch :size="12" /> 第 {{ detail.pageIndex + 1 }} 頁
@@ -871,20 +874,12 @@ function copyMessage(message: ChatMessage): void {
               </div>
               <div class="risk-actions">
                 <button
-                  v-if="risk.groupId"
+                  v-if="risk.source === 'field' && risk.groupId"
                   type="button"
                   class="risk-link-button"
                   @click="openFieldEditor(risk)"
                 >
-                  <ExternalLink :size="14" /> 回關鍵欄位
-                </button>
-                <button
-                  v-if="risk.pageIndex !== null"
-                  type="button"
-                  class="risk-link-button"
-                  @click="focusRisk(risk)"
-                >
-                  <FileSearch :size="14" /> 定位條文
+                  <ExternalLink :size="14" /> 修改欄位
                 </button>
                 <button type="button" class="risk-chat-button" @click="startNegotiation(risk)">
                   <MessageSquareText :size="14" /> 詢問法律
@@ -896,6 +891,10 @@ function copyMessage(message: ChatMessage): void {
               <CheckCircle2 :size="22" />
               <strong>這個分類目前沒有風險</strong>
               <span>可切換其他分類繼續查看。</span>
+            </div>
+
+            <div v-else class="risk-list-footer">
+              已顯示全部 {{ filteredRisks.length }} 項分析結果
             </div>
           </div>
         </section>
