@@ -16,7 +16,7 @@ import { RotateCcw } from 'lucide-vue-next'
 import BarStatCard from '@/src/components/admin/BarStatCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
-import { useAdminAiQuality } from '@/src/composables/admin/useAdminAiQuality'
+import { useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { resetAdminData } from '@/src/composables/admin/useAdminStore'
 import { formatDateTime } from '@/src/utils/admin-format'
@@ -29,7 +29,7 @@ const CHART_RED = '#DC2626'
 const CHART_INDIGO_MUTED = '#B4B9EE'
 
 const { users } = useAdminUsers()
-const { records, needsReviewCount } = useAdminAiQuality()
+const { usages, alerts, alertCount } = useAdminAiUsage()
 const { events, logAction } = useAdminAudit()
 
 const resetOpen = ref(false)
@@ -58,18 +58,15 @@ const suspendedNote = computed(() => {
   return suspended > 0 ? `停用中 ${suspended} 筆` : '目前沒有停用帳號'
 })
 
-const ratingLabels = ['1 星', '2 星', '3 星', '4 星', '5 星']
-const ratingColors = [CHART_RED, CHART_RED, CHART_INDIGO, CHART_INDIGO, CHART_INDIGO]
+const usageLabels = computed(() => usages.value.map((usage) => usage.provider.label))
 
-const ratingValues = computed(() => {
-  const counts = [0, 0, 0, 0, 0]
-  for (const record of records.value) {
-    if (record.rating !== null && record.rating >= 1 && record.rating <= 5) {
-      counts[record.rating - 1] += 1
-    }
-  }
-  return counts
-})
+const usageValues = computed(() => usages.value.map((usage) => usage.percent))
+
+const usageColors = computed(() =>
+  usages.value.map((usage) =>
+    usage.level === 'critical' ? CHART_RED : usage.level === 'warn' ? CHART_AMBER : CHART_INDIGO,
+  ),
+)
 
 const trendDays = computed(() => {
   return Array.from({ length: 7 }, (_, index) => {
@@ -98,16 +95,15 @@ const trendColors = computed(() =>
 )
 
 const queueItems = computed(() =>
-  needsReviewCount.value > 0
-    ? [
-        {
-          id: 'ai-review',
-          label: `AI 低分產出人工複核（${needsReviewCount.value} 筆）`,
-          to: '/admin/ai-quality',
-          tag: 'AI品質',
-        },
-      ]
-    : [],
+  alerts.value.map((usage) => ({
+    id: `quota-${usage.provider.id}`,
+    label:
+      usage.daysLeft === null
+        ? `${usage.provider.label} 額度告急（已用 ${usage.percent}%）`
+        : `${usage.provider.label} 額度告急（預估 ${usage.daysLeft} 天後用盡）`,
+    to: '/admin/ai-usage',
+    tag: 'AI額度',
+  })),
 )
 
 function confirmReset(): void {
@@ -147,13 +143,13 @@ function confirmReset(): void {
         :note="suspendedNote"
       />
       <BarStatCard
-        title="AI 產出品質"
-        to="/admin/ai-quality"
-        :labels="ratingLabels"
-        :values="ratingValues"
-        :colors="ratingColors"
-        :corner-text="`需複核 ${needsReviewCount} 筆`"
-        :corner-variant="needsReviewCount > 0 ? 'destructive' : 'secondary'"
+        title="AI 額度用量"
+        to="/admin/ai-usage"
+        :labels="usageLabels"
+        :values="usageValues"
+        :colors="usageColors"
+        :corner-text="alertCount > 0 ? `${alertCount} 項告急` : '額度充足'"
+        :corner-variant="alertCount > 0 ? 'destructive' : 'secondary'"
       />
       <BarStatCard
         title="稽核事件趨勢"
