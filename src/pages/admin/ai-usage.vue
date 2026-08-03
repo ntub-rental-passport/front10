@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/table/index'
 import UsageTrendChart from '@/src/components/admin/UsageTrendChart.vue'
 import { quotaLevelLabels, useAdminAiUsage, type ProviderUsage } from '@/src/composables/admin/useAdminAiUsage'
+import type { AiProviderId } from '@/src/mocks/admin-seed'
 
 const CHART_INDIGO = '#5660D6'
 const CHART_TEAL = '#0E9488'
@@ -35,9 +36,22 @@ const barClasses = {
   critical: 'bg-destructive',
 } as const
 
+/**
+ * 兩個供應商的原始用量單位差三個數量級（token vs 頁），直接畫在同一張圖上
+ * 會讓其中一條線壓成貼著 x 軸的直線。改畫「每日用量佔該供應商月額度的百分比」，
+ * 讓兩條線落在同一量級、可直接比較消耗速度。
+ */
+function percentSeriesFor(providerId: AiProviderId): number[] {
+  const usage = usages.value.find((item) => item.provider.id === providerId)
+  const quota = usage?.quota ?? 0
+  // 額度為 0（尚未設定）或為負數時，除法會產生 Infinity/NaN 讓圖表壞掉，一律填 0。
+  if (quota <= 0) return trendDates.value.map(() => 0)
+  return seriesFor(providerId).map((value) => (value / quota) * 100)
+}
+
 const chartSeries = computed(() => [
-  { label: 'Gemini API（tokens）', values: seriesFor('gemini'), color: CHART_INDIGO },
-  { label: 'Google Vision（頁）', values: seriesFor('vision'), color: CHART_TEAL },
+  { label: 'Gemini API（% 月額度）', values: percentSeriesFor('gemini'), color: CHART_INDIGO },
+  { label: 'Google Vision（% 月額度）', values: percentSeriesFor('vision'), color: CHART_TEAL },
 ])
 
 const chartLabels = computed(() => trendDates.value.map((date) => date.slice(5).replace('-', '/')))
@@ -117,7 +131,7 @@ function daysLeftText(usage: ProviderUsage): string {
     <Card class="rounded-[1.5rem]">
       <CardHeader>
         <CardTitle>近 30 天用量趨勢</CardTitle>
-        <CardDescription>兩個供應商的計量單位不同，僅供觀察各自的消耗速度變化。</CardDescription>
+        <CardDescription>顯示各供應商每日用量佔其月額度的百分比，因此兩者可以直接比較消耗速度。</CardDescription>
       </CardHeader>
       <CardContent>
         <UsageTrendChart :labels="chartLabels" :series="chartSeries" />

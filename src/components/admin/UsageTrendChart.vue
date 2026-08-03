@@ -40,7 +40,17 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
   interaction: { mode: 'index', intersect: false },
   plugins: {
     legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
-    tooltip: { enabled: true },
+    tooltip: {
+      enabled: true,
+      callbacks: {
+        // 數值已改成佔月額度的百分比，保留一位小數 —— 這裡的數字通常落在
+        // 0–5% 之間，取整數會全部變成同一個值，失去可比較的解析度。
+        label: (context) => {
+          const value = typeof context.parsed.y === 'number' ? context.parsed.y : 0
+          return `${context.dataset.label ?? ''}: ${value.toFixed(1)}%`
+        },
+      },
+    },
   },
   scales: {
     x: {
@@ -50,7 +60,11 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
     y: {
       beginAtZero: true,
       grid: { color: 'rgba(100, 116, 139, 0.12)' },
-      ticks: { color: '#64748B', font: { size: 11 }, precision: 0 },
+      ticks: {
+        color: '#64748B',
+        font: { size: 11 },
+        callback: (value) => `${Number(value).toFixed(1)}%`,
+      },
     },
   },
 }))
