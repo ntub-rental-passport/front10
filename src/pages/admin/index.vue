@@ -17,7 +17,6 @@ import BarStatCard from '@/src/components/admin/BarStatCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { useAdminAiQuality } from '@/src/composables/admin/useAdminAiQuality'
-import { useAdminReview } from '@/src/composables/admin/useAdminReview'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { resetAdminData } from '@/src/composables/admin/useAdminStore'
 import { formatDateTime } from '@/src/utils/admin-format'
@@ -30,7 +29,6 @@ const CHART_RED = '#DC2626'
 const CHART_INDIGO_MUTED = '#B4B9EE'
 
 const { users } = useAdminUsers()
-const { pendingListings, pendingRatings } = useAdminReview()
 const { records, needsReviewCount } = useAdminAiQuality()
 const { events, logAction } = useAdminAudit()
 
@@ -40,13 +38,6 @@ const todayEventCount = computed(() => {
   const today = new Date().toDateString()
   return events.value.filter((event) => new Date(event.at).toDateString() === today).length
 })
-
-const reviewSegments = computed(() => [
-  { label: '待審物件', value: pendingListings.value.length, color: CHART_INDIGO },
-  { label: '待審評價', value: pendingRatings.value.length, color: CHART_TEAL },
-])
-
-const pendingTotal = computed(() => pendingListings.value.length + pendingRatings.value.length)
 
 const roleColors: Record<AdminUserRole, string> = {
   user: CHART_INDIGO,
@@ -106,20 +97,8 @@ const trendColors = computed(() =>
   trendDays.value.map((_, index) => (index === 6 ? CHART_INDIGO : CHART_INDIGO_MUTED)),
 )
 
-const queueItems = computed(() => [
-  ...pendingListings.value.map((listing) => ({
-    id: listing.id,
-    label: `物件審核：${listing.title}`,
-    to: '/admin/review',
-    tag: '審核',
-  })),
-  ...pendingRatings.value.map((rating) => ({
-    id: rating.id,
-    label: `評價審核：${rating.listingTitle}`,
-    to: '/admin/review',
-    tag: '審核',
-  })),
-  ...(needsReviewCount.value > 0
+const queueItems = computed(() =>
+  needsReviewCount.value > 0
     ? [
         {
           id: 'ai-review',
@@ -128,8 +107,8 @@ const queueItems = computed(() => [
           tag: 'AI品質',
         },
       ]
-    : []),
-])
+    : [],
+)
 
 function confirmReset(): void {
   resetAdminData()
@@ -148,7 +127,7 @@ function confirmReset(): void {
         <div>
           <h1 class="text-4xl font-black tracking-tight">後台總覽</h1>
           <p class="mt-2 text-muted-foreground">
-            集中掌握審核佇列、使用者狀態、AI 品質與稽核事件。
+            集中掌握使用者狀態、AI 品質與稽核事件。
           </p>
         </div>
       </div>
@@ -158,14 +137,7 @@ function confirmReset(): void {
       </Button>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <DonutStatCard
-        title="待審核項目"
-        to="/admin/review"
-        :center-value="pendingTotal"
-        center-label="筆待審"
-        :segments="reviewSegments"
-      />
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <DonutStatCard
         title="使用者組成"
         to="/admin/users"

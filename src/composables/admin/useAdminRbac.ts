@@ -1,8 +1,5 @@
 import { computed, type Component } from 'vue'
 import {
-  Bell,
-  BookOpen,
-  ClipboardCheck,
   CreditCard,
   LayoutDashboard,
   Megaphone,
@@ -11,33 +8,23 @@ import {
   Sparkles,
   Users,
 } from 'lucide-vue-next'
-import { getAuthSession } from '@/src/composables/useAuth'
-import { adminUsersCollection } from './useAdminUsers'
+import { getCurrentAdminRole } from './useAdminUsers'
 import {
   visibleNavGroupsFor,
   canAdminAccessPath,
-  type AdminRole,
   type AdminNavItem,
 } from '@/src/utils/admin-rbac'
+
+export { getCurrentAdminRole }
 
 const navIcons: Record<string, Component> = {
   '/admin': LayoutDashboard,
   '/admin/users': Users,
-  '/admin/review': ClipboardCheck,
   '/admin/subscription': CreditCard,
   '/admin/content': Megaphone,
-  '/admin/knowledge': BookOpen,
   '/admin/ai-quality': Sparkles,
-  '/admin/notifications': Bell,
   '/admin/audit': ScrollText,
   '/admin/settings': Settings,
-}
-
-export function getCurrentAdminRole(): AdminRole {
-  const session = getAuthSession()
-  if (!session || session.role !== 'admin') return 'super'
-  const user = adminUsersCollection.value.find((item) => item.email === session.email)
-  return user?.adminRole ?? 'super'
 }
 
 export interface AdminNavGroupWithIcons {

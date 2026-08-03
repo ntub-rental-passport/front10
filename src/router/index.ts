@@ -49,14 +49,15 @@ const router = createRouter({
       children: [
         { path: '', component: () => import('@/src/pages/admin/index.vue') },
         { path: 'users', component: () => import('@/src/pages/admin/users.vue') },
-        { path: 'review', component: () => import('@/src/pages/admin/review.vue') },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
-        { path: 'notifications', component: () => import('@/src/pages/admin/notifications.vue') },
-        { path: 'knowledge', component: () => import('@/src/pages/admin/knowledge.vue') },
+        // 通知已併入內容管理，保留舊路徑避免既有書籤 404
+        { path: 'notifications', redirect: '/admin/content' },
         { path: 'ai-quality', component: () => import('@/src/pages/admin/ai-quality.vue') },
         { path: 'subscription', component: () => import('@/src/pages/admin/subscription.vue') },
         { path: 'audit', component: () => import('@/src/pages/admin/audit.vue') },
         { path: 'settings', component: () => import('@/src/pages/admin/settings.vue') },
+        // 已移除的後台模組（review、knowledge）留在書籤裡時，導回後台總覽而非公開首頁
+        { path: ':pathMatch(.*)*', redirect: '/admin' },
       ],
     },
     {

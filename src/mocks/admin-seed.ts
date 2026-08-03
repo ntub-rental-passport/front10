@@ -1,6 +1,4 @@
 export * from './admin/users'
-export * from './admin/review'
-export * from './admin/knowledge'
 export * from './admin/ai-quality'
 export * from './admin/subscription'
 export * from './admin/audit'

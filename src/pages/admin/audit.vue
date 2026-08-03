@@ -34,10 +34,11 @@ const toDate = ref('')
 const actionTypes: AuditActionType[] = [
   '登入',
   '使用者管理',
-  '審核',
-  '知識庫',
+  '內容管理',
+  '通知管理',
   'AI品質',
   '訂閱',
+  '系統設定',
   '系統',
   '資料存取',
 ]

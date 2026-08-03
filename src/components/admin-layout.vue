@@ -44,7 +44,7 @@ function isActive(path: string): boolean {
           </div>
           <div>
             <p class="text-sm font-semibold">管理工作區</p>
-            <p class="text-xs text-muted-foreground">集中管理 OCR 任務、內容與系統設定</p>
+            <p class="text-xs text-muted-foreground">集中管理使用者、內容與系統設定</p>
           </div>
         </div>
 

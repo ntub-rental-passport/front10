@@ -2,7 +2,7 @@ import { daysAgo } from './helpers'
 
 export type AdminUserRole = 'user' | 'landlord' | 'admin'
 export type AdminUserStatus = 'active' | 'suspended'
-export type AdminRole = 'super' | 'ops' | 'content'
+export type AdminRole = 'super' | 'admin'
 
 export interface AdminUser {
   id: string
@@ -18,8 +18,7 @@ export interface AdminUser {
 export function seedAdminUsers(): AdminUser[] {
   return [
     { id: 'u-admin-1', email: 'admin@rentmate.tw', nickname: '系統管理員', role: 'admin', adminRole: 'super', status: 'active', emailVerified: true, registeredAt: daysAgo(180) },
-    { id: 'u-admin-2', email: 'ops@rentmate.tw', nickname: '陳營運', role: 'admin', adminRole: 'ops', status: 'active', emailVerified: true, registeredAt: daysAgo(150) },
-    { id: 'u-admin-3', email: 'content@rentmate.tw', nickname: '李內容', role: 'admin', adminRole: 'content', status: 'active', emailVerified: true, registeredAt: daysAgo(140) },
+    { id: 'u-admin-2', email: 'staff@rentmate.tw', nickname: '陳小管', role: 'admin', adminRole: 'admin', status: 'active', emailVerified: true, registeredAt: daysAgo(150) },
     { id: 'u-landlord-1', email: 'chen.landlord@example.com', nickname: '陳房東', role: 'landlord', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(120) },
     { id: 'u-landlord-2', email: 'lin.house@example.com', nickname: '林太太', role: 'landlord', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(75) },
     { id: 'u-tenant-1', email: 'amy.wang@example.com', nickname: '小艾', role: 'user', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(90) },

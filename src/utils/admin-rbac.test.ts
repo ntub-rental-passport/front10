@@ -10,21 +10,18 @@ import type { AdminRole } from '@/src/mocks/admin/users'
 
 // path -> role -> expected access
 const MATRIX: Record<string, Record<AdminRole, boolean>> = {
-  '/admin': { super: true, ops: true, content: true },
-  '/admin/users': { super: true, ops: true, content: false },
-  '/admin/review': { super: true, ops: true, content: true },
-  '/admin/subscription': { super: true, ops: true, content: false },
-  '/admin/content': { super: true, ops: false, content: true },
-  '/admin/knowledge': { super: true, ops: false, content: true },
-  '/admin/ai-quality': { super: true, ops: false, content: true },
-  '/admin/notifications': { super: true, ops: false, content: true },
-  '/admin/audit': { super: true, ops: true, content: false },
-  '/admin/settings': { super: true, ops: false, content: false },
+  '/admin': { super: true, admin: true },
+  '/admin/subscription': { super: true, admin: true },
+  '/admin/content': { super: true, admin: true },
+  '/admin/ai-quality': { super: true, admin: true },
+  '/admin/users': { super: true, admin: false },
+  '/admin/audit': { super: true, admin: false },
+  '/admin/settings': { super: true, admin: false },
 }
 
 describe('ADMIN_ROLES', () => {
-  it('包含三種管理員角色', () => {
-    expect(ADMIN_ROLES).toEqual(['super', 'ops', 'content'])
+  it('只有兩種管理員角色', () => {
+    expect(ADMIN_ROLES).toEqual(['super', 'admin'])
   })
 })
 
@@ -32,8 +29,7 @@ describe('adminRoleLabels', () => {
   it('提供中文標籤', () => {
     expect(adminRoleLabels).toEqual({
       super: '超級管理員',
-      ops: '營運管理員',
-      content: '內容審核員',
+      admin: '一般管理員',
     })
   })
 })
@@ -47,30 +43,22 @@ describe('canAdminAccessPath', () => {
     }
   }
 
-  it('/admin 對三種角色皆為 true', () => {
-    expect(canAdminAccessPath('super', '/admin')).toBe(true)
-    expect(canAdminAccessPath('ops', '/admin')).toBe(true)
-    expect(canAdminAccessPath('content', '/admin')).toBe(true)
-  })
-
-  it('/admin/settings 只有 super 為 true', () => {
-    expect(canAdminAccessPath('super', '/admin/settings')).toBe(true)
-    expect(canAdminAccessPath('ops', '/admin/settings')).toBe(false)
-    expect(canAdminAccessPath('content', '/admin/settings')).toBe(false)
+  it('已移除的模組不再出現在導覽中（未知路徑一律放行）', () => {
+    expect(canAdminAccessPath('admin', '/admin/review')).toBe(true)
+    expect(canAdminAccessPath('admin', '/admin/knowledge')).toBe(true)
   })
 
   it('未知子路徑一律放行（安全預設值，避免誤擋）', () => {
     expect(canAdminAccessPath('super', '/admin/unknown')).toBe(true)
-    expect(canAdminAccessPath('ops', '/admin/unknown')).toBe(true)
-    expect(canAdminAccessPath('content', '/admin/unknown')).toBe(true)
+    expect(canAdminAccessPath('admin', '/admin/unknown')).toBe(true)
   })
 
   it('帶有尾端子段落的路徑會依第一段解析', () => {
-    expect(canAdminAccessPath('content', '/admin/users/detail')).toBe(
-      canAdminAccessPath('content', '/admin/users'),
+    expect(canAdminAccessPath('admin', '/admin/users/detail')).toBe(
+      canAdminAccessPath('admin', '/admin/users'),
     )
-    expect(canAdminAccessPath('ops', '/admin/users/detail')).toBe(true)
-    expect(canAdminAccessPath('content', '/admin/users/detail')).toBe(false)
+    expect(canAdminAccessPath('super', '/admin/users/detail')).toBe(true)
+    expect(canAdminAccessPath('admin', '/admin/users/detail')).toBe(false)
   })
 })
 
@@ -79,16 +67,12 @@ describe('visibleNavGroupsFor', () => {
     return visibleNavGroupsFor(role).reduce((sum, g) => sum + g.items.length, 0)
   }
 
-  it('super 可看到全部 10 個項目', () => {
-    expect(totalItems('super')).toBe(10)
+  it('super 可看到全部 7 個項目', () => {
+    expect(totalItems('super')).toBe(7)
   })
 
-  it('ops 可看到 5 個項目', () => {
-    expect(totalItems('ops')).toBe(5)
-  })
-
-  it('content 可看到 6 個項目', () => {
-    expect(totalItems('content')).toBe(6)
+  it('一般管理員可看到 4 個項目', () => {
+    expect(totalItems('admin')).toBe(4)
   })
 
   it('不會回傳空群組（每個群組至少有一個項目）', () => {
@@ -100,16 +84,23 @@ describe('visibleNavGroupsFor', () => {
     }
   })
 
-  it('content 角色看不到「系統」群組（稽核紀錄與系統設定皆無權限）', () => {
-    const groups = visibleNavGroupsFor('content')
+  it('一般管理員看不到「系統」群組（稽核紀錄與系統設定皆無權限）', () => {
+    const groups = visibleNavGroupsFor('admin')
     expect(groups.find((g) => g.label === '系統')).toBeUndefined()
   })
 })
 
 describe('adminNavGroups', () => {
-  it('定義了三個群組，共 10 個項目', () => {
+  it('定義了三個群組，共 7 個項目', () => {
     const total = adminNavGroups.reduce((sum, g) => sum + g.items.length, 0)
     expect(adminNavGroups.length).toBe(3)
-    expect(total).toBe(10)
+    expect(total).toBe(7)
+  })
+
+  it('已移除的模組不再出現在導覽中', () => {
+    const paths = adminNavGroups.flatMap((g) => g.items.map((i) => i.path))
+    expect(paths).not.toContain('/admin/review')
+    expect(paths).not.toContain('/admin/knowledge')
+    expect(paths).not.toContain('/admin/notifications')
   })
 })

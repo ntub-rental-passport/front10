@@ -13,37 +13,33 @@ export interface AdminNavGroup {
   items: AdminNavItem[]
 }
 
-export const ADMIN_ROLES: AdminRole[] = ['super', 'ops', 'content']
+export const ADMIN_ROLES: AdminRole[] = ['super', 'admin']
 
 export const adminRoleLabels: Record<AdminRole, string> = {
   super: '超級管理員',
-  ops: '營運管理員',
-  content: '內容審核員',
+  admin: '一般管理員',
 }
 
 export const adminNavGroups: AdminNavGroup[] = [
   {
     label: '營運管理',
     items: [
-      { label: '後台總覽', path: '/admin', roles: ['super', 'ops', 'content'] },
-      { label: '使用者管理', path: '/admin/users', roles: ['super', 'ops'] },
-      { label: '物件與評價審核', path: '/admin/review', roles: ['super', 'ops', 'content'] },
-      { label: '訂閱與容量', path: '/admin/subscription', roles: ['super', 'ops'] },
+      { label: '後台總覽', path: '/admin', roles: ['super', 'admin'] },
+      { label: '使用者管理', path: '/admin/users', roles: ['super'] },
+      { label: '訂閱與容量', path: '/admin/subscription', roles: ['super', 'admin'] },
     ],
   },
   {
-    label: '內容與知識',
+    label: '內容與通知',
     items: [
-      { label: '內容管理', path: '/admin/content', roles: ['super', 'content'] },
-      { label: '法規知識庫', path: '/admin/knowledge', roles: ['super', 'content'] },
-      { label: 'AI 品質監控', path: '/admin/ai-quality', roles: ['super', 'content'] },
-      { label: '通知模板', path: '/admin/notifications', roles: ['super', 'content'] },
+      { label: '內容與通知', path: '/admin/content', roles: ['super', 'admin'] },
+      { label: 'AI 品質監控', path: '/admin/ai-quality', roles: ['super', 'admin'] },
     ],
   },
   {
     label: '系統',
     items: [
-      { label: '稽核紀錄', path: '/admin/audit', roles: ['super', 'ops'] },
+      { label: '稽核紀錄', path: '/admin/audit', roles: ['super'] },
       { label: '系統設定', path: '/admin/settings', roles: ['super'] },
     ],
   },
