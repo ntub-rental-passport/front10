@@ -84,6 +84,27 @@ export function dateKey(date: Date): string {
 }
 ```
 
+同時建立 `src/utils/date-key.test.ts`：
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { dateKey } from './date-key'
+
+describe('dateKey', () => {
+  it('輸出本地時區的 YYYY-MM-DD', () => {
+    expect(dateKey(new Date(2026, 7, 1))).toBe('2026-08-01')
+    expect(dateKey(new Date(2026, 11, 31))).toBe('2026-12-31')
+  })
+
+  it('月與日補零', () => {
+    expect(dateKey(new Date(2026, 0, 5))).toBe('2026-01-05')
+  })
+})
+```
+
+Run: `npx vitest run src/utils/date-key.test.ts`
+Expected: PASS，2 個測試
+
 - [ ] **Step 2: 建立型別與 seed**
 
 建立 `src/mocks/admin/ai-usage.ts`：
@@ -169,7 +190,7 @@ Expected: 既有測試全數通過
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/utils/date-key.ts src/mocks/admin/ai-usage.ts src/mocks/admin-seed.ts
+git add src/utils/date-key.ts src/utils/date-key.test.ts src/mocks/admin/ai-usage.ts src/mocks/admin-seed.ts
 git commit -m "feat: 新增 AI 用量 mock 資料與供應商定義"
 ```
 
@@ -416,7 +437,7 @@ export function quotaStatus(input: QuotaStatusInput): QuotaLevel {
 - [ ] **Step 4: 執行測試確認通過**
 
 Run: `npx vitest run src/utils/admin-ai-usage.test.ts`
-Expected: PASS，16 個測試全綠
+Expected: PASS，15 個測試全綠
 
 - [ ] **Step 5: Commit**
 
