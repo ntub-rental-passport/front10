@@ -7,6 +7,8 @@ const PAGE_SIZE_MIN = 1
 const PAGE_SIZE_MAX = 100
 const MAX_UPLOAD_MB_MIN = 1
 const MAX_UPLOAD_MB_MAX = 50
+const PERCENT_MIN = 1
+const PERCENT_MAX = 100
 
 export function validateSettings(settings: SystemSettings): SettingsErrors {
   const errors: SettingsErrors = {}
@@ -31,6 +33,36 @@ export function validateSettings(settings: SystemSettings): SettingsErrors {
 
   if (!Number.isFinite(settings.defaultAiQuota) || settings.defaultAiQuota < 0) {
     errors.defaultAiQuota = 'AI 配額不可為負數'
+  }
+
+  if (!Number.isFinite(settings.platformGeminiTokenQuota) || settings.platformGeminiTokenQuota < 0) {
+    errors.platformGeminiTokenQuota = 'Gemini token 額度不可為負數'
+  }
+
+  if (!Number.isFinite(settings.platformVisionPageQuota) || settings.platformVisionPageQuota < 0) {
+    errors.platformVisionPageQuota = 'Vision 頁數額度不可為負數'
+  }
+
+  if (
+    !Number.isFinite(settings.quotaWarnPercent) ||
+    settings.quotaWarnPercent < PERCENT_MIN ||
+    settings.quotaWarnPercent > PERCENT_MAX
+  ) {
+    errors.quotaWarnPercent = '預警門檻需介於 1 到 100'
+  } else if (
+    Number.isFinite(settings.quotaCriticalPercent) &&
+    settings.quotaWarnPercent >= settings.quotaCriticalPercent
+  ) {
+    // 黃燈門檻若不低於紅燈，狀態判定將永遠跳不到 warn
+    errors.quotaWarnPercent = '預警門檻需小於告急門檻'
+  }
+
+  if (
+    !Number.isFinite(settings.quotaCriticalPercent) ||
+    settings.quotaCriticalPercent < PERCENT_MIN ||
+    settings.quotaCriticalPercent > PERCENT_MAX
+  ) {
+    errors.quotaCriticalPercent = '告急門檻需介於 1 到 100'
   }
 
   if (settings.maintenanceMode && settings.maintenanceMessage.trim() === '') {

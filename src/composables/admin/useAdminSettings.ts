@@ -1,9 +1,9 @@
 import { computed } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
-import { seedSettings, type SystemSettings } from '@/src/mocks/admin-seed'
+import { migrateSettings, seedSettings, type SystemSettings } from '@/src/mocks/admin-seed'
 
-const settings = createAdminCollection<SystemSettings>('settings', seedSettings)
+const settings = createAdminCollection<SystemSettings>('settings', seedSettings, migrateSettings)
 
 export function useAdminSettings() {
   const { logAction } = useAdminAudit()

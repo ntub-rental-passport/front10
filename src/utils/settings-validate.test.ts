@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { validateSettings } from './settings-validate'
+import { migrateSettings } from '@/src/mocks/admin/settings'
 import type { SystemSettings } from '@/src/mocks/admin/settings'
 
 function baseSettings(): SystemSettings {
@@ -11,6 +12,10 @@ function baseSettings(): SystemSettings {
     pageSize: 20,
     maxUploadMb: 10,
     defaultAiQuota: 3,
+    platformGeminiTokenQuota: 2_000_000,
+    platformVisionPageQuota: 3_000,
+    quotaWarnPercent: 80,
+    quotaCriticalPercent: 95,
   }
 }
 
@@ -105,5 +110,72 @@ describe('validateSettings', () => {
       pageSize: 999,
     })
     expect(Object.keys(result).sort()).toEqual(['pageSize', 'siteName'])
+  })
+})
+
+describe('AI 平台額度驗證', () => {
+  function baseSettings(): SystemSettings {
+    return {
+      siteName: 'RentMate 租隊友',
+      supportEmail: 'support@rentmate.tw',
+      maintenanceMode: false,
+      maintenanceMessage: '維護中',
+      pageSize: 20,
+      maxUploadMb: 10,
+      defaultAiQuota: 3,
+      platformGeminiTokenQuota: 2_000_000,
+      platformVisionPageQuota: 3_000,
+      quotaWarnPercent: 80,
+      quotaCriticalPercent: 95,
+    }
+  }
+
+  it('合法設定沒有錯誤', () => {
+    expect(validateSettings(baseSettings())).toEqual({})
+  })
+
+  it('額度為負數時報錯', () => {
+    const errors = validateSettings({ ...baseSettings(), platformGeminiTokenQuota: -1 })
+    expect(errors.platformGeminiTokenQuota).toBeTruthy()
+  })
+
+  it('門檻超出 1 到 100 時報錯', () => {
+    expect(validateSettings({ ...baseSettings(), quotaWarnPercent: 0 }).quotaWarnPercent).toBeTruthy()
+    expect(
+      validateSettings({ ...baseSettings(), quotaCriticalPercent: 101 }).quotaCriticalPercent,
+    ).toBeTruthy()
+  })
+
+  it('黃燈門檻不得大於等於紅燈門檻', () => {
+    const errors = validateSettings({
+      ...baseSettings(),
+      quotaWarnPercent: 95,
+      quotaCriticalPercent: 90,
+    })
+    expect(errors.quotaWarnPercent).toBeTruthy()
+  })
+})
+
+describe('migrateSettings', () => {
+  it('舊資料缺少額度欄位時補回預設值，不產生 NaN', () => {
+    const legacy = {
+      siteName: '舊站名',
+      supportEmail: 'old@rentmate.tw',
+      maintenanceMode: false,
+      maintenanceMessage: '維護中',
+      pageSize: 50,
+      maxUploadMb: 20,
+      defaultAiQuota: 5,
+    }
+
+    const migrated = migrateSettings(legacy)
+
+    expect(migrated.platformGeminiTokenQuota).toBe(2_000_000)
+    expect(migrated.platformVisionPageQuota).toBe(3_000)
+    expect(migrated.quotaWarnPercent).toBe(80)
+    expect(migrated.quotaCriticalPercent).toBe(95)
+    // 使用者原本的設定不可被預設值覆蓋
+    expect(migrated.siteName).toBe('舊站名')
+    expect(migrated.pageSize).toBe(50)
   })
 })
