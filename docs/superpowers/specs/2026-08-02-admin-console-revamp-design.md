@@ -138,7 +138,7 @@ adminRole == null      → null
 | 後台總覽 | `/admin` | ✅ | ✅ |
 | 訂閱與容量 | `/admin/subscription` | ✅ | ✅ |
 | 內容與通知 | `/admin/content` | ✅ | ✅ |
-| AI 品質監控 | `/admin/ai-quality` | ✅ | ✅ |
+| AI 使用量 | `/admin/ai-usage` | ✅ | ✅ |
 | 使用者管理 | `/admin/users` | ✅ | — |
 | 稽核紀錄 | `/admin/audit` | ✅ | — |
 | 系統設定 | `/admin/settings` | ✅ | — |
@@ -147,7 +147,7 @@ adminRole == null      → null
 
 ```
 營運管理    後台總覽 · 使用者管理 · 訂閱與容量
-內容與通知  內容與通知 · AI 品質監控
+內容與通知  內容與通知 · AI 使用量
 系統        稽核紀錄 · 系統設定
 ```
 
@@ -297,7 +297,7 @@ src/api/admin/
 └── index.ts         依 VITE_USE_MOCK_API 組裝並匯出 adminApi
 ```
 
-七個模組：`users`、`content`、`notifications`、`aiQuality`、`audit`、`subscription`、`settings`。
+七個模組：`users`、`content`、`notifications`、`aiUsage`、`audit`、`subscription`、`settings`。
 
 **所有方法一律 async，mock 也不例外。** composable 只寫一次，兩種實作都能運作，切換時前端零改動。
 
@@ -322,8 +322,8 @@ DELETE /api/admin/notifications/templates/{id}
 POST   /api/admin/notifications/send
 GET    /api/admin/notifications/logs
 
-GET    /api/admin/ai-quality
-PATCH  /api/admin/ai-quality/{id}/review
+GET    /api/admin/ai-usage
+GET    /api/admin/ai-usage/daily
 
 GET    /api/admin/subscription
 PATCH  /api/admin/subscription/{id}

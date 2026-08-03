@@ -1,5 +1,4 @@
 export * from './admin/users'
-export * from './admin/ai-quality'
 export * from './admin/ai-usage'
 export * from './admin/subscription'
 export * from './admin/audit'

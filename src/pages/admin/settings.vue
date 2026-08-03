@@ -127,6 +127,68 @@ function resetDraft(): void {
       </CardContent>
     </Card>
 
+    <Card class="rounded-[1.5rem]">
+      <CardHeader>
+        <CardTitle>AI 平台額度</CardTitle>
+        <CardDescription>
+          平台向 AI 廠商購買的每月額度與預警門檻，用於 AI 使用量頁的告急判定。
+          與上方「AI 每日配額預設值」（單一使用者的額度）無關。
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="grid gap-4 md:grid-cols-2">
+        <div class="space-y-2">
+          <Label for="platformGeminiTokenQuota">Gemini 每月 token 上限</Label>
+          <Input
+            id="platformGeminiTokenQuota"
+            v-model.number="draft.platformGeminiTokenQuota"
+            type="number"
+            min="0"
+          />
+          <p v-if="errors.platformGeminiTokenQuota" class="text-sm text-destructive">
+            {{ errors.platformGeminiTokenQuota }}
+          </p>
+        </div>
+        <div class="space-y-2">
+          <Label for="platformVisionPageQuota">Vision 每月頁數上限</Label>
+          <Input
+            id="platformVisionPageQuota"
+            v-model.number="draft.platformVisionPageQuota"
+            type="number"
+            min="0"
+          />
+          <p v-if="errors.platformVisionPageQuota" class="text-sm text-destructive">
+            {{ errors.platformVisionPageQuota }}
+          </p>
+        </div>
+        <div class="space-y-2">
+          <Label for="quotaWarnPercent">預警門檻（%）</Label>
+          <Input
+            id="quotaWarnPercent"
+            v-model.number="draft.quotaWarnPercent"
+            type="number"
+            min="1"
+            max="100"
+          />
+          <p v-if="errors.quotaWarnPercent" class="text-sm text-destructive">
+            {{ errors.quotaWarnPercent }}
+          </p>
+        </div>
+        <div class="space-y-2">
+          <Label for="quotaCriticalPercent">告急門檻（%）</Label>
+          <Input
+            id="quotaCriticalPercent"
+            v-model.number="draft.quotaCriticalPercent"
+            type="number"
+            min="1"
+            max="100"
+          />
+          <p v-if="errors.quotaCriticalPercent" class="text-sm text-destructive">
+            {{ errors.quotaCriticalPercent }}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+
     <div class="flex items-center justify-end gap-3">
       <p v-if="savedAt" class="text-sm text-muted-foreground">已於 {{ savedAt }} 儲存</p>
       <Button variant="outline" :disabled="!isDirty" @click="resetDraft">還原變更</Button>

@@ -123,7 +123,7 @@ function confirmReset(): void {
         <div>
           <h1 class="text-4xl font-black tracking-tight">後台總覽</h1>
           <p class="mt-2 text-muted-foreground">
-            集中掌握使用者狀態、AI 品質與稽核事件。
+            集中掌握使用者狀態、AI 額度與稽核事件。
           </p>
         </div>
       </div>
