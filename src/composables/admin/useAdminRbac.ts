@@ -1,11 +1,11 @@
 import { computed, type Component } from 'vue'
 import {
   CreditCard,
+  Gauge,
   LayoutDashboard,
   Megaphone,
   ScrollText,
   Settings,
-  Sparkles,
   Users,
 } from 'lucide-vue-next'
 import { getCurrentAdminRole } from './useAdminUsers'
@@ -22,7 +22,7 @@ const navIcons: Record<string, Component> = {
   '/admin/users': Users,
   '/admin/subscription': CreditCard,
   '/admin/content': Megaphone,
-  '/admin/ai-quality': Sparkles,
+  '/admin/ai-usage': Gauge,
   '/admin/audit': ScrollText,
   '/admin/settings': Settings,
 }

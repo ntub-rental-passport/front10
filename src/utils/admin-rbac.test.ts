@@ -13,7 +13,7 @@ const MATRIX: Record<string, Record<AdminRole, boolean>> = {
   '/admin': { super: true, admin: true },
   '/admin/subscription': { super: true, admin: true },
   '/admin/content': { super: true, admin: true },
-  '/admin/ai-quality': { super: true, admin: true },
+  '/admin/ai-usage': { super: true, admin: true },
   '/admin/users': { super: true, admin: false },
   '/admin/audit': { super: true, admin: false },
   '/admin/settings': { super: true, admin: false },

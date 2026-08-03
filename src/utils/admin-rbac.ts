@@ -33,7 +33,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     label: '內容與通知',
     items: [
       { label: '內容與通知', path: '/admin/content', roles: ['super', 'admin'] },
-      { label: 'AI 品質監控', path: '/admin/ai-quality', roles: ['super', 'admin'] },
+      { label: 'AI 使用量', path: '/admin/ai-usage', roles: ['super', 'admin'] },
     ],
   },
   {

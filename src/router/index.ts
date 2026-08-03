@@ -52,7 +52,9 @@ const router = createRouter({
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
         // 通知已併入內容管理，保留舊路徑避免既有書籤 404
         { path: 'notifications', redirect: '/admin/content' },
-        { path: 'ai-quality', component: () => import('@/src/pages/admin/ai-quality.vue') },
+        { path: 'ai-usage', component: () => import('@/src/pages/admin/ai-usage.vue') },
+        // 已改名為 AI 使用量，保留舊路徑避免既有書籤 404
+        { path: 'ai-quality', redirect: '/admin/ai-usage' },
         { path: 'subscription', component: () => import('@/src/pages/admin/subscription.vue') },
         { path: 'audit', component: () => import('@/src/pages/admin/audit.vue') },
         { path: 'settings', component: () => import('@/src/pages/admin/settings.vue') },
