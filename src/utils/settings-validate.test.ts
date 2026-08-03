@@ -114,22 +114,6 @@ describe('validateSettings', () => {
 })
 
 describe('AI 平台額度驗證', () => {
-  function baseSettings(): SystemSettings {
-    return {
-      siteName: 'RentMate 租隊友',
-      supportEmail: 'support@rentmate.tw',
-      maintenanceMode: false,
-      maintenanceMessage: '維護中',
-      pageSize: 20,
-      maxUploadMb: 10,
-      defaultAiQuota: 3,
-      platformGeminiTokenQuota: 2_000_000,
-      platformVisionPageQuota: 3_000,
-      quotaWarnPercent: 80,
-      quotaCriticalPercent: 95,
-    }
-  }
-
   it('合法設定沒有錯誤', () => {
     expect(validateSettings(baseSettings())).toEqual({})
   })
