@@ -15,6 +15,7 @@ import {
 import { RotateCcw } from 'lucide-vue-next'
 import BarStatCard from '@/src/components/admin/BarStatCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
+import QuotaProgressCard, { type QuotaProgressItem } from '@/src/components/admin/QuotaProgressCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
@@ -25,7 +26,6 @@ import type { AdminUserRole } from '@/src/mocks/admin-seed'
 const CHART_INDIGO = '#5660D6'
 const CHART_TEAL = '#0E9488'
 const CHART_AMBER = '#D97706'
-const CHART_RED = '#DC2626'
 const CHART_INDIGO_MUTED = '#B4B9EE'
 
 const { users } = useAdminUsers()
@@ -58,14 +58,19 @@ const suspendedNote = computed(() => {
   return suspended > 0 ? `停用中 ${suspended} 筆` : '目前沒有停用帳號'
 })
 
-const usageLabels = computed(() => usages.value.map((usage) => usage.provider.label))
-
-const usageValues = computed(() => usages.value.map((usage) => usage.percent))
-
-const usageColors = computed(() =>
-  usages.value.map((usage) =>
-    usage.level === 'critical' ? CHART_RED : usage.level === 'warn' ? CHART_AMBER : CHART_INDIGO,
-  ),
+const usageBars = computed<QuotaProgressItem[]>(() =>
+  usages.value.map((usage) => ({
+    id: usage.provider.id,
+    label: usage.provider.label,
+    percent: usage.percent,
+    level: usage.level,
+    unset: usage.unset,
+    caption: usage.unset
+      ? '尚未設定額度上限'
+      : usage.daysLeft === null
+        ? `剩餘 ${usage.remaining.toLocaleString('zh-TW')}・目前無消耗`
+        : `剩餘 ${usage.remaining.toLocaleString('zh-TW')}・預估可撐 ${usage.daysLeft} 天`,
+  })),
 )
 
 const trendDays = computed(() => {
@@ -142,12 +147,10 @@ function confirmReset(): void {
         :segments="roleSegments"
         :note="suspendedNote"
       />
-      <BarStatCard
+      <QuotaProgressCard
         title="AI 額度用量"
         to="/admin/ai-usage"
-        :labels="usageLabels"
-        :values="usageValues"
-        :colors="usageColors"
+        :items="usageBars"
         :corner-text="alertCount > 0 ? `${alertCount} 項告急` : '額度充足'"
         :corner-variant="alertCount > 0 ? 'destructive' : 'secondary'"
       />
