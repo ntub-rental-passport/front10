@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, Boolean, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, Boolean, Enum, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 import datetime
 from database import Base
@@ -8,8 +8,10 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    email = Column(String(100), unique=True, nullable=False, index=True)
-    password = Column(String(255), nullable=False)
+    email = Column(String(254), unique=True, nullable=False, index=True)
+    display_name = Column(String(100), nullable=True)
+    avatar_url = Column(Text, nullable=True)
+    email_verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
 
     # 關聯設定
@@ -17,6 +19,82 @@ class User(Base):
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     trash_favorites = relationship("TrashFavorite", back_populates="user", cascade="all, delete-orphan")
     subsidy_applications = relationship("SubsidyApplication", back_populates="user", cascade="all, delete-orphan")
+    roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+    identities = relationship("UserIdentity", back_populates="user", cascade="all, delete-orphan")
+    password_credential = relationship(
+        "UserPasswordCredential",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (UniqueConstraint("user_id", "role", name="uq_user_role"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(Enum("tenant", "landlord"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="roles")
+
+
+class UserIdentity(Base):
+    __tablename__ = "user_identities"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subject", name="uq_identity_provider_subject"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    provider = Column(Enum("google"), nullable=False)
+    provider_subject = Column(String(255), nullable=False)
+    provider_email = Column(String(254), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="identities")
+
+
+class UserPasswordCredential(Base):
+    __tablename__ = "user_password_credentials"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    password_hash = Column(String(255), nullable=False)
+    password_changed_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="password_credential")
+
+
+class PendingRegistration(Base):
+    __tablename__ = "pending_registrations"
+    __table_args__ = (
+        UniqueConstraint("email", name="uq_pending_email"),
+        UniqueConstraint("provider", "provider_subject", name="uq_pending_provider_subject"),
+    )
+
+    id = Column(String(36), primary_key=True)
+    email = Column(String(254), nullable=False, index=True)
+    provider = Column(Enum("password", "google"), nullable=False)
+    provider_subject = Column(String(255), nullable=True)
+    display_name = Column(String(100), nullable=True)
+    avatar_url = Column(Text, nullable=True)
+    password_hash = Column(String(255), nullable=True)
+    role = Column(Enum("tenant", "landlord"), nullable=False)
+    invite_code = Column(String(100), nullable=True)
+    verification_code_hash = Column(String(64), nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    resend_available_at = Column(DateTime, nullable=False)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    send_count = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.datetime.utcnow,
+        onupdate=datetime.datetime.utcnow,
+    )
 
 # 2. 租屋案件模型
 class Rental(Base):
