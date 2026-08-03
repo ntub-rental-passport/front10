@@ -34,6 +34,7 @@ npx vue-tsc --noEmit              # 型別檢查（全專案）
 
 | 檔案 | 責任 | 動作 |
 |---|---|---|
+| `src/utils/date-key.ts` | 本地時區 YYYY-MM-DD，seed 與計算層共用 | 新增 |
 | `src/utils/admin-ai-usage.ts` | 純計算：本月累計、日均、耗盡預估、門檻判定 | 新增 |
 | `src/utils/admin-ai-usage.test.ts` | 上者的測試 | 新增 |
 | `src/mocks/admin/ai-usage.ts` | 型別與 seed 資料 | 新增 |
@@ -61,14 +62,35 @@ npx vue-tsc --noEmit              # 型別檢查（全專案）
 計算函式的測試需要 `AiUsageDaily` 型別，所以資料層必須先建立。
 
 **Files:**
+- Create: `src/utils/date-key.ts`
 - Create: `src/mocks/admin/ai-usage.ts`
 - Modify: `src/mocks/admin-seed.ts`
 
-- [ ] **Step 1: 建立型別與 seed**
+- [ ] **Step 1: 建立共用的日期字串工具**
+
+`mocks/admin/ai-usage.ts`（產生 seed 日期）與 `utils/admin-ai-usage.ts`（比對日期）都需要同一套「本地時區 YYYY-MM-DD」邏輯。若各自實作就是重複的邏輯區塊；若互相 import 則形成模組循環（utils 已用 `import type` 取用 mocks 的型別）。因此抽成獨立的共用模組。
+
+建立 `src/utils/date-key.ts`：
+
+```ts
+/**
+ * 本地時區的 YYYY-MM-DD。
+ * 不可用 toISOString()：那是 UTC，在 UTC+8 會把當地凌晨的日期算成前一天。
+ */
+export function dateKey(date: Date): string {
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+```
+
+- [ ] **Step 2: 建立型別與 seed**
 
 建立 `src/mocks/admin/ai-usage.ts`：
 
 ```ts
+import { dateKey } from '@/src/utils/date-key'
+
 export type AiProviderId = 'gemini' | 'vision'
 export type AiUsageUnit = 'token' | 'page'
 
@@ -90,14 +112,10 @@ export const AI_PROVIDERS: AiProvider[] = [
   { id: 'vision', label: 'Google Cloud Vision', unit: 'page' },
 ]
 
-/** 以本地時區產生 YYYY-MM-DD。與 admin-ai-usage.ts 的 dateKey 同邏輯，
- *  但 mocks 不依賴 utils，避免 seed 與計算層互相 import。 */
 function dayKey(offsetDays: number): string {
   const date = new Date()
   date.setDate(date.getDate() - offsetDays)
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
+  return dateKey(date)
 }
 
 /**
@@ -132,7 +150,7 @@ export function seedAiUsage(): AiUsageDaily[] {
 }
 ```
 
-- [ ] **Step 2: 在 admin-seed 併入新 export**
+- [ ] **Step 3: 在 admin-seed 併入新 export**
 
 修改 `src/mocks/admin-seed.ts`，在既有 `export * from './admin/ai-quality'` **下一行**加入（此時**不要**刪除舊行，Task 8 才刪；提前刪除會讓仍存在的 `ai-quality.vue` 編譯失敗）：
 
@@ -140,7 +158,7 @@ export function seedAiUsage(): AiUsageDaily[] {
 export * from './admin/ai-usage'
 ```
 
-- [ ] **Step 3: 驗證型別與既有測試未被破壞**
+- [ ] **Step 4: 驗證型別與既有測試未被破壞**
 
 Run: `npx vue-tsc --noEmit`
 Expected: 無錯誤輸出
@@ -148,10 +166,10 @@ Expected: 無錯誤輸出
 Run: `npm test`
 Expected: 既有測試全數通過
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/mocks/admin/ai-usage.ts src/mocks/admin-seed.ts
+git add src/utils/date-key.ts src/mocks/admin/ai-usage.ts src/mocks/admin-seed.ts
 git commit -m "feat: 新增 AI 用量 mock 資料與供應商定義"
 ```
 
@@ -173,7 +191,6 @@ vitest 設定於 `vite.config.ts` 為 `environment: 'node'`、`include: ['src/**
 import { describe, expect, it } from 'vitest'
 import {
   dailyAverage,
-  dateKey,
   daysLeftInMonth,
   daysUntilExhausted,
   monthToDateUnits,
@@ -187,13 +204,6 @@ const TODAY = new Date(2026, 7, 10)
 function rec(date: string, units: number, provider: AiUsageDaily['provider'] = 'gemini'): AiUsageDaily {
   return { date, provider, units, calls: 1 }
 }
-
-describe('dateKey', () => {
-  it('輸出本地時區的 YYYY-MM-DD，不受 UTC 位移影響', () => {
-    expect(dateKey(new Date(2026, 7, 1))).toBe('2026-08-01')
-    expect(dateKey(new Date(2026, 11, 31))).toBe('2026-12-31')
-  })
-})
 
 describe('monthToDateUnits', () => {
   it('只加總當月且供應商相符的紀錄', () => {
@@ -296,19 +306,13 @@ Expected: FAIL，錯誤訊息為找不到模組 `./admin-ai-usage`
 建立 `src/utils/admin-ai-usage.ts`：
 
 ```ts
+import { dateKey } from './date-key'
 import type { AiProviderId, AiUsageDaily } from '@/src/mocks/admin/ai-usage'
 
 export type QuotaLevel = 'ok' | 'warn' | 'critical'
 
 const DEFAULT_AVERAGE_WINDOW = 7
 const CRITICAL_DAYS_LEFT = 3
-
-/** 以本地時區輸出 YYYY-MM-DD。不可用 toISOString，UTC 位移會讓日期跳掉一天。 */
-export function dateKey(date: Date): string {
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
 
 function monthPrefix(date: Date): string {
   return dateKey(date).slice(0, 7) // YYYY-MM
@@ -668,12 +672,12 @@ import {
 } from '@/src/mocks/admin-seed'
 import {
   dailyAverage,
-  dateKey,
   daysUntilExhausted,
   monthToDateUnits,
   quotaStatus,
   type QuotaLevel,
 } from '@/src/utils/admin-ai-usage'
+import { dateKey } from '@/src/utils/date-key'
 
 const records = createAdminCollection<AiUsageDaily[]>('ai-usage', seedAiUsage)
 
@@ -1307,8 +1311,10 @@ export * from './admin/ai-quality'
 
 - [ ] **Step 4: 全面驗證**
 
-Run: `grep -rn "ai-quality\|AiQuality\|AiOutputRecord\|seedAiOutputs" src docs`
+Run: `grep -rn "ai-quality\|AiQuality\|AiOutputRecord\|seedAiOutputs" src`
 Expected: 僅剩 `src/router/index.ts` 的轉址那一行
+
+（只掃 `src`。`docs/` 底下的 spec 與本計畫本來就會提到舊名稱，掃進去只會得到大量預期中的雜訊。）
 
 Run: `npx vue-tsc --noEmit`
 Expected: 無錯誤
