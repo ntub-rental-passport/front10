@@ -54,7 +54,7 @@ export const CONTRACT_FIELD_GROUPS = [
     order: 8,
     title: '押金約定',
     shortTitle: '押金',
-    description: '押金月數及金額，不得超過二個月租金。',
+    description: '確認契約是否載明押金月數及金額。',
   },
   {
     id: 'expenses',
@@ -315,6 +315,7 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     '遺留物之處理',
     ['遺留物之處理', '視為拋棄其所有權'],
     'leftover_clause',
+    'recommended',
   ),
   field(
     'jurisdiction_court',
