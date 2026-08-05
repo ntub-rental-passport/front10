@@ -16,11 +16,15 @@ import { RotateCcw } from 'lucide-vue-next'
 import BarStatCard from '@/src/components/admin/BarStatCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
 import QuotaProgressCard, { type QuotaProgressItem } from '@/src/components/admin/QuotaProgressCard.vue'
+import StatusCard from '@/src/components/admin/StatusCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
+import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
+import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { resetAdminData } from '@/src/composables/admin/useAdminStore'
 import { formatDateTime } from '@/src/utils/admin-format'
+import { isMaintenanceActive } from '@/src/utils/maintenance'
 import type { AdminUserRole } from '@/src/mocks/admin-seed'
 
 const CHART_INDIGO = '#5660D6'
@@ -31,8 +35,19 @@ const CHART_INDIGO_MUTED = '#B4B9EE'
 const { users } = useAdminUsers()
 const { usages, alerts, alertCount } = useAdminAiUsage()
 const { events, logAction } = useAdminAudit()
+const { settings } = useAdminSettings()
+const { canAccessPath } = useAdminRbac()
 
 const resetOpen = ref(false)
+
+// 開關打開不代表此刻生效，排程可能尚未開始或已結束
+const maintenanceActive = computed(() => isMaintenanceActive(settings.value))
+
+const maintenanceDetail = computed(() => {
+  if (maintenanceActive.value) return '一般使用者目前看到維護頁'
+  if (settings.value.maintenanceMode) return '維護模式已開啟，但依排程此刻尚未生效'
+  return '所有功能開放中'
+})
 
 const todayEventCount = computed(() => {
   const today = new Date().toDateString()
@@ -138,7 +153,15 @@ function confirmReset(): void {
       </Button>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <StatusCard
+        title="維護狀態"
+        :to="canAccessPath('/admin/settings') ? '/admin/settings' : undefined"
+        :status="maintenanceActive ? '維護中' : '運作正常'"
+        :tone="maintenanceActive ? 'alert' : 'ok'"
+        :detail="maintenanceDetail"
+        corner-text="本機設定"
+      />
       <DonutStatCard
         title="使用者組成"
         to="/admin/users"

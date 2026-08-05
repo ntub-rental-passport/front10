@@ -3,6 +3,15 @@ export interface SystemSettings {
   supportEmail: string
   maintenanceMode: boolean
   maintenanceMessage: string
+  // datetime-local 格式（YYYY-MM-DDTHH:mm），空字串代表未設定排程＝開啟即持續生效
+  maintenanceStartsAt: string
+  maintenanceEndsAt: string
+  // 換行分隔的 email，維護期間仍可進站
+  maintenanceAllowlist: string
+  loginMaxAttempts: number
+  loginLockoutMinutes: number
+  sessionTimeoutMinutes: number
+  passwordMinLength: number
   pageSize: number
   maxUploadMb: number
   defaultAiQuota: number
@@ -20,6 +29,13 @@ export function seedSettings(): SystemSettings {
     supportEmail: 'support@rentmate.tw',
     maintenanceMode: false,
     maintenanceMessage: '系統維護中，預計 30 分鐘後恢復，造成不便敬請見諒。',
+    maintenanceStartsAt: '',
+    maintenanceEndsAt: '',
+    maintenanceAllowlist: 'admin@rentmate.tw',
+    loginMaxAttempts: 5,
+    loginLockoutMinutes: 15,
+    sessionTimeoutMinutes: 120,
+    passwordMinLength: 8,
     pageSize: 20,
     maxUploadMb: 10,
     defaultAiQuota: 3,

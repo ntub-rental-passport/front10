@@ -6,13 +6,16 @@ import ReviewerLayout from '@/src/components/reviewer-layout.vue'
 import {
   getAuthSession,
   getPendingRegistration,
+  isSessionExpired,
   needsNicknameSetup,
   resolveRoleHome,
+  signOut,
   type AuthRole,
 } from '@/src/composables/useAuth'
 import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 import { canAdminAccessPath } from '@/src/utils/admin-rbac'
 import { getCurrentAdminRole } from '@/src/composables/admin/useAdminRbac'
+import { isMaintenanceActive, isMaintenanceBypassPath } from '@/src/utils/maintenance'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -151,15 +154,22 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const maintenanceOn = adminSettings.value.maintenanceMode
-  if (maintenanceOn && !to.path.startsWith('/admin') && to.path !== '/maintenance') {
+  let session = getAuthSession()
+
+  // Session 逾時：清掉再往下走，後續的 requiresAuth 檢查會自然導向登入頁
+  if (isSessionExpired(session, adminSettings.value.sessionTimeoutMinutes)) {
+    signOut()
+    session = null
+  }
+
+  const maintenanceOn = isMaintenanceActive(adminSettings.value, new Date(), session?.email)
+  if (maintenanceOn && !isMaintenanceBypassPath(to.path)) {
     return '/maintenance'
   }
   if (!maintenanceOn && to.path === '/maintenance') {
     return '/'
   }
 
-  const session = getAuthSession()
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth)
   const pendingRegistration = getPendingRegistration()
 

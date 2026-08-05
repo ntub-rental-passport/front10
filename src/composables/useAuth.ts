@@ -14,6 +14,8 @@ export interface AuthSession {
   role: AuthRole
   emailVerified: boolean
   nickname: string | null
+  /** 登入時間（epoch 毫秒）。舊 session 沒有這個欄位，視為不過期。 */
+  issuedAt?: number
 }
 
 export interface PendingRegistration {
@@ -117,6 +119,7 @@ function createSession(role: AuthRole, profile: UserProfile): AuthSession {
     role,
     emailVerified: profile.emailVerified,
     nickname: profile.nickname,
+    issuedAt: Date.now(),
   }
 
   writeJson(AUTH_STORAGE_KEY, session)
@@ -125,6 +128,24 @@ function createSession(role: AuthRole, profile: UserProfile): AuthSession {
 
 export function getAuthSession(): AuthSession | null {
   return readJson<AuthSession>(AUTH_STORAGE_KEY)
+}
+
+/**
+ * Session 是否已超過有效時間。
+ *
+ * 逾時分鐘數由呼叫端傳入而非在這裡讀 adminSettings —— useAuth 若相依後台設定，
+ * 會與 useAdminAudit（它需要 getAuthSession 取得操作者）形成循環相依。
+ *
+ * 舊 session 沒有 issuedAt，視為不過期，避免改版後把所有人踢出去。
+ */
+export function isSessionExpired(
+  session: AuthSession | null,
+  timeoutMinutes: number,
+  now: number = Date.now(),
+): boolean {
+  if (!session?.issuedAt) return false
+  if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) return false
+  return now - session.issuedAt > timeoutMinutes * 60_000
 }
 
 export function signIn(role: AuthRole, email: string): AuthSession {

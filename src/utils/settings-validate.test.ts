@@ -3,20 +3,9 @@ import { validateSettings } from './settings-validate'
 import { migrateSettings } from '@/src/mocks/admin/settings'
 import type { SystemSettings } from '@/src/mocks/admin/settings'
 
+// 直接沿用種子值，新增設定欄位時這份 fixture 會自動跟上，不必手動補。
 function baseSettings(): SystemSettings {
-  return {
-    siteName: 'RentMate',
-    supportEmail: 'support@rentmate.tw',
-    maintenanceMode: false,
-    maintenanceMessage: '系統維護中，請稍後再試。',
-    pageSize: 20,
-    maxUploadMb: 10,
-    defaultAiQuota: 3,
-    platformGeminiTokenQuota: 2_000_000,
-    platformVisionPageQuota: 3_000,
-    quotaWarnPercent: 80,
-    quotaCriticalPercent: 95,
-  }
+  return migrateSettings({})
 }
 
 describe('validateSettings', () => {
@@ -161,5 +150,89 @@ describe('migrateSettings', () => {
     // 使用者原本的設定不可被預設值覆蓋
     expect(migrated.siteName).toBe('舊站名')
     expect(migrated.pageSize).toBe(50)
+  })
+})
+
+describe('維護排程與白名單驗證', () => {
+  it('未設排程時不檢查順序', () => {
+    const result = validateSettings(baseSettings())
+    expect(result.maintenanceEndsAt).toBeUndefined()
+  })
+
+  it('只設單邊時不檢查順序', () => {
+    const startOnly = validateSettings({
+      ...baseSettings(),
+      maintenanceStartsAt: '2026-08-05T10:00',
+    })
+    expect(startOnly.maintenanceEndsAt).toBeUndefined()
+  })
+
+  it('結束時間早於開始時間時報錯', () => {
+    const result = validateSettings({
+      ...baseSettings(),
+      maintenanceStartsAt: '2026-08-05T14:00',
+      maintenanceEndsAt: '2026-08-05T10:00',
+    })
+    expect(result.maintenanceEndsAt).toBe('結束時間必須晚於開始時間')
+  })
+
+  it('起訖相同時報錯（區間為零，等於沒有生效時段）', () => {
+    const result = validateSettings({
+      ...baseSettings(),
+      maintenanceStartsAt: '2026-08-05T10:00',
+      maintenanceEndsAt: '2026-08-05T10:00',
+    })
+    expect(result.maintenanceEndsAt).toBe('結束時間必須晚於開始時間')
+  })
+
+  it('順序正確時通過', () => {
+    const result = validateSettings({
+      ...baseSettings(),
+      maintenanceStartsAt: '2026-08-05T10:00',
+      maintenanceEndsAt: '2026-08-05T14:00',
+    })
+    expect(result.maintenanceEndsAt).toBeUndefined()
+  })
+
+  it('白名單含無效 Email 時指出是哪一筆', () => {
+    const result = validateSettings({
+      ...baseSettings(),
+      maintenanceAllowlist: 'ok@rentmate.tw\nnot-an-email\nalso@ok.tw',
+    })
+    expect(result.maintenanceAllowlist).toBe('「not-an-email」不是有效的 Email')
+  })
+
+  it('白名單留空是允許的', () => {
+    const result = validateSettings({ ...baseSettings(), maintenanceAllowlist: '' })
+    expect(result.maintenanceAllowlist).toBeUndefined()
+  })
+})
+
+describe('安全性設定驗證', () => {
+  const cases: Array<[keyof SystemSettings, number, string | undefined]> = [
+    ['loginMaxAttempts', 0, '登入失敗次數需介於 1 到 20'],
+    ['loginMaxAttempts', 21, '登入失敗次數需介於 1 到 20'],
+    ['loginMaxAttempts', 5, undefined],
+    ['loginLockoutMinutes', 0, '鎖定時間需介於 1 到 1440 分鐘'],
+    ['loginLockoutMinutes', 1441, '鎖定時間需介於 1 到 1440 分鐘'],
+    ['loginLockoutMinutes', 15, undefined],
+    ['sessionTimeoutMinutes', 4, 'Session 逾時需介於 5 到 10080 分鐘'],
+    ['sessionTimeoutMinutes', 10081, 'Session 逾時需介於 5 到 10080 分鐘'],
+    ['sessionTimeoutMinutes', 120, undefined],
+    ['passwordMinLength', 5, '密碼最短長度需介於 6 到 64'],
+    ['passwordMinLength', 65, '密碼最短長度需介於 6 到 64'],
+    ['passwordMinLength', 8, undefined],
+  ]
+
+  for (const [field, value, expected] of cases) {
+    it(`${field} = ${value} → ${expected ?? '通過'}`, () => {
+      const result = validateSettings({ ...baseSettings(), [field]: value })
+      expect(result[field]).toBe(expected)
+    })
+  }
+
+  it('非數字一律報錯', () => {
+    const result = validateSettings({ ...baseSettings(), sessionTimeoutMinutes: Number.NaN })
+    expect(result.sessionTimeoutMinutes).toBe('Session 逾時需介於 5 到 10080 分鐘')
   })
 })

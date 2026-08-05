@@ -25,6 +25,13 @@ import {
   signInWithEmail,
   type EmailSignInError,
 } from '@/src/composables/useAuth'
+import { adminSettings } from '@/src/composables/admin/useAdminSettings'
+import {
+  clearAttempts,
+  evaluateLockout,
+  getAttemptRecord,
+  recordFailure,
+} from '@/src/utils/login-lockout'
 import {
   authIdentityOptions,
   getAuthIdentity,
@@ -120,12 +127,28 @@ async function handleLogin(): Promise<void> {
   loginError.value = ''
   if (emailState.value === 'error' || passwordState.value === 'error') return
 
+  const policy = adminSettings.value
+  const lockout = evaluateLockout(getAttemptRecord(email.value), policy)
+  if (lockout.locked) {
+    loginError.value = `登入失敗次數過多，請於 ${lockout.unlocksInMinutes} 分鐘後再試。`
+    return
+  }
+
   const result = await signInWithEmail(email.value, password.value, selectedOption.value.authRole)
   if ('error' in result) {
+    // 只有帳密錯誤才計次；服務中斷不是使用者的問題，不該因此把人鎖住
+    if (result.error === 'invalid-password' || result.error === 'account-not-found') {
+      const next = evaluateLockout(recordFailure(email.value), policy)
+      loginError.value = next.locked
+        ? `登入失敗次數過多，請於 ${next.unlocksInMinutes} 分鐘後再試。`
+        : `${loginErrorMessages[result.error]}（剩餘 ${next.remainingAttempts} 次機會）`
+      return
+    }
     loginError.value = loginErrorMessages[result.error]
     return
   }
 
+  clearAttempts(email.value)
   await router.push(getPostLoginTarget())
 }
 

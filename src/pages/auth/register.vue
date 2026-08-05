@@ -25,6 +25,7 @@ import {
   startEmailRegistration,
 } from '@/src/composables/useAuth'
 import { getGoogleLoginUrl } from '@/src/services/authApi'
+import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 import {
   authIdentityOptions,
   getAuthIdentity,
@@ -81,14 +82,19 @@ const loginLink = computed(() => ({
   },
 }))
 
+// 密碼最短長度由系統設定決定，改設定後註冊頁的規則與提示都會跟著變
+const passwordMinLength = computed(() => adminSettings.value.passwordMinLength)
+const PASSWORD_MAX_LENGTH = 20
+
 const passwordRules = computed<PasswordRule[]>(() => {
   const password = form.value.password
 
   return [
     {
       id: 'length',
-      label: '8-20 個字元',
-      met: password.length >= 8 && password.length <= 20,
+      label: `${passwordMinLength.value}-${PASSWORD_MAX_LENGTH} 個字元`,
+      met:
+        password.length >= passwordMinLength.value && password.length <= PASSWORD_MAX_LENGTH,
     },
     {
       id: 'uppercase',
@@ -146,7 +152,7 @@ const passwordMessage = computed(() => {
   if (passwordState.value === 'valid') return '密碼強度：強'
   if (passwordState.value === 'error') {
     return form.value.password
-      ? '密碼至少需要 8 個字元，並包含大寫字母、數字與特殊符號。'
+      ? `密碼至少需要 ${passwordMinLength.value} 個字元，並包含大寫字母、數字與特殊符號。`
       : '請先輸入密碼。'
   }
   return ''

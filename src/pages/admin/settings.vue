@@ -14,9 +14,10 @@ import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Switch } from '@/components/ui/switch/index'
 import { Textarea } from '@/components/ui/textarea/index'
-import { AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle, Info, ShieldOff } from 'lucide-vue-next'
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { validateSettings } from '@/src/utils/settings-validate'
+import { isMaintenanceActive } from '@/src/utils/maintenance'
 import type { SystemSettings } from '@/src/mocks/admin/settings'
 
 const { settings, saveSettings } = useAdminSettings()
@@ -38,6 +39,14 @@ const turningOnMaintenance = computed(
   () => draft.value.maintenanceMode && !settings.value.maintenanceMode,
 )
 
+// 開關打開不代表此刻生效：排程可能還沒到，或已經結束
+const maintenanceStatusText = computed(() => {
+  if (!draft.value.maintenanceMode) return '已關閉：平台正常運作'
+  return isMaintenanceActive(draft.value)
+    ? '已開啟且此刻生效：使用者會看到維護頁'
+    : '已開啟，但依排程此刻尚未生效'
+})
+
 function confirmSave(): void {
   saveSettings(draft.value)
   confirmOpen.value = false
@@ -46,6 +55,22 @@ function confirmSave(): void {
 
 function resetDraft(): void {
   draft.value = { ...settings.value }
+}
+
+/**
+ * 緊急出口：不經確認對話框，直接關閉維護模式並清掉排程。
+ * 維護中誤設排程時，多一道確認就多一次點錯的機會。
+ */
+function liftMaintenanceNow(): void {
+  const next: SystemSettings = {
+    ...settings.value,
+    maintenanceMode: false,
+    maintenanceStartsAt: '',
+    maintenanceEndsAt: '',
+  }
+  saveSettings(next)
+  draft.value = { ...next }
+  savedAt.value = new Date().toLocaleTimeString('zh-TW', { hour12: false })
 }
 </script>
 
@@ -77,26 +102,175 @@ function resetDraft(): void {
 
     <Card class="rounded-[1.5rem]">
       <CardHeader>
-        <CardTitle>系統維護</CardTitle>
-        <CardDescription>開啟後，一般使用者將無法使用平台，管理後台不受影響。</CardDescription>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>系統維護</CardTitle>
+            <CardDescription>
+              開啟後，一般使用者會看到維護頁。管理後台與內部人員登入頁（/staff-login）不受影響。
+            </CardDescription>
+          </div>
+          <Button
+            v-if="settings.maintenanceMode"
+            variant="destructive"
+            @click="liftMaintenanceNow"
+          >
+            <ShieldOff class="mr-1 h-4 w-4" />
+            立即解除維護
+          </Button>
+        </div>
       </CardHeader>
       <CardContent class="space-y-4">
+        <div class="flex gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+          <Info class="h-5 w-5 shrink-0 text-amber-600" />
+          <div>
+            <p class="font-medium">這項設定目前只存在你這個瀏覽器</p>
+            <p class="mt-1 text-muted-foreground">
+              維護狀態尚未接後端，因此
+              <code class="rounded bg-muted px-1">localhost</code> 與
+              <code class="rounded bg-muted px-1">127.0.0.1</code>
+              會各有一份、互不同步。在其中一邊關閉，另一邊仍可能是開啟的。
+            </p>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between rounded-2xl border bg-muted/20 p-4">
           <div>
             <p class="font-medium">維護模式</p>
             <p class="text-sm text-muted-foreground">
-              {{ draft.maintenanceMode ? '已開啟：使用者會看到維護頁' : '已關閉：平台正常運作' }}
+              {{ maintenanceStatusText }}
             </p>
           </div>
           <Switch v-model="draft.maintenanceMode" />
         </div>
 
-        <div v-if="draft.maintenanceMode" class="space-y-2">
-          <Label for="maintenanceMessage">維護說明文字</Label>
-          <Textarea id="maintenanceMessage" v-model="draft.maintenanceMessage" rows="3" />
-          <p v-if="errors.maintenanceMessage" class="text-sm text-destructive">
-            {{ errors.maintenanceMessage }}
+        <div v-if="draft.maintenanceMode" class="space-y-4">
+          <div class="space-y-2">
+            <Label for="maintenanceMessage">維護說明文字</Label>
+            <Textarea id="maintenanceMessage" v-model="draft.maintenanceMessage" rows="3" />
+            <p v-if="errors.maintenanceMessage" class="text-sm text-destructive">
+              {{ errors.maintenanceMessage }}
+            </p>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="space-y-2">
+              <Label for="maintenanceStartsAt">開始時間（選填）</Label>
+              <Input
+                id="maintenanceStartsAt"
+                v-model="draft.maintenanceStartsAt"
+                type="datetime-local"
+              />
+            </div>
+            <div class="space-y-2">
+              <Label for="maintenanceEndsAt">結束時間（選填）</Label>
+              <Input
+                id="maintenanceEndsAt"
+                v-model="draft.maintenanceEndsAt"
+                type="datetime-local"
+              />
+              <p v-if="errors.maintenanceEndsAt" class="text-sm text-destructive">
+                {{ errors.maintenanceEndsAt }}
+              </p>
+            </div>
+          </div>
+          <p class="text-sm text-muted-foreground">
+            兩者留空代表開啟後持續生效，直到你手動關閉。
           </p>
+
+          <div class="space-y-2">
+            <Label for="maintenanceAllowlist">白名單 Email（一行一個）</Label>
+            <Textarea
+              id="maintenanceAllowlist"
+              v-model="draft.maintenanceAllowlist"
+              rows="3"
+              placeholder="admin@rentmate.tw"
+            />
+            <p v-if="errors.maintenanceAllowlist" class="text-sm text-destructive">
+              {{ errors.maintenanceAllowlist }}
+            </p>
+            <p class="text-sm text-muted-foreground">
+              名單內的帳號在維護期間仍可正常使用平台，方便上線前驗證。
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card class="rounded-[1.5rem]">
+      <CardHeader>
+        <CardTitle>安全性設定</CardTitle>
+        <CardDescription>登入保護與 Session 有效期限。</CardDescription>
+      </CardHeader>
+      <CardContent class="space-y-4">
+        <div class="grid gap-4 md:grid-cols-2">
+          <div class="space-y-2">
+            <Label for="loginMaxAttempts">登入失敗鎖定次數</Label>
+            <Input
+              id="loginMaxAttempts"
+              v-model.number="draft.loginMaxAttempts"
+              type="number"
+              min="1"
+              max="20"
+            />
+            <p v-if="errors.loginMaxAttempts" class="text-sm text-destructive">
+              {{ errors.loginMaxAttempts }}
+            </p>
+          </div>
+          <div class="space-y-2">
+            <Label for="loginLockoutMinutes">鎖定時間（分鐘）</Label>
+            <Input
+              id="loginLockoutMinutes"
+              v-model.number="draft.loginLockoutMinutes"
+              type="number"
+              min="1"
+              max="1440"
+            />
+            <p v-if="errors.loginLockoutMinutes" class="text-sm text-destructive">
+              {{ errors.loginLockoutMinutes }}
+            </p>
+          </div>
+          <div class="space-y-2">
+            <Label for="sessionTimeoutMinutes">Session 有效時間（分鐘）</Label>
+            <Input
+              id="sessionTimeoutMinutes"
+              v-model.number="draft.sessionTimeoutMinutes"
+              type="number"
+              min="5"
+              max="10080"
+            />
+            <p v-if="errors.sessionTimeoutMinutes" class="text-sm text-destructive">
+              {{ errors.sessionTimeoutMinutes }}
+            </p>
+            <p class="text-sm text-muted-foreground">從登入時起算，逾時後自動登出。</p>
+          </div>
+          <div class="space-y-2">
+            <Label for="passwordMinLength">密碼最短長度</Label>
+            <Input
+              id="passwordMinLength"
+              v-model.number="draft.passwordMinLength"
+              type="number"
+              min="6"
+              max="64"
+            />
+            <p v-if="errors.passwordMinLength" class="text-sm text-destructive">
+              {{ errors.passwordMinLength }}
+            </p>
+          </div>
+        </div>
+
+        <div class="flex gap-3 rounded-2xl border bg-muted/20 p-4 text-sm">
+          <Info class="h-5 w-5 shrink-0 text-muted-foreground" />
+          <div class="space-y-1 text-muted-foreground">
+            <p>
+              <span class="font-medium text-foreground">密碼長度</span>與
+              <span class="font-medium text-foreground">Session 有效時間</span>
+              目前會實際生效。
+            </p>
+            <p>
+              <span class="font-medium text-foreground">登入失敗鎖定</span>
+              目前只在前端計數，清除瀏覽器資料即可繞過。接上後端驗證後才是真正的鎖定。
+            </p>
+          </div>
         </div>
       </CardContent>
     </Card>
