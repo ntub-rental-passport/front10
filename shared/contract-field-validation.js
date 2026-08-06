@@ -209,7 +209,7 @@ export function isValidContractFieldFormat(format, value, options = []) {
     }
     case 'months': {
       const months = Number(normalized.match(/\d+/)?.[0] ?? 0)
-      return /^\d+\s*個?月$/.test(normalized) && months > 0 && months <= 2
+      return /^\d+\s*個?月(?:租金)?$/.test(normalized) && months > 0
     }
     case 'area':
       return isValidPositiveArea(normalized)

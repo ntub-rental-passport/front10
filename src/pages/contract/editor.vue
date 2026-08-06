@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   loadContractOcrResult,
   mergeContractPageTexts,
@@ -112,6 +112,7 @@ interface PaginationItem {
 }
 
 const storedOcrResult = ref<ContractOcrResult | null>(loadContractOcrResult())
+const route = useRoute()
 const initialPageTexts = storedOcrResult.value?.pageTexts.length
   ? storedOcrResult.value.pageTexts
   : storedOcrResult.value?.text
@@ -409,7 +410,13 @@ const isSaved = ref(false)
 const isDirty = ref(false)
 const saveError = ref('')
 const activeFieldFilter = ref<FieldFilter>('all')
-const activeFieldGroupId = ref(CONTRACT_FIELD_GROUPS[0]?.id ?? 'review')
+const requestedGroupId = typeof route.query.group === 'string' ? route.query.group : ''
+const activeFieldGroupId = ref(
+  CONTRACT_FIELD_GROUPS.some((group) => group.id === requestedGroupId)
+    ? requestedGroupId
+    : (CONTRACT_FIELD_GROUPS[0]?.id ?? 'review'),
+)
+const linkedFieldId = ref(typeof route.query.field === 'string' ? route.query.field : '')
 const searchQuery = ref('')
 const activeSearchMatchIndex = ref(-1)
 const activeFieldHighlight = ref<TextMatch | null>(null)
@@ -453,9 +460,12 @@ const extractionProgress = computed(() =>
     : 0,
 )
 const completedRequiredCount = computed(() => requiredFields.value.filter(isFieldCompleted).length)
+const reviewableRequiredCount = computed(
+  () => requiredFields.value.filter(isFieldPopulated).length,
+)
 const reviewProgress = computed(() =>
-  requiredFields.value.length
-    ? Math.round((completedRequiredCount.value / requiredFields.value.length) * 100)
+  reviewableRequiredCount.value
+    ? Math.round((completedRequiredCount.value / reviewableRequiredCount.value) * 100)
     : 0,
 )
 const missingRequiredCount = computed(
@@ -467,10 +477,9 @@ const pendingRequiredReviewCount = computed(
       (field) => isFieldPopulated(field) && field.reviewState === 'unreviewed',
     ).length,
 )
-const requiredRemainingCount = computed(
-  () => requiredFields.value.filter((field) => !isFieldCompleted(field)).length,
+const canStartAnalysis = computed(
+  () => hasOcrData.value && pendingRequiredReviewCount.value === 0,
 )
-const canStartAnalysis = computed(() => hasOcrData.value && requiredRemainingCount.value === 0)
 
 const activeGroupFields = computed(() =>
   applicableFields.value.filter((field) => field.groupId === activeFieldGroupId.value),
@@ -581,6 +590,16 @@ const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: num
     count: activeGroupFields.value.filter((field) => field.reviewState !== 'unreviewed').length,
   },
 ])
+
+onMounted(async () => {
+  if (!linkedFieldId.value) return
+  activeFieldFilter.value = 'all'
+  await nextTick()
+  document.querySelector<HTMLElement>(`[data-field-id="${linkedFieldId.value}"]`)?.scrollIntoView({
+    block: 'center',
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  })
+})
 
 const fieldGroups = computed(() =>
   CONTRACT_FIELD_GROUPS.map((group) => {
@@ -742,6 +761,11 @@ function startFieldEdit(field: ContractField): void {
   field.editing = true
 }
 
+function clearFieldValidation(field: ContractField): void {
+  field.validationError = ''
+  saveError.value = ''
+}
+
 function parseNumericValue(value: string): number {
   return Number(value.replace(/[^0-9]/g, '')) || 0
 }
@@ -766,17 +790,6 @@ function validateLegalField(field: ContractField, value = field.value.trim()): s
   }
   if (['landlord', 'tenant', 'agent_name'].includes(field.id) && !isValidPersonOrEntityName(value)) {
     return '姓名／名稱只能使用中文、英文字母及姓名常用符號，不得填寫純數字。'
-  }
-  if (field.id === 'deposit_months' && parseNumericValue(value) > 2) {
-    return '押金最高不得超過 2 個月租金。'
-  }
-  if (field.id === 'deposit') {
-    const rentField = fields.value.find((item) => item.id === 'rent')
-    const rentAmount = rentField ? parseNumericValue(rentField.value) : 0
-    const depositAmount = parseNumericValue(value)
-    if (rentAmount && depositAmount > rentAmount * 2) {
-      return `押金金額不得超過 2 個月租金（目前上限 NT$${(rentAmount * 2).toLocaleString('en-US')}）。`
-    }
   }
   if (/(?:landlord|tenant|agent)_id$/.test(field.id)) {
     if (!isValidTaiwanIdentityNumber(value)) {
@@ -856,12 +869,16 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
   const moneyValue = newValue.replace(/[^0-9０-９,，]/g, '')
   const dayValue = newValue.match(/[0-9０-９]{1,2}/)?.[0] ?? ''
 
-  if (field.control === 'choice') {
+  const appendManualCorrection = (): boolean => {
     if (!ocrPages.value.length) return false
     const supplementalText = `【人工校對補充】${field.label}：${newValue}`
     ocrPages.value[0] = `${ocrPages.value[0]?.trimEnd() ?? ''}\n\n${supplementalText}`.trim()
     field.sourceValue = newValue
     return true
+  }
+
+  if (field.control === 'choice') {
+    return appendManualCorrection()
   }
 
   if (field.id === 'rent' && moneyValue) {
@@ -870,7 +887,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
       `$1${moneyValue}$2`,
     )
     if (insertedValue !== null) field.sourceValue = moneyValue
-    return insertedValue !== null
+    if (insertedValue !== null) return true
   }
 
   if (field.id === 'deposit' && moneyValue) {
@@ -879,7 +896,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
       `$1${moneyValue}$2`,
     )
     if (insertedValue !== null) field.sourceValue = moneyValue
-    return insertedValue !== null
+    if (insertedValue !== null) return true
   }
 
   if (field.id === 'due_day' && dayValue) {
@@ -888,15 +905,11 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
       `$1${dayValue}$2`,
     )
     if (insertedValue !== null) field.sourceValue = dayValue
-    return insertedValue !== null
+    if (insertedValue !== null) return true
   }
 
   if (!field.sourceValue) {
-    if (!ocrPages.value.length) return false
-    const supplementalText = `【人工校對補充】${field.label}：${newValue}`
-    ocrPages.value[0] = `${ocrPages.value[0]?.trimEnd() ?? ''}\n\n${supplementalText}`.trim()
-    field.sourceValue = newValue
-    return true
+    return appendManualCorrection()
   }
 
   for (let pageIndex = 0; pageIndex < ocrPages.value.length; pageIndex += 1) {
@@ -910,7 +923,7 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
     return true
   }
 
-  return false
+  return appendManualCorrection()
 }
 
 function confirmFieldEdit(field: ContractField): void {
@@ -967,6 +980,8 @@ function verifyField(field: ContractField): void {
   }
   const legalValidationError = validateLegalField(field)
   if (legalValidationError) {
+    field.editStartValue = field.value
+    field.editing = true
     field.validationError = legalValidationError
     saveError.value = legalValidationError
     return
@@ -1009,6 +1024,7 @@ function persistContract(): boolean {
   }
 
   for (const field of applicableFields.value) {
+    if (!isFieldPopulated(field)) continue
     const validationError = validateLegalField(field)
     if (!validationError) continue
     field.validationError = validationError
@@ -1187,7 +1203,7 @@ function returnToOcr(): void {
           <h2 id="review-summary-title">契約校對摘要</h2>
         </div>
         <div class="review-progress-display">
-          <span>必填人工校對</span>
+          <span>已辨識欄位校對</span>
           <strong class="review-progress-value">{{ reviewProgress }}%</strong>
         </div>
       </div>
@@ -1199,16 +1215,16 @@ function returnToOcr(): void {
           <small>{{ extractionProgress }}% 已找到內容</small>
         </div>
         <div class="review-stat">
-          <span>必填人工校對</span>
-          <strong>{{ completedRequiredCount }} / {{ requiredFields.length }}</strong>
+          <span>已辨識欄位校對</span>
+          <strong>{{ completedRequiredCount }} / {{ reviewableRequiredCount }}</strong>
           <small>確認或修正後才計入</small>
         </div>
         <div class="review-stat review-stat--warning">
           <span>已有值、待確認</span>
           <strong>{{ pendingRequiredReviewCount }}</strong>
         </div>
-        <div class="review-stat review-stat--danger">
-          <span>缺少必填資料</span>
+        <div class="review-stat review-stat--warning">
+          <span>留待風險分析</span>
           <strong>{{ missingRequiredCount }}</strong>
         </div>
       </div>
@@ -1231,11 +1247,15 @@ function returnToOcr(): void {
               recommendedFieldCount
             }} 個建議填寫。
           </p>
-          <p v-if="requiredRemainingCount">
-            尚缺 <strong>{{ missingRequiredCount }}</strong> 個必填資料，另有
-            <strong>{{ pendingRequiredReviewCount }}</strong> 個欄位待確認。
+          <p v-if="pendingRequiredReviewCount">
+            尚有 <strong>{{ pendingRequiredReviewCount }}</strong> 個已辨識欄位待確認；缺少的
+            <strong>{{ missingRequiredCount }}</strong> 個資料將留待 AI 風險分析提醒。
           </p>
-          <p v-else>所有必填欄位皆已確認，可以開始 AI 契約分析。</p>
+          <p v-else-if="missingRequiredCount">
+            已辨識欄位皆已完成校對；缺少的 <strong>{{ missingRequiredCount }}</strong>
+            個資料將由 AI 風險分析列出，不影響進入下一步。
+          </p>
+          <p v-else>所有已辨識欄位皆已確認，可以開始 AI 契約分析。</p>
         </div>
         <Button :disabled="!canStartAnalysis" @click="completeReviewAndAnalyze">
           完成校對並開始 AI 契約分析
@@ -1529,8 +1549,12 @@ function returnToOcr(): void {
                 <div
                   v-for="field in section.fields"
                   :key="field.id"
+                  :data-field-id="field.id"
                   class="contract-field-card rounded-lg border transition-colors"
-                  :class="fieldCardClass(field)"
+                  :class="[
+                    fieldCardClass(field),
+                    { 'is-linked-field': linkedFieldId === field.id },
+                  ]"
                 >
               <div class="field-card-header">
                 <span class="text-xs font-medium text-muted-foreground">
@@ -1602,7 +1626,7 @@ function returnToOcr(): void {
                     field.validationError ? `${field.id}-validation-error` : undefined
                   "
                   :placeholder="field.placeholder"
-                  @input="field.validationError = ''"
+                  @input="clearFieldValidation(field)"
                   @keyup.enter="confirmFieldEdit(field)"
                 />
                 <Button
@@ -1623,7 +1647,7 @@ function returnToOcr(): void {
                 <AlertTriangle :size="14" />
                 <span>{{ field.validationError }}</span>
               </div>
-              <div v-else class="field-value-row">
+              <div v-if="!field.editing" class="field-value-row">
                 <div class="field-value-content">
                   <span
                     v-if="field.id === 'address' && field.addressResolution"
