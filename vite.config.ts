@@ -6,7 +6,7 @@ import vueDevTools from 'vite-plugin-vue-devtools';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  const apiTarget = env.VITE_OCR_API_URL || 'http://localhost:8787';
+  const apiTarget = env.VITE_OCR_API_URL || 'http://127.0.0.1:8000';
   return {
     plugins: [vue(), vueDevTools(), tailwindcss()],
     define: {
