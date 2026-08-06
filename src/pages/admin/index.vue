@@ -23,20 +23,28 @@ import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdmin
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { resetAdminData } from '@/src/composables/admin/useAdminStore'
+import { useAdminMaintenance } from '@/src/composables/admin/useAdminMaintenance'
+import { useAdminDeposits } from '@/src/composables/admin/useAdminDeposits'
 import { formatDateTime } from '@/src/utils/admin-format'
+import { formatCurrency } from '@/src/utils/rent-format'
 import { isMaintenanceActive } from '@/src/utils/maintenance'
+import { maintenanceCategoryLabels, type MaintenanceCategory } from '@/src/utils/admin-maintenance'
 import type { AdminUserRole } from '@/src/mocks/admin-seed'
 
 const CHART_INDIGO = '#5660D6'
 const CHART_TEAL = '#0E9488'
 const CHART_AMBER = '#D97706'
 const CHART_INDIGO_MUTED = '#B4B9EE'
+const CHART_ROSE = '#DC2626'
+const CHART_SLATE = '#64748B'
 
 const { users } = useAdminUsers()
 const { usages, alerts, alertCount } = useAdminAiUsage()
 const { events, logAction } = useAdminAudit()
 const { settings } = useAdminSettings()
 const { canAccessPath } = useAdminRbac()
+const { stats: maintenanceStats } = useAdminMaintenance()
+const { stats: depositStats } = useAdminDeposits()
 
 const resetOpen = ref(false)
 
@@ -125,6 +133,34 @@ const queueItems = computed(() =>
     tag: 'AI額度',
   })),
 )
+
+const maintenanceCategoryColors: Record<MaintenanceCategory, string> = {
+  leak: CHART_INDIGO,
+  appliance: CHART_TEAL,
+  lock: CHART_AMBER,
+  pipe: CHART_ROSE,
+  other: CHART_SLATE,
+}
+
+const maintenanceCategoryKeys = Object.keys(maintenanceCategoryLabels) as MaintenanceCategory[]
+
+const maintenanceCategoryChartLabels = computed(() =>
+  maintenanceCategoryKeys.map((category) => maintenanceCategoryLabels[category]),
+)
+
+const maintenanceCategoryChartValues = computed(() =>
+  maintenanceCategoryKeys.map((category) => maintenanceStats.value.byCategory[category]),
+)
+
+const maintenanceCategoryChartColors = computed(() =>
+  maintenanceCategoryKeys.map((category) => maintenanceCategoryColors[category]),
+)
+
+const maintenanceOverdueDetail = computed(
+  () => `處理中 ${maintenanceStats.value.processing} 件・共 ${maintenanceStats.value.total} 件`,
+)
+
+const depositProcessingDetail = computed(() => `處理中 ${depositStats.value.processing} 案`)
 
 function confirmReset(): void {
   resetAdminData()
@@ -223,6 +259,58 @@ function confirmReset(): void {
           </div>
         </CardContent>
       </Card>
+    </div>
+
+    <div class="space-y-4">
+      <div>
+        <h2 class="text-xl font-bold tracking-tight">報修工單與押金退還</h2>
+        <p class="mt-1 text-sm text-muted-foreground">
+          點擊卡片前往對應模組查看詳情。
+        </p>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <StatusCard
+          title="報修逾期件數"
+          to="/admin/maintenance-tickets"
+          :status="`${maintenanceStats.overdue} 件`"
+          :tone="maintenanceStats.overdue > 0 ? 'alert' : 'ok'"
+          :detail="maintenanceOverdueDetail"
+          corner-text="報修工單"
+        />
+        <BarStatCard
+          title="報修分類分布"
+          to="/admin/maintenance-tickets"
+          :labels="maintenanceCategoryChartLabels"
+          :values="maintenanceCategoryChartValues"
+          :colors="maintenanceCategoryChartColors"
+          :corner-text="`逾期 ${maintenanceStats.overdue} 件`"
+          :corner-variant="maintenanceStats.overdue > 0 ? 'destructive' : 'secondary'"
+        />
+        <StatusCard
+          title="持有押金總額"
+          to="/admin/deposits"
+          :status="formatCurrency(depositStats.heldTotal)"
+          tone="ok"
+          :detail="depositProcessingDetail"
+          corner-text="押金退還"
+        />
+        <StatusCard
+          title="押金超收警示"
+          to="/admin/deposits"
+          :status="`${depositStats.overCollectedCount} 件`"
+          :tone="depositStats.overCollectedCount > 0 ? 'alert' : 'ok'"
+          detail="押金超過月租一定倍數視為超收"
+          corner-text="押金退還"
+        />
+        <StatusCard
+          title="押金爭議件數"
+          to="/admin/deposits"
+          :status="`${depositStats.disputedCount} 件`"
+          :tone="depositStats.disputedCount > 0 ? 'alert' : 'ok'"
+          detail="租客對扣款項目提出異議的案件"
+          corner-text="押金退還"
+        />
+      </div>
     </div>
 
     <Dialog v-model:open="resetOpen">
