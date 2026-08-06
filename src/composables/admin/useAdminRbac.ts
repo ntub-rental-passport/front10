@@ -1,5 +1,6 @@
 import { computed, type Component } from 'vue'
 import {
+  Banknote,
   CreditCard,
   Gauge,
   LayoutDashboard,
@@ -22,6 +23,7 @@ const navIcons: Record<string, Component> = {
   '/admin': LayoutDashboard,
   '/admin/users': Users,
   '/admin/maintenance-tickets': Wrench,
+  '/admin/deposits': Banknote,
   '/admin/subscription': CreditCard,
   '/admin/content': Megaphone,
   '/admin/ai-usage': Gauge,

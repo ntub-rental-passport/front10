@@ -16,6 +16,7 @@ const MATRIX: Record<string, Record<AdminRole, boolean>> = {
   '/admin/ai-usage': { super: true, admin: true },
   '/admin/users': { super: true, admin: false },
   '/admin/maintenance-tickets': { super: true, admin: true },
+  '/admin/deposits': { super: true, admin: true },
   '/admin/audit': { super: true, admin: false },
   '/admin/settings': { super: true, admin: false },
 }
@@ -68,12 +69,12 @@ describe('visibleNavGroupsFor', () => {
     return visibleNavGroupsFor(role).reduce((sum, g) => sum + g.items.length, 0)
   }
 
-  it('super 可看到全部 8 個項目', () => {
-    expect(totalItems('super')).toBe(8)
+  it('super 可看到全部 9 個項目', () => {
+    expect(totalItems('super')).toBe(9)
   })
 
-  it('一般管理員可看到 5 個項目', () => {
-    expect(totalItems('admin')).toBe(5)
+  it('一般管理員可看到 6 個項目', () => {
+    expect(totalItems('admin')).toBe(6)
   })
 
   it('不會回傳空群組（每個群組至少有一個項目）', () => {
@@ -92,10 +93,10 @@ describe('visibleNavGroupsFor', () => {
 })
 
 describe('adminNavGroups', () => {
-  it('定義了三個群組，共 8 個項目', () => {
+  it('定義了三個群組，共 9 個項目', () => {
     const total = adminNavGroups.reduce((sum, g) => sum + g.items.length, 0)
     expect(adminNavGroups.length).toBe(3)
-    expect(total).toBe(8)
+    expect(total).toBe(9)
   })
 
   it('已移除的模組不再出現在導覽中', () => {

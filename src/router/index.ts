@@ -53,6 +53,7 @@ const router = createRouter({
         { path: '', component: () => import('@/src/pages/admin/index.vue') },
         { path: 'users', component: () => import('@/src/pages/admin/users.vue') },
         { path: 'maintenance-tickets', component: () => import('@/src/pages/admin/maintenance-tickets.vue') },
+        { path: 'deposits', component: () => import('@/src/pages/admin/deposits.vue') },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
         // 通知已併入內容管理，保留舊路徑避免既有書籤 404
         { path: 'notifications', redirect: '/admin/content' },

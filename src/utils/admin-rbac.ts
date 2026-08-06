@@ -27,6 +27,7 @@ export const adminNavGroups: AdminNavGroup[] = [
       { label: '後台總覽', path: '/admin', roles: ['super', 'admin'] },
       { label: '使用者管理', path: '/admin/users', roles: ['super'] },
       { label: '報修工單', path: '/admin/maintenance-tickets', roles: ['super', 'admin'] },
+      { label: '押金退還', path: '/admin/deposits', roles: ['super', 'admin'] },
       { label: '訂閱與容量', path: '/admin/subscription', roles: ['super', 'admin'] },
     ],
   },
