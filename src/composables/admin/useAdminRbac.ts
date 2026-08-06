@@ -7,6 +7,7 @@ import {
   ScrollText,
   Settings,
   Users,
+  Wrench,
 } from 'lucide-vue-next'
 import { getCurrentAdminRole } from './useAdminUsers'
 import {
@@ -20,6 +21,7 @@ export { getCurrentAdminRole }
 const navIcons: Record<string, Component> = {
   '/admin': LayoutDashboard,
   '/admin/users': Users,
+  '/admin/maintenance-tickets': Wrench,
   '/admin/subscription': CreditCard,
   '/admin/content': Megaphone,
   '/admin/ai-usage': Gauge,
