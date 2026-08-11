@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
@@ -306,6 +307,7 @@ function buildRisks(): RiskItem[] {
   const conditions = detectContractConditions(ocrResult?.text ?? '') as Record<string, boolean>
   const missingByGroup = new Map<string, Array<{ id: string; label: string }>>()
 
+  // 1. 檢查缺少欄位
   CONTRACT_FIELD_DEFINITIONS.forEach((definition) => {
     const required =
       definition.requirement === 'required' ||
@@ -349,6 +351,7 @@ function buildRisks(): RiskItem[] {
     })
   })
 
+  // 2. 檢查押金上限
   const rent = parseAmount(reviewValue('rent'))
   const deposit = parseAmount(reviewValue('deposit'))
   const depositMonths = parseAmount(reviewValue('deposit_months'))
@@ -371,104 +374,9 @@ function buildRisks(): RiskItem[] {
     })
   }
 
-  const equipmentRepairClause = findClause(
-    /冷氣[^。]{0,50}(?:熱水器|電燈|插座)[^。]{0,180}不論新舊[^。]{0,140}(?:承租人負擔|承租人負責)[^。]*。?/,
-    '冷氣',
-  )
-  if (equipmentRepairClause) {
-    result.push({
-      id: 'rag-equipment-repair',
-      title: '設備故障責任概括轉嫁承租人',
-      severity: 'high',
-      source: 'rag',
-      sourceLabel: 'RAG 法規比對',
-      groupId: null,
-      groupLabel: '修繕與保養',
-      fieldIds: [],
-      pageIndex: equipmentRepairClause.pageIndex,
-      focusText: equipmentRepairClause.focusText,
-      clause: equipmentRepairClause.text,
-      description:
-        '現行住宅租賃規範以出租人修繕為原則；若簽約前約定由承租人修繕，應說明具體項目與範圍並經承租人確認。本條以「不論新舊、一律負擔」概括轉嫁，未排除自然耗損或設備老化，屬高風險約定。',
-      advice:
-        '建議改為：自然耗損、設備老化及非可歸責於承租人的故障由出租人修繕；僅因承租人故意或過失造成的損壞，由承租人負擔。另載明通知、修繕期限及緊急處理方式。',
-      legalBasis: [
-        '民法第 423、429、430 條',
-        '住宅租賃定型化契約應記載事項第 9、11 點',
-      ],
-    })
-  }
-
-  const broadDamageClause = findClause(
-    /非因自然耗損[^。]{0,220}(?:概由承租人|承租人負責)[^。]*。?/,
-    '非因自然耗損',
-  )
-  if (broadDamageClause) {
-    result.push({
-      id: 'rag-broad-damage-liability',
-      title: '承租人損壞責任範圍過廣',
-      severity: 'medium',
-      source: 'rag',
-      sourceLabel: 'RAG 法規比對',
-      groupId: null,
-      groupLabel: '修繕與保養',
-      fieldIds: [],
-      pageIndex: broadDamageClause.pageIndex,
-      focusText: broadDamageClause.focusText,
-      clause: broadDamageClause.text,
-      description:
-        '「非自然耗損」不等於損壞必然可歸責於承租人；設備瑕疵、第三人行為或不可抗力仍可能落入本條。承租人原則上僅就違反善良管理人注意義務所造成的毀損負責。',
-      advice:
-        '建議將責任要件改為「因承租人故意、過失或可歸責於承租人之事由所致」，並排除自然耗損、設備老化、原有瑕疵及不可抗力。',
-      legalBasis: ['民法第 432 條', '住宅租賃定型化契約應記載事項第 9、12 點'],
-    })
-  }
-
-  const taxTransferClause = findClause(
-    /(?:房屋稅|地價稅)[^。]{0,260}(?:承租人承擔|承租人負擔)[^。]*。?/,
-    '房屋稅',
-  )
-  if (taxTransferClause) {
-    result.push({
-      id: 'rag-tax-transfer',
-      title: '房屋稅、地價稅轉嫁承租人',
-      severity: 'high',
-      source: 'rag',
-      sourceLabel: 'RAG 法規比對',
-      groupId: null,
-      groupLabel: '稅費負擔',
-      fieldIds: [],
-      pageIndex: taxTransferClause.pageIndex,
-      focusText: taxTransferClause.focusText,
-      clause: taxTransferClause.text,
-      description:
-        '民法及現行住宅租賃定型化契約規範均將租賃住宅的房屋稅、地價稅列為出租人負擔。契約將既有稅負、稅率調升或新增稅費概括轉由承租人承擔，應列為高風險。',
-      advice:
-        '建議刪除房屋稅、地價稅及其增加部分由承租人負擔的內容；其他稅費應逐項寫明名稱、金額或計算方式及負擔人，不使用概括授權。',
-      legalBasis: ['民法第 427 條', '住宅租賃定型化契約應記載事項第 7 點'],
-    })
-  }
-
-  result.push(
-    {
-      id: 'ai-termination',
-      title: '提前終止與通知流程可再明確',
-      severity: 'low',
-      source: 'ai',
-      sourceLabel: 'AI 語意分析',
-      groupId: null,
-      groupLabel: '提前終止',
-      fieldIds: [],
-      pageIndex: findPageByKeyword('終止'),
-      focusText: '終止',
-      clause: '提前終止條款涉及通知期間、通知方式及違約責任，建議進一步確認。',
-      description: 'AI 從條文語意辨識出流程可能不夠明確，此結果應搭配原始條文與專業意見判讀。',
-      advice: '建議補充書面通知方式、通知送達日與違約金計算基準，降低雙方認定差異。',
-    },
-  )
-
   return result
 }
+
 
 const risks = ref<RiskItem[]>(buildRisks())
 if (!risks.value.some((risk) => risk.source === 'field')) activeRiskTab.value = 'rag'
@@ -481,6 +389,30 @@ const riskTabs = computed(() => [
   { id: 'rag' as const, label: 'RAG 風險分析', count: risks.value.filter((risk) => risk.source === 'rag').length },
   { id: 'ai' as const, label: 'AI 綜合建議', count: risks.value.filter((risk) => risk.source === 'ai').length },
 ])
+async function loadBackendRagAndAiAnalysis() {
+  if (!ocrResult?.text) return
+
+  try {
+    const response = await fetch('http://localhost:8000/api/contract/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ocr_text: ocrResult.text,
+        page_texts: ocrResult.pageTexts ?? [ocrResult.text],
+        field_reviews: ocrResult.fieldReviews ?? {}
+      })
+    })
+
+    if (!response.ok) return
+    const data = await response.json()
+
+    // 取得後端真正的 RAG 與 AI 風險，並與本機 field 風險疊加
+    const localFieldRisks = buildRisks()
+    risks.value = [...localFieldRisks, ...(data.rag_risks || []), ...(data.ai_risks || [])]
+  } catch (error) {
+    console.error('後端 API 呼叫失敗，維持本機檢核結果:', error)
+  }
+}
 
 const chatMessages = ref<ChatMessage[]>([
   {
@@ -624,23 +556,58 @@ onBeforeUnmount(() => {
   endChatDrag()
 })
 
-function sendChat(message = chatInput.value): void {
+onMounted(() => {
+  void loadBackendRagAndAiAnalysis()
+})
+
+onBeforeUnmount(() => {
+  endChatDrag()
+})
+async function fetchAiChatResponse(
+  userMessage: string,
+  activeRisk: RiskItem | undefined
+): Promise<void> {
+  try {
+    const response = await fetch('http://localhost:8000/api/contract/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: userMessage,
+        contract_text: ocrResult?.text ?? '',
+        active_risk: activeRisk ?? null,
+      }),
+    })
+
+    if (!response.ok) throw new Error('API 響應失敗')
+
+    const data = await response.json()
+    chatMessages.value.push({
+      id: nextMessageId.value++,
+      role: 'assistant',
+      text: data.reply,
+      sources: data.sources ?? ['租賃專法與實務判決'],
+    })
+  } catch (error) {
+    console.error('LLM 對話請求失敗:', error)
+    chatMessages.value.push({
+      id: nextMessageId.value++,
+      role: 'assistant',
+      text: '抱歉，無法連線至 AI 服務，請確認後端 API 是否已啟動。',
+    })
+  }
+}
+async function sendChat(message = chatInput.value): Promise<void> {
   const content = message.trim()
   if (!content) return
+
+  // 顯示使用者發送的訊息
   chatMessages.value.push({ id: nextMessageId.value++, role: 'user', text: content })
   chatInput.value = ''
 
   const activeRisk = risks.value.find((risk) => risk.id === activeRiskId.value)
-  chatMessages.value.push({
-    id: nextMessageId.value++,
-    role: 'assistant',
-    text: activeRisk
-      ? `可以這樣表達：「您好，關於${activeRisk.title}，想請您協助確認。${activeRisk.advice}希望雙方能在簽約前把內容寫清楚，謝謝。」\n\n目前是前端示意回覆；串接 RAG 與 LLM 後，會依你的問題即時生成內容。`
-      : '我已收到你的問題。正式串接後，這裡會結合契約條文、關鍵欄位及 RAG 法規來源產生個人化回覆。',
-    sources: activeRisk
-      ? [activeRisk.sourceLabel, '契約原文', ...(activeRisk.legalBasis ?? [])]
-      : ['契約原文'],
-  })
+
+  // 呼叫後端 API 取得真實 LLM 回覆
+  await fetchAiChatResponse(content, activeRisk)
 }
 
 function copyMessage(message: ChatMessage): void {

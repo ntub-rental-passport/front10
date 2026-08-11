@@ -45,3 +45,5 @@ key/*.json
 
 __pycache__/
 *.pyc
+
+rentmate-vision-key.json
