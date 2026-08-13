@@ -1,44 +1,37 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  canTransitionDeposit,
-  depositTransitions,
-  isOverCollected,
-  overCollectedAmount,
-} from './admin-deposit'
+import { depositGap, depositMatchOf } from './admin-deposit'
 
-describe('canTransitionDeposit', () => {
-  it('允許轉換表內的變更', () => {
-    expect(canTransitionDeposit('held', 'inspecting')).toBe(true)
-    expect(canTransitionDeposit('agreed', 'refunded')).toBe(true)
+describe('depositMatchOf', () => {
+  it('兩造聲明相同視為相符', () => {
+    expect(depositMatchOf(30000, 30000)).toBe('matched')
   })
 
-  it('拒絕轉換表外的變更', () => {
-    expect(canTransitionDeposit('held', 'refunded')).toBe(false)
-    expect(canTransitionDeposit('refunded', 'held')).toBe(false)
+  it('兩造聲明不同視為不符', () => {
+    expect(depositMatchOf(30000, 20000)).toBe('mismatched')
+    expect(depositMatchOf(20000, 30000)).toBe('mismatched')
   })
 
-  it('已退還是終態', () => {
-    expect(depositTransitions.refunded).toEqual([])
+  it('租客尚未聲明是待補，不是不符', () => {
+    expect(depositMatchOf(28000, null)).toBe('pending')
+  })
+
+  it('雙方都是 0 也算相符', () => {
+    expect(depositMatchOf(0, 0)).toBe('matched')
   })
 })
 
-describe('isOverCollected', () => {
-  it('押金恰好等於兩個月租金不算超收', () => {
-    expect(isOverCollected(20000, 10000)).toBe(false)
+describe('depositGap', () => {
+  it('相符時差額為 0', () => {
+    expect(depositGap(24000, 24000)).toBe(0)
   })
 
-  it('押金超過兩個月租金算超收', () => {
-    expect(isOverCollected(30000, 10000)).toBe(true)
-  })
-})
-
-describe('overCollectedAmount', () => {
-  it('未超收回傳 0', () => {
-    expect(overCollectedAmount(20000, 10000)).toBe(0)
+  it('差額取絕對值，不分誰報得多', () => {
+    expect(depositGap(30000, 20000)).toBe(10000)
+    expect(depositGap(20000, 30000)).toBe(10000)
   })
 
-  it('回傳超出上限的金額', () => {
-    expect(overCollectedAmount(30000, 10000)).toBe(10000)
+  it('租客未聲明時差額為 0，避免把未填當成短少', () => {
+    expect(depositGap(28000, null)).toBe(0)
   })
 })

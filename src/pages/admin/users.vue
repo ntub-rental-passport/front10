@@ -1,16 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent } from '@/components/ui/card/index'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog/index'
 import { Input } from '@/components/ui/input/index'
 import {
   Select,
@@ -27,45 +20,47 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { BadgeCheck, Search, ShieldAlert } from 'lucide-vue-next'
-import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
-import { ADMIN_ROLES, adminRoleLabels as rbacRoleLabels } from '@/src/utils/admin-rbac'
-import { formatDate } from '@/src/utils/admin-format'
-import type { AdminRole, AdminUser, AdminUserRole } from '@/src/mocks/admin-seed'
+import { BadgeCheck, Search, ShieldAlert, X } from 'lucide-vue-next'
+import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
+import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
+import { userAlertLabels, type UserAlert } from '@/src/utils/admin-user-directory'
+import type { UserDirectoryRow } from '@/src/utils/admin-user-directory'
 
-const { users, setStatus, setRole, setAdminRole } = useAdminUsers()
+const route = useRoute()
+const router = useRouter()
 
-const keyword = ref('')
-const roleFilter = ref<'all' | AdminUserRole>('all')
-const statusFilter = ref<'all' | 'active' | 'suspended'>('all')
-const detailUser = ref<AdminUser | null>(null)
+const { filteredRows, filter, filterActive, clearFilter } = useAdminDirectory()
 
-const filteredUsers = computed(() =>
-  users.value.filter((user) => {
-    const text = keyword.value.trim().toLowerCase()
-    if (
-      text &&
-      !user.email.toLowerCase().includes(text) &&
-      !(user.nickname ?? '').toLowerCase().includes(text)
-    ) {
-      return false
+// 總覽頁的 KPI 卡帶著 ?alert= 跳過來，預選對應的警示條件
+watch(
+  () => route.query.alert,
+  (value) => {
+    if (typeof value === 'string' && value in userAlertLabels) {
+      filter.value.alert = value as UserAlert
     }
-    if (roleFilter.value !== 'all' && user.role !== roleFilter.value) return false
-    if (statusFilter.value !== 'all' && user.status !== statusFilter.value) return false
-    return true
-  }),
+  },
+  { immediate: true },
 )
 
-function toggleStatus(user: AdminUser): void {
-  setStatus(user.id, user.status === 'active' ? 'suspended' : 'active')
+const alertOptions = Object.keys(userAlertLabels) as UserAlert[]
+
+function depositLabel(row: UserDirectoryRow): string {
+  if (row.deposits.length === 0) return '—'
+  if (row.mismatchedDepositCount > 0) return `${row.mismatchedDepositCount} 筆不符`
+  const pending = row.deposits.filter((item) => item.match === 'pending').length
+  if (pending > 0) return `${pending} 筆待補`
+  return `${row.deposits.length} 筆相符`
 }
 
-function handleRoleChange(user: AdminUser, value: unknown): void {
-  setRole(user.id, value as AdminUserRole)
+function openDetail(row: UserDirectoryRow): void {
+  void router.push(`/admin/users/${row.user.id}`)
 }
 
-function handleAdminRoleChange(user: AdminUser, value: unknown): void {
-  setAdminRole(user.id, value as AdminRole)
+function handleFilterChange<K extends keyof typeof filter.value>(
+  key: K,
+  value: unknown,
+): void {
+  filter.value[key] = value as (typeof filter.value)[K]
 }
 </script>
 
@@ -73,7 +68,9 @@ function handleAdminRoleChange(user: AdminUser, value: unknown): void {
   <div class="space-y-6">
     <div>
       <h1 class="text-3xl font-black tracking-tight">使用者管理</h1>
-      <p class="mt-1 text-muted-foreground">檢視與管理平台帳號的狀態與角色。</p>
+      <p class="mt-1 text-muted-foreground">
+        以使用者為中心檢視訂閱容量、押金對帳與報修工單，點選任一列進入詳情。
+      </p>
     </div>
 
     <Card class="rounded-[1.5rem]">
@@ -81,145 +78,155 @@ function handleAdminRoleChange(user: AdminUser, value: unknown): void {
         <div class="flex flex-wrap items-center gap-3">
           <div class="relative min-w-56 flex-1">
             <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input v-model="keyword" placeholder="搜尋 Email 或暱稱" class="pl-9" />
+            <Input v-model="filter.keyword" placeholder="搜尋 Email 或暱稱" class="pl-9" />
           </div>
-          <Select v-model="roleFilter">
-            <SelectTrigger class="w-36">
-              <SelectValue placeholder="角色" />
-            </SelectTrigger>
+
+          <Select
+            :model-value="filter.role"
+            @update:model-value="(value) => handleFilterChange('role', value)"
+          >
+            <SelectTrigger class="w-32"><SelectValue placeholder="身分" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部角色</SelectItem>
+              <SelectItem value="all">全部身分</SelectItem>
               <SelectItem value="user">租客</SelectItem>
               <SelectItem value="landlord">房東</SelectItem>
               <SelectItem value="admin">管理員</SelectItem>
             </SelectContent>
           </Select>
-          <Select v-model="statusFilter">
-            <SelectTrigger class="w-36">
-              <SelectValue placeholder="狀態" />
-            </SelectTrigger>
+
+          <Select
+            :model-value="filter.status"
+            @update:model-value="(value) => handleFilterChange('status', value)"
+          >
+            <SelectTrigger class="w-32"><SelectValue placeholder="狀態" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部狀態</SelectItem>
               <SelectItem value="active">正常</SelectItem>
               <SelectItem value="suspended">停用</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select
+            :model-value="filter.plan"
+            @update:model-value="(value) => handleFilterChange('plan', value)"
+          >
+            <SelectTrigger class="w-32"><SelectValue placeholder="方案" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部方案</SelectItem>
+              <SelectItem value="free">免費方案</SelectItem>
+              <SelectItem value="plus">進階方案</SelectItem>
+              <SelectItem value="pro">專業方案</SelectItem>
+              <SelectItem value="none">尚未訂閱</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            :model-value="filter.alert"
+            @update:model-value="(value) => handleFilterChange('alert', value)"
+          >
+            <SelectTrigger class="w-40"><SelectValue placeholder="案件警示" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部警示</SelectItem>
+              <SelectItem v-for="alert in alertOptions" :key="alert" :value="alert">
+                {{ userAlertLabels[alert] }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Button v-if="filterActive" variant="outline" size="sm" @click="clearFilter">
+            <X class="mr-1 h-3.5 w-3.5" />
+            清除篩選
+          </Button>
+
+          <p class="whitespace-nowrap text-sm text-muted-foreground">
+            共 {{ filteredRows.length }} 人
+          </p>
         </div>
 
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Email</TableHead>
-              <TableHead class="whitespace-nowrap">角色</TableHead>
-              <TableHead class="whitespace-nowrap">權限角色</TableHead>
+              <TableHead>使用者</TableHead>
+              <TableHead class="whitespace-nowrap">身分</TableHead>
+              <TableHead class="whitespace-nowrap">訂閱方案</TableHead>
+              <TableHead class="whitespace-nowrap">押金對帳</TableHead>
+              <TableHead class="whitespace-nowrap">工單待處理</TableHead>
               <TableHead class="whitespace-nowrap">狀態</TableHead>
-              <TableHead class="whitespace-nowrap">註冊日</TableHead>
-              <TableHead class="whitespace-nowrap text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow v-for="user in filteredUsers" :key="user.id">
+            <TableRow
+              v-for="row in filteredRows"
+              :key="row.user.id"
+              class="cursor-pointer"
+              @click="openDetail(row)"
+            >
               <TableCell>
                 <div class="flex items-center gap-1.5">
-                  <span class="font-medium">{{ user.email }}</span>
+                  <span class="font-medium">{{ row.user.email }}</span>
                   <!-- 驗證狀態改用圖示：獨立成欄時中文標題會在 1280px 被壓成直排 -->
-                  <span :title="user.emailVerified ? 'Email 已驗證' : 'Email 未驗證'">
-                    <BadgeCheck v-if="user.emailVerified" class="h-4 w-4 shrink-0 text-emerald-600" />
+                  <span :title="row.user.emailVerified ? 'Email 已驗證' : 'Email 未驗證'">
+                    <BadgeCheck
+                      v-if="row.user.emailVerified"
+                      class="h-4 w-4 shrink-0 text-emerald-600"
+                    />
                     <ShieldAlert v-else class="h-4 w-4 shrink-0 text-amber-600" />
-                    <span class="sr-only">{{ user.emailVerified ? 'Email 已驗證' : 'Email 未驗證' }}</span>
+                    <span class="sr-only">
+                      {{ row.user.emailVerified ? 'Email 已驗證' : 'Email 未驗證' }}
+                    </span>
                   </span>
                 </div>
-                <p class="text-sm text-muted-foreground">{{ user.nickname ?? '—' }}</p>
+                <p class="text-sm text-muted-foreground">{{ row.user.nickname ?? '—' }}</p>
               </TableCell>
-              <TableCell class="whitespace-nowrap">{{ adminRoleLabels[user.role] }}</TableCell>
-              <TableCell>
-                <Select
-                  v-if="user.role === 'admin'"
-                  :model-value="user.adminRole ?? 'super'"
-                  @update:model-value="(value) => handleAdminRoleChange(user, value)"
-                >
-                  <SelectTrigger class="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="role in ADMIN_ROLES" :key="role" :value="role">
-                      {{ rbacRoleLabels[role] }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <span v-else class="text-muted-foreground">—</span>
+
+              <TableCell class="whitespace-nowrap">{{ adminRoleLabels[row.user.role] }}</TableCell>
+
+              <TableCell class="whitespace-nowrap">
+                <span v-if="row.plan">{{ row.plan.name }}</span>
+                <span v-else class="text-muted-foreground">尚未訂閱</span>
               </TableCell>
+
+              <TableCell
+                class="whitespace-nowrap"
+                :class="row.mismatchedDepositCount > 0 ? 'font-semibold text-destructive' : ''"
+              >
+                {{ depositLabel(row) }}
+              </TableCell>
+
+              <TableCell
+                class="whitespace-nowrap"
+                :class="row.overdueTicketCount > 0 ? 'font-semibold text-destructive' : ''"
+              >
+                <span v-if="row.openTicketCount === 0" class="text-muted-foreground">—</span>
+                <span v-else>
+                  {{ row.openTicketCount }} 件
+                  <template v-if="row.overdueTicketCount > 0">
+                    （逾期 {{ row.overdueTicketCount }}）
+                  </template>
+                </span>
+              </TableCell>
+
               <TableCell>
                 <Badge
                   class="whitespace-nowrap"
-                  :variant="user.status === 'active' ? 'default' : 'destructive'"
+                  :variant="row.user.status === 'active' ? 'default' : 'destructive'"
                 >
-                  {{ user.status === 'active' ? '正常' : '停用' }}
+                  {{ row.user.status === 'active' ? '正常' : '停用' }}
                 </Badge>
               </TableCell>
-              <TableCell class="whitespace-nowrap">{{ formatDate(user.registeredAt) }}</TableCell>
-              <TableCell class="text-right">
-                <div class="flex justify-end gap-2 whitespace-nowrap">
-                  <Button variant="outline" size="sm" @click="detailUser = user">詳情</Button>
-                  <Button
-                    :variant="user.status === 'active' ? 'destructive' : 'default'"
-                    size="sm"
-                    @click="toggleStatus(user)"
-                  >
-                    {{ user.status === 'active' ? '停用' : '啟用' }}
-                  </Button>
-                </div>
-              </TableCell>
             </TableRow>
-            <TableRow v-if="filteredUsers.length === 0">
-              <TableCell colspan="6" class="py-8 text-center text-muted-foreground">
-                沒有符合條件的使用者。
+
+            <TableRow v-if="filteredRows.length === 0">
+              <TableCell colspan="6" class="py-10 text-center text-muted-foreground">
+                <p>沒有符合條件的使用者。</p>
+                <Button v-if="filterActive" variant="outline" size="sm" class="mt-3" @click="clearFilter">
+                  清除篩選
+                </Button>
               </TableCell>
             </TableRow>
           </TableBody>
         </Table>
       </CardContent>
     </Card>
-
-    <Dialog
-      :open="detailUser !== null"
-      @update:open="(open: boolean) => { if (!open) detailUser = null }"
-    >
-      <DialogContent v-if="detailUser">
-        <DialogHeader>
-          <DialogTitle>使用者詳情</DialogTitle>
-          <DialogDescription>{{ detailUser.email }}</DialogDescription>
-        </DialogHeader>
-        <div class="space-y-3 text-sm">
-          <div class="flex justify-between"><span class="text-muted-foreground">暱稱</span><span>{{ detailUser.nickname ?? '—' }}</span></div>
-          <div class="flex justify-between"><span class="text-muted-foreground">註冊日</span><span>{{ formatDate(detailUser.registeredAt) }}</span></div>
-          <div class="flex justify-between"><span class="text-muted-foreground">Email 驗證</span><span>{{ detailUser.emailVerified ? '已驗證' : '未驗證' }}</span></div>
-          <div class="flex items-center justify-between">
-            <span class="text-muted-foreground">角色</span>
-            <Select
-              :model-value="detailUser.role"
-              @update:model-value="(value) => handleRoleChange(detailUser!, value)"
-            >
-              <SelectTrigger class="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="user">租客</SelectItem>
-                <SelectItem value="landlord">房東</SelectItem>
-                <SelectItem value="admin">管理員</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            :variant="detailUser.status === 'active' ? 'destructive' : 'default'"
-            @click="toggleStatus(detailUser)"
-          >
-            {{ detailUser.status === 'active' ? '停用帳號' : '啟用帳號' }}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   </div>
 </template>

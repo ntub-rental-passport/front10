@@ -1,7 +1,10 @@
 import { computed, ref } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
+import { adminUsersCollection } from './useAdminUsers'
 import { seedMaintenanceTickets, type MaintenanceTicket } from '@/src/mocks/admin-seed'
+import { discardLegacy } from '@/src/utils/admin-collection-migrate'
+import { userDisplayName } from '@/src/utils/admin-user-directory'
 import {
   canTransition,
   elapsedDays,
@@ -10,9 +13,11 @@ import {
   type MaintenanceStatus,
 } from '@/src/utils/admin-maintenance'
 
+// 舊格式的 tenant 是顯示名字串，無法與使用者對接，直接丟棄重 seed。
 export const adminMaintenanceCollection = createAdminCollection<MaintenanceTicket[]>(
   'maintenance-tickets',
   seedMaintenanceTickets,
+  discardLegacy(seedMaintenanceTickets, 'tenantUserId'),
 )
 const tickets = adminMaintenanceCollection
 
@@ -52,6 +57,8 @@ export interface MaintenanceTicketView extends MaintenanceTicket {
   elapsed: number
   /** timeline 最後一筆時間，沒有 timeline 時退回 createdAt */
   lastUpdatedAt: string
+  tenantName: string
+  landlordName: string
 }
 
 export interface MaintenanceStats {
@@ -70,12 +77,21 @@ export function useAdminMaintenance() {
   const statusTab = ref<MaintenanceStatusTab>('all')
   const categoryFilter = ref<MaintenanceCategory | 'all'>('all')
   const keyword = ref('')
+  /** 從使用者詳情跳轉過來時預選的使用者，空字串代表不限 */
+  const userFilter = ref('')
+
+  function nameOf(userId: string): string {
+    const user = adminUsersCollection.value.find((item) => item.id === userId)
+    return user ? userDisplayName(user) : userId
+  }
 
   const ticketViews = computed<MaintenanceTicketView[]>(() =>
     tickets.value.map((ticket) => ({
       ...ticket,
       elapsed: elapsedDays(ticket.createdAt),
       lastUpdatedAt: ticket.timeline.at(-1)?.at ?? ticket.createdAt,
+      tenantName: nameOf(ticket.tenantUserId),
+      landlordName: nameOf(ticket.landlordUserId),
     })),
   )
 
@@ -85,11 +101,18 @@ export function useAdminMaintenance() {
       .filter((ticket) => matchesStatusTab(ticket.status, statusTab.value))
       .filter((ticket) => categoryFilter.value === 'all' || ticket.category === categoryFilter.value)
       .filter((ticket) => {
+        if (!userFilter.value) return true
+        return (
+          ticket.tenantUserId === userFilter.value || ticket.landlordUserId === userFilter.value
+        )
+      })
+      .filter((ticket) => {
         if (!kw) return true
         return (
           ticket.id.toLowerCase().includes(kw) ||
           ticket.address.toLowerCase().includes(kw) ||
-          ticket.tenant.toLowerCase().includes(kw)
+          ticket.tenantName.toLowerCase().includes(kw) ||
+          ticket.landlordName.toLowerCase().includes(kw)
         )
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -165,6 +188,7 @@ export function useAdminMaintenance() {
     statusTab,
     categoryFilter,
     keyword,
+    userFilter,
     filteredTickets,
     stats,
     advanceStatus,

@@ -25,10 +25,10 @@ export const adminNavGroups: AdminNavGroup[] = [
     label: '營運管理',
     items: [
       { label: '後台總覽', path: '/admin', roles: ['super', 'admin'] },
-      { label: '使用者管理', path: '/admin/users', roles: ['super'] },
+      // 押金對帳與訂閱容量已整合進使用者管理，一般管理員可檢視，
+      // 但改角色與停用帳號在詳情頁另外限超級管理員。
+      { label: '使用者管理', path: '/admin/users', roles: ['super', 'admin'] },
       { label: '報修工單', path: '/admin/maintenance-tickets', roles: ['super', 'admin'] },
-      { label: '押金退還', path: '/admin/deposits', roles: ['super', 'admin'] },
-      { label: '訂閱與容量', path: '/admin/subscription', roles: ['super', 'admin'] },
     ],
   },
   {

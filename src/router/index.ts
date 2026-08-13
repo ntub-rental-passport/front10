@@ -52,15 +52,18 @@ const router = createRouter({
       children: [
         { path: '', component: () => import('@/src/pages/admin/index.vue') },
         { path: 'users', component: () => import('@/src/pages/admin/users.vue') },
+        { path: 'users/:id', component: () => import('@/src/pages/admin/user-detail.vue') },
         { path: 'maintenance-tickets', component: () => import('@/src/pages/admin/maintenance-tickets.vue') },
-        { path: 'deposits', component: () => import('@/src/pages/admin/deposits.vue') },
+        // 押金退還已併入使用者詳情，保留舊路徑避免既有書籤與稽核紀錄連結 404
+        { path: 'deposits', redirect: '/admin/users' },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
         // 通知已併入內容管理，保留舊路徑避免既有書籤 404
         { path: 'notifications', redirect: '/admin/content' },
         { path: 'ai-usage', component: () => import('@/src/pages/admin/ai-usage.vue') },
         // 已改名為 AI 使用量，保留舊路徑避免既有書籤 404
         { path: 'ai-quality', redirect: '/admin/ai-usage' },
-        { path: 'subscription', component: () => import('@/src/pages/admin/subscription.vue') },
+        // 訂閱與容量已併入使用者詳情，保留舊路徑避免既有書籤 404
+        { path: 'subscription', redirect: '/admin/users' },
         { path: 'audit', component: () => import('@/src/pages/admin/audit.vue') },
         { path: 'settings', component: () => import('@/src/pages/admin/settings.vue') },
         // 已移除的後台模組（review、knowledge）留在書籤裡時，導回後台總覽而非公開首頁

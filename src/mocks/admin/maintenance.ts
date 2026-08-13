@@ -12,7 +12,8 @@ export interface MaintenanceEvent {
 export interface MaintenanceTicket {
   id: string
   address: string
-  tenant: string
+  tenantUserId: string
+  landlordUserId: string
   category: MaintenanceCategory
   description: string
   status: MaintenanceStatus
@@ -30,7 +31,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-1',
       address: '台北市大安區信義路四段 100 號 5 樓',
-      tenant: '小雨',
+      tenantUserId: 'u-tenant-1',
+      landlordUserId: 'u-landlord-1',
       category: 'leak',
       description: '浴室天花板滲水，牆角出現黃色水漬且面積持續擴大',
       status: 'submitted',
@@ -39,14 +41,15 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(1), actor: '小雨', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(1), actor: '小艾', from: null, to: 'submitted', note: '租客送出報修申請' },
       ],
       adminNote: '',
     },
     {
       id: 'mt-2',
       address: '新北市板橋區文化路二段 55 號 3 樓',
-      tenant: '阿凱',
+      tenantUserId: 'u-tenant-2',
+      landlordUserId: 'u-landlord-2',
       category: 'appliance',
       description: '冷氣室內機不斷滴水，牆面已經濕透',
       status: 'submitted',
@@ -55,14 +58,15 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(2), actor: '阿凱', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(2), actor: '阿賓', from: null, to: 'submitted', note: '租客送出報修申請' },
       ],
       adminNote: '',
     },
     {
       id: 'mt-3',
       address: '台中市西屯區台灣大道三段 200 號 8 樓',
-      tenant: '小敏',
+      tenantUserId: 'u-tenant-3',
+      landlordUserId: 'u-landlord-1',
       category: 'lock',
       description: '大門電子鎖感應失靈，需插入緊急鑰匙才能開門',
       status: 'submitted',
@@ -71,7 +75,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(1), actor: '小敏', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(1), actor: 'cindy.chang@example.com', from: null, to: 'submitted', note: '租客送出報修申請' },
       ],
       adminNote: '',
     },
@@ -80,7 +84,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-4',
       address: '台北市中山區松江路 88 號 4 樓',
-      tenant: '阿宏',
+      tenantUserId: 'u-tenant-4',
+      landlordUserId: 'u-landlord-2',
       category: 'appliance',
       description: '電熱水器無法點火，洗澡時完全沒有熱水',
       status: 'notified',
@@ -89,7 +94,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(4), actor: '阿宏', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(4), actor: '小德', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(3), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
       ],
       adminNote: '',
@@ -97,7 +102,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-5',
       address: '高雄市三民區九如二路 120 號 2 樓',
-      tenant: '小婷',
+      tenantUserId: 'u-tenant-5',
+      landlordUserId: 'u-landlord-1',
       category: 'pipe',
       description: '廚房排水管堵塞，水槽積水無法排出',
       status: 'notified',
@@ -106,7 +112,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(3), actor: '小婷', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(3), actor: '伊蓮', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(2), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
       ],
       adminNote: '',
@@ -114,7 +120,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-6',
       address: '台南市東區長榮路二段 66 號 6 樓',
-      tenant: '阿志',
+      tenantUserId: 'u-tenant-1',
+      landlordUserId: 'u-landlord-2',
       category: 'other',
       description: '陽台紗窗破損，大量蚊蟲從縫隙進入室內',
       status: 'notified',
@@ -123,7 +130,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(2), actor: '阿志', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(2), actor: '小艾', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(1), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
       ],
       adminNote: '',
@@ -133,7 +140,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-7',
       address: '台北市信義區松仁路 58 號 12 樓',
-      tenant: '家豪',
+      tenantUserId: 'u-tenant-2',
+      landlordUserId: 'u-landlord-1',
       category: 'leak',
       description: '廁所馬桶底座滲水，周圍地板磁磚已翹起',
       status: 'in_progress',
@@ -142,7 +150,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(6),
       completedAt: null,
       timeline: [
-        { at: daysAgo(9), actor: '家豪', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(9), actor: '阿賓', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(8), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(6), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已安排水電師傅到場評估' },
       ],
@@ -151,7 +159,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-8',
       address: '新北市三重區重新路五段 33 號 7 樓',
-      tenant: '佳玲',
+      tenantUserId: 'u-tenant-3',
+      landlordUserId: 'u-landlord-2',
       category: 'appliance',
       description: '洗衣機脫水時劇烈震動並發出異音',
       status: 'in_progress',
@@ -160,7 +169,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(4),
       completedAt: null,
       timeline: [
-        { at: daysAgo(6), actor: '佳玲', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(6), actor: 'cindy.chang@example.com', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(5), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(4), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已聯絡家電行安排維修' },
       ],
@@ -169,7 +178,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-9',
       address: '桃園市桃園區中正路 168 號 9 樓',
-      tenant: '俊傑',
+      tenantUserId: 'u-tenant-4',
+      landlordUserId: 'u-landlord-1',
       category: 'lock',
       description: '房間門鎖鎖芯鬆脫，門把轉動空轉無法上鎖',
       status: 'in_progress',
@@ -178,7 +188,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(3),
       completedAt: null,
       timeline: [
-        { at: daysAgo(5), actor: '俊傑', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(5), actor: '小德', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(4), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(3), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已購買新鎖芯，約定師傅到場更換' },
       ],
@@ -187,7 +197,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-10',
       address: '台中市北區三民路三段 45 號 5 樓',
-      tenant: '怡君',
+      tenantUserId: 'u-tenant-5',
+      landlordUserId: 'u-landlord-2',
       category: 'pipe',
       description: '陽台落水管破裂，下雨時漏水到樓下鄰居陽台',
       status: 'in_progress',
@@ -196,7 +207,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(5),
       completedAt: null,
       timeline: [
-        { at: daysAgo(7), actor: '怡君', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(7), actor: '伊蓮', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(6), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(5), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已通知社區水電班更換落水管' },
       ],
@@ -205,7 +216,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-11',
       address: '新竹市東區光復路一段 88 號 10 樓',
-      tenant: '建成',
+      tenantUserId: 'u-tenant-1',
+      landlordUserId: 'u-landlord-1',
       category: 'other',
       description: '對講機無法通話，訪客無法通知住戶開門',
       status: 'in_progress',
@@ -214,7 +226,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(2),
       completedAt: null,
       timeline: [
-        { at: daysAgo(4), actor: '建成', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(4), actor: '小艾', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(3), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(2), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已請物業廠商檢查對講機主機' },
       ],
@@ -225,7 +237,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-12',
       address: '台北市文山區羅斯福路六段 100 號 3 樓',
-      tenant: '淑芬',
+      tenantUserId: 'u-tenant-2',
+      landlordUserId: 'u-landlord-2',
       category: 'leak',
       description: '冷氣排水管接頭脫落，冷氣運轉時滴水到床邊地板',
       status: 'overdue',
@@ -234,7 +247,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(20), actor: '淑芬', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(20), actor: '阿賓', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(18), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(11), actor: 'system', from: 'notified', to: 'overdue', note: '通報房東逾 7 天無回應，系統自動標記逾期' },
       ],
@@ -243,7 +256,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-13',
       address: '高雄市左營區博愛二路 77 號 11 樓',
-      tenant: '明浩',
+      tenantUserId: 'u-tenant-3',
+      landlordUserId: 'u-landlord-1',
       category: 'appliance',
       description: '抽油煙機馬達過熱並冒煙，已暫停使用',
       status: 'overdue',
@@ -252,7 +266,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(16), actor: '明浩', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(16), actor: 'cindy.chang@example.com', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(15), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(8), actor: 'system', from: 'notified', to: 'overdue', note: '通報房東逾 7 天無回應，系統自動標記逾期' },
       ],
@@ -261,7 +275,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-14',
       address: '台南市北區成功路 220 號 4 樓',
-      tenant: '雅婷',
+      tenantUserId: 'u-tenant-4',
+      landlordUserId: 'u-landlord-2',
       category: 'pipe',
       description: '陽台地漏逆流，異味瀰漫整間房間',
       status: 'overdue',
@@ -270,7 +285,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: null,
       completedAt: null,
       timeline: [
-        { at: daysAgo(14), actor: '雅婷', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(14), actor: '小德', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(12), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(5), actor: 'system', from: 'notified', to: 'overdue', note: '通報房東逾 7 天無回應，系統自動標記逾期' },
       ],
@@ -281,7 +296,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-15',
       address: '新北市中和區中山路三段 66 號 6 樓',
-      tenant: '志遠',
+      tenantUserId: 'u-tenant-5',
+      landlordUserId: 'u-landlord-1',
       category: 'leak',
       description: '窗框縫隙滲水，房東認為是租客未關窗所致',
       status: 'disputed',
@@ -290,7 +306,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(7),
       completedAt: null,
       timeline: [
-        { at: daysAgo(10), actor: '志遠', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(10), actor: '伊蓮', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(9), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(7), actor: '房東', from: 'notified', to: 'disputed', note: '房東認為係外部風雨造成，非窗框結構問題，租客不同意，雙方對維修責任有爭議' },
       ],
@@ -299,7 +315,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-16',
       address: '台中市南屯區文心路一段 300 號 8 樓',
-      tenant: '思妍',
+      tenantUserId: 'u-tenant-1',
+      landlordUserId: 'u-landlord-2',
       category: 'lock',
       description: '大門鎖具老化損壞，房東要求租客分攤更換費用引發爭議',
       status: 'disputed',
@@ -308,7 +325,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(5),
       completedAt: null,
       timeline: [
-        { at: daysAgo(8), actor: '思妍', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(8), actor: '小艾', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(7), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(5), actor: '房東', from: 'notified', to: 'disputed', note: '房東要求租客分攤更換鎖具費用，租客認為屬自然老化不同意分攤' },
       ],
@@ -319,7 +336,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-17',
       address: '台北市士林區中山北路六段 88 號 5 樓',
-      tenant: '冠廷',
+      tenantUserId: 'u-tenant-2',
+      landlordUserId: 'u-landlord-1',
       category: 'appliance',
       description: '冰箱不製冷，內部食材已開始融化腐敗',
       status: 'completed',
@@ -328,7 +346,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(10),
       completedAt: daysAgo(8),
       timeline: [
-        { at: daysAgo(12), actor: '冠廷', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(12), actor: '阿賓', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(11), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(10), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已聯絡家電行安排維修' },
         { at: daysAgo(8), actor: '房東', from: 'in_progress', to: 'completed', note: '壓縮機已更換完畢，冰箱恢復正常運作' },
@@ -338,7 +356,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-18',
       address: '新北市新莊區中正路 158 號 7 樓',
-      tenant: '芷若',
+      tenantUserId: 'u-tenant-3',
+      landlordUserId: 'u-landlord-2',
       category: 'pipe',
       description: '浴室排水孔堵塞導致積水無法排出',
       status: 'completed',
@@ -347,7 +366,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(9),
       completedAt: daysAgo(6),
       timeline: [
-        { at: daysAgo(11), actor: '芷若', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(11), actor: 'cindy.chang@example.com', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(10), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(9), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已請水電師傅前往疏通排水孔' },
         { at: daysAgo(6), actor: '房東', from: 'in_progress', to: 'completed', note: '排水管已疏通並清潔完畢' },
@@ -357,7 +376,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-19',
       address: '桃園市中壢區中正路 300 號 3 樓',
-      tenant: '柏宇',
+      tenantUserId: 'u-tenant-4',
+      landlordUserId: 'u-landlord-1',
       category: 'leak',
       description: '廚房水槽下方水管接頭滲漏，櫥櫃底板受潮',
       status: 'completed',
@@ -366,7 +386,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(7),
       completedAt: daysAgo(4),
       timeline: [
-        { at: daysAgo(9), actor: '柏宇', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(9), actor: '小德', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(8), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(7), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已安排水電師傅更換水管接頭' },
         { at: daysAgo(4), actor: '房東', from: 'in_progress', to: 'completed', note: '接頭已更換，滲漏情況已排除' },
@@ -376,7 +396,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-20',
       address: '台中市西區台灣大道二段 100 號 15 樓',
-      tenant: '佩璇',
+      tenantUserId: 'u-tenant-5',
+      landlordUserId: 'u-landlord-2',
       category: 'lock',
       description: '陽台落地窗鎖扣脫落，無法上鎖',
       status: 'completed',
@@ -385,7 +406,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(6),
       completedAt: daysAgo(3),
       timeline: [
-        { at: daysAgo(8), actor: '佩璇', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(8), actor: '伊蓮', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(7), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(6), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已購買新鎖扣並約定師傅安裝' },
         { at: daysAgo(3), actor: '房東', from: 'in_progress', to: 'completed', note: '鎖扣已更換完畢，開關恢復正常' },
@@ -395,7 +416,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-21',
       address: '高雄市鳳山區中山路 88 號 6 樓',
-      tenant: '育嘉',
+      tenantUserId: 'u-tenant-1',
+      landlordUserId: 'u-landlord-1',
       category: 'other',
       description: '對外門損壞，門縫過大造成漏風漏雨',
       status: 'completed',
@@ -404,7 +426,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(5),
       completedAt: daysAgo(2),
       timeline: [
-        { at: daysAgo(7), actor: '育嘉', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(7), actor: '小艾', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(6), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(5), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已請木工師傅調整門框' },
         { at: daysAgo(2), actor: '房東', from: 'in_progress', to: 'completed', note: '門框已調整並加裝防水條，問題已解決' },
@@ -416,7 +438,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-22',
       address: '台北市內湖區成功路四段 188 號 9 樓',
-      tenant: '詩涵',
+      tenantUserId: 'u-tenant-2',
+      landlordUserId: 'u-landlord-2',
       category: 'appliance',
       description: '電熱水瓶漏電開關跳脫，已暫停使用',
       status: 'closed',
@@ -425,7 +448,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(22),
       completedAt: daysAgo(18),
       timeline: [
-        { at: daysAgo(25), actor: '詩涵', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(25), actor: '阿賓', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(24), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(22), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已請師傅更換漏電保護零件' },
         { at: daysAgo(18), actor: '房東', from: 'in_progress', to: 'completed', note: '零件已更換，漏電問題已排除' },
@@ -436,7 +459,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-23',
       address: '新北市淡水區中正路 220 號 4 樓',
-      tenant: '語彤',
+      tenantUserId: 'u-tenant-3',
+      landlordUserId: 'u-landlord-1',
       category: 'pipe',
       description: '洗手台排水管漏水，滲入樓下天花板',
       status: 'closed',
@@ -445,7 +469,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(19),
       completedAt: daysAgo(15),
       timeline: [
-        { at: daysAgo(22), actor: '語彤', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(22), actor: 'cindy.chang@example.com', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(21), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(19), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已請水電師傅更換排水管並檢查樓下天花板' },
         { at: daysAgo(15), actor: '房東', from: 'in_progress', to: 'completed', note: '排水管已更換，天花板漏水痕跡已處理' },
@@ -456,7 +480,8 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
     {
       id: 'mt-24',
       address: '台南市安平區安平路 100 號 2 樓',
-      tenant: '承恩',
+      tenantUserId: 'u-tenant-4',
+      landlordUserId: 'u-landlord-2',
       category: 'leak',
       description: '屋頂平台防水層老化，大雨時漏水到頂樓房間',
       status: 'closed',
@@ -465,7 +490,7 @@ export function seedMaintenanceTickets(): MaintenanceTicket[] {
       firstResponseAt: daysAgo(25),
       completedAt: daysAgo(20),
       timeline: [
-        { at: daysAgo(30), actor: '承恩', from: null, to: 'submitted', note: '租客送出報修申請' },
+        { at: daysAgo(30), actor: '小德', from: null, to: 'submitted', note: '租客送出報修申請' },
         { at: daysAgo(28), actor: 'system', from: 'submitted', to: 'notified', note: '系統已將報修內容通報房東' },
         { at: daysAgo(25), actor: '房東', from: 'notified', to: 'in_progress', note: '房東已發包廠商重新施作屋頂防水層' },
         { at: daysAgo(20), actor: '房東', from: 'in_progress', to: 'completed', note: '防水層已重新施作完成，經雨後確認無再滲水' },

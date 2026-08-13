@@ -160,7 +160,7 @@ const maintenanceOverdueDetail = computed(
   () => `處理中 ${maintenanceStats.value.processing} 件・共 ${maintenanceStats.value.total} 件`,
 )
 
-const depositProcessingDetail = computed(() => `處理中 ${depositStats.value.processing} 案`)
+const depositPendingDetail = computed(() => `其中 ${depositStats.value.pendingCount} 筆租客尚未聲明`)
 
 function confirmReset(): void {
   resetAdminData()
@@ -263,7 +263,7 @@ function confirmReset(): void {
 
     <div class="space-y-4">
       <div>
-        <h2 class="text-xl font-bold tracking-tight">報修工單與押金退還</h2>
+        <h2 class="text-xl font-bold tracking-tight">報修工單與押金對帳</h2>
         <p class="mt-1 text-sm text-muted-foreground">
           點擊卡片前往對應模組查看詳情。
         </p>
@@ -287,28 +287,20 @@ function confirmReset(): void {
           :corner-variant="maintenanceStats.overdue > 0 ? 'destructive' : 'secondary'"
         />
         <StatusCard
-          title="持有押金總額"
-          to="/admin/deposits"
-          :status="formatCurrency(depositStats.heldTotal)"
+          title="房東聲明押金總額"
+          to="/admin/users"
+          :status="formatCurrency(depositStats.declaredTotal)"
           tone="ok"
-          :detail="depositProcessingDetail"
-          corner-text="押金退還"
+          :detail="depositPendingDetail"
+          corner-text="押金對帳"
         />
         <StatusCard
-          title="押金超收警示"
-          to="/admin/deposits"
-          :status="`${depositStats.overCollectedCount} 件`"
-          :tone="depositStats.overCollectedCount > 0 ? 'alert' : 'ok'"
-          detail="押金超過月租一定倍數視為超收"
-          corner-text="押金退還"
-        />
-        <StatusCard
-          title="押金爭議件數"
-          to="/admin/deposits"
-          :status="`${depositStats.disputedCount} 件`"
-          :tone="depositStats.disputedCount > 0 ? 'alert' : 'ok'"
-          detail="租客對扣款項目提出異議的案件"
-          corner-text="押金退還"
+          title="押金金額不符"
+          to="/admin/users?alert=deposit-mismatch"
+          :status="`${depositStats.mismatchedCount} 件`"
+          :tone="depositStats.mismatchedCount > 0 ? 'alert' : 'ok'"
+          detail="房東與租客聲明的金額對不起來"
+          corner-text="押金對帳"
         />
       </div>
     </div>

@@ -1,0 +1,182 @@
+/**
+ * 使用者與各案件的關聯與篩選。純邏輯，不依賴 Vue。
+ *
+ * 後台把報修工單、押金對帳、訂閱容量都收斂到使用者底下，
+ * 這個檔案負責把散在各 collection 的資料接成一列一列的使用者，以及套用列表的篩選條件。
+ */
+
+import type { AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admin/users'
+import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
+import type { DepositRecord } from '@/src/mocks/admin/deposit'
+import type { PlanId, Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
+import { depositGap, depositMatchOf, type DepositMatch } from './admin-deposit'
+import type { MaintenanceStatus } from './admin-maintenance'
+
+/** 列表與案件裡呈現使用者的名稱，沒有暱稱時退回 email */
+export function userDisplayName(user: Pick<AdminUser, 'nickname' | 'email'>): string {
+  return user.nickname ?? user.email
+}
+
+/** 使用者在一筆案件裡站哪一邊 */
+export type CaseSide = 'tenant' | 'landlord'
+
+export const caseSideLabels: Record<CaseSide, string> = {
+  tenant: '租客',
+  landlord: '房東',
+}
+
+/** 已結案的工單狀態，不列入「待處理」 */
+const CLOSED_TICKET_STATUSES: MaintenanceStatus[] = ['completed', 'closed']
+
+export function isTicketOpen(status: MaintenanceStatus): boolean {
+  return !CLOSED_TICKET_STATUSES.includes(status)
+}
+
+export interface UserDepositView extends DepositRecord {
+  side: CaseSide
+  match: DepositMatch
+  /** 雙方聲明的差額，相符或未聲明時為 0 */
+  gap: number
+}
+
+export interface UserTicketView extends MaintenanceTicket {
+  side: CaseSide
+  open: boolean
+}
+
+export interface UserDirectoryRow {
+  user: AdminUser
+  /** 沒有訂閱記錄時為 null，詳情頁顯示空狀態 */
+  subscription: Subscription | null
+  plan: SubscriptionPlan | null
+  deposits: UserDepositView[]
+  tickets: UserTicketView[]
+  openTicketCount: number
+  overdueTicketCount: number
+  mismatchedDepositCount: number
+}
+
+export interface UserDirectorySources {
+  users: AdminUser[]
+  tickets: MaintenanceTicket[]
+  deposits: DepositRecord[]
+  subscriptions: Subscription[]
+  plans: SubscriptionPlan[]
+}
+
+/** 把工單／押金／訂閱接到每個使用者身上。一筆案件會同時掛在房東與租客兩邊。 */
+export function joinUserDirectory(sources: UserDirectorySources): UserDirectoryRow[] {
+  const { users, tickets, deposits, subscriptions, plans } = sources
+
+  return users.map((user) => {
+    const subscription = subscriptions.find((item) => item.userId === user.id) ?? null
+    const plan = subscription
+      ? (plans.find((item) => item.id === subscription.planId) ?? null)
+      : null
+
+    const userDeposits: UserDepositView[] = deposits
+      .filter((item) => item.tenantUserId === user.id || item.landlordUserId === user.id)
+      .map((item) => ({
+        ...item,
+        side: item.tenantUserId === user.id ? 'tenant' : 'landlord',
+        match: depositMatchOf(item.landlordDeclared, item.tenantDeclared),
+        gap: depositGap(item.landlordDeclared, item.tenantDeclared),
+      }))
+
+    const userTickets: UserTicketView[] = tickets
+      .filter((item) => item.tenantUserId === user.id || item.landlordUserId === user.id)
+      .map((item) => ({
+        ...item,
+        side: item.tenantUserId === user.id ? 'tenant' : 'landlord',
+        open: isTicketOpen(item.status),
+      }))
+
+    return {
+      user,
+      subscription,
+      plan,
+      deposits: userDeposits,
+      tickets: userTickets,
+      openTicketCount: userTickets.filter((item) => item.open).length,
+      overdueTicketCount: userTickets.filter((item) => item.status === 'overdue').length,
+      mismatchedDepositCount: userDeposits.filter((item) => item.match === 'mismatched').length,
+    }
+  })
+}
+
+export type UserAlert = 'deposit-mismatch' | 'ticket-overdue'
+
+export const userAlertLabels: Record<UserAlert, string> = {
+  'deposit-mismatch': '押金金額不符',
+  'ticket-overdue': '工單逾期',
+}
+
+export interface UserDirectoryFilter {
+  keyword: string
+  role: AdminUserRole | 'all'
+  status: AdminUserStatus | 'all'
+  /** 'none' 篩出沒有訂閱記錄的使用者 */
+  plan: PlanId | 'none' | 'all'
+  alert: UserAlert | 'all'
+}
+
+export const emptyUserDirectoryFilter: UserDirectoryFilter = {
+  keyword: '',
+  role: 'all',
+  status: 'all',
+  plan: 'all',
+  alert: 'all',
+}
+
+export function isFilterActive(filter: UserDirectoryFilter): boolean {
+  return (
+    filter.keyword.trim() !== '' ||
+    filter.role !== 'all' ||
+    filter.status !== 'all' ||
+    filter.plan !== 'all' ||
+    filter.alert !== 'all'
+  )
+}
+
+function matchesKeyword(row: UserDirectoryRow, keyword: string): boolean {
+  const kw = keyword.trim().toLowerCase()
+  if (!kw) return true
+  return (
+    row.user.email.toLowerCase().includes(kw) ||
+    (row.user.nickname ?? '').toLowerCase().includes(kw)
+  )
+}
+
+function matchesPlan(row: UserDirectoryRow, plan: UserDirectoryFilter['plan']): boolean {
+  if (plan === 'all') return true
+  if (plan === 'none') return row.subscription === null
+  return row.subscription?.planId === plan
+}
+
+function matchesAlert(row: UserDirectoryRow, alert: UserDirectoryFilter['alert']): boolean {
+  switch (alert) {
+    case 'all':
+      return true
+    case 'deposit-mismatch':
+      return row.mismatchedDepositCount > 0
+    case 'ticket-overdue':
+      return row.overdueTicketCount > 0
+    default:
+      return true
+  }
+}
+
+/** 五軸皆為 AND 疊加 */
+export function filterUserDirectory(
+  rows: UserDirectoryRow[],
+  filter: UserDirectoryFilter,
+): UserDirectoryRow[] {
+  return rows.filter(
+    (row) =>
+      matchesKeyword(row, filter.keyword) &&
+      (filter.role === 'all' || row.user.role === filter.role) &&
+      (filter.status === 'all' || row.user.status === filter.status) &&
+      matchesPlan(row, filter.plan) &&
+      matchesAlert(row, filter.alert),
+  )
+}

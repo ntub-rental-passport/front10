@@ -11,12 +11,11 @@ import type { AdminRole } from '@/src/mocks/admin/users'
 // path -> role -> expected access
 const MATRIX: Record<string, Record<AdminRole, boolean>> = {
   '/admin': { super: true, admin: true },
-  '/admin/subscription': { super: true, admin: true },
   '/admin/content': { super: true, admin: true },
   '/admin/ai-usage': { super: true, admin: true },
-  '/admin/users': { super: true, admin: false },
+  // 押金與訂閱整合進來後開放給一般管理員；高風險操作在詳情頁另外擋
+  '/admin/users': { super: true, admin: true },
   '/admin/maintenance-tickets': { super: true, admin: true },
-  '/admin/deposits': { super: true, admin: true },
   '/admin/audit': { super: true, admin: false },
   '/admin/settings': { super: true, admin: false },
 }
@@ -55,12 +54,17 @@ describe('canAdminAccessPath', () => {
     expect(canAdminAccessPath('admin', '/admin/unknown')).toBe(true)
   })
 
-  it('帶有尾端子段落的路徑會依第一段解析', () => {
-    expect(canAdminAccessPath('admin', '/admin/users/detail')).toBe(
-      canAdminAccessPath('admin', '/admin/users'),
-    )
-    expect(canAdminAccessPath('super', '/admin/users/detail')).toBe(true)
-    expect(canAdminAccessPath('admin', '/admin/users/detail')).toBe(false)
+  it('使用者詳情 /admin/users/:id 沿用使用者管理的權限', () => {
+    for (const role of ADMIN_ROLES) {
+      expect(canAdminAccessPath(role, '/admin/users/u-tenant-1')).toBe(
+        canAdminAccessPath(role, '/admin/users'),
+      )
+    }
+    expect(canAdminAccessPath('admin', '/admin/users/u-tenant-1')).toBe(true)
+  })
+
+  it('稽核紀錄的子路徑不會因為多一段就被放行', () => {
+    expect(canAdminAccessPath('admin', '/admin/audit/anything')).toBe(false)
   })
 })
 
@@ -69,12 +73,17 @@ describe('visibleNavGroupsFor', () => {
     return visibleNavGroupsFor(role).reduce((sum, g) => sum + g.items.length, 0)
   }
 
-  it('super 可看到全部 9 個項目', () => {
-    expect(totalItems('super')).toBe(9)
+  it('super 可看到全部 7 個項目', () => {
+    expect(totalItems('super')).toBe(7)
   })
 
-  it('一般管理員可看到 6 個項目', () => {
-    expect(totalItems('admin')).toBe(6)
+  it('一般管理員可看到 5 個項目（少了稽核紀錄與系統設定）', () => {
+    expect(totalItems('admin')).toBe(5)
+  })
+
+  it('一般管理員看得到使用者管理', () => {
+    const paths = visibleNavGroupsFor('admin').flatMap((g) => g.items.map((i) => i.path))
+    expect(paths).toContain('/admin/users')
   })
 
   it('不會回傳空群組（每個群組至少有一個項目）', () => {
@@ -93,10 +102,10 @@ describe('visibleNavGroupsFor', () => {
 })
 
 describe('adminNavGroups', () => {
-  it('定義了三個群組，共 9 個項目', () => {
+  it('定義了三個群組，共 7 個項目', () => {
     const total = adminNavGroups.reduce((sum, g) => sum + g.items.length, 0)
     expect(adminNavGroups.length).toBe(3)
-    expect(total).toBe(9)
+    expect(total).toBe(7)
   })
 
   it('已移除的模組不再出現在導覽中', () => {
@@ -104,5 +113,11 @@ describe('adminNavGroups', () => {
     expect(paths).not.toContain('/admin/review')
     expect(paths).not.toContain('/admin/knowledge')
     expect(paths).not.toContain('/admin/notifications')
+  })
+
+  it('押金與訂閱已整合進使用者管理，不再是獨立項目', () => {
+    const paths = adminNavGroups.flatMap((g) => g.items.map((i) => i.path))
+    expect(paths).not.toContain('/admin/deposits')
+    expect(paths).not.toContain('/admin/subscription')
   })
 })

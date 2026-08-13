@@ -1,58 +1,28 @@
-/** 押金退還的狀態機與法規檢核。純邏輯，不依賴 Vue。 */
+/**
+ * 押金對帳。純邏輯，不依賴 Vue。
+ *
+ * 只比對租約雙方各自聲明的金額，不判定押金上限等法規問題 —— 那不在系統管轄範圍。
+ */
 
-export type DepositStatus =
-  | 'held'
-  | 'inspecting'
-  | 'deduction_proposed'
-  | 'disputed'
-  | 'agreed'
-  | 'refunded'
-  | 'overdue'
+export type DepositMatch = 'matched' | 'mismatched' | 'pending'
 
-export const depositStatusLabels: Record<DepositStatus, string> = {
-  held: '持有中',
-  inspecting: '退租點交中',
-  deduction_proposed: '房東提出扣款',
-  disputed: '租客異議',
-  agreed: '租客同意',
-  refunded: '已退還',
-  overdue: '逾期未退',
+export const depositMatchLabels: Record<DepositMatch, string> = {
+  matched: '金額相符',
+  mismatched: '金額不符',
+  pending: '租客未聲明',
 }
 
-export const depositTransitions: Record<DepositStatus, DepositStatus[]> = {
-  held: ['inspecting'],
-  inspecting: ['deduction_proposed', 'agreed'],
-  deduction_proposed: ['agreed', 'disputed', 'overdue'],
-  disputed: ['agreed', 'overdue'],
-  agreed: ['refunded', 'overdue'],
-  overdue: ['disputed', 'refunded'],
-  refunded: [],
+/** 租客尚未聲明時視為 pending，不算不符 —— 那是還沒填，不是對不起來 */
+export function depositMatchOf(
+  landlordDeclared: number,
+  tenantDeclared: number | null,
+): DepositMatch {
+  if (tenantDeclared === null) return 'pending'
+  return landlordDeclared === tenantDeclared ? 'matched' : 'mismatched'
 }
 
-export function canTransitionDeposit(from: DepositStatus, to: DepositStatus): boolean {
-  return depositTransitions[from].includes(to)
-}
-
-export type DeductionResponse = 'pending' | 'agreed' | 'disputed'
-
-export const deductionResponseLabels: Record<DeductionResponse, string> = {
-  pending: '待回應',
-  agreed: '同意',
-  disputed: '異議',
-}
-
-/** 押金上限月數（土地法第 99 條，撰寫論文時請再核對現行條文） */
-export const depositCapMonths = 2
-/** 退租後幾天內應退還押金 */
-export const refundDueDays = 30
-
-/** 押金是否超收：嚴格大於月租 × 上限月數才算 */
-export function isOverCollected(depositAmount: number, monthlyRent: number): boolean {
-  return depositAmount > monthlyRent * depositCapMonths
-}
-
-/** 超收金額，未超收為 0 */
-export function overCollectedAmount(depositAmount: number, monthlyRent: number): number {
-  const cap = monthlyRent * depositCapMonths
-  return depositAmount > cap ? depositAmount - cap : 0
+/** 雙方聲明的差額。相符或租客未聲明時為 0 */
+export function depositGap(landlordDeclared: number, tenantDeclared: number | null): number {
+  if (tenantDeclared === null) return 0
+  return Math.abs(landlordDeclared - tenantDeclared)
 }

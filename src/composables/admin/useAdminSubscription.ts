@@ -1,5 +1,6 @@
 import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
+import { adminUsersCollection } from './useAdminUsers'
 import {
   seedPlans,
   seedSubscriptions,
@@ -7,11 +8,25 @@ import {
   type Subscription,
   type SubscriptionPlan,
 } from '@/src/mocks/admin-seed'
+import { discardLegacy } from '@/src/utils/admin-collection-migrate'
 
-const plans = createAdminCollection<SubscriptionPlan[]>('plans', seedPlans)
-const subscriptions = createAdminCollection<Subscription[]>('subscriptions', seedSubscriptions)
+export const adminPlansCollection = createAdminCollection<SubscriptionPlan[]>('plans', seedPlans)
+const plans = adminPlansCollection
+
+// 舊格式用 userEmail 指向使用者，無法與其他 collection 對接，直接丟棄重 seed。
+export const adminSubscriptionCollection = createAdminCollection<Subscription[]>(
+  'subscriptions',
+  seedSubscriptions,
+  discardLegacy(seedSubscriptions, 'userId'),
+)
+const subscriptions = adminSubscriptionCollection
 
 const EXPIRING_SOON_DAYS = 14
+
+/** 稽核紀錄用 email 當識別，比 userId 好讀 */
+function labelOf(userId: string): string {
+  return adminUsersCollection.value.find((user) => user.id === userId)?.email ?? userId
+}
 
 export function useAdminSubscription() {
   const { logAction } = useAdminAudit()
@@ -26,14 +41,14 @@ export function useAdminSubscription() {
     const nextPlan = plans.value.find((plan) => plan.id === planId)
     if (!nextPlan) return
     subscription.planId = planId
-    logAction('訂閱', subscription.userEmail, `方案調整為「${nextPlan.name}」`)
+    logAction('訂閱', labelOf(subscription.userId), `方案調整為「${nextPlan.name}」`)
   }
 
   function cancelSubscription(id: string): void {
     const subscription = subscriptions.value.find((item) => item.id === id)
     if (!subscription || !subscription.active) return
     subscription.active = false
-    logAction('訂閱', subscription.userEmail, '取消訂閱')
+    logAction('訂閱', labelOf(subscription.userId), '取消訂閱')
   }
 
   function isExpiringSoon(subscription: Subscription): boolean {
