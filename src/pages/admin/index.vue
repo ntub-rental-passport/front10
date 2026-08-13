@@ -31,12 +31,14 @@ import { isMaintenanceActive } from '@/src/utils/maintenance'
 import { maintenanceCategoryLabels, type MaintenanceCategory } from '@/src/utils/admin-maintenance'
 import type { AdminUserRole } from '@/src/mocks/admin-seed'
 
-const CHART_INDIGO = '#5660D6'
-const CHART_TEAL = '#0E9488'
-const CHART_AMBER = '#D97706'
-const CHART_INDIGO_MUTED = '#B4B9EE'
-const CHART_ROSE = '#DC2626'
-const CHART_SLATE = '#64748B'
+import {
+  CHART_AMBER,
+  CHART_INDIGO,
+  CHART_INDIGO_MUTED,
+  CHART_ROSE,
+  CHART_SLATE,
+  CHART_TEAL,
+} from '@/src/constants/admin-chart'
 
 const { users } = useAdminUsers()
 const { usages, alerts, alertCount } = useAdminAiUsage()

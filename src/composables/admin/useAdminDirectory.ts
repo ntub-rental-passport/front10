@@ -4,10 +4,12 @@ import { adminMaintenanceCollection } from './useAdminMaintenance'
 import { adminDepositCollection } from './useAdminDeposits'
 import { adminPlansCollection, adminSubscriptionCollection } from './useAdminSubscription'
 import {
+  adminRoleCounts,
   emptyUserDirectoryFilter,
   filterUserDirectory,
   isFilterActive,
   joinUserDirectory,
+  planDistribution,
   type UserDirectoryFilter,
   type UserDirectoryRow,
 } from '@/src/utils/admin-user-directory'
@@ -32,6 +34,10 @@ export function useAdminDirectory() {
 
   const filteredRows = computed(() => filterUserDirectory(rows.value, filter.value))
 
+  // 圖表刻意吃全量 rows，不吃 filteredRows —— 見 planDistribution 的註解
+  const planSegments = computed(() => planDistribution(rows.value, adminPlansCollection.value))
+  const adminCounts = computed(() => adminRoleCounts(rows.value))
+
   const filterActive = computed(() => isFilterActive(filter.value))
 
   function clearFilter(): void {
@@ -42,5 +48,14 @@ export function useAdminDirectory() {
     return rows.value.find((row) => row.user.id === userId) ?? null
   }
 
-  return { rows, filteredRows, filter, filterActive, clearFilter, rowOf }
+  return {
+    rows,
+    filteredRows,
+    filter,
+    filterActive,
+    clearFilter,
+    rowOf,
+    planSegments,
+    adminCounts,
+  }
 }

@@ -9,6 +9,7 @@ import {
   type SubscriptionPlan,
 } from '@/src/mocks/admin-seed'
 import { discardLegacy } from '@/src/utils/admin-collection-migrate'
+import { isSubscriptionExpiring } from '@/src/utils/admin-user-directory'
 
 export const adminPlansCollection = createAdminCollection<SubscriptionPlan[]>('plans', seedPlans)
 const plans = adminPlansCollection
@@ -20,8 +21,6 @@ export const adminSubscriptionCollection = createAdminCollection<Subscription[]>
   discardLegacy(seedSubscriptions, 'userId'),
 )
 const subscriptions = adminSubscriptionCollection
-
-const EXPIRING_SOON_DAYS = 14
 
 /** 稽核紀錄用 email 當識別，比 userId 好讀 */
 function labelOf(userId: string): string {
@@ -51,10 +50,9 @@ export function useAdminSubscription() {
     logAction('訂閱', labelOf(subscription.userId), '取消訂閱')
   }
 
+  // 與使用者列表的「訂閱即將到期」警示共用同一份判定，避免兩處規則走鐘
   function isExpiringSoon(subscription: Subscription): boolean {
-    if (!subscription.active) return false
-    const remainingMs = new Date(subscription.expiresAt).getTime() - Date.now()
-    return remainingMs > 0 && remainingMs <= EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000
+    return isSubscriptionExpiring(subscription)
   }
 
   return { plans, subscriptions, planOf, changePlan, cancelSubscription, isExpiringSoon }

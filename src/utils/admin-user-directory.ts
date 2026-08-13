@@ -5,12 +5,45 @@
  * 這個檔案負責把散在各 collection 的資料接成一列一列的使用者，以及套用列表的篩選條件。
  */
 
-import type { AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admin/users'
+import type { AdminRole, AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admin/users'
 import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import type { PlanId, Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
 import { depositGap, depositMatchOf, type DepositMatch } from './admin-deposit'
 import type { MaintenanceStatus } from './admin-maintenance'
+
+/** 到期前幾天開始標示「即將到期」 */
+export const EXPIRING_SOON_DAYS = 14
+
+/**
+ * 訂閱是否即將到期。
+ *
+ * 已停用的訂閱不算 —— 它已經沒有續約可言，混進警示只會製造雜訊。
+ */
+export function isSubscriptionExpiring(
+  subscription: Subscription | null,
+  now: Date = new Date(),
+): boolean {
+  if (!subscription || !subscription.active) return false
+  const remainingMs = new Date(subscription.expiresAt).getTime() - now.getTime()
+  return remainingMs > 0 && remainingMs <= EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000
+}
+
+/**
+ * AI 次數或儲存空間任一達到方案上限。
+ *
+ * 門檻是「已用滿」而非「快用完」：提醒使用者升級是產品端的事，
+ * 後台要追的是已經卡住的人。已停用的訂閱同樣排除，與到期判定一致。
+ */
+export function isQuotaExhausted(
+  subscription: Subscription | null,
+  plan: SubscriptionPlan | null,
+): boolean {
+  if (!subscription || !subscription.active || !plan) return false
+  const aiFull = plan.aiQuota > 0 && subscription.aiUsed >= plan.aiQuota
+  const storageFull = plan.storageMb > 0 && subscription.storageUsedMb >= plan.storageMb
+  return aiFull || storageFull
+}
 
 /** 列表與案件裡呈現使用者的名稱，沒有暱稱時退回 email */
 export function userDisplayName(user: Pick<AdminUser, 'nickname' | 'email'>): string {
@@ -54,6 +87,8 @@ export interface UserDirectoryRow {
   openTicketCount: number
   overdueTicketCount: number
   mismatchedDepositCount: number
+  subscriptionExpiring: boolean
+  quotaExhausted: boolean
 }
 
 export interface UserDirectorySources {
@@ -64,8 +99,15 @@ export interface UserDirectorySources {
   plans: SubscriptionPlan[]
 }
 
-/** 把工單／押金／訂閱接到每個使用者身上。一筆案件會同時掛在房東與租客兩邊。 */
-export function joinUserDirectory(sources: UserDirectorySources): UserDirectoryRow[] {
+/**
+ * 把工單／押金／訂閱接到每個使用者身上。一筆案件會同時掛在房東與租客兩邊。
+ *
+ * `now` 可注入，讓「即將到期」的測試不必跟著真實日期飄。
+ */
+export function joinUserDirectory(
+  sources: UserDirectorySources,
+  now: Date = new Date(),
+): UserDirectoryRow[] {
   const { users, tickets, deposits, subscriptions, plans } = sources
 
   return users.map((user) => {
@@ -100,15 +142,23 @@ export function joinUserDirectory(sources: UserDirectorySources): UserDirectoryR
       openTicketCount: userTickets.filter((item) => item.open).length,
       overdueTicketCount: userTickets.filter((item) => item.status === 'overdue').length,
       mismatchedDepositCount: userDeposits.filter((item) => item.match === 'mismatched').length,
+      subscriptionExpiring: isSubscriptionExpiring(subscription, now),
+      quotaExhausted: isQuotaExhausted(subscription, plan),
     }
   })
 }
 
-export type UserAlert = 'deposit-mismatch' | 'ticket-overdue'
+export type UserAlert =
+  | 'deposit-mismatch'
+  | 'ticket-overdue'
+  | 'subscription-expiring'
+  | 'quota-exhausted'
 
 export const userAlertLabels: Record<UserAlert, string> = {
   'deposit-mismatch': '押金金額不符',
   'ticket-overdue': '工單逾期',
+  'subscription-expiring': '訂閱即將到期',
+  'quota-exhausted': '額度已用滿',
 }
 
 export interface UserDirectoryFilter {
@@ -161,9 +211,53 @@ function matchesAlert(row: UserDirectoryRow, alert: UserDirectoryFilter['alert']
       return row.mismatchedDepositCount > 0
     case 'ticket-overdue':
       return row.overdueTicketCount > 0
+    case 'subscription-expiring':
+      return row.subscriptionExpiring
+    case 'quota-exhausted':
+      return row.quotaExhausted
     default:
       return true
   }
+}
+
+/** 訂閱方案分布的一段。planId 為 'none' 代表尚未訂閱。 */
+export interface PlanDistributionSegment {
+  planId: PlanId | 'none'
+  label: string
+  value: number
+}
+
+/**
+ * 訂閱方案分布。永遠以全量 rows 計算 —— 圖表的用途是「進來先看一眼盤子長怎樣」，
+ * 跟著篩選跑的話篩到單一方案時圖表只剩一段，等於自己把自己吃掉。
+ */
+export function planDistribution(
+  rows: UserDirectoryRow[],
+  plans: SubscriptionPlan[],
+): PlanDistributionSegment[] {
+  const segments: PlanDistributionSegment[] = plans.map((plan) => ({
+    planId: plan.id,
+    label: plan.name,
+    value: rows.filter((row) => row.subscription?.planId === plan.id).length,
+  }))
+
+  segments.push({
+    planId: 'none',
+    label: '尚未訂閱',
+    value: rows.filter((row) => row.subscription === null).length,
+  })
+
+  return segments
+}
+
+/** 管理員權限角色人數。adminRole 為 null 時視為超級管理員，與詳情頁的預設值一致。 */
+export function adminRoleCounts(rows: UserDirectoryRow[]): Record<AdminRole, number> {
+  const counts: Record<AdminRole, number> = { super: 0, admin: 0 }
+  for (const row of rows) {
+    if (row.user.role !== 'admin') continue
+    counts[row.user.adminRole ?? 'super'] += 1
+  }
+  return counts
 }
 
 /** 五軸皆為 AND 疊加 */

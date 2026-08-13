@@ -21,15 +21,41 @@ import {
   TableRow,
 } from '@/components/ui/table/index'
 import { BadgeCheck, Search, ShieldAlert, X } from 'lucide-vue-next'
+import AdminRoleCountCard from '@/src/components/admin/AdminRoleCountCard.vue'
+import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
 import { userAlertLabels, type UserAlert } from '@/src/utils/admin-user-directory'
-import type { UserDirectoryRow } from '@/src/utils/admin-user-directory'
+import type {
+  PlanDistributionSegment,
+  UserDirectoryRow,
+} from '@/src/utils/admin-user-directory'
+import type { AdminRole } from '@/src/utils/admin-rbac'
+import {
+  CHART_AMBER,
+  CHART_INDIGO,
+  CHART_INDIGO_MUTED,
+  CHART_SLATE,
+  CHART_TEAL,
+} from '@/src/constants/admin-chart'
 
 const route = useRoute()
 const router = useRouter()
 
-const { filteredRows, filter, filterActive, clearFilter } = useAdminDirectory()
+const { rows, filteredRows, filter, filterActive, clearFilter, planSegments, adminCounts } =
+  useAdminDirectory()
+
+// 順序對應 seedPlans()：免費、進階、專業，最後一色留給「尚未訂閱」
+const planColors = [CHART_TEAL, CHART_INDIGO, CHART_AMBER, CHART_SLATE]
+const adminRoleColors: Record<AdminRole, string> = {
+  super: CHART_INDIGO,
+  admin: CHART_INDIGO_MUTED,
+}
+
+// 再點一次同一個方案就取消篩選，不用特地跑去按「清除篩選」
+function handlePlanSelect(planId: PlanDistributionSegment['planId']): void {
+  filter.value.plan = filter.value.plan === planId ? 'all' : planId
+}
 
 // 總覽頁的 KPI 卡帶著 ?alert= 跳過來，預選對應的警示條件
 watch(
@@ -71,6 +97,17 @@ function handleFilterChange<K extends keyof typeof filter.value>(
       <p class="mt-1 text-muted-foreground">
         以使用者為中心檢視訂閱容量、押金對帳與報修工單，點選任一列進入詳情。
       </p>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      <PlanDistributionCard
+        :segments="planSegments"
+        :colors="planColors"
+        :total="rows.length"
+        :active-plan="filter.plan"
+        @select="handlePlanSelect"
+      />
+      <AdminRoleCountCard :counts="adminCounts" :colors="adminRoleColors" />
     </div>
 
     <Card class="rounded-[1.5rem]">
