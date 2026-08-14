@@ -51,7 +51,7 @@ const chartOptions = computed<ChartOptions<'doughnut'>>(() => ({
 </script>
 
 <template>
-  <Card class="h-full rounded-[1.5rem] border-border/70 bg-background/90 shadow-sm">
+  <Card class="h-full rounded-3xl border-border/70 bg-background/90 shadow-sm">
     <CardHeader class="pb-2">
       <CardTitle class="text-sm font-medium">訂閱方案分布</CardTitle>
       <p class="text-xs text-muted-foreground">全部 {{ total }} 位使用者，點方案可篩選</p>

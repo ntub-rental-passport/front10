@@ -88,7 +88,7 @@ function daysLeftText(usage: ProviderUsage): string {
     </div>
 
     <div class="grid gap-4 md:grid-cols-2">
-      <Card v-for="usage in usages" :key="usage.provider.id" class="rounded-[1.5rem]">
+      <Card v-for="usage in usages" :key="usage.provider.id" class="rounded-3xl">
         <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle class="text-base">{{ usage.provider.label }}</CardTitle>
           <Badge :variant="levelVariants[usage.level]">{{ quotaLevelLabels[usage.level] }}</Badge>
@@ -128,7 +128,7 @@ function daysLeftText(usage: ProviderUsage): string {
       </Card>
     </div>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader>
         <CardTitle>近 30 天用量趨勢</CardTitle>
         <CardDescription>顯示各供應商每日用量佔其月額度的百分比，因此兩者可以直接比較消耗速度。</CardDescription>
@@ -138,7 +138,7 @@ function daysLeftText(usage: ProviderUsage): string {
       </CardContent>
     </Card>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader class="flex flex-row items-center justify-between space-y-0">
         <CardTitle>每日明細</CardTitle>
         <Button variant="outline" size="sm" @click="showAllDays = !showAllDays">

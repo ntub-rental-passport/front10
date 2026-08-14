@@ -8,7 +8,7 @@ import {
   type Subscription,
   type SubscriptionPlan,
 } from '@/src/mocks/admin-seed'
-import { discardLegacy } from '@/src/utils/admin-collection-migrate'
+import { ADMIN_DATASET_VERSION, discardLegacy } from '@/src/utils/admin-collection-migrate'
 import { isSubscriptionExpiring } from '@/src/utils/admin-user-directory'
 
 export const adminPlansCollection = createAdminCollection<SubscriptionPlan[]>('plans', seedPlans)
@@ -16,7 +16,7 @@ const plans = adminPlansCollection
 
 // 舊格式用 userEmail 指向使用者，無法與其他 collection 對接，直接丟棄重 seed。
 export const adminSubscriptionCollection = createAdminCollection<Subscription[]>(
-  'subscriptions',
+  `subscriptions-${ADMIN_DATASET_VERSION}`,
   seedSubscriptions,
   discardLegacy(seedSubscriptions, 'userId'),
 )

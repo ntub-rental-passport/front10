@@ -167,7 +167,7 @@ function goToTickets(): void {
 
     <!-- 摘要 -->
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Card class="rounded-[1.5rem]">
+      <Card class="rounded-3xl">
         <CardContent class="pt-6">
           <p class="text-sm text-muted-foreground">AI 用量</p>
           <p class="text-2xl font-black">
@@ -178,7 +178,7 @@ function goToTickets(): void {
           </p>
         </CardContent>
       </Card>
-      <Card class="rounded-[1.5rem]">
+      <Card class="rounded-3xl">
         <CardContent class="pt-6">
           <p class="text-sm text-muted-foreground">儲存用量</p>
           <p class="text-2xl font-black">
@@ -189,7 +189,7 @@ function goToTickets(): void {
           </p>
         </CardContent>
       </Card>
-      <Card class="rounded-[1.5rem]">
+      <Card class="rounded-3xl">
         <CardContent class="pt-6">
           <p class="text-sm text-muted-foreground">押金對帳</p>
           <p
@@ -203,7 +203,7 @@ function goToTickets(): void {
           </p>
         </CardContent>
       </Card>
-      <Card class="rounded-[1.5rem]">
+      <Card class="rounded-3xl">
         <CardContent class="pt-6">
           <p class="text-sm text-muted-foreground">工單待處理</p>
           <p
@@ -220,7 +220,7 @@ function goToTickets(): void {
     </div>
 
     <!-- 權限與帳號 -->
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader><CardTitle>權限與帳號</CardTitle></CardHeader>
       <CardContent class="space-y-4">
         <p v-if="!isSuper" class="rounded-xl bg-muted/50 p-3 text-sm text-muted-foreground">
@@ -277,7 +277,7 @@ function goToTickets(): void {
     </Card>
 
     <!-- 訂閱與容量 -->
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader><CardTitle>訂閱與容量</CardTitle></CardHeader>
       <CardContent>
         <p v-if="!row.subscription" class="text-muted-foreground">此帳號尚未訂閱任何方案。</p>
@@ -339,7 +339,7 @@ function goToTickets(): void {
     </Card>
 
     <!-- 押金對帳 -->
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader>
         <CardTitle>押金對帳</CardTitle>
         <p class="text-sm text-muted-foreground">
@@ -390,7 +390,7 @@ function goToTickets(): void {
     </Card>
 
     <!-- 報修工單 -->
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>報修工單</CardTitle>

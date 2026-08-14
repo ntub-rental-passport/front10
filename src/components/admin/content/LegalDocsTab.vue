@@ -27,7 +27,7 @@ function save(id: string): void {
 
 <template>
   <div class="space-y-6">
-    <Card v-for="doc in legalDocs" :key="doc.id" class="rounded-[1.5rem]">
+    <Card v-for="doc in legalDocs" :key="doc.id" class="rounded-3xl">
       <CardHeader>
         <div class="flex items-center justify-between">
           <div>

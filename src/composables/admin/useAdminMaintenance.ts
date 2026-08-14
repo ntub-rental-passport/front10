@@ -3,7 +3,7 @@ import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
 import { adminUsersCollection } from './useAdminUsers'
 import { seedMaintenanceTickets, type MaintenanceTicket } from '@/src/mocks/admin-seed'
-import { discardLegacy } from '@/src/utils/admin-collection-migrate'
+import { ADMIN_DATASET_VERSION, discardLegacy } from '@/src/utils/admin-collection-migrate'
 import { userDisplayName } from '@/src/utils/admin-user-directory'
 import {
   canTransition,
@@ -15,7 +15,7 @@ import {
 
 // 舊格式的 tenant 是顯示名字串，無法與使用者對接，直接丟棄重 seed。
 export const adminMaintenanceCollection = createAdminCollection<MaintenanceTicket[]>(
-  'maintenance-tickets',
+  `maintenance-tickets-${ADMIN_DATASET_VERSION}`,
   seedMaintenanceTickets,
   discardLegacy(seedMaintenanceTickets, 'tenantUserId'),
 )

@@ -81,7 +81,7 @@ function liftMaintenanceNow(): void {
       <p class="mt-1 text-muted-foreground">調整平台的基本資訊、維護狀態與使用限制。</p>
     </div>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader>
         <CardTitle>基本資訊</CardTitle>
         <CardDescription>顯示於平台各處的識別資訊。</CardDescription>
@@ -100,7 +100,7 @@ function liftMaintenanceNow(): void {
       </CardContent>
     </Card>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader>
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -196,7 +196,7 @@ function liftMaintenanceNow(): void {
       </CardContent>
     </Card>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader>
         <CardTitle>安全性設定</CardTitle>
         <CardDescription>登入保護與 Session 有效期限。</CardDescription>
@@ -275,7 +275,7 @@ function liftMaintenanceNow(): void {
       </CardContent>
     </Card>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader>
         <CardTitle>使用限制</CardTitle>
         <CardDescription>影響資料呈現與檔案上傳的預設值。</CardDescription>
@@ -301,7 +301,7 @@ function liftMaintenanceNow(): void {
       </CardContent>
     </Card>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardHeader>
         <CardTitle>AI 平台額度</CardTitle>
         <CardDescription>

@@ -70,7 +70,7 @@ const filteredEvents = computed(() =>
       </p>
     </div>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardContent class="space-y-4 pt-6">
         <div class="flex flex-wrap items-end gap-3">
           <div class="relative min-w-56 flex-1">

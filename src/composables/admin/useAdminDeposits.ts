@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { seedDepositRecords, type DepositRecord } from '@/src/mocks/admin-seed'
 import { depositMatchOf } from '@/src/utils/admin-deposit'
+import { ADMIN_DATASET_VERSION } from '@/src/utils/admin-collection-migrate'
 
 /**
  * 押金對帳記錄。
@@ -10,7 +11,7 @@ import { depositMatchOf } from '@/src/utils/admin-deposit'
  * 平台不經手金流，因此這裡沒有任何寫入操作。
  */
 export const adminDepositCollection = createAdminCollection<DepositRecord[]>(
-  'deposit-records',
+  `deposit-records-${ADMIN_DATASET_VERSION}`,
   seedDepositRecords,
 )
 const records = adminDepositCollection

@@ -62,7 +62,7 @@ const chartOptions = computed<ChartOptions<'bar'>>(() => ({
 
 <template>
   <RouterLink :to="to" class="block">
-    <Card class="h-full rounded-[1.5rem] border-border/70 bg-background/90 shadow-sm transition-shadow hover:shadow-md">
+    <Card class="h-full rounded-3xl border-border/70 bg-background/90 shadow-sm transition-shadow hover:shadow-md">
       <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle class="text-sm font-medium">{{ title }}</CardTitle>
         <Badge :variant="cornerVariant ?? 'secondary'">{{ cornerText }}</Badge>

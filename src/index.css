@@ -89,7 +89,30 @@
     --chart-3: oklch(0.8 0.15 80);
     --chart-4: oklch(0.9 0.05 280);
     --chart-5: oklch(0.6 0.1 280);
-    
+
+    /*
+     * 後台圖表的分類色階。
+     *
+     * 多段一律用 Blue Iris 同色相的明度階梯區分，不換色相 ——
+     * 一頁十幾張圖時六個飽和色相擠在一起會很吵。
+     * 語意色（警示、注意）另外給，且只在真的有語意時才用。
+     */
+    --chart-series-1: oklch(0.42 0.16 280);
+    --chart-series-2: oklch(0.54 0.14 280);
+    --chart-series-3: oklch(0.66 0.11 280);
+    --chart-series-4: oklch(0.78 0.08 280);
+    --chart-series-5: oklch(0.88 0.05 280);
+
+    /* 面積圖的填色與格線，刻意很淡，不與線條爭注意力 */
+    --chart-fill: oklch(0.42 0.16 280 / 0.12);
+    --chart-grid: oklch(0.9 0.02 280);
+    /* 座標軸文字要讀得到，不能沿用格線色 */
+    --chart-label: oklch(0.55 0.03 280);
+
+    /* 語意色：警示＝Safety Orange，注意＝Amber */
+    --chart-danger: oklch(0.7 0.18 40);
+    --chart-attention: oklch(0.8 0.15 80);
+
     --radius: 0.75rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
@@ -135,6 +158,20 @@
     --chart-3: oklch(0.8 0.15 80);
     --chart-4: oklch(0.9 0.05 280);
     --chart-5: oklch(0.45 0.15 280);
+
+    /* 深色底下明度階梯要反過來：最亮的當主序列才有對比 */
+    --chart-series-1: oklch(0.82 0.13 280);
+    --chart-series-2: oklch(0.72 0.14 280);
+    --chart-series-3: oklch(0.62 0.13 280);
+    --chart-series-4: oklch(0.52 0.11 280);
+    --chart-series-5: oklch(0.42 0.08 280);
+
+    --chart-fill: oklch(0.82 0.13 280 / 0.16);
+    --chart-grid: oklch(0.35 0.03 280);
+    --chart-label: oklch(0.72 0.03 280);
+
+    --chart-danger: oklch(0.72 0.18 40);
+    --chart-attention: oklch(0.82 0.15 80);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);

@@ -31,7 +31,7 @@ const toneClasses = computed(() =>
   >
     <Card
       :class="[
-        'h-full rounded-[1.5rem] border-border/70 bg-background/90 shadow-sm',
+        'h-full rounded-3xl border-border/70 bg-background/90 shadow-sm',
         to ? 'transition-shadow hover:shadow-md' : '',
       ]"
     >

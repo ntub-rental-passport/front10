@@ -31,13 +31,7 @@ import type {
   UserDirectoryRow,
 } from '@/src/utils/admin-user-directory'
 import type { AdminRole } from '@/src/utils/admin-rbac'
-import {
-  CHART_AMBER,
-  CHART_INDIGO,
-  CHART_INDIGO_MUTED,
-  CHART_SLATE,
-  CHART_TEAL,
-} from '@/src/constants/admin-chart'
+import { chartColor, chartSeries } from '@/src/constants/admin-chart'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,12 +39,18 @@ const router = useRouter()
 const { rows, filteredRows, filter, filterActive, clearFilter, planSegments, adminCounts } =
   useAdminDirectory()
 
-// 順序對應 seedPlans()：免費、進階、專業，最後一色留給「尚未訂閱」
-const planColors = [CHART_TEAL, CHART_INDIGO, CHART_AMBER, CHART_SLATE]
-const adminRoleColors: Record<AdminRole, string> = {
-  super: CHART_INDIGO,
-  admin: CHART_INDIGO_MUTED,
-}
+// 對應 planDistribution 的順序：免費、進階、專業、尚未訂閱。
+// 用明度表達層級 —— 方案越高階顏色越深，未訂閱最淡。
+const planColors = computed(() => [
+  chartColor('series-3'),
+  chartColor('series-2'),
+  chartColor('series-1'),
+  chartColor('series-5'),
+])
+const adminRoleColors = computed<Record<AdminRole, string>>(() => ({
+  super: chartColor('series-1'),
+  admin: chartColor('series-3'),
+}))
 
 // 再點一次同一個方案就取消篩選，不用特地跑去按「清除篩選」
 function handlePlanSelect(planId: PlanDistributionSegment['planId']): void {
@@ -110,7 +110,7 @@ function handleFilterChange<K extends keyof typeof filter.value>(
       <AdminRoleCountCard :counts="adminCounts" :colors="adminRoleColors" />
     </div>
 
-    <Card class="rounded-[1.5rem]">
+    <Card class="rounded-3xl">
       <CardContent class="space-y-4 pt-6">
         <div class="flex flex-wrap items-center gap-3">
           <div class="relative min-w-56 flex-1">

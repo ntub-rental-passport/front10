@@ -9,10 +9,11 @@ import {
 } from '@/src/mocks/admin-seed'
 import { adminRoleLabels as rbacRoleLabels, type AdminRole } from '@/src/utils/admin-rbac'
 import { migrateAdminRoleInUsers } from '@/src/utils/admin-role-migrate'
+import { ADMIN_DATASET_VERSION } from '@/src/utils/admin-collection-migrate'
 
 // 舊資料的 adminRole 可能是已淘汰的 'ops' / 'content'，載入時轉成新的兩種角色。
 export const adminUsersCollection = createAdminCollection<AdminUser[]>(
-  'users',
+  `users-${ADMIN_DATASET_VERSION}`,
   seedAdminUsers,
   migrateAdminRoleInUsers,
 )
