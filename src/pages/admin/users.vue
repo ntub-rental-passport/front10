@@ -99,7 +99,11 @@ function handleFilterChange<K extends keyof typeof filter.value>(
       </p>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2">
+    <!--
+      甜甜圈要留白給外側標籤所以吃比較多寬度；管理員人數只有兩個數字，
+      給它等寬只會空一大片。items-start 讓它照內容收高，不被甜甜圈撐平。
+    -->
+    <div class="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
       <PlanDistributionCard
         :segments="planSegments"
         :colors="planColors"
