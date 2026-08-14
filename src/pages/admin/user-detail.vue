@@ -46,6 +46,15 @@ import {
   type UserDepositView,
 } from '@/src/utils/admin-user-directory'
 import { depositMatchLabels } from '@/src/utils/admin-deposit'
+import { useAdminHandover } from '@/src/composables/admin/useAdminHandover'
+import {
+  handoverAgreementLabels,
+  handoverAgreementOf,
+  handoverVerdictLabels,
+  overallAgreement,
+  summarizeHandover,
+  type HandoverAgreement,
+} from '@/src/utils/admin-handover'
 import {
   maintenanceCategoryLabels,
   maintenanceStatusLabels,
@@ -61,6 +70,7 @@ const { rowOf } = useAdminDirectory()
 const { setStatus, setRole, setAdminRole } = useAdminUsers()
 const { planOf, changePlan, isExpiringSoon } = useAdminSubscription()
 const { ticketViews } = useAdminMaintenance()
+const { records: handoverRecords } = useAdminHandover()
 
 const userId = computed(() => String(route.params.id ?? ''))
 const row = computed(() => rowOf(userId.value))
@@ -80,6 +90,35 @@ const ticketGroups = computed(() =>
     .map((side) => ({ side, items: row.value?.tickets.filter((t) => t.side === side) ?? [] }))
     .filter((group) => group.items.length > 0),
 )
+
+// 點交紀錄同樣兩造都掛，依這個人是房東還是租客分開列
+const handoverGroups = computed(() =>
+  (['tenant', 'landlord'] as const)
+    .map((side) => ({
+      side,
+      items: handoverRecords.value.filter((record) =>
+        side === 'tenant'
+          ? record.tenantUserId === userId.value
+          : record.landlordUserId === userId.value,
+      ),
+    }))
+    .filter((group) => group.items.length > 0),
+)
+
+const handoverDisputedCount = computed(
+  () =>
+    handoverRecords.value.filter(
+      (record) =>
+        (record.tenantUserId === userId.value || record.landlordUserId === userId.value) &&
+        overallAgreement(record.items) === 'disputed',
+    ).length,
+)
+
+function agreementVariant(agreement: HandoverAgreement): 'default' | 'secondary' | 'destructive' {
+  if (agreement === 'disputed') return 'destructive'
+  if (agreement === 'pending') return 'secondary'
+  return 'default'
+}
 
 const selectedTicketId = ref<string | null>(null)
 const selectedTicket = computed<MaintenanceTicketView | null>(
@@ -385,6 +424,88 @@ function goToTickets(): void {
               </TableRow>
             </TableBody>
           </Table>
+        </div>
+      </CardContent>
+    </Card>
+
+    <!-- 點交存證：與押金對帳同一種「兩造各自認定、比對是否一致」的模式 -->
+    <Card v-if="handoverGroups.length > 0" class="rounded-3xl">
+      <CardHeader>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>點交存證</CardTitle>
+          <Badge v-if="handoverDisputedCount > 0" variant="destructive">
+            {{ handoverDisputedCount }} 份有爭議
+          </Badge>
+        </div>
+        <p class="text-sm text-muted-foreground">
+          比對房東與租客對每個品項的認定。存證照片留在使用者端，後台不顯示。
+        </p>
+      </CardHeader>
+
+      <CardContent class="space-y-6">
+        <div v-for="group in handoverGroups" :key="group.side" class="space-y-3">
+          <p class="font-semibold">以{{ caseSideLabels[group.side] }}身分</p>
+
+          <div
+            v-for="record in group.items"
+            :key="record.id"
+            class="space-y-2 rounded-xl border p-4"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0">
+                <p class="truncate font-medium">{{ record.address }}</p>
+                <p class="text-xs text-muted-foreground">
+                  點交於 {{ formatDate(record.inspectedAt) }}・共
+                  {{ summarizeHandover(record.items).total }} 項
+                </p>
+              </div>
+              <Badge :variant="agreementVariant(overallAgreement(record.items))">
+                {{ handoverAgreementLabels[overallAgreement(record.items)] }}
+              </Badge>
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead class="whitespace-nowrap">位置</TableHead>
+                  <TableHead>品項</TableHead>
+                  <TableHead class="whitespace-nowrap">房東認定</TableHead>
+                  <TableHead class="whitespace-nowrap">租客認定</TableHead>
+                  <TableHead class="whitespace-nowrap">比對</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="item in record.items" :key="item.id">
+                  <TableCell class="whitespace-nowrap text-muted-foreground">
+                    {{ item.room }}
+                  </TableCell>
+                  <TableCell>{{ item.name }}</TableCell>
+                  <TableCell class="whitespace-nowrap">
+                    {{ handoverVerdictLabels[item.landlordVerdict] }}
+                  </TableCell>
+                  <TableCell class="whitespace-nowrap">
+                    <span v-if="item.tenantVerdict === null" class="text-muted-foreground">
+                      未確認
+                    </span>
+                    <span v-else>{{ handoverVerdictLabels[item.tenantVerdict] }}</span>
+                  </TableCell>
+                  <TableCell class="whitespace-nowrap">
+                    <Badge
+                      :variant="
+                        agreementVariant(handoverAgreementOf(item.landlordVerdict, item.tenantVerdict))
+                      "
+                    >
+                      {{
+                        handoverAgreementLabels[
+                          handoverAgreementOf(item.landlordVerdict, item.tenantVerdict)
+                        ]
+                      }}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </CardContent>
     </Card>
