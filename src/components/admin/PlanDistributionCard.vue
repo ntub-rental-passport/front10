@@ -121,7 +121,7 @@ const chartOptions = computed<ChartOptions<'doughnut'>>(() => ({
   responsive: true,
   maintainAspectRatio: false,
   // 留白給外側標籤，否則長標籤會被畫布裁掉
-  layout: { padding: { top: 24, bottom: 24, left: 72, right: 72 } },
+  layout: { padding: { top: 18, bottom: 18, left: 72, right: 72 } },
   plugins: {
     legend: { display: false },
     tooltip: { enabled: hasData.value },
@@ -162,11 +162,13 @@ function handleChartMove(event: MouseEvent): void {
       <p class="text-xs text-muted-foreground">全部 {{ total }} 位使用者，點方案可篩選</p>
     </CardHeader>
     <CardContent>
-      <div class="relative h-64" @click="handleChartClick" @mousemove="handleChartMove">
+      <!-- 高度壓到與旁邊的管理員人數卡接近，避免一高一矮看起來沒對齊 -->
+      <div class="relative h-48" @click="handleChartClick" @mousemove="handleChartMove">
         <Doughnut ref="chartRef" :data="chartData" :options="chartOptions" :plugins="[labelPlugin]" />
+        <!-- 環變小後中心的洞也小了，數字跟著降一級才不會貼著環 -->
         <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span class="text-3xl font-black leading-none">{{ total }}</span>
-          <span class="mt-1 text-xs text-muted-foreground">位使用者</span>
+          <span class="text-2xl font-black leading-none">{{ total }}</span>
+          <span class="mt-0.5 text-[11px] text-muted-foreground">位使用者</span>
         </div>
       </div>
     </CardContent>
