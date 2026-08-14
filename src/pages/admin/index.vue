@@ -58,7 +58,7 @@ const maintenanceDetail = computed(() => {
   return '所有功能開放中'
 })
 
-// ── 匯報：趨勢 ────────────────────────────────────────────────────
+// ── 規模與趨勢 ────────────────────────────────────────────────────
 
 const ticketTrend = computed(() => weeklyTicketTrend(tickets.value, 12))
 const ticketTrendSummary = computed(() => `本週 ${ticketTrend.value.at(-1)?.value ?? 0} 件`)
@@ -70,7 +70,7 @@ const userGrowthSummary = computed(() => {
   return gained > 0 ? `本月 +${gained}` : '本月持平'
 })
 
-// ── 匯報：組成 ────────────────────────────────────────────────────
+// ── 組成 ────────────────────────────────────────────────────
 
 const categoryItems = computed(() =>
   (Object.keys(maintenanceCategoryLabels) as MaintenanceCategory[]).map((category) => ({
@@ -192,7 +192,7 @@ function confirmReset(): void {
         <div>
           <h1 class="text-4xl font-black tracking-tight">後台總覽</h1>
           <p class="mt-2 text-muted-foreground">
-            上半是現在要處理的事，下半是平台目前的規模與趨勢。
+            平台目前的規模與案件流動，以及需要你處理的事。
           </p>
         </div>
       </div>
@@ -202,12 +202,60 @@ function confirmReset(): void {
       </Button>
     </div>
 
+    <!-- 一 · 平台規模與組成：1.4:1:1 -->
+    <section
+      class="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
+    >
+      <TrendAreaCard
+        title="使用者成長"
+        description="近 12 個月累計人數"
+        :points="userGrowth"
+        :summary="userGrowthSummary"
+        height="h-48"
+        :tension="0.25"
+      />
+      <DonutStatCard
+        title="使用者組成"
+        to="/admin/users"
+        :center-value="users.length"
+        center-label="位使用者"
+        :segments="roleSegments"
+        :note="suspendedNote"
+      />
+      <DonutStatCard
+        title="押金對帳結果"
+        to="/admin/users?alert=deposit-mismatch"
+        :center-value="depositRecords.length"
+        center-label="筆記錄"
+        :segments="depositSegments"
+        :note="`房東聲明總額 NT$${depositStats.declaredTotal.toLocaleString('zh-TW')}`"
+      />
+    </section>
+
+    <!-- 二 · 報修案件流動：1:2 -->
+    <section class="grid gap-4 lg:grid-cols-3">
+      <CategoryBarCard
+        title="報修分類分布"
+        description="全部工單依問題類型"
+        :items="categoryItems"
+        to="/admin/maintenance-tickets"
+      />
+      <div class="lg:col-span-2">
+        <TrendAreaCard
+          title="報修工單趨勢"
+          description="近 12 週每週新增件數"
+          :points="ticketTrend"
+          :summary="ticketTrendSummary"
+          height="h-72"
+        />
+      </div>
+    </section>
+
     <!--
-      一 · 待辦與額度。
-      刻意不放一排指標卡 —— 那些數字下面的佇列已經在講了，
-      並排四張只是把同一件事包裝成很多卡來填版面。
+      三 · 要處理的事與系統紀錄。
+      右欄把稽核與額度直向疊起來，兩張加總的高度才接得上左邊的佇列 ——
+      單獨並排時佇列有七百多、額度卡只有兩百多，右側會空掉一大塊。
     -->
-    <!-- items-start：額度卡只有兩條進度條，被待辦佇列撐到等高會留下半張空白 -->
     <section class="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
       <!-- min-w-0：grid 子項預設 min-width:auto，長地址會把整個 track 撐爆容器 -->
       <Card class="min-w-0 rounded-3xl">
@@ -260,92 +308,38 @@ function confirmReset(): void {
         </CardContent>
       </Card>
 
-      <QuotaProgressCard
-        title="AI 額度用量"
-        to="/admin/ai-usage"
-        :items="usageBars"
-        :corner-text="alertCount > 0 ? `${alertCount} 項告急` : '額度充足'"
-        :corner-variant="alertCount > 0 ? 'destructive' : 'secondary'"
-      />
-    </section>
+      <div class="min-w-0 space-y-4">
+        <Card class="rounded-3xl">
+          <CardHeader>
+            <CardTitle>最新稽核事件</CardTitle>
+            <CardDescription>最近 5 筆，完整紀錄請到稽核紀錄查詢。</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-2.5 text-sm">
+            <div
+              v-for="event in events.slice(0, 5)"
+              :key="event.id"
+              class="min-w-0 rounded-xl border bg-muted/20 p-3"
+            >
+              <p class="font-medium">{{ event.detail }}</p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {{ formatDateTime(event.at) }}｜{{ event.actor }}
+              </p>
+            </div>
+            <p v-if="events.length === 0" class="py-6 text-center text-muted-foreground">
+              尚無稽核事件。
+            </p>
+          </CardContent>
+        </Card>
 
-    <!-- 二 · 平台規模與組成：1.4:1:1 -->
-    <section
-      class="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
-    >
-      <TrendAreaCard
-        title="使用者成長"
-        description="近 12 個月累計人數"
-        :points="userGrowth"
-        :summary="userGrowthSummary"
-        height="h-48"
-        :tension="0.25"
-      />
-      <DonutStatCard
-        title="使用者組成"
-        to="/admin/users"
-        :center-value="users.length"
-        center-label="位使用者"
-        :segments="roleSegments"
-        :note="suspendedNote"
-      />
-      <DonutStatCard
-        title="押金對帳結果"
-        to="/admin/users?alert=deposit-mismatch"
-        :center-value="depositRecords.length"
-        center-label="筆記錄"
-        :segments="depositSegments"
-        :note="`房東聲明總額 NT$${depositStats.declaredTotal.toLocaleString('zh-TW')}`"
-      />
-    </section>
-
-    <!-- 三 · 報修案件流動：1:2 -->
-    <section class="grid gap-4 lg:grid-cols-3">
-      <CategoryBarCard
-        title="報修分類分布"
-        description="全部工單依問題類型"
-        :items="categoryItems"
-        to="/admin/maintenance-tickets"
-      />
-      <div class="lg:col-span-2">
-        <TrendAreaCard
-          title="報修工單趨勢"
-          description="近 12 週每週新增件數"
-          :points="ticketTrend"
-          :summary="ticketTrendSummary"
-          height="h-72"
+        <QuotaProgressCard
+          title="AI 額度用量"
+          to="/admin/ai-usage"
+          :items="usageBars"
+          :corner-text="alertCount > 0 ? `${alertCount} 項告急` : '額度充足'"
+          :corner-variant="alertCount > 0 ? 'destructive' : 'secondary'"
         />
       </div>
     </section>
-
-    <!-- 四 · 稽核：整頁最後一塊，滿版收尾 -->
-    <section>
-      <Card class="rounded-3xl">
-        <CardHeader>
-          <CardTitle>最新稽核事件</CardTitle>
-          <CardDescription>最近 6 筆，完整紀錄請到稽核紀錄查詢。</CardDescription>
-        </CardHeader>
-        <CardContent class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-3">
-          <div
-            v-for="event in events.slice(0, 6)"
-            :key="event.id"
-            class="rounded-xl border bg-muted/20 p-3"
-          >
-            <p class="font-medium">{{ event.detail }}</p>
-            <p class="mt-1 text-xs text-muted-foreground">
-              {{ formatDateTime(event.at) }}｜{{ event.actor }}
-            </p>
-          </div>
-          <p
-            v-if="events.length === 0"
-            class="py-6 text-center text-sm text-muted-foreground md:col-span-2 xl:col-span-3"
-          >
-            尚無稽核事件。
-          </p>
-        </CardContent>
-      </Card>
-    </section>
-
 
     <Dialog v-model:open="resetOpen">
       <DialogContent>

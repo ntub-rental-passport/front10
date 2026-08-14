@@ -1,8 +1,8 @@
 /**
  * 後台總覽的資料聚合。純邏輯，不依賴 Vue。
  *
- * 頁面分成兩半：上半是「現在有什麼要處理」（巡邏），下半是「這個系統長什麼樣」（匯報）。
- * 這個檔案負責把散在各 collection 的資料算成那兩半需要的形狀。
+ * 頁面講兩件事：「這個系統長什麼樣」（規模、組成、趨勢）與「有什麼在等你處理」（待辦佇列）。
+ * 這個檔案負責把散在各 collection 的資料算成那兩者需要的形狀。
  */
 
 import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
@@ -11,7 +11,7 @@ import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import { depositMatchOf, type DepositMatch } from './admin-deposit'
 import type { MaintenanceStatus } from './admin-maintenance'
 
-// ── 匯報：時間序列 ────────────────────────────────────────────────
+// ── 規模與趨勢：時間序列 ────────────────────────────────────────────────
 
 export interface TrendPoint {
   label: string
@@ -78,7 +78,7 @@ export function monthlyUserGrowth(
   return points
 }
 
-// ── 匯報：組成 ────────────────────────────────────────────────────
+// ── 規模與趨勢：組成 ────────────────────────────────────────────────────
 
 export interface DepositMatchSummary {
   match: DepositMatch
@@ -98,7 +98,7 @@ export function depositMatchDistribution(records: DepositRecord[]): DepositMatch
   ]
 }
 
-// ── 巡邏：待辦佇列 ────────────────────────────────────────────────
+// ── 待辦佇列 ────────────────────────────────────────────────
 
 /**
  * 待辦的種類。
