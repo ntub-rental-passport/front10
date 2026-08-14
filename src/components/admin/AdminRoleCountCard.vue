@@ -26,19 +26,17 @@ const roles: AdminRole[] = ['super', 'admin']
     </CardHeader>
     <CardContent>
       <!--
-        兩個數字並排而非直向堆疊：只有兩筆內容，直排會讓卡片又高又空。
-        也不再給固定高度，讓它照內容收斂。
+        兩筆上下排列。不給固定高度，讓卡片照內容收斂 ——
+        先前撐到與甜甜圈等高才是留白的來源，不是排列方向。
       -->
-      <div class="grid grid-cols-2 gap-4">
-        <div v-for="role in roles" :key="role" class="flex items-center gap-3">
+      <div class="divide-y">
+        <div v-for="role in roles" :key="role" class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
           <span
-            class="h-12 w-1.5 shrink-0 rounded-full"
+            class="h-10 w-1.5 shrink-0 rounded-full"
             :style="{ backgroundColor: colors[role] }"
           />
-          <div class="min-w-0">
-            <p class="text-4xl font-black leading-none">{{ counts[role] }}</p>
-            <p class="mt-1 truncate text-xs text-muted-foreground">{{ adminRoleLabels[role] }}</p>
-          </div>
+          <p class="text-3xl font-black leading-none tabular-nums">{{ counts[role] }}</p>
+          <p class="min-w-0 truncate text-sm text-muted-foreground">{{ adminRoleLabels[role] }}</p>
         </div>
       </div>
     </CardContent>
