@@ -49,6 +49,7 @@ const {
   stats,
   tab,
   keyword,
+  batchFilter,
   markMissingDocuments,
   reject,
   approve,
@@ -138,11 +139,17 @@ function handleCreateBatch(): void {
   if (createBatch(batchPicked.value, batchNote.value)) batchOpen.value = false
 }
 
-const recentBatches = computed(() =>
-  [...batches.value]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 4),
+// 已送出的批次，新的在上面
+const sentBatches = computed(() =>
+  [...batches.value].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  ),
 )
+
+function selectBatch(value: string): void {
+  // 再點一次同一個就取消篩選
+  batchFilter.value = batchFilter.value === value ? 'all' : value
+}
 
 function formatMoney(amount: number): string {
   return `NT$${amount.toLocaleString('zh-TW')}`
@@ -151,108 +158,171 @@ function formatMoney(amount: number): string {
 
 <template>
   <div class="space-y-6">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 class="text-3xl font-black tracking-tight">租金補貼審核</h1>
-        <p class="mt-1 text-muted-foreground">
-          先由後台把關文件與資格，齊備後彙整成批次一次送件；送件後的政府端進度僅供查看。
-        </p>
-      </div>
-      <Button :disabled="submittable.length === 0" @click="openBatch">
-        <PackageCheck class="mr-1 h-4 w-4" />
-        建立送件批次（{{ submittable.length }}）
-      </Button>
+    <!-- 送件的入口只留左欄草稿批次那一顆，標題列不再重複放一次 -->
+    <div>
+      <h1 class="text-3xl font-black tracking-tight">租金補貼審核</h1>
+      <p class="mt-1 text-muted-foreground">
+        審核通過的案件會落入左側草稿批次，確認後一次送出；送件後的政府端進度僅供查看。
+      </p>
     </div>
 
-    <!-- 最近批次：送件是這頁的產出，放在最上面看得到 -->
-    <Card v-if="recentBatches.length > 0" class="rounded-3xl">
-      <CardHeader class="pb-3">
-        <CardTitle class="text-sm font-medium">最近送件批次</CardTitle>
-      </CardHeader>
-      <CardContent class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div v-for="batch in recentBatches" :key="batch.id" class="rounded-xl border bg-muted/20 p-3">
+    <!--
+      左欄批次、右欄案件。
+      「待送件」本身就是下一批的草稿 —— 審核通過即進入草稿，
+      不需要另外建一個批次實體，只是先前沒把它畫成批次，才顯得多一道手續。
+    -->
+    <div class="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <!-- 批次固定 280px：卡片內容是編號與日期，跟著螢幕變寬只會拉開空白 -->
+      <aside class="space-y-3">
+        <!-- 草稿批次：審核通過的案件直接落在這裡 -->
+        <Card
+          class="rounded-3xl border-primary/30 bg-primary/5"
+          :class="batchFilter === 'draft' ? 'ring-2 ring-primary' : ''"
+        >
+          <CardHeader class="pb-3">
+            <CardTitle class="text-sm font-medium">草稿批次</CardTitle>
+            <p class="text-xs text-muted-foreground">審核通過的案件會落在這裡</p>
+          </CardHeader>
+          <CardContent class="space-y-3">
+            <button
+              type="button"
+              class="flex w-full items-baseline gap-1.5 text-left"
+              @click="selectBatch('draft')"
+            >
+              <span class="text-3xl font-black leading-none tabular-nums text-primary">
+                {{ submittable.length }}
+              </span>
+              <span class="text-sm text-muted-foreground">件待送件</span>
+            </button>
+            <Button
+              size="sm"
+              class="w-full"
+              :disabled="submittable.length === 0"
+              @click="openBatch"
+            >
+              <PackageCheck class="mr-1 h-4 w-4" />
+              送出這批
+            </Button>
+          </CardContent>
+        </Card>
+
+        <p class="px-1 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          已送出批次
+        </p>
+
+        <button
+          v-for="batch in sentBatches"
+          :key="batch.id"
+          type="button"
+          class="w-full rounded-2xl border p-3 text-left transition-colors hover:bg-muted/50"
+          :class="batchFilter === batch.id ? 'border-primary bg-primary/5' : 'bg-background'"
+          @click="selectBatch(batch.id)"
+        >
           <p class="font-mono text-sm font-semibold">{{ batch.code }}</p>
           <p class="mt-1 text-xs text-muted-foreground">
             {{ formatDate(batch.createdAt) }}・{{ batch.applicationIds.length }} 件
           </p>
-        </div>
-      </CardContent>
-    </Card>
+        </button>
 
-    <Tabs :model-value="tab" @update:model-value="(value: string) => (tab = value as typeof tab)">
-      <TabsList class="rounded-full bg-muted/60">
-        <TabsTrigger
-          v-for="item in subsidyTabs"
-          :key="item.value"
-          :value="item.value"
-          class="rounded-full px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+        <p v-if="sentBatches.length === 0" class="px-1 text-xs text-muted-foreground">
+          尚未送出任何批次。
+        </p>
+      </aside>
+
+      <div class="min-w-0 space-y-4">
+        <div
+          v-if="batchFilter !== 'all'"
+          class="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm"
         >
-          {{ item.label }}
-        </TabsTrigger>
-      </TabsList>
-    </Tabs>
-
-    <Card class="rounded-3xl">
-      <CardContent class="space-y-4 pt-6">
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="relative min-w-56 flex-1">
-            <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input v-model="keyword" placeholder="搜尋申請編號、申請人或地址" class="pl-9" />
-          </div>
-          <p class="whitespace-nowrap text-sm text-muted-foreground">
-            共 {{ filteredApplications.length }} 件・待審 {{ stats.pending }}・待送件 {{ stats.ready }}
-          </p>
+          <span>
+            目前只顯示
+            <span class="font-semibold">
+              {{
+                batchFilter === 'draft'
+                  ? '草稿批次'
+                  : sentBatches.find((b) => b.id === batchFilter)?.code
+              }}
+            </span>
+            的案件。
+          </span>
+          <Button variant="outline" size="sm" @click="batchFilter = 'all'">顯示全部批次</Button>
         </div>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead class="whitespace-nowrap">編號</TableHead>
-              <TableHead>申請人</TableHead>
-              <TableHead>地址</TableHead>
-              <TableHead class="whitespace-nowrap">月租</TableHead>
-              <TableHead class="whitespace-nowrap">狀態</TableHead>
-              <TableHead class="whitespace-nowrap">文件</TableHead>
-              <TableHead class="whitespace-nowrap">批次</TableHead>
-              <TableHead class="whitespace-nowrap">申請日</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow
-              v-for="item in filteredApplications"
-              :key="item.id"
-              class="cursor-pointer"
-              @click="selectedId = item.id"
-            >
-              <TableCell class="whitespace-nowrap font-medium">{{ item.id }}</TableCell>
-              <TableCell class="whitespace-nowrap">{{ item.applicantName }}</TableCell>
-              <TableCell>{{ item.address }}</TableCell>
-              <TableCell class="whitespace-nowrap">{{ formatMoney(item.monthlyRent) }}</TableCell>
-              <TableCell>
-                <Badge :variant="statusVariant(item.status)" class="whitespace-nowrap">
-                  {{ subsidyStatusLabels[item.status] }}
-                </Badge>
-              </TableCell>
-              <TableCell
-                class="whitespace-nowrap text-sm"
-                :class="item.documentsReady ? 'text-muted-foreground' : 'font-semibold text-destructive'"
+      <Tabs :model-value="tab" @update:model-value="(value: string) => (tab = value as typeof tab)">
+        <TabsList class="rounded-full bg-muted/60">
+          <TabsTrigger
+            v-for="item in subsidyTabs"
+            :key="item.value"
+            :value="item.value"
+            class="rounded-full px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          >
+            {{ item.label }}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <Card class="rounded-3xl">
+        <CardContent class="space-y-4 pt-6">
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="relative min-w-56 flex-1">
+              <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input v-model="keyword" placeholder="搜尋申請編號、申請人或地址" class="pl-9" />
+            </div>
+            <p class="whitespace-nowrap text-sm text-muted-foreground">
+              共 {{ filteredApplications.length }} 件・待審 {{ stats.pending }}・待送件 {{ stats.ready }}
+            </p>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead class="whitespace-nowrap">編號</TableHead>
+                <TableHead>申請人</TableHead>
+                <!-- 中文可在任意字元換行，不給下限就會被擠成一字一行 -->
+                <TableHead class="min-w-52">地址</TableHead>
+                <TableHead class="whitespace-nowrap">狀態</TableHead>
+                <TableHead class="whitespace-nowrap">文件</TableHead>
+                <TableHead class="whitespace-nowrap">批次</TableHead>
+                <TableHead class="whitespace-nowrap">申請日</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow
+                v-for="item in filteredApplications"
+                :key="item.id"
+                class="cursor-pointer"
+                @click="selectedId = item.id"
               >
-                {{ item.documentsReady ? '齊備' : `缺 ${item.missingLabel}` }}
-              </TableCell>
-              <TableCell class="whitespace-nowrap font-mono text-xs">
-                {{ item.batchCode ?? '—' }}
-              </TableCell>
-              <TableCell class="whitespace-nowrap">{{ formatDate(item.submittedAt) }}</TableCell>
-            </TableRow>
-            <TableRow v-if="filteredApplications.length === 0">
-              <TableCell colspan="8" class="py-10 text-center text-muted-foreground">
-                沒有符合條件的申請案件。
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+                <TableCell class="whitespace-nowrap font-medium">{{ item.id }}</TableCell>
+                <TableCell class="whitespace-nowrap">{{ item.applicantName }}</TableCell>
+                <TableCell>{{ item.address }}</TableCell>
+                <TableCell>
+                  <Badge :variant="statusVariant(item.status)" class="whitespace-nowrap">
+                    {{ subsidyStatusLabels[item.status] }}
+                  </Badge>
+                </TableCell>
+                <TableCell
+                  class="whitespace-nowrap text-sm"
+                  :class="item.documentsReady ? 'text-muted-foreground' : 'font-semibold text-destructive'"
+                >
+                  {{ item.documentsReady ? '齊備' : `缺 ${item.missingLabel}` }}
+                </TableCell>
+                <TableCell class="whitespace-nowrap font-mono text-xs">
+                  {{ item.batchCode ?? '—' }}
+                </TableCell>
+                <TableCell class="whitespace-nowrap">{{ formatDate(item.submittedAt) }}</TableCell>
+              </TableRow>
+              <TableRow v-if="filteredApplications.length === 0">
+                <TableCell colspan="7" class="py-10 text-center text-muted-foreground">
+                  沒有符合條件的申請案件。
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      </div>
+    </div>
 
     <!-- 詳情：第一層可操作，第二層唯讀 -->
     <Dialog

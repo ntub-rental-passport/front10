@@ -59,6 +59,13 @@ export function useAdminSubsidy() {
 
   const tab = ref<SubsidyTab>('all')
   const keyword = ref('')
+  /**
+   * 批次篩選。'all' 不限、'draft' 是尚未成批的待送件、其餘是批次 id。
+   *
+   * 「待送件」本身就是下一批的草稿 —— 不需要為它另外建一個批次實體，
+   * 只是先前畫面沒把它呈現成批次，才讓人覺得審核完還要多一道手續。
+   */
+  const batchFilter = ref<string>('all')
 
   function nameOf(userId: string): { name: string; email: string } {
     const user = adminUsersCollection.value.find((item) => item.id === userId)
@@ -83,6 +90,11 @@ export function useAdminSubsidy() {
     const kw = keyword.value.trim().toLowerCase()
     return applicationViews.value
       .filter((item) => tab.value === 'all' || item.status === tab.value)
+      .filter((item) => {
+        if (batchFilter.value === 'all') return true
+        if (batchFilter.value === 'draft') return item.status === 'ready'
+        return item.batchId === batchFilter.value
+      })
       .filter((item) => {
         if (!kw) return true
         return (
@@ -235,6 +247,7 @@ export function useAdminSubsidy() {
     stats,
     tab,
     keyword,
+    batchFilter,
     markMissingDocuments,
     reject,
     approve,
