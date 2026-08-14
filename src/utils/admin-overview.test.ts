@@ -1,17 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  buildQueue,
+  buildQueueGroups,
   depositMatchDistribution,
   monthlyUserGrowth,
   queueTotal,
   weeklyTicketTrend,
+  type QueueTicket,
 } from './admin-overview'
 import type { AdminUser } from '@/src/mocks/admin/users'
 import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
-import { joinUserDirectory, type UserDirectorySources } from './admin-user-directory'
-import type { Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
 
 const NOW = new Date('2026-08-14T12:00:00.000Z')
 
@@ -143,112 +142,79 @@ describe('depositMatchDistribution', () => {
   })
 })
 
-describe('buildQueue', () => {
-  const plans: SubscriptionPlan[] = [
-    { id: 'free', name: '免費方案', priceLabel: 'NT$0', aiQuota: 3, storageMb: 200 },
-  ]
-
-  function subscription(over: Partial<Subscription> = {}): Subscription {
-    return {
-      id: 'sub-1',
-      userId: 'u-1',
-      planId: 'free',
-      expiresAt: '2026-12-31T00:00:00.000Z',
-      aiUsed: 0,
-      storageUsedMb: 0,
-      active: true,
-      ...over,
-    }
+describe('buildQueueGroups', () => {
+  function qt(id: string, status: QueueTicket['status'], tenantName = '小艾'): QueueTicket {
+    return { id, address: `測試路 ${id} 號`, tenantName, status }
   }
 
-  function rowsFrom(over: Partial<UserDirectorySources>) {
-    return joinUserDirectory(
-      {
-        users: [user('u-1', '2026-01-01T00:00:00.000Z', { nickname: '小艾' })],
-        tickets: [],
-        deposits: [],
-        subscriptions: [],
-        plans,
-        ...over,
-      },
-      NOW,
+  it('沒有待辦時回傳空陣列', () => {
+    expect(buildQueueGroups([], [])).toEqual([])
+  })
+
+  it('只收管理員做得了事的三種工單狀態', () => {
+    const groups = buildQueueGroups(
+      [
+        qt('a', 'submitted'),
+        qt('b', 'disputed'),
+        qt('c', 'overdue'),
+        // 以下都在等別人，不是管理員的待辦
+        qt('d', 'notified'),
+        qt('e', 'in_progress'),
+        qt('f', 'completed'),
+        qt('g', 'closed'),
+      ],
+      [],
     )
-  }
-
-  it('沒有警示時是空佇列', () => {
-    expect(buildQueue(rowsFrom({}))).toEqual([])
-  })
-
-  it('逾期工單產生一筆，連結帶到工單頁並預選該使用者', () => {
-    const rows = rowsFrom({
-      tickets: [{ ...ticket('t1', daysBefore(20)), tenantUserId: 'u-1', status: 'overdue' }],
-    })
-    const queue = buildQueue(rows)
-    expect(queue).toHaveLength(1)
-    expect(queue[0].kind).toBe('ticket-overdue')
-    expect(queue[0].label).toContain('小艾')
-    expect(queue[0].to).toBe('/admin/maintenance-tickets?user=u-1')
-  })
-
-  it('押金不符連到該使用者的詳情頁', () => {
-    const rows = rowsFrom({
-      deposits: [{ ...deposit('d1', 20000, 10000), tenantUserId: 'u-1' }],
-    })
-    expect(buildQueue(rows)[0].to).toBe('/admin/users/u-1')
-  })
-
-  it('逾期排在其他警示之前', () => {
-    const rows = rowsFrom({
-      tickets: [{ ...ticket('t1', daysBefore(20)), tenantUserId: 'u-1', status: 'overdue' }],
-      deposits: [{ ...deposit('d1', 20000, 10000), tenantUserId: 'u-1' }],
-      subscriptions: [subscription({ expiresAt: '2026-08-20T00:00:00.000Z' })],
-    })
-    expect(buildQueue(rows).map((item) => item.kind)).toEqual([
+    expect(groups.map((group) => group.kind)).toEqual([
+      'ticket-disputed',
+      'ticket-pending',
       'ticket-overdue',
-      'deposit-mismatch',
-      'subscription-expiring',
     ])
+    expect(queueTotal(groups)).toBe(3)
   })
 
-  it('同一類很多筆時輪替，不會把整張卡塞滿同一種', () => {
-    const many = Array.from({ length: 5 }, (_, i) =>
-      user(`t-${i}`, '2026-01-01T00:00:00.000Z'),
+  it('依急迫度排序，爭議排最前面', () => {
+    const groups = buildQueueGroups([qt('a', 'overdue'), qt('b', 'disputed')], [])
+    expect(groups[0].kind).toBe('ticket-disputed')
+  })
+
+  it('沒有件數的種類整組不出現', () => {
+    const groups = buildQueueGroups([qt('a', 'disputed')], [])
+    expect(groups).toHaveLength(1)
+    expect(groups.map((group) => group.kind)).not.toContain('ticket-overdue')
+  })
+
+  it('count 是真實總數，不受預覽筆數影響', () => {
+    const tickets = Array.from({ length: 8 }, (_, i) => qt(`t${i}`, 'disputed'))
+    const groups = buildQueueGroups(tickets, [], 3)
+    expect(groups[0].count).toBe(8)
+    expect(groups[0].items).toHaveLength(3)
+  })
+
+  it('每筆明細連到該工單，查看全部連到對應分頁', () => {
+    const groups = buildQueueGroups([qt('mt-9', 'overdue')], [])
+    expect(groups[0].items[0].to).toBe('/admin/maintenance-tickets?ticket=mt-9')
+    expect(groups[0].to).toBe('/admin/maintenance-tickets?tab=overdue')
+  })
+
+  it('明細同時顯示地址與租客，方便一眼認出是哪一件', () => {
+    const groups = buildQueueGroups([qt('a', 'disputed', '阿賓')], [])
+    expect(groups[0].items[0].label).toContain('阿賓')
+    expect(groups[0].items[0].label).toContain('測試路')
+  })
+
+  it('AI 額度告急獨立成一組，排在工單之後', () => {
+    const groups = buildQueueGroups(
+      [qt('a', 'disputed')],
+      [{ id: 'gemini', label: 'Gemini API 額度告急' }],
     )
-    const rows = joinUserDirectory(
-      {
-        users: [...many, user('d-1', '2026-01-01T00:00:00.000Z')],
-        tickets: many.map((u, i) => ({
-          ...ticket(`t${i}`, daysBefore(20)),
-          tenantUserId: u.id,
-          status: 'overdue' as const,
-        })),
-        deposits: [{ ...deposit('d1', 20000, 10000), tenantUserId: 'd-1' }],
-        subscriptions: [],
-        plans,
-      },
-      NOW,
-    )
-
-    const kinds = buildQueue(rows, 4).map((item) => item.kind)
-    expect(kinds[0]).toBe('ticket-overdue')
-    // 押金只有一筆，但必須在前幾筆就出現，不能被 5 筆逾期擠掉
-    expect(kinds).toContain('deposit-mismatch')
+    expect(groups.map((group) => group.kind)).toEqual(['ticket-disputed', 'quota-alert'])
+    expect(groups[1].to).toBe('/admin/ai-usage')
+    expect(queueTotal(groups)).toBe(2)
   })
 
-  it('超過上限時截斷', () => {
-    const rows = rowsFrom({
-      tickets: [{ ...ticket('t1', daysBefore(20)), tenantUserId: 'u-1', status: 'overdue' }],
-      deposits: [{ ...deposit('d1', 20000, 10000), tenantUserId: 'u-1' }],
-    })
-    expect(buildQueue(rows, 1)).toHaveLength(1)
-  })
-
-  it('queueTotal 不受顯示上限影響', () => {
-    const rows = rowsFrom({
-      tickets: [{ ...ticket('t1', daysBefore(20)), tenantUserId: 'u-1', status: 'overdue' }],
-      deposits: [{ ...deposit('d1', 20000, 10000), tenantUserId: 'u-1' }],
-    })
-    expect(buildQueue(rows, 1)).toHaveLength(1)
-    expect(queueTotal(rows)).toBe(2)
+  it('每一組都帶下一步動作的提示', () => {
+    const groups = buildQueueGroups([qt('a', 'submitted')], [])
+    expect(groups[0].hint).toContain('通報房東')
   })
 })

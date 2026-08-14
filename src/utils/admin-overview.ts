@@ -9,8 +9,7 @@ import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
 import type { AdminUser } from '@/src/mocks/admin/users'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import { depositMatchOf, type DepositMatch } from './admin-deposit'
-import type { UserDirectoryRow } from './admin-user-directory'
-import { userDisplayName } from './admin-user-directory'
+import type { MaintenanceStatus } from './admin-maintenance'
 
 // ── 匯報：時間序列 ────────────────────────────────────────────────
 
@@ -101,111 +100,133 @@ export function depositMatchDistribution(records: DepositRecord[]): DepositMatch
 
 // ── 巡邏：待辦佇列 ────────────────────────────────────────────────
 
-export type QueueKind =
-  | 'ticket-overdue'
-  | 'deposit-mismatch'
-  | 'subscription-expiring'
-  | 'quota-exhausted'
+/**
+ * 待辦的種類。
+ *
+ * 收錄標準只有一條：**管理員在後台真的做得了事**。
+ * 押金對帳與訂閱到期刻意不在此列 —— 押金是唯讀的，訂閱續約是使用者自己的事，
+ * 把做不了的項目放進待辦，只會讓人點進去發現沒有按鈕，然後不再相信這張卡。
+ */
+export type QueueKind = 'ticket-pending' | 'ticket-disputed' | 'ticket-overdue' | 'quota-alert'
 
 export const queueKindLabels: Record<QueueKind, string> = {
-  'ticket-overdue': '工單逾期',
-  'deposit-mismatch': '押金不符',
-  'subscription-expiring': '訂閱到期',
-  'quota-exhausted': '額度用滿',
+  'ticket-pending': '待通報房東',
+  'ticket-disputed': '爭議待介入',
+  'ticket-overdue': '逾期待催辦',
+  'quota-alert': 'AI 額度告急',
 }
 
-export interface QueueItem {
+/** 每一種待辦對應的下一步動作，直接寫在卡片上，不用使用者自己推敲 */
+export const queueKindHints: Record<QueueKind, string> = {
+  'ticket-pending': '租客已送出，等你通報房東',
+  'ticket-disputed': '雙方對責任有爭議，等你介入判斷',
+  'ticket-overdue': '房東逾期未回應，需要催辦或轉爭議',
+  'quota-alert': '供應商額度接近用盡，到系統設定調整',
+}
+
+export interface QueueEntry {
   id: string
-  kind: QueueKind
   label: string
   to: string
 }
 
-/**
- * 待辦佇列：把四種警示攤成一筆一筆帶連結的明細。
- *
- * 巡邏列給的是數字，這裡給的是「是誰、哪一件」，兩者是同一組資料的兩種粒度。
- */
-export function buildQueue(rows: UserDirectoryRow[], limit = 8): QueueItem[] {
-  const items: QueueItem[] = []
-
-  for (const row of rows) {
-    const who = userDisplayName(row.user)
-
-    if (row.overdueTicketCount > 0) {
-      items.push({
-        id: `overdue-${row.user.id}`,
-        kind: 'ticket-overdue',
-        label: `${who} 有 ${row.overdueTicketCount} 件工單逾期未回應`,
-        to: `/admin/maintenance-tickets?user=${row.user.id}`,
-      })
-    }
-
-    if (row.mismatchedDepositCount > 0) {
-      items.push({
-        id: `deposit-${row.user.id}`,
-        kind: 'deposit-mismatch',
-        label: `${who} 有 ${row.mismatchedDepositCount} 筆押金金額對不起來`,
-        to: `/admin/users/${row.user.id}`,
-      })
-    }
-
-    if (row.subscriptionExpiring) {
-      items.push({
-        id: `expiring-${row.user.id}`,
-        kind: 'subscription-expiring',
-        label: `${who} 的訂閱即將到期`,
-        to: `/admin/users/${row.user.id}`,
-      })
-    }
-
-    if (row.quotaExhausted) {
-      items.push({
-        id: `quota-${row.user.id}`,
-        kind: 'quota-exhausted',
-        label: `${who} 的方案額度已用滿`,
-        to: `/admin/users/${row.user.id}`,
-      })
-    }
-  }
-
-  // 依急迫度輪替，而不是把最急的那類排滿。
-  //
-  // 純按優先級排序的話，逾期工單一多就會塞滿整張卡，
-  // 讓人完全看不出還有押金與訂閱要處理 —— 佇列該呈現工作量的組成，不只是最上面那一類。
-  const order: QueueKind[] = [
-    'ticket-overdue',
-    'deposit-mismatch',
-    'subscription-expiring',
-    'quota-exhausted',
-  ]
-  const buckets = order.map((kind) => items.filter((item) => item.kind === kind))
-
-  const interleaved: QueueItem[] = []
-  for (let round = 0; interleaved.length < items.length; round += 1) {
-    let addedThisRound = false
-    for (const bucket of buckets) {
-      const item = bucket[round]
-      if (item) {
-        interleaved.push(item)
-        addedThisRound = true
-      }
-    }
-    if (!addedThisRound) break
-  }
-
-  return interleaved.slice(0, limit)
+export interface QueueGroup {
+  kind: QueueKind
+  label: string
+  hint: string
+  /** 該種類的總件數，不受預覽筆數影響 */
+  count: number
+  /** 預覽用的前幾筆 */
+  items: QueueEntry[]
+  /** 「查看全部」的去處 */
+  to: string
 }
 
-/** 待辦總數，不受顯示上限影響 —— 卡片標題要說的是真實數量 */
-export function queueTotal(rows: UserDirectoryRow[]): number {
-  return rows.reduce(
-    (sum, row) =>
-      sum +
-      (row.overdueTicketCount > 0 ? 1 : 0) +
-      (row.mismatchedDepositCount > 0 ? 1 : 0) +
-      (row.subscriptionExpiring ? 1 : 0) +
-      (row.quotaExhausted ? 1 : 0),
-    0,
-  )
+/** 建佇列時需要的工單欄位，刻意只取這幾個，方便測試 */
+export interface QueueTicket {
+  id: string
+  address: string
+  tenantName: string
+  status: MaintenanceStatus
+}
+
+export interface QueueQuotaAlert {
+  id: string
+  label: string
+}
+
+const TICKET_KIND_BY_STATUS: Partial<Record<MaintenanceStatus, QueueKind>> = {
+  submitted: 'ticket-pending',
+  disputed: 'ticket-disputed',
+  overdue: 'ticket-overdue',
+}
+
+/** 工單頁的狀態頁籤，讓「查看全部」能直接落在對的分頁 */
+const TAB_BY_KIND: Record<QueueKind, string> = {
+  'ticket-pending': '/admin/maintenance-tickets?tab=pending',
+  'ticket-disputed': '/admin/maintenance-tickets?tab=disputed',
+  'ticket-overdue': '/admin/maintenance-tickets?tab=overdue',
+  'quota-alert': '/admin/ai-usage',
+}
+
+/** 依急迫度排序：爭議要人判斷最急，待通報卡在自己手上次之 */
+const KIND_ORDER: QueueKind[] = [
+  'ticket-disputed',
+  'ticket-pending',
+  'ticket-overdue',
+  'quota-alert',
+]
+
+/**
+ * 待辦佇列，依種類分組。
+ *
+ * 每組給「幾件」與前幾筆明細；件數是真實總數，不會因為只預覽三筆就縮水。
+ * 沒有任何件數的種類整組不顯示 —— 空的分組只是在告訴你沒事做，不需要佔版面。
+ */
+export function buildQueueGroups(
+  tickets: QueueTicket[],
+  quotaAlerts: QueueQuotaAlert[],
+  previewLimit = 3,
+): QueueGroup[] {
+  const byKind = new Map<QueueKind, QueueEntry[]>()
+
+  for (const ticket of tickets) {
+    const kind = TICKET_KIND_BY_STATUS[ticket.status]
+    if (!kind) continue
+    const entries = byKind.get(kind) ?? []
+    entries.push({
+      id: ticket.id,
+      label: `${ticket.address}・${ticket.tenantName}`,
+      to: `/admin/maintenance-tickets?ticket=${ticket.id}`,
+    })
+    byKind.set(kind, entries)
+  }
+
+  if (quotaAlerts.length > 0) {
+    byKind.set(
+      'quota-alert',
+      quotaAlerts.map((alert) => ({
+        id: alert.id,
+        label: alert.label,
+        to: '/admin/ai-usage',
+      })),
+    )
+  }
+
+  return KIND_ORDER.filter((kind) => (byKind.get(kind)?.length ?? 0) > 0).map((kind) => {
+    const entries = byKind.get(kind) ?? []
+    return {
+      kind,
+      label: queueKindLabels[kind],
+      hint: queueKindHints[kind],
+      count: entries.length,
+      items: entries.slice(0, previewLimit),
+      to: TAB_BY_KIND[kind],
+    }
+  })
+}
+
+/** 待辦總件數，供卡片標題顯示 */
+export function queueTotal(groups: QueueGroup[]): number {
+  return groups.reduce((sum, group) => sum + group.count, 0)
 }

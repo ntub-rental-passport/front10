@@ -62,6 +62,18 @@ watch(
   { immediate: true },
 )
 
+// 總覽的待辦佇列用 ?tab= 指定要落在哪個狀態分頁
+const validTabs = new Set(maintenanceStatusTabs.map((tab) => tab.value))
+watch(
+  () => route.query.tab,
+  (value) => {
+    if (typeof value === 'string' && validTabs.has(value as typeof statusTab.value)) {
+      statusTab.value = value as typeof statusTab.value
+    }
+  },
+  { immediate: true },
+)
+
 const filteredUserName = computed(() => {
   if (!userFilter.value) return ''
   const user = adminUsersCollection.value.find((item) => item.id === userFilter.value)
@@ -69,6 +81,15 @@ const filteredUserName = computed(() => {
 })
 
 const selectedId = ref<string | null>(null)
+
+// 待辦佇列的每一筆明細用 ?ticket= 直接把該工單的詳情打開，點進來就能動手
+watch(
+  () => route.query.ticket,
+  (value) => {
+    if (typeof value === 'string' && value) selectedId.value = value
+  },
+  { immediate: true },
+)
 
 // 用全量 ticketViews 而非 filteredTickets，避免篩選條件變動時詳情面板意外關閉
 const selectedTicket = computed<MaintenanceTicketView | null>(
@@ -82,7 +103,13 @@ function statusBadgeVariant(status: MaintenanceStatus): 'default' | 'secondary' 
 }
 
 function closeDetail(open: boolean): void {
-  if (!open) selectedId.value = null
+  if (open) return
+  selectedId.value = null
+  // 關掉後把 ?ticket= 拿掉，否則重新整理又會自己打開
+  if (route.query.ticket) {
+    const { ticket: _removed, ...rest } = route.query
+    void router.replace({ query: rest })
+  }
 }
 
 function handleStatusTabChange(value: string): void {
