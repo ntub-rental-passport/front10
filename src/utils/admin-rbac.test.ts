@@ -12,7 +12,8 @@ import type { AdminRole } from '@/src/mocks/admin/users'
 const MATRIX: Record<string, Record<AdminRole, boolean>> = {
   '/admin': { super: true, admin: true },
   '/admin/content': { super: true, admin: true },
-  '/admin/ai-usage': { super: true, admin: true },
+  '/admin/monitoring': { super: true, admin: true },
+  '/admin/subsidy': { super: true, admin: true },
   // 押金與訂閱整合進來後開放給一般管理員；高風險操作在詳情頁另外擋
   '/admin/users': { super: true, admin: true },
   '/admin/maintenance-tickets': { super: true, admin: true },
@@ -73,12 +74,12 @@ describe('visibleNavGroupsFor', () => {
     return visibleNavGroupsFor(role).reduce((sum, g) => sum + g.items.length, 0)
   }
 
-  it('super 可看到全部 7 個項目', () => {
-    expect(totalItems('super')).toBe(7)
+  it('super 可看到全部 8 個項目', () => {
+    expect(totalItems('super')).toBe(8)
   })
 
-  it('一般管理員可看到 5 個項目（少了稽核紀錄與系統設定）', () => {
-    expect(totalItems('admin')).toBe(5)
+  it('一般管理員可看到 6 個項目（少了稽核紀錄與系統設定）', () => {
+    expect(totalItems('admin')).toBe(6)
   })
 
   it('一般管理員看得到使用者管理', () => {
@@ -95,17 +96,17 @@ describe('visibleNavGroupsFor', () => {
     }
   })
 
-  it('一般管理員看不到「系統」群組（稽核紀錄與系統設定皆無權限）', () => {
-    const groups = visibleNavGroupsFor('admin')
-    expect(groups.find((g) => g.label === '系統')).toBeUndefined()
+  it('一般管理員在「系統」群組裡只看得到系統監控', () => {
+    const system = visibleNavGroupsFor('admin').find((g) => g.label === '系統')
+    expect(system?.items.map((i) => i.path)).toEqual(['/admin/monitoring'])
   })
 })
 
 describe('adminNavGroups', () => {
-  it('定義了三個群組，共 7 個項目', () => {
+  it('定義了三個群組，共 8 個項目', () => {
     const total = adminNavGroups.reduce((sum, g) => sum + g.items.length, 0)
     expect(adminNavGroups.length).toBe(3)
-    expect(total).toBe(7)
+    expect(total).toBe(8)
   })
 
   it('已移除的模組不再出現在導覽中', () => {

@@ -29,18 +29,20 @@ export const adminNavGroups: AdminNavGroup[] = [
       // 但改角色與停用帳號在詳情頁另外限超級管理員。
       { label: '使用者管理', path: '/admin/users', roles: ['super', 'admin'] },
       { label: '報修工單', path: '/admin/maintenance-tickets', roles: ['super', 'admin'] },
+      { label: '租金補貼', path: '/admin/subsidy', roles: ['super', 'admin'] },
     ],
   },
   {
     label: '內容與通知',
     items: [
       { label: '內容與通知', path: '/admin/content', roles: ['super', 'admin'] },
-      { label: 'AI 使用量', path: '/admin/ai-usage', roles: ['super', 'admin'] },
     ],
   },
   {
     label: '系統',
     items: [
+      // 監控是一般管理員也該看的，所以「系統」群組對他們不再是完全隱藏
+      { label: '系統監控', path: '/admin/monitoring', roles: ['super', 'admin'] },
       { label: '稽核紀錄', path: '/admin/audit', roles: ['super'] },
       { label: '系統設定', path: '/admin/settings', roles: ['super'] },
     ],

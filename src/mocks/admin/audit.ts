@@ -13,6 +13,7 @@ export type AuditActionType =
   | '通知管理'
   | '報修工單'
   | '押金退還'
+  | '租金補貼'
 
 export interface AuditEvent {
   id: string

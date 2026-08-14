@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
+import { RefreshCw } from 'lucide-vue-next'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
 import {
   Table,
@@ -14,11 +15,15 @@ import {
 import UsageTrendChart from '@/src/components/admin/UsageTrendChart.vue'
 import { quotaLevelLabels, useAdminAiUsage, type ProviderUsage } from '@/src/composables/admin/useAdminAiUsage'
 import type { AiProviderId } from '@/src/mocks/admin-seed'
+import { chartColor } from '@/src/constants/admin-chart'
+import MonitorCard from '@/src/components/admin/MonitorCard.vue'
+import { useSystemHealth } from '@/src/composables/admin/useSystemHealth'
 
-const CHART_INDIGO = '#5660D6'
-const CHART_TEAL = '#0E9488'
 
 const { records, usages, trendDates, seriesFor } = useAdminAiUsage()
+const { checking, check, liveMonitors, pendingMonitors } = useSystemHealth()
+
+const monitors = computed(() => [...liveMonitors(), ...pendingMonitors()])
 
 const showAllDays = ref(false)
 
@@ -50,8 +55,8 @@ function percentSeriesFor(providerId: AiProviderId): number[] {
 }
 
 const chartSeries = computed(() => [
-  { label: 'Gemini API（% 月額度）', values: percentSeriesFor('gemini'), color: CHART_INDIGO },
-  { label: 'Google Vision（% 月額度）', values: percentSeriesFor('vision'), color: CHART_TEAL },
+  { label: 'Gemini API（% 月額度）', values: percentSeriesFor('gemini'), color: chartColor('series-1') },
+  { label: 'Google Vision（% 月額度）', values: percentSeriesFor('vision'), color: chartColor('series-3') },
 ])
 
 const chartLabels = computed(() => trendDates.value.map((date) => date.slice(5).replace('-', '/')))
@@ -80,10 +85,28 @@ function daysLeftText(usage: ProviderUsage): string {
 
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-3xl font-black tracking-tight">AI 使用量與額度</h1>
-      <p class="mt-1 text-muted-foreground">
-        監控平台向 AI 廠商購買的額度，並在耗盡前提出預警。額度上限與門檻於系統設定頁調整。
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-black tracking-tight">系統監控</h1>
+        <p class="mt-1 text-muted-foreground">
+          服務健康度與 AI 額度消耗。已接上的項目顯示實測值，尚未接上的明確標示，不以假數字充數。
+        </p>
+      </div>
+      <Button variant="outline" :disabled="checking" @click="check">
+        <RefreshCw class="mr-1 h-4 w-4" :class="checking ? 'animate-spin' : ''" />
+        {{ checking ? '量測中' : '重新量測' }}
+      </Button>
+    </div>
+
+    <!-- 服務健康度：後端是前端自己量得到的，其餘等後端提供 metrics 端點 -->
+    <section class="grid gap-4 md:grid-cols-3">
+      <MonitorCard v-for="reading in monitors" :key="reading.id" :reading="reading" />
+    </section>
+
+    <div class="border-t pt-6">
+      <h2 class="text-xl font-bold tracking-tight">AI 額度用量</h2>
+      <p class="mt-1 text-sm text-muted-foreground">
+        平台向 AI 廠商購買的額度，耗盡前提出預警。上限與門檻於系統設定頁調整。
       </p>
     </div>
 

@@ -93,7 +93,8 @@ async function handleSignOut(): Promise<void> {
               :key="item.path"
               :to="item.path"
               :class="cn(
-                'whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                // px-2.5 而非 px-3：八個項目時，每項省下的 4px 才夠讓 1024px 不溢出
+                'whitespace-nowrap rounded-xl px-2.5 py-2 text-sm font-medium transition-colors',
                 isActive(item.path)
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground',
