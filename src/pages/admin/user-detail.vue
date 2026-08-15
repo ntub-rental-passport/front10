@@ -8,9 +8,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog/index'
+import { Input } from '@/components/ui/input/index'
+import { Label } from '@/components/ui/label/index'
 import { Progress } from '@/components/ui/progress/index'
 import {
   Select,
@@ -27,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { ArrowLeft, BadgeCheck, ExternalLink, ShieldAlert } from 'lucide-vue-next'
+import { ArrowLeft, BadgeCheck, ExternalLink, Plus, ShieldAlert } from 'lucide-vue-next'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import {
@@ -63,13 +66,21 @@ import {
 import { formatDate } from '@/src/utils/admin-format'
 import type { AdminUserRole, PlanId } from '@/src/mocks/admin-seed'
 import type { Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
+import {
+  PLAN_FEATURES,
+  PLAN_FEATURE_KEYS,
+  effectivePlanId,
+  isInTrial,
+  isMetered,
+  type PlanFeatureKey,
+} from '@/src/utils/admin-entitlements'
 
 const route = useRoute()
 const router = useRouter()
 
 const { rowOf } = useAdminDirectory()
 const { setStatus, setRole, setAdminRole } = useAdminUsers()
-const { planOf, changePlan, isExpiringSoon } = useAdminSubscription()
+const { plans, planOf, changePlan, grantCredits, isExpiringSoon } = useAdminSubscription()
 const { ticketViews } = useAdminMaintenance()
 const { records: handoverRecords } = useAdminHandover()
 
@@ -137,6 +148,53 @@ function storageLabel(mb: number): string {
 function usagePercent(used: number, quota: number): number {
   if (quota <= 0) return 0
   return Math.min(100, Math.round((used / quota) * 100))
+}
+
+// ── 試用 ────────────────────────────────────────────────────────
+
+const inTrial = computed(
+  () => !!row.value?.subscription && isInTrial(row.value.subscription.trialEndsAt),
+)
+
+/** 試用期間實際生效的方案，可能與他名下掛的不同 */
+const effectivePlan = computed<SubscriptionPlan | null>(() => {
+  const subscription = row.value?.subscription
+  if (!subscription) return null
+  const planId = effectivePlanId(subscription.planId, subscription.trialEndsAt)
+  return plans.value.find((plan) => plan.id === planId) ?? planOf(subscription)
+})
+
+const trialDaysLeft = computed(() => {
+  const endsAt = row.value?.subscription?.trialEndsAt
+  if (!endsAt) return 0
+  const ms = new Date(endsAt).getTime() - Date.now()
+  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)))
+})
+
+// ── 單次加購 ────────────────────────────────────────────────────
+
+const meteredKeys = PLAN_FEATURE_KEYS.filter(isMetered)
+
+const creditOpen = ref(false)
+const creditKey = ref<PlanFeatureKey>('contract-analysis')
+const creditAmount = ref(10)
+
+const creditsInUse = computed(() =>
+  meteredKeys
+    .map((key) => ({ key, amount: row.value?.subscription?.extraCredits[key] ?? 0 }))
+    .filter((item) => item.amount > 0),
+)
+
+function openCreditDialog(): void {
+  creditKey.value = 'contract-analysis'
+  creditAmount.value = 10
+  creditOpen.value = true
+}
+
+function confirmCredit(): void {
+  if (!row.value?.subscription) return
+  grantCredits(row.value.subscription.id, creditKey.value, creditAmount.value)
+  creditOpen.value = false
 }
 
 /** 契約分析的可用次數，含單次加購。無上限時顯示「無上限」而不是一個假的大數字。 */
@@ -231,8 +289,9 @@ function goToTickets(): void {
         <CardContent class="pt-6">
           <p class="text-sm text-muted-foreground">AI 用量</p>
           <p class="text-2xl font-black">
-            <template v-if="row.subscription && row.plan">
-              {{ row.subscription.aiUsed }} / {{ analysisLimitLabel(row.subscription, row.plan) }}
+            <template v-if="row.subscription && effectivePlan">
+              {{ row.subscription.aiUsed }} /
+              {{ analysisLimitLabel(row.subscription, effectivePlan) }}
             </template>
             <span v-else class="text-muted-foreground">—</span>
           </p>
@@ -342,7 +401,7 @@ function goToTickets(): void {
       <CardContent>
         <p v-if="!row.subscription" class="text-muted-foreground">此帳號尚未訂閱任何方案。</p>
 
-        <div v-else class="space-y-4">
+        <div v-else-if="effectivePlan" class="space-y-4">
           <div class="flex flex-wrap items-center gap-6">
             <div class="space-y-1.5">
               <p class="text-sm text-muted-foreground">方案</p>
@@ -365,6 +424,15 @@ function goToTickets(): void {
                 <Badge v-else-if="!row.subscription.active" variant="secondary">已停用</Badge>
               </div>
             </div>
+            <div v-if="inTrial" class="space-y-1.5">
+              <p class="text-sm text-muted-foreground">限時試用</p>
+              <div class="flex items-center gap-2">
+                <Badge>還有 {{ trialDaysLeft }} 天</Badge>
+                <span class="text-sm text-muted-foreground">
+                  期間享 {{ effectivePlan.name }}權益，到期自動回到{{ planOf(row.subscription).name }}
+                </span>
+              </div>
+            </div>
           </div>
 
           <div class="grid gap-4 sm:grid-cols-2">
@@ -373,27 +441,45 @@ function goToTickets(): void {
                 <span class="text-muted-foreground">AI 分析</span>
                 <span>
                   {{ row.subscription.aiUsed }} /
-                  {{ analysisLimitLabel(row.subscription, planOf(row.subscription)) }} 次
+                  {{ analysisLimitLabel(row.subscription, effectivePlan) }} 次
                 </span>
               </div>
-              <Progress
-                :model-value="analysisPercent(row.subscription, planOf(row.subscription))"
-              />
+              <Progress :model-value="analysisPercent(row.subscription, effectivePlan)" />
             </div>
             <div class="space-y-1.5">
               <div class="flex justify-between text-sm">
                 <span class="text-muted-foreground">儲存空間</span>
                 <span>
                   {{ storageLabel(row.subscription.storageUsedMb) }} /
-                  {{ storageLabel(planOf(row.subscription).storageMb) }}
+                  {{ storageLabel(effectivePlan.storageMb) }}
                 </span>
               </div>
               <Progress
-                :model-value="
-                  usagePercent(row.subscription.storageUsedMb, planOf(row.subscription).storageMb)
-                "
+                :model-value="usagePercent(row.subscription.storageUsedMb, effectivePlan.storageMb)"
               />
             </div>
+          </div>
+
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/20 p-4"
+          >
+            <div class="space-y-1">
+              <p class="text-sm font-medium">單次加購額度</p>
+              <p v-if="creditsInUse.length === 0" class="text-sm text-muted-foreground">
+                尚未加購，目前只使用方案內建的額度。
+              </p>
+              <p v-else class="text-sm text-muted-foreground">
+                <span v-for="(item, index) in creditsInUse" :key="item.key">
+                  <span v-if="index > 0">、</span>
+                  {{ PLAN_FEATURES[item.key].label }} +{{ item.amount }}
+                  {{ PLAN_FEATURES[item.key].unit }}
+                </span>
+              </p>
+            </div>
+            <Button variant="outline" size="sm" @click="openCreditDialog">
+              <Plus class="mr-1 h-4 w-4" />
+              加購額度
+            </Button>
           </div>
         </div>
       </CardContent>
@@ -593,6 +679,43 @@ function goToTickets(): void {
           <DialogDescription>{{ selectedTicket.address }}</DialogDescription>
         </DialogHeader>
         <TicketDetailPanel :ticket="selectedTicket" />
+      </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="creditOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>加購單次額度</DialogTitle>
+          <DialogDescription>
+            加購的額度疊加在方案上限之上，本期未用完不會退回。
+          </DialogDescription>
+        </DialogHeader>
+
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <Label>功能</Label>
+            <Select v-model="creditKey">
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="key in meteredKeys" :key="key" :value="key">
+                  {{ PLAN_FEATURES[key].label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="space-y-2">
+            <Label for="creditAmount">加購數量（{{ PLAN_FEATURES[creditKey].unit }}）</Label>
+            <Input id="creditAmount" v-model.number="creditAmount" type="number" min="1" />
+          </div>
+          <p class="text-sm text-muted-foreground">
+            平台尚未接金流，這裡只記權益不記付款；實際收款流程接上後再補金額欄位。
+          </p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" @click="creditOpen = false">取消</Button>
+          <Button :disabled="!(creditAmount > 0)" @click="confirmCredit">確認加購</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   </div>

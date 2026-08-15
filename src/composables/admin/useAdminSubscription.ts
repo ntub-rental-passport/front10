@@ -10,6 +10,7 @@ import {
 } from '@/src/mocks/admin-seed'
 import { ADMIN_DATASET_VERSION, discardLegacy } from '@/src/utils/admin-collection-migrate'
 import { isSubscriptionExpiring } from '@/src/utils/admin-user-directory'
+import { PLAN_FEATURES, type PlanFeatureKey } from '@/src/utils/admin-entitlements'
 
 // 舊格式的方案把契約分析額度存在 aiQuota，沒有 features 這張功能矩陣，一樣整批重 seed
 export const adminPlansCollection = createAdminCollection<SubscriptionPlan[]>(
@@ -56,10 +57,40 @@ export function useAdminSubscription() {
     logAction('訂閱', labelOf(subscription.userId), '取消訂閱')
   }
 
+  /**
+   * 加購單次額度。
+   *
+   * 只加不減：要收回額度應該是調方案上限，而不是把已經賣出去的次數扣回來。
+   * 這裡也不記金流 —— 平台還沒接金流，後台不該生出一筆假的付款紀錄。
+   */
+  function grantCredits(id: string, featureKey: PlanFeatureKey, amount: number): void {
+    const subscription = subscriptions.value.find((item) => item.id === id)
+    if (!subscription || !Number.isFinite(amount) || amount <= 0) return
+
+    const next = Math.floor(amount)
+    subscription.extraCredits = {
+      ...subscription.extraCredits,
+      [featureKey]: (subscription.extraCredits[featureKey] ?? 0) + next,
+    }
+    logAction(
+      '訂閱',
+      labelOf(subscription.userId),
+      `加購${PLAN_FEATURES[featureKey].label} ${next} ${PLAN_FEATURES[featureKey].unit ?? '次'}`,
+    )
+  }
+
   // 與使用者列表的「訂閱即將到期」警示共用同一份判定，避免兩處規則走鐘
   function isExpiringSoon(subscription: Subscription): boolean {
     return isSubscriptionExpiring(subscription)
   }
 
-  return { plans, subscriptions, planOf, changePlan, cancelSubscription, isExpiringSoon }
+  return {
+    plans,
+    subscriptions,
+    planOf,
+    changePlan,
+    cancelSubscription,
+    grantCredits,
+    isExpiringSoon,
+  }
 }
