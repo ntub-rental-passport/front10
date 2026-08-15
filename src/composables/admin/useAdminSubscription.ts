@@ -11,14 +11,20 @@ import {
 import { ADMIN_DATASET_VERSION, discardLegacy } from '@/src/utils/admin-collection-migrate'
 import { isSubscriptionExpiring } from '@/src/utils/admin-user-directory'
 
-export const adminPlansCollection = createAdminCollection<SubscriptionPlan[]>('plans', seedPlans)
+// 舊格式的方案把契約分析額度存在 aiQuota，沒有 features 這張功能矩陣，一樣整批重 seed
+export const adminPlansCollection = createAdminCollection<SubscriptionPlan[]>(
+  'plans',
+  seedPlans,
+  discardLegacy(seedPlans, 'features'),
+)
 const plans = adminPlansCollection
 
-// 舊格式用 userEmail 指向使用者，無法與其他 collection 對接，直接丟棄重 seed。
+// 舊格式用 userEmail 指向使用者，且沒有單次加購欄位，直接丟棄重 seed。
+// marker 用 extraCredits 而非 userId —— 前者是這一版才出現的欄位。
 export const adminSubscriptionCollection = createAdminCollection<Subscription[]>(
   `subscriptions-${ADMIN_DATASET_VERSION}`,
   seedSubscriptions,
-  discardLegacy(seedSubscriptions, 'userId'),
+  discardLegacy(seedSubscriptions, 'extraCredits'),
 )
 const subscriptions = adminSubscriptionCollection
 

@@ -40,10 +40,6 @@ export function validateSettings(settings: SystemSettings): SettingsErrors {
     errors.maxUploadMb = '上傳上限需介於 1 到 50 MB'
   }
 
-  if (!Number.isFinite(settings.defaultAiQuota) || settings.defaultAiQuota < 0) {
-    errors.defaultAiQuota = 'AI 配額不可為負數'
-  }
-
   if (!Number.isFinite(settings.platformGeminiTokenQuota) || settings.platformGeminiTokenQuota < 0) {
     errors.platformGeminiTokenQuota = 'Gemini token 額度不可為負數'
   }

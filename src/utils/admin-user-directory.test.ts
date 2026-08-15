@@ -17,6 +17,7 @@ import type { AdminUser } from '@/src/mocks/admin/users'
 import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import type { Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
+import type { PlanFeatureRule, PlanFeatures } from './admin-entitlements'
 
 function user(id: string, over: Partial<AdminUser> = {}): AdminUser {
   return {
@@ -64,9 +65,28 @@ function deposit(id: string, over: Partial<DepositRecord> = {}): DepositRecord {
   }
 }
 
+/** 測試只在意契約分析的額度，其餘功能一律開啟無上限 */
+function planFeatures(analysisLimit: number | null): PlanFeatures {
+  const open: PlanFeatureRule = { enabled: true, limit: null }
+  return {
+    'contract-analysis': { enabled: true, limit: analysisLimit },
+    handover: open,
+    subsidy: open,
+    garbage: open,
+    outage: open,
+    notes: open,
+  }
+}
+
 const plans: SubscriptionPlan[] = [
-  { id: 'free', name: '免費方案', priceLabel: 'NT$0', aiQuota: 3, storageMb: 200 },
-  { id: 'plus', name: '進階方案', priceLabel: 'NT$99／月', aiQuota: 20, storageMb: 2048 },
+  { id: 'free', name: '免費方案', priceLabel: 'NT$0', storageMb: 200, features: planFeatures(3) },
+  {
+    id: 'plus',
+    name: '進階方案',
+    priceLabel: 'NT$99／月',
+    storageMb: 2048,
+    features: planFeatures(20),
+  },
 ]
 
 function subscription(over: Partial<Subscription> = {}): Subscription {
@@ -78,6 +98,8 @@ function subscription(over: Partial<Subscription> = {}): Subscription {
     aiUsed: 1,
     storageUsedMb: 10,
     active: true,
+    trialEndsAt: null,
+    extraCredits: {},
     ...over,
   }
 }

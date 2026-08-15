@@ -62,6 +62,7 @@ import {
 } from '@/src/utils/admin-maintenance'
 import { formatDate } from '@/src/utils/admin-format'
 import type { AdminUserRole, PlanId } from '@/src/mocks/admin-seed'
+import type { Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
 
 const route = useRoute()
 const router = useRouter()
@@ -138,6 +139,26 @@ function usagePercent(used: number, quota: number): number {
   return Math.min(100, Math.round((used / quota) * 100))
 }
 
+/** 契約分析的可用次數，含單次加購。無上限時顯示「無上限」而不是一個假的大數字。 */
+function analysisAllowance(subscription: Subscription, plan: SubscriptionPlan): number | null {
+  const rule = plan.features['contract-analysis']
+  if (!rule.enabled) return 0
+  if (rule.limit === null) return null
+  return rule.limit + (subscription.extraCredits['contract-analysis'] ?? 0)
+}
+
+function analysisLimitLabel(subscription: Subscription, plan: SubscriptionPlan): string {
+  const allowance = analysisAllowance(subscription, plan)
+  return allowance === null ? '無上限' : String(allowance)
+}
+
+/** 無上限時進度條固定為 0 —— 沒有分母就沒有百分比可言 */
+function analysisPercent(subscription: Subscription, plan: SubscriptionPlan): number {
+  const allowance = analysisAllowance(subscription, plan)
+  if (allowance === null) return 0
+  return usagePercent(subscription.aiUsed, allowance)
+}
+
 function matchVariant(deposit: UserDepositView): 'default' | 'secondary' | 'destructive' {
   if (deposit.match === 'mismatched') return 'destructive'
   if (deposit.match === 'pending') return 'secondary'
@@ -211,7 +232,7 @@ function goToTickets(): void {
           <p class="text-sm text-muted-foreground">AI 用量</p>
           <p class="text-2xl font-black">
             <template v-if="row.subscription && row.plan">
-              {{ row.subscription.aiUsed }} / {{ row.plan.aiQuota }}
+              {{ row.subscription.aiUsed }} / {{ analysisLimitLabel(row.subscription, row.plan) }}
             </template>
             <span v-else class="text-muted-foreground">—</span>
           </p>
@@ -351,11 +372,12 @@ function goToTickets(): void {
               <div class="flex justify-between text-sm">
                 <span class="text-muted-foreground">AI 分析</span>
                 <span>
-                  {{ row.subscription.aiUsed }} / {{ planOf(row.subscription).aiQuota }} 次
+                  {{ row.subscription.aiUsed }} /
+                  {{ analysisLimitLabel(row.subscription, planOf(row.subscription)) }} 次
                 </span>
               </div>
               <Progress
-                :model-value="usagePercent(row.subscription.aiUsed, planOf(row.subscription).aiQuota)"
+                :model-value="analysisPercent(row.subscription, planOf(row.subscription))"
               />
             </div>
             <div class="space-y-1.5">

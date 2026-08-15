@@ -14,9 +14,8 @@ export interface SystemSettings {
   passwordMinLength: number
   pageSize: number
   maxUploadMb: number
-  defaultAiQuota: number
-  // 以下為「平台向 AI 廠商購買的額度」，與上方 defaultAiQuota（單一使用者的
-  // 每日配額）是不同的東西，命名刻意加 platform 前綴並帶單位以免混淆。
+  // 以下為「平台向 AI 廠商購買的額度」，也就是成本側的總量。
+  // 單一使用者能用幾次是方案權益，存在 SubscriptionPlan.features，不在這裡。
   platformGeminiTokenQuota: number
   platformVisionPageQuota: number
   quotaWarnPercent: number
@@ -38,7 +37,6 @@ export function seedSettings(): SystemSettings {
     passwordMinLength: 8,
     pageSize: 20,
     maxUploadMb: 10,
-    defaultAiQuota: 3,
     platformGeminiTokenQuota: 2_000_000,
     platformVisionPageQuota: 3_000,
     quotaWarnPercent: 80,

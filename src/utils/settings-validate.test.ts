@@ -48,11 +48,6 @@ describe('validateSettings', () => {
     expect(result.maxUploadMb).toBe('上傳上限需介於 1 到 50 MB')
   })
 
-  it('AI 配額不可為負數', () => {
-    const result = validateSettings({ ...baseSettings(), defaultAiQuota: -1 })
-    expect(result.defaultAiQuota).toBe('AI 配額不可為負數')
-  })
-
   it('開啟維護模式時維護文字不可空白', () => {
     const result = validateSettings({
       ...baseSettings(),
@@ -79,11 +74,6 @@ describe('validateSettings', () => {
   it('上傳上限為 NaN 視為錯誤', () => {
     const result = validateSettings({ ...baseSettings(), maxUploadMb: Number.NaN })
     expect(result.maxUploadMb).toBe('上傳上限需介於 1 到 50 MB')
-  })
-
-  it('AI 配額為 NaN 視為錯誤', () => {
-    const result = validateSettings({ ...baseSettings(), defaultAiQuota: Number.NaN })
-    expect(result.defaultAiQuota).toBe('AI 配額不可為負數')
   })
 
   it('上傳上限下限與邊界值', () => {
@@ -138,7 +128,6 @@ describe('migrateSettings', () => {
       maintenanceMessage: '維護中',
       pageSize: 50,
       maxUploadMb: 20,
-      defaultAiQuota: 5,
     }
 
     const migrated = migrateSettings(legacy)

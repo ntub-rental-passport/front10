@@ -11,6 +11,7 @@ import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import type { PlanId, Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
 import { depositGap, depositMatchOf, type DepositMatch } from './admin-deposit'
 import type { MaintenanceStatus } from './admin-maintenance'
+import { featureVerdict } from './admin-entitlements'
 
 /** 到期前幾天開始標示「即將到期」 */
 export const EXPIRING_SOON_DAYS = 14
@@ -40,9 +41,15 @@ export function isQuotaExhausted(
   plan: SubscriptionPlan | null,
 ): boolean {
   if (!subscription || !subscription.active || !plan) return false
-  const aiFull = plan.aiQuota > 0 && subscription.aiUsed >= plan.aiQuota
+
+  // 契約分析的額度改由功能矩陣決定，並把單次加購算進去
+  const analysis = featureVerdict(
+    plan.features['contract-analysis'],
+    subscription.aiUsed,
+    subscription.extraCredits['contract-analysis'] ?? 0,
+  )
   const storageFull = plan.storageMb > 0 && subscription.storageUsedMb >= plan.storageMb
-  return aiFull || storageFull
+  return analysis === 'exhausted' || storageFull
 }
 
 /** 列表與案件裡呈現使用者的名稱，沒有暱稱時退回 email */

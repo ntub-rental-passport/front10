@@ -291,13 +291,6 @@ function liftMaintenanceNow(): void {
           <Input id="maxUploadMb" v-model.number="draft.maxUploadMb" type="number" min="1" max="50" />
           <p v-if="errors.maxUploadMb" class="text-sm text-destructive">{{ errors.maxUploadMb }}</p>
         </div>
-        <div class="space-y-2">
-          <Label for="defaultAiQuota">AI 每日配額預設值</Label>
-          <Input id="defaultAiQuota" v-model.number="draft.defaultAiQuota" type="number" min="0" />
-          <p v-if="errors.defaultAiQuota" class="text-sm text-destructive">
-            {{ errors.defaultAiQuota }}
-          </p>
-        </div>
       </CardContent>
     </Card>
 
