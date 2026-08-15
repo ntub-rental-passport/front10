@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label/index'
 import { Switch } from '@/components/ui/switch/index'
 import { Textarea } from '@/components/ui/textarea/index'
 import { AlertTriangle, Info, ShieldOff } from 'lucide-vue-next'
+import PlanEntitlementsCard from '@/src/components/admin/PlanEntitlementsCard.vue'
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { validateSettings } from '@/src/utils/settings-validate'
 import { isMaintenanceActive } from '@/src/utils/maintenance'
@@ -294,12 +295,14 @@ function liftMaintenanceNow(): void {
       </CardContent>
     </Card>
 
+    <PlanEntitlementsCard />
+
     <Card class="rounded-3xl">
       <CardHeader>
         <CardTitle>AI 平台額度</CardTitle>
         <CardDescription>
           平台向 AI 廠商購買的每月額度與預警門檻，用於 AI 使用量頁的告急判定。
-          與上方「AI 每日配額預設值」（單一使用者的額度）無關。
+          這是成本側的總量，與上方「方案權益」裡單一使用者能用幾次是兩回事。
         </CardDescription>
       </CardHeader>
       <CardContent class="grid gap-4 md:grid-cols-2">

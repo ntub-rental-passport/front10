@@ -9,7 +9,9 @@ import {
   isInTrial,
   isMetered,
   limitImpacts,
+  newlyImpacted,
   remainingQuota,
+  type PlanFeatureKey,
   type PlanFeatureRule,
   type PlanFeatures,
 } from './admin-entitlements'
@@ -183,5 +185,36 @@ describe('limitImpacts', () => {
       plans,
     )
     expect(impactedUserCount(impacts)).toBe(2)
+  })
+})
+
+describe('newlyImpacted', () => {
+  const impact = (userId: string, featureKey: PlanFeatureKey, used: number, limit: number) => ({
+    userId,
+    featureKey,
+    used,
+    limit,
+  })
+
+  it('本來就超額的人不算在這次調整頭上', () => {
+    const before = [impact('a', 'handover', 5, 1)]
+    const after = [impact('a', 'handover', 5, 1), impact('b', 'contract-analysis', 3, 1)]
+    expect(newlyImpacted(before, after)).toEqual([impact('b', 'contract-analysis', 3, 1)])
+  })
+
+  it('同一人的不同功能分開判斷', () => {
+    const before = [impact('a', 'handover', 5, 1)]
+    const after = [impact('a', 'handover', 5, 1), impact('a', 'contract-analysis', 3, 1)]
+    expect(newlyImpacted(before, after)).toHaveLength(1)
+    expect(impactedUserCount(newlyImpacted(before, after))).toBe(1)
+  })
+
+  it('調整沒有讓任何人新超額時為空', () => {
+    const before = [impact('a', 'handover', 5, 1)]
+    expect(newlyImpacted(before, before)).toEqual([])
+  })
+
+  it('放寬上限不會產生新的超額', () => {
+    expect(newlyImpacted([impact('a', 'handover', 5, 1)], [])).toEqual([])
   })
 })
