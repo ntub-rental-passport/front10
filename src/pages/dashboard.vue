@@ -33,8 +33,17 @@ import {
 import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
 import BannerCarousel from '@/src/components/BannerCarousel.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { useFeatureGate } from '@/src/composables/useFeatureGate'
 
 const { activeAnnouncements } = useAdminContent()
+// 首頁有兩個直接通往「合約 OCR」功能的入口，該功能維護關閉時要標記出來——
+// 使用者在首頁看到一張正常的卡片、點下去卻是維護頁，那一下的落差可以避免，
+// 但入口本身仍保留可點（維護說明就在那個網址上）。
+//
+// 教學文章那幾列雖然也連到 /app/contract，但它們是內容不是功能入口，
+// 掛「維護中」等於在說文章壞了。那些連結指向功能頁本身是既有的資訊架構
+// 問題，不該由維護開關來補。
+const { isPathUnderMaintenance } = useFeatureGate()
 
 const {
   accentStyles,
@@ -195,7 +204,7 @@ const {
                   </div>
                   <RouterLink
                     to="/app/contract"
-                    :class="['shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors', selectedContractId === contract.id ? 'border-white/50 bg-white/20 text-white hover:bg-white/30' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700']"
+                    :class="['shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors', isPathUnderMaintenance('/app/contract') ? 'opacity-60' : '', selectedContractId === contract.id ? 'border-white/50 bg-white/20 text-white hover:bg-white/30' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700']"
                     @click.stop
                   >
                     完整租約
@@ -589,9 +598,17 @@ const {
               <ShieldAlert class="h-28 w-28" />
             </div>
             <div class="relative space-y-5">
-              <Badge class="w-fit border-white/20 bg-white/14 text-white hover:bg-white/14">
-                {{ defenseReminder.eyebrow }}
-              </Badge>
+              <div class="flex flex-wrap items-center gap-2">
+                <Badge class="w-fit border-white/20 bg-white/14 text-white hover:bg-white/14">
+                  {{ defenseReminder.eyebrow }}
+                </Badge>
+                <Badge
+                  v-if="isPathUnderMaintenance(defenseReminder.actionTo)"
+                  class="w-fit border-white/20 bg-white/10 text-white/80 hover:bg-white/10"
+                >
+                  維護中
+                </Badge>
+              </div>
               <div class="space-y-3">
                 <h3 class="text-3xl font-bold tracking-tight">{{ defenseReminder.title }}</h3>
                 <p class="max-w-sm text-base leading-8 text-white/90">{{ defenseReminder.summary }}</p>
@@ -600,7 +617,7 @@ const {
             </div>
             <Button
               as-child
-              class="relative z-10 mt-auto h-12 rounded-full border border-white/15 bg-white/12 text-base font-semibold text-white hover:bg-white/20"
+              :class="['relative z-10 mt-auto h-12 rounded-full border border-white/15 bg-white/12 text-base font-semibold text-white hover:bg-white/20', isPathUnderMaintenance(defenseReminder.actionTo) ? 'opacity-60' : '']"
             >
               <RouterLink :to="defenseReminder.actionTo">{{ defenseReminder.actionLabel }}</RouterLink>
             </Button>

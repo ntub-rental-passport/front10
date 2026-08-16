@@ -5,9 +5,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { useNavigation } from '@/src/composables/useNavigation'
+import { useFeatureGate } from '@/src/composables/useFeatureGate'
+import FeatureMaintenanceNotice from '@/src/components/FeatureMaintenanceNotice.vue'
 
 const route = useRoute()
 const { navItems, accountItem, mobileNavItems } = useNavigation()
+const { blocked, outage, isPathUnderMaintenance } = useFeatureGate()
 const SIDEBAR_PIN_KEY = 'rentmate-sidebar-pinned'
 
 const isSidebarPinned = ref(false)
@@ -79,21 +82,24 @@ watch(isSidebarPinned, (value) => {
             v-for="item in desktopNavItems"
             :key="item.path"
             :to="item.path"
-            :title="item.label"
+            :title="isPathUnderMaintenance(item.path) ? `${item.label}（維護中）` : item.label"
             :class="cn(
               'flex rounded-md text-sm font-medium transition-all duration-300',
               isSidebarExpanded ? 'items-center gap-3 px-3 py-2' : 'justify-center px-0 py-3',
               isActive(item.path)
                 ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                : isPathUnderMaintenance(item.path)
+                  ? 'text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             )"
           >
             <component :is="item.icon" class="h-4 w-4 shrink-0" />
             <span
-              class="overflow-hidden whitespace-nowrap transition-all duration-300"
-              :class="isSidebarExpanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0'"
+              class="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap transition-all duration-300"
+              :class="isSidebarExpanded ? 'max-w-[160px] opacity-100' : 'max-w-0 opacity-0'"
             >
               {{ item.label }}
+              <span v-if="isPathUnderMaintenance(item.path)" class="shrink-0 text-xs font-normal">（維護中）</span>
             </span>
           </RouterLink>
         </div>
@@ -103,7 +109,13 @@ watch(isSidebarPinned, (value) => {
     <!-- Main Content -->
     <main class="flex-1 overflow-y-auto pb-16 sm:pb-0">
       <div :class="isWideContentRoute ? 'min-h-full w-full' : 'mx-auto min-h-full max-w-[1400px] p-4 md:p-6'">
-        <RouterView />
+        <!--
+          維護攔截刻意不 redirect：使用者要找的東西還在這個網址底下，只是
+          暫時關著，書籤與分享連結都該繼續有效。管理員不受這裡影響（見
+          useFeatureGate 的說明），因為改完設定總得自己點一遍確認。
+        -->
+        <FeatureMaintenanceNotice v-if="blocked && outage" :outage="outage" />
+        <RouterView v-else />
       </div>
       <footer class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300">
         <div class="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 py-4 text-center">
@@ -125,9 +137,14 @@ watch(isSidebarPinned, (value) => {
         v-for="item in mobileNavItems"
         :key="item.path"
         :to="item.path"
+        :title="isPathUnderMaintenance(item.path) ? `${item.label}（維護中）` : item.label"
         :class="cn(
           'flex flex-1 flex-col items-center justify-center gap-0.5 text-[9px] font-medium transition-colors',
-          isActive(item.path) ? 'text-primary' : 'text-muted-foreground'
+          isActive(item.path)
+            ? 'text-primary'
+            : isPathUnderMaintenance(item.path)
+              ? 'text-muted-foreground/50'
+              : 'text-muted-foreground'
         )"
       >
         <component :is="item.icon" class="h-5 w-5" />
