@@ -31,6 +31,7 @@ import {
   TableRow,
 } from '@/components/ui/table/index'
 import { ArrowLeft, BadgeCheck, ExternalLink, Plus, ShieldAlert } from 'lucide-vue-next'
+import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import {
@@ -551,6 +552,8 @@ function goToTickets(): void {
       </CardHeader>
 
       <CardContent class="space-y-6">
+        <FeatureOutageBanner feature-key="handover" />
+
         <div v-for="group in handoverGroups" :key="group.side" class="space-y-3">
           <p class="font-semibold">以{{ caseSideLabels[group.side] }}身分</p>
 

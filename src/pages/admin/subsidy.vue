@@ -25,6 +25,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
 import { Textarea } from '@/components/ui/textarea/index'
 import { CheckCircle2, PackageCheck, Search } from 'lucide-vue-next'
+import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import {
   subsidyTabs,
   useAdminSubsidy,
@@ -165,6 +166,8 @@ function formatMoney(amount: number): string {
         審核通過的案件會落入左側草稿批次，確認後一次送出；送件後的政府端進度僅供查看。
       </p>
     </div>
+
+    <FeatureOutageBanner feature-key="subsidy" />
 
     <!--
       左欄批次、右欄案件。

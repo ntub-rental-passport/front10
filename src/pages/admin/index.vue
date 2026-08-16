@@ -15,6 +15,7 @@ import {
 import { ArrowUpRight, RotateCcw } from 'lucide-vue-next'
 import CategoryBarCard from '@/src/components/admin/CategoryBarCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
+import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import QuotaProgressCard, { type QuotaProgressItem } from '@/src/components/admin/QuotaProgressCard.vue'
 import TrendAreaCard from '@/src/components/admin/TrendAreaCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
@@ -55,7 +56,10 @@ const maintenanceActive = computed(() => isMaintenanceActive(settings.value))
 const maintenanceDetail = computed(() => {
   if (maintenanceActive.value) return '一般使用者目前看到維護頁'
   if (settings.value.maintenanceMode) return '維護模式已開啟，依排程此刻尚未生效'
-  return '所有功能開放中'
+  // 這顆膠囊講的只有「全站維護模式」，措辭要留在自己的範圍內。
+  // 原本寫「所有功能開放中」，但個別功能可以被功能開關單獨關掉，
+  // 那時膠囊會和正下方的維護橫幅直接互相打臉。
+  return '一般使用者可正常進入'
 })
 
 // ── 規模與趨勢 ────────────────────────────────────────────────────
@@ -201,6 +205,8 @@ function confirmReset(): void {
         重置示範資料
       </Button>
     </div>
+
+    <FeatureOutageBanner />
 
     <!-- 一 · 平台規模與組成：1.4:1:1 -->
     <section

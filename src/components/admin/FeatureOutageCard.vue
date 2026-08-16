@@ -5,7 +5,7 @@
  * 這裡關的是「功能故障時對所有使用者暫停」，跟方案權益（PlanEntitlementsCard，
  * 哪個方案能用哪些功能）是兩回事，不共用開關也不共用文案——見卡片說明文字。
  */
-import { computed, onUnmounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label/index'
 import { Textarea } from '@/components/ui/textarea/index'
 import { AlertTriangle } from 'lucide-vue-next'
 import { useAdminFeatureOutages } from '@/src/composables/admin/useAdminFeatureOutages'
+import { useTickingNow } from '@/src/composables/useTickingNow'
 import { PLAN_FEATURES, PLAN_FEATURE_KEYS, type PlanFeatureKey } from '@/src/utils/admin-entitlements'
 import {
   DEFAULT_PUBLIC_NOTE,
@@ -35,16 +36,8 @@ import { formatDateTime } from '@/src/utils/admin-format'
 
 const { outages, closeFeature, reopenFeature } = useAdminFeatureOutages()
 
-/**
- * 「已關閉多久」與「預計時間過了沒」都跟現在幾點有關，只靠 outages 當依賴的話
- * 這兩個值會在畫面開著的期間凍住 —— 管理員把監控頁擺著不動，時長永遠停在打開那刻，
- * 預計時間過了也不會轉紅。用一個每 30 秒推進的時間當額外依賴讓它們自己走。
- */
-const now = ref(new Date())
-const timer = window.setInterval(() => {
-  now.value = new Date()
-}, 30_000)
-onUnmounted(() => window.clearInterval(timer))
+// 「已關閉多久」與「預計時間過了沒」都跟現在幾點有關，見 useTickingNow 註解
+const now = useTickingNow()
 
 const dialogOpen = ref(false)
 const dialogKey = ref<PlanFeatureKey | null>(null)
