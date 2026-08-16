@@ -17,6 +17,7 @@ import { quotaLevelLabels, useAdminAiUsage, type ProviderUsage } from '@/src/com
 import type { AiProviderId } from '@/src/mocks/admin-seed'
 import { chartColor } from '@/src/constants/admin-chart'
 import MonitorCard from '@/src/components/admin/MonitorCard.vue'
+import FeatureOutageCard from '@/src/components/admin/FeatureOutageCard.vue'
 import { useSystemHealth } from '@/src/composables/admin/useSystemHealth'
 
 
@@ -102,6 +103,10 @@ function daysLeftText(usage: ProviderUsage): string {
     <section class="grid gap-4 md:grid-cols-3">
       <MonitorCard v-for="reading in monitors" :key="reading.id" :reading="reading" />
     </section>
+
+    <div class="border-t pt-6">
+      <FeatureOutageCard />
+    </div>
 
     <div class="border-t pt-6">
       <h2 class="text-xl font-bold tracking-tight">AI 額度用量</h2>
