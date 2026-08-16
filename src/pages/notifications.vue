@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
+import MaintenanceStatusPanel from '@/src/components/MaintenanceStatusPanel.vue'
 import { useNotifications, type InboxItem } from '@/src/composables/useNotifications'
 import { formatDateTime } from '@/src/utils/admin-format'
 import type { AnnouncementLevel, NotifChannel } from '@/src/mocks/admin-seed'
@@ -51,6 +52,13 @@ function unreadAccent(item: InboxItem): string {
       </div>
     </div>
 
+    <MaintenanceStatusPanel />
+
+    <!--
+      維護狀態不是通知，所以就算收件匣是空的，只要有功能維護中，上面的
+      MaintenanceStatusPanel 一樣會顯示，畫面同時出現狀態區塊與這則空狀態
+      是刻意的，不要因為想讓畫面「看起來乾淨」而改動這個條件。
+    -->
     <div
       v-if="inboxItems.length === 0"
       class="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-muted-foreground"

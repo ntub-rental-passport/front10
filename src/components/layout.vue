@@ -7,6 +7,7 @@ import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { useNavigation } from '@/src/composables/useNavigation'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'
 import FeatureMaintenanceNotice from '@/src/components/FeatureMaintenanceNotice.vue'
+import MaintenanceToaster from '@/src/components/MaintenanceToaster.vue'
 
 const route = useRoute()
 const { navItems, accountItem, mobileNavItems } = useNavigation()
@@ -151,5 +152,8 @@ watch(isSidebarPinned, (value) => {
         {{ item.label }}
       </RouterLink>
     </nav>
+
+    <!-- 掛在外框最外層，整個 /app 只會有一個實例，避免重複的維護提示 -->
+    <MaintenanceToaster />
   </div>
 </template>
