@@ -73,7 +73,7 @@ export function isValidPersonOrEntityName(value) {
 export function parseRocDate(value) {
   const normalized = normalizeDigits(value).trim()
   const match = normalized.match(
-    /^(?:民國\s*)?(\d{2,3})\s*(?:年|[/.\-])\s*(\d{1,2})\s*(?:月|[/.\-])\s*(\d{1,2})\s*日?$/,
+    /^(?:民國\s*)?(\d{2,3})\s*(?:年|[/.-])\s*(\d{1,2})\s*(?:月|[/.-])\s*(\d{1,2})\s*日?$/,
   )
   if (!match) return null
   const rocYear = Number(match[1])
@@ -180,7 +180,7 @@ export function isValidExpenseAgreement(value) {
 
 export function isValidHandoverTime(value) {
   const normalized = normalizeDigits(value).trim()
-  return isValidRocDate(normalized) || /(?:交屋|入住|搬入).*(?:民國)?\d{2,3}[年/.\-]\d{1,2}/.test(normalized)
+  return isValidRocDate(normalized) || /(?:交屋|入住|搬入).*(?:民國)?\d{2,3}[年/.-]\d{1,2}/.test(normalized)
 }
 
 export function isValidContractFieldFormat(format, value, options = []) {

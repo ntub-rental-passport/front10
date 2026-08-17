@@ -416,12 +416,12 @@ async function pollAiReview(jobId: string): Promise<void> {
       if (!currentResult || currentResult.aiReview?.jobId !== jobId) return
 
       currentResult.fieldReviews = {
-        ...(currentResult.fieldReviews ?? {}),
+        ...currentResult.fieldReviews,
         ...Object.fromEntries(
           Object.entries(reviewJob.fieldReviews ?? {}).map(([fieldId, review]) => [
             fieldId,
             {
-              ...(currentResult.fieldReviews?.[fieldId] ?? {}),
+              ...currentResult.fieldReviews?.[fieldId],
               ...review,
               reviewSource: 'ai' as const,
             },

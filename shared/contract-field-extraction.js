@@ -64,7 +64,7 @@ function normalizePersonName(rawValue) {
   const value = cleanSource(rawValue)
     .replace(/[（(].*$/, '')
     .replace(/以下簡稱.*$/, '')
-    .replace(/[\[［【].*?[\]］】]/g, '')
+    .replace(/[[［【].*?[\]］】]/g, '')
     .trim()
   if (/遮蔽|模糊|不清|姓名|身分證/.test(value)) return ''
   return /^[\p{Script=Han}·‧]{2,20}$/u.test(value) ? value : ''
