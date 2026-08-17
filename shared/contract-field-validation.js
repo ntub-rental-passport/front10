@@ -39,7 +39,9 @@ export function isValidTaiwanNationalId(value) {
   const code = TAIWAN_ID_LETTER_CODES[normalized[0]]
   if (!code) return false
 
-  const digits = [...normalized.slice(1)].map(Number)
+  // 用 Array.from 而非 [...str].map()：後者會被 oxlint 的 no-useless-spread 判定為
+  // 多餘展開並自動改成 str.slice(1).map()，但字串沒有 map，一跑 lint --fix 就會壞掉。
+  const digits = Array.from(normalized.slice(1), Number)
   const sum =
     Math.floor(code / 10) +
     (code % 10) * 9 +
