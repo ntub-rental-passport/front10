@@ -4,6 +4,7 @@ import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent } from '@/components/ui/card/index'
+import BannerCarousel from '@/src/components/BannerCarousel.vue'
 import {
   ArrowRight,
   Globe,
@@ -149,6 +150,9 @@ const featureCards = [
           </CardContent>
         </Card>
       </section>
+
+      <!-- 後台維護的行銷輪播，訪客未登入所以連結一律導向註冊頁（見 BannerCarousel 的 public prop） -->
+      <BannerCarousel public class="mt-16" />
 
       <section class="mt-16 space-y-6 lg:mt-16">
         <div class="space-y-3">

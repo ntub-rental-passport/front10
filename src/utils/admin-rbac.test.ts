@@ -12,6 +12,7 @@ import type { AdminRole } from '@/src/mocks/admin/users'
 const MATRIX: Record<string, Record<AdminRole, boolean>> = {
   '/admin': { super: true, admin: true },
   '/admin/content': { super: true, admin: true },
+  '/admin/notifications': { super: true, admin: true },
   '/admin/monitoring': { super: true, admin: true },
   '/admin/subsidy': { super: true, admin: true },
   // 押金與訂閱整合進來後開放給一般管理員；高風險操作在詳情頁另外擋
@@ -74,12 +75,12 @@ describe('visibleNavGroupsFor', () => {
     return visibleNavGroupsFor(role).reduce((sum, g) => sum + g.items.length, 0)
   }
 
-  it('super 可看到全部 8 個項目', () => {
-    expect(totalItems('super')).toBe(8)
+  it('super 可看到全部 9 個項目', () => {
+    expect(totalItems('super')).toBe(9)
   })
 
-  it('一般管理員可看到 6 個項目（少了稽核紀錄與系統設定）', () => {
-    expect(totalItems('admin')).toBe(6)
+  it('一般管理員可看到 7 個項目（少了稽核紀錄與系統設定）', () => {
+    expect(totalItems('admin')).toBe(7)
   })
 
   it('一般管理員看得到使用者管理', () => {
@@ -103,17 +104,22 @@ describe('visibleNavGroupsFor', () => {
 })
 
 describe('adminNavGroups', () => {
-  it('定義了三個群組，共 8 個項目', () => {
+  it('定義了三個群組，共 9 個項目', () => {
     const total = adminNavGroups.reduce((sum, g) => sum + g.items.length, 0)
     expect(adminNavGroups.length).toBe(3)
-    expect(total).toBe(8)
+    expect(total).toBe(9)
   })
 
   it('已移除的模組不再出現在導覽中', () => {
     const paths = adminNavGroups.flatMap((g) => g.items.map((i) => i.path))
     expect(paths).not.toContain('/admin/review')
     expect(paths).not.toContain('/admin/knowledge')
-    expect(paths).not.toContain('/admin/notifications')
+  })
+
+  it('內容管理與通知管理是並列的兩個獨立項目', () => {
+    const paths = adminNavGroups.flatMap((g) => g.items.map((i) => i.path))
+    expect(paths).toContain('/admin/content')
+    expect(paths).toContain('/admin/notifications')
   })
 
   it('押金與訂閱已整合進使用者管理，不再是獨立項目', () => {

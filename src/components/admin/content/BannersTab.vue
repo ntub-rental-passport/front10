@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import {
@@ -13,8 +13,9 @@ import {
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Switch } from '@/components/ui/switch/index'
-import { ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, ImageOff } from 'lucide-vue-next'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { isValidImageUrl } from '@/src/utils/banner-url'
 import type { Banner } from '@/src/mocks/admin/content'
 
 const { banners, saveBanner, removeBanner, moveBanner } = useAdminContent()
@@ -38,8 +39,21 @@ function emptyDraft(): DraftState {
   return { title: '', imageUrl: '', linkUrl: '', published: true }
 }
 
+// 圖片載入失敗時要換成佔位樣式而不是瀏覽器預設的破圖示；
+// 網址改變就重置，否則換了網址但還沒重新載入完成前會誤顯示上一張的失敗狀態。
+const previewFailed = ref(false)
+
+watch(() => draft.value.imageUrl, () => {
+  previewFailed.value = false
+})
+
+function onPreviewError(): void {
+  previewFailed.value = true
+}
+
 function openCreate(): void {
   draft.value = emptyDraft()
+  previewFailed.value = false
   dialogOpen.value = true
 }
 
@@ -51,6 +65,7 @@ function openEdit(item: Banner): void {
     linkUrl: item.linkUrl,
     published: item.published,
   }
+  previewFailed.value = false
   dialogOpen.value = true
 }
 
@@ -65,6 +80,11 @@ function confirmDelete(): void {
 }
 
 const canSubmit = () => draft.value.title.trim() !== '' && draft.value.imageUrl.trim() !== ''
+
+// 只在使用者已經有輸入內容時才提示格式錯誤，避免新增輪播一開對話框就先罵人。
+const showUrlFormatWarning = computed(
+  () => draft.value.imageUrl.trim() !== '' && !isValidImageUrl(draft.value.imageUrl),
+)
 </script>
 
 <template>
@@ -118,9 +138,25 @@ const canSubmit = () => draft.value.title.trim() !== '' && draft.value.imageUrl.
           <div class="space-y-2">
             <Label for="ban-image">圖片網址</Label>
             <Input id="ban-image" v-model="draft.imageUrl" placeholder="https://..." />
+            <p v-if="showUrlFormatWarning" class="text-xs text-destructive">
+              網址格式不正確，請確認是否為完整的 http(s) 連結。
+            </p>
           </div>
           <div v-if="draft.imageUrl" class="overflow-hidden rounded-xl border">
-            <img :src="draft.imageUrl" alt="預覽" class="max-h-40 w-full object-cover" />
+            <img
+              v-if="!previewFailed"
+              :src="draft.imageUrl"
+              alt="預覽"
+              class="max-h-40 w-full object-cover"
+              @error="onPreviewError"
+            />
+            <div
+              v-else
+              class="flex h-40 w-full flex-col items-center justify-center gap-2 bg-muted/50 text-sm text-muted-foreground"
+            >
+              <ImageOff class="h-6 w-6" />
+              圖片載入失敗，請確認網址是否正確
+            </div>
           </div>
           <div class="space-y-2">
             <Label for="ban-link">連結網址</Label>

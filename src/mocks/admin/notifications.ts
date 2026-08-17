@@ -14,6 +14,10 @@ export interface NotifTemplate {
   updatedAt: string
 }
 
+// Email／推播後端還沒接，實際上沒有真的寄出去，所以一律是 pending；
+// 只有實際啟用的管道才會有條目，沒啟用的管道不需要狀態。
+export type NotifDeliveryStatus = 'sent' | 'pending' | 'failed'
+
 export interface UserNotification {
   id: string
   userEmail: string
@@ -21,6 +25,7 @@ export interface UserNotification {
   body: string
   category: NotifCategory
   channels: NotifChannel[]
+  deliveryStatus: Partial<Record<NotifChannel, NotifDeliveryStatus>>
   createdAt: string
   read: boolean
 }
@@ -89,6 +94,7 @@ export function seedUserNotifications(): UserNotification[] {
       body: '您的本期帳單金額為 12,400 元，應繳日為 2026/08/10，逾期將產生滯納金。',
       category: '帳務',
       channels: ['inapp', 'email', 'push'],
+      deliveryStatus: { inapp: 'sent', email: 'pending', push: 'pending' },
       createdAt: daysAgo(1),
       read: false,
     },
@@ -99,6 +105,7 @@ export function seedUserNotifications(): UserNotification[] {
       body: '小艾 您好，您申請的租金補貼已審核通過，每月核定金額為 3,200 元，將於 2026/08/15 起撥款。',
       category: '補貼',
       channels: ['inapp', 'push'],
+      deliveryStatus: { inapp: 'sent', push: 'pending' },
       createdAt: daysAgo(4),
       read: false,
     },
@@ -109,6 +116,7 @@ export function seedUserNotifications(): UserNotification[] {
       body: '小艾 您好，您位於 台北市中正區杭州南路一段 88 號 6 樓 的租約即將於 2026/12/31 到期，請儘早與房東確認續約意願。',
       category: '租約',
       channels: ['inapp', 'email'],
+      deliveryStatus: { inapp: 'sent', email: 'pending' },
       createdAt: daysAgo(12),
       read: true,
     },
@@ -119,6 +127,7 @@ export function seedUserNotifications(): UserNotification[] {
       body: '您上傳的「租賃契約_中正區.pdf」已完成 AI 分析，可至合約專區查看結果。',
       category: '系統',
       channels: ['inapp'],
+      deliveryStatus: { inapp: 'sent' },
       createdAt: daysAgo(25),
       read: true,
     },

@@ -35,7 +35,7 @@ import { extractVariables, renderTemplate } from '@/src/utils/notif-template'
 import { formatDateTime } from '@/src/utils/admin-format'
 import type { NotifCategory, NotifChannel, NotifTemplate } from '@/src/mocks/admin-seed'
 
-const { templates, saveTemplate, removeTemplate, toggleTemplate, sendFromTemplate } = useAdminNotifications()
+const { templates, saveTemplate, removeTemplate, toggleTemplate, sendFromTemplate, resolveRecipients } = useAdminNotifications()
 const { users } = useAdminUsers()
 
 const channelLabels: Record<NotifChannel, string> = {
@@ -172,6 +172,40 @@ const canSend = computed(() => {
   return true
 })
 
+// 指定單一使用者的影響範圍很小、又已經在下拉選單裡明確點名，不需要再確認一次；
+// 選到角色群組（全部使用者／全部租客／全部房東）一次會發給一整批人，且發出去無法收回，
+// 這種才需要多一層確認，並且把真實解析出的人數秀出來，不能用「一批人」帶過。
+const isRoleRecipient = computed(() => recipientKind.value !== 'single')
+
+const resolvedRecipientCount = computed(() => {
+  const kind = recipientKind.value
+  if (kind === 'single') return recipientEmail.value ? 1 : 0
+  return resolveRecipients({ kind: 'role', role: kind }).length
+})
+
+// 發送框與確認框的開關各自獨立管理，不用 sendTarget 反推。
+// 兩個框不能同時開著（Dialog 遮罩是 bg-black/80，疊兩層等於九成以上全黑），
+// 但關掉發送框時 sendTarget 與已填的變數必須留著，使用者在確認框按取消才回得來。
+const sendDialogOpen = ref(false)
+const confirmSendOpen = ref(false)
+
+function closeSendFlow(): void {
+  sendDialogOpen.value = false
+  confirmSendOpen.value = false
+  sendTarget.value = null
+}
+
+// 確認框會蓋掉發送表單，所以要把「發什麼、發給誰」原封不動帶過來，
+// 否則使用者是在看不到內容的情況下確認一次無法復原的群發。
+const RECIPIENT_LABELS: Record<'all' | 'user' | 'landlord' | 'single', string> = {
+  all: '全部使用者',
+  user: '全部租客',
+  landlord: '全部房東',
+  single: '指定使用者',
+}
+
+const recipientLabel = computed(() => RECIPIENT_LABELS[recipientKind.value])
+
 function openSend(item: NotifTemplate): void {
   sendTarget.value = item
   const vars = extractVariables(`${item.title} ${item.body}`)
@@ -181,17 +215,34 @@ function openSend(item: NotifTemplate): void {
   recipientKind.value = 'all'
   recipientEmail.value = ''
   sentMessage.value = ''
+  sendDialogOpen.value = true
+  confirmSendOpen.value = false
 }
 
-function submitSend(): void {
+function requestSend(): void {
+  if (isRoleRecipient.value) {
+    sendDialogOpen.value = false
+    confirmSendOpen.value = true
+    return
+  }
+  void performSend()
+}
+
+/** 確認框按取消：退回填好的發送表單，不清掉任何已輸入的內容。 */
+function cancelConfirm(): void {
+  confirmSendOpen.value = false
+  sendDialogOpen.value = true
+}
+
+async function performSend(): Promise<void> {
   const target = sendTarget.value
   if (!target) return
   const kind = recipientKind.value
   const recipient: NotifRecipient =
     kind === 'single' ? { kind: 'user', email: recipientEmail.value } : { kind: 'role', role: kind }
-  const count = sendFromTemplate(target.id, filledVars.value, recipient)
+  const count = await sendFromTemplate(target.id, filledVars.value, recipient)
   sentMessage.value = `已成功發送給 ${count} 位使用者。`
-  sendTarget.value = null
+  closeSendFlow()
 }
 </script>
 
@@ -313,7 +364,7 @@ function submitSend(): void {
     </Dialog>
 
     <!-- 發送 Dialog -->
-    <Dialog :open="sendTarget !== null" @update:open="(o: boolean) => { if (!o) sendTarget = null }">
+    <Dialog :open="sendDialogOpen" @update:open="(o: boolean) => { if (!o) closeSendFlow() }">
       <DialogContent v-if="sendTarget">
         <DialogHeader>
           <DialogTitle>發送通知</DialogTitle>
@@ -359,8 +410,38 @@ function submitSend(): void {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="sendTarget = null">取消</Button>
-          <Button :disabled="!canSend" @click="submitSend">發送</Button>
+          <Button variant="outline" @click="closeSendFlow">取消</Button>
+          <Button :disabled="!canSend" @click="requestSend">發送</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 發送二次確認 Dialog：只有收件人是角色群組（會一次發給一整批人）才會走到這裡 -->
+    <!-- Esc 或點外面關掉確認框時，也要退回發送表單而不是把整個流程丟掉 -->
+    <Dialog :open="confirmSendOpen" @update:open="(o: boolean) => { if (!o) cancelConfirm() }">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>確認發送</DialogTitle>
+          <DialogDescription>
+            即將發送給 {{ resolvedRecipientCount }} 位使用者，此操作無法復原。
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3 text-sm">
+          <div class="flex items-center justify-between rounded-xl border px-3 py-2">
+            <span class="text-muted-foreground">收件人</span>
+            <span class="font-semibold">{{ recipientLabel }}</span>
+          </div>
+          <div class="space-y-1 rounded-xl border bg-muted/30 p-3">
+            <p class="text-xs font-medium text-muted-foreground">
+              模板：{{ sendTarget?.name }}
+            </p>
+            <p class="font-bold">{{ previewTitle }}</p>
+            <p class="text-muted-foreground">{{ previewBody }}</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="cancelConfirm">取消</Button>
+          <Button @click="performSend">確認發送</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

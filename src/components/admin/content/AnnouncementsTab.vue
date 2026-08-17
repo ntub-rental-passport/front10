@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/table/index'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { formatDate } from '@/src/utils/admin-format'
-import type { Announcement, AnnouncementLevel } from '@/src/mocks/admin/content'
+import type { Announcement, AnnouncementAudience, AnnouncementLevel } from '@/src/mocks/admin/content'
 
 const { announcements, saveAnnouncement, removeAnnouncement } = useAdminContent()
 
@@ -39,6 +39,12 @@ const levelLabels: Record<AnnouncementLevel, string> = {
   info: '一般',
   warning: '注意',
   urgent: '緊急',
+}
+
+const audienceLabels: Record<AnnouncementAudience, string> = {
+  all: '全部',
+  tenant: '租客',
+  landlord: '房東',
 }
 
 const dialogOpen = ref(false)
@@ -49,6 +55,7 @@ interface DraftState {
   title: string
   body: string
   level: AnnouncementLevel
+  audience: AnnouncementAudience
   published: boolean
   startAt: string
   endAt: string
@@ -69,6 +76,7 @@ function emptyDraft(): DraftState {
     title: '',
     body: '',
     level: 'info',
+    audience: 'all',
     published: true,
     startAt: toDateInput(new Date().toISOString()),
     endAt: '',
@@ -86,6 +94,7 @@ function openEdit(item: Announcement): void {
     title: item.title,
     body: item.body,
     level: item.level,
+    audience: item.audience,
     published: item.published,
     startAt: toDateInput(item.startAt),
     endAt: item.endAt ? toDateInput(item.endAt) : '',
@@ -99,6 +108,7 @@ function submit(): void {
     title: draft.value.title,
     body: draft.value.body,
     level: draft.value.level,
+    audience: draft.value.audience,
     published: draft.value.published,
     startAt: fromDateInput(draft.value.startAt),
     endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
@@ -125,6 +135,7 @@ const canSubmit = () => draft.value.title.trim() !== '' && draft.value.body.trim
         <TableRow>
           <TableHead>標題</TableHead>
           <TableHead>等級</TableHead>
+          <TableHead>受眾</TableHead>
           <TableHead>狀態</TableHead>
           <TableHead>生效期間</TableHead>
           <TableHead class="text-right">操作</TableHead>
@@ -134,6 +145,9 @@ const canSubmit = () => draft.value.title.trim() !== '' && draft.value.body.trim
         <TableRow v-for="item in announcements" :key="item.id">
           <TableCell class="font-medium">{{ item.title }}</TableCell>
           <TableCell>{{ levelLabels[item.level] }}</TableCell>
+          <TableCell>
+            <Badge variant="outline">{{ audienceLabels[item.audience] }}</Badge>
+          </TableCell>
           <TableCell>
             <Badge :variant="item.published ? 'default' : 'secondary'">
               {{ item.published ? '已發布' : '未發布' }}
@@ -150,7 +164,7 @@ const canSubmit = () => draft.value.title.trim() !== '' && draft.value.body.trim
           </TableCell>
         </TableRow>
         <TableRow v-if="announcements.length === 0">
-          <TableCell colspan="5" class="py-8 text-center text-muted-foreground">尚無公告。</TableCell>
+          <TableCell colspan="6" class="py-8 text-center text-muted-foreground">尚無公告。</TableCell>
         </TableRow>
       </TableBody>
     </Table>
@@ -182,10 +196,21 @@ const canSubmit = () => draft.value.title.trim() !== '' && draft.value.body.trim
                 </SelectContent>
               </Select>
             </div>
-            <div class="flex items-center justify-between rounded-xl border px-3">
-              <Label class="mb-0">發布</Label>
-              <Switch v-model="draft.published" />
+            <div class="space-y-2">
+              <Label>受眾</Label>
+              <Select v-model="draft.audience">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部</SelectItem>
+                  <SelectItem value="tenant">租客</SelectItem>
+                  <SelectItem value="landlord">房東</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+          <div class="flex items-center justify-between rounded-xl border px-3 py-2">
+            <Label class="mb-0">發布</Label>
+            <Switch v-model="draft.published" />
           </div>
           <div class="grid grid-cols-2 gap-4">
             <div class="space-y-2">

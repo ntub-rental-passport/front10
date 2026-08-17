@@ -58,8 +58,7 @@ const router = createRouter({
         // 押金退還已併入使用者詳情，保留舊路徑避免既有書籤與稽核紀錄連結 404
         { path: 'deposits', redirect: '/admin/users' },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
-        // 通知已併入內容管理，保留舊路徑避免既有書籤 404
-        { path: 'notifications', redirect: '/admin/content' },
+        { path: 'notifications', component: () => import('@/src/pages/admin/notifications.vue') },
         { path: 'monitoring', component: () => import('@/src/pages/admin/monitoring.vue') },
         // AI 使用量已擴充為系統監控，保留舊路徑避免既有書籤 404
         { path: 'ai-usage', redirect: '/admin/monitoring' },

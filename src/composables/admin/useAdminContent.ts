@@ -1,7 +1,11 @@
 import { computed } from 'vue'
 import { createAdminCollection, newId } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
-import { isAnnouncementActive } from '@/src/utils/announcement'
+import {
+  isAnnouncementActive,
+  isAnnouncementVisibleToTenant,
+  migrateAnnouncements,
+} from '@/src/utils/announcement'
 import {
   seedAnnouncements,
   seedBanners,
@@ -13,7 +17,11 @@ import {
   type LegalDoc,
 } from '@/src/mocks/admin-seed'
 
-const announcements = createAdminCollection<Announcement[]>('content-announcements', seedAnnouncements)
+const announcements = createAdminCollection<Announcement[]>(
+  'content-announcements',
+  seedAnnouncements,
+  migrateAnnouncements,
+)
 const faqs = createAdminCollection<FaqEntry[]>('content-faqs', seedFaqs)
 const legalDocs = createAdminCollection<LegalDoc[]>('content-legal', seedLegalDocs)
 const banners = createAdminCollection<Banner[]>('content-banners', seedBanners)
@@ -44,6 +52,12 @@ export function useAdminContent() {
       .filter((item) => isAnnouncementActive(item, now))
       .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
   })
+
+  // 後台管理頁要看得到全部生效中公告（不分受眾），租客端（首頁、通知中心）
+  // 則只該看到跟自己身分有關的，所以另外導出一份過濾過的清單而不是改掉上面那個。
+  const tenantAnnouncements = computed(() =>
+    activeAnnouncements.value.filter((item) => isAnnouncementVisibleToTenant(item)),
+  )
 
   // --- 公告 ---
   function saveAnnouncement(input: Omit<Announcement, 'id' | 'updatedAt'> & { id?: string }): void {
@@ -132,6 +146,7 @@ export function useAdminContent() {
     legalDocs,
     banners,
     activeAnnouncements,
+    tenantAnnouncements,
     saveAnnouncement,
     removeAnnouncement,
     saveFaq,

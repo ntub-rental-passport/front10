@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
@@ -33,9 +34,20 @@ import {
 import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
 import BannerCarousel from '@/src/components/BannerCarousel.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { useAnnouncementDismissal } from '@/src/composables/useAnnouncementDismissal'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'
+import { isDashboardAnnouncementLevel } from '@/src/utils/announcement'
 
-const { activeAnnouncements } = useAdminContent()
+const { tenantAnnouncements } = useAdminContent()
+const { isDismissed, dismiss } = useAnnouncementDismissal()
+
+// 首頁只放最緊急的訊息（urgent／warning），一般公告仍在通知中心看得到；
+// 使用者關掉的公告（依 id+updatedAt 判斷）不再重複出現，除非管理員又更新了內容。
+const dashboardAnnouncements = computed(() =>
+  tenantAnnouncements.value.filter(
+    (item) => isDashboardAnnouncementLevel(item.level) && !isDismissed(item),
+  ),
+)
 // 首頁有兩個直接通往「合約 OCR」功能的入口，該功能維護關閉時要標記出來——
 // 使用者在首頁看到一張正常的卡片、點下去卻是維護頁，那一下的落差可以避免，
 // 但入口本身仍保留可點（維護說明就在那個網址上）。
@@ -82,11 +94,13 @@ const {
   <div class="flex min-h-full min-w-0 flex-col gap-5 pb-6">
     <BannerCarousel />
 
-    <div v-if="activeAnnouncements.length > 0" class="flex flex-col gap-3">
+    <div v-if="dashboardAnnouncements.length > 0" class="flex flex-col gap-3">
       <AnnouncementBanner
-        v-for="item in activeAnnouncements"
+        v-for="item in dashboardAnnouncements"
         :key="item.id"
         :announcement="item"
+        dismissible
+        @dismiss="dismiss(item)"
       />
     </div>
 

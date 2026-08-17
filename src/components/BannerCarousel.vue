@@ -3,6 +3,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 
+const props = defineProps<{
+  /**
+   * 公開首頁（未登入）用。這裡的 banner 連結都是後台為登入後的租客工作區設的
+   * （/app/*），未登入訪客點下去會被路由守衛踢去 /login，行銷入口變登入牆。
+   * public 時一律導去 /register，忽略 banner 自己的 linkUrl。
+   */
+  public?: boolean
+}>()
+
 const { banners } = useAdminContent()
 
 const visibleBanners = computed(() =>
@@ -63,7 +72,7 @@ onBeforeUnmount(stopAutoplay)
       v-for="(item, index) in visibleBanners"
       v-show="index === activeIndex"
       :key="item.id"
-      :to="item.linkUrl"
+      :to="props.public ? '/register' : item.linkUrl"
       class="block"
     >
       <div class="relative">

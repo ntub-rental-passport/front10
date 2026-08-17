@@ -27,7 +27,8 @@ export interface InboxItem {
 }
 
 export function useNotifications() {
-  const { activeAnnouncements } = useAdminContent()
+  // 通知中心是租客端的收件匣，只該收到跟租客身分有關的公告（audience 為 tenant 或 all）。
+  const { tenantAnnouncements } = useAdminContent()
 
   const currentEmail = computed(() => getAuthSession()?.email ?? '')
 
@@ -36,7 +37,7 @@ export function useNotifications() {
   )
 
   const announcementItems = computed<InboxItem[]>(() =>
-    activeAnnouncements.value.map((item) => ({
+    tenantAnnouncements.value.map((item) => ({
       key: `an:${item.id}`,
       sourceId: item.id,
       source: 'announcement' as const,

@@ -1,6 +1,7 @@
 import { computed, type Component } from 'vue'
 import {
   Banknote,
+  Bell,
   Gauge,
   LayoutDashboard,
   Megaphone,
@@ -24,6 +25,7 @@ const navIcons: Record<string, Component> = {
   '/admin/maintenance-tickets': Wrench,
   '/admin/subsidy': Banknote,
   '/admin/content': Megaphone,
+  '/admin/notifications': Bell,
   '/admin/monitoring': Gauge,
   '/admin/audit': ScrollText,
   '/admin/settings': Settings,
