@@ -22,10 +22,14 @@ sudo ufw enable
 ## 二、部署程式碼與機密
 
 ```bash
-git clone <repo網址> rentmate && cd rentmate
+# 資安變更不進 GitHub，程式碼用 rsync 從本機直接上傳（在本機專案根目錄執行）：
+rsync -avz --delete \
+  --exclude node_modules --exclude dist --exclude .venv --exclude .git \
+  --exclude logs --exclude '__pycache__' \
+  ./ <user>@<VM_IP>:~/rentmate/
 
-# 機密檔案不在 git 裡，需另外傳上來（在本機執行）：
-#   scp .env key/vision-key.json <user>@<VM_IP>:~/rentmate/...
+# .env 與金鑰被 rsync 一併傳上去了（它們只被 .gitignore/.dockerignore 排除），
+# 上 VM 後記得把 .env 改成正式環境的值（見下表）
 ```
 
 `.env` 上 VM 後必須修改／確認的項目：
