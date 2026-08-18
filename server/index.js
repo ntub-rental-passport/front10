@@ -5,6 +5,8 @@ import { performance } from 'node:perf_hooks'
 import process from 'node:process'
 import express from 'express'
 import multer from 'multer'
+import cookieParser from 'cookie-parser'
+import jwt from 'jsonwebtoken'
 import { PDFDocument } from 'pdf-lib'
 import vision from '@google-cloud/vision'
 import { getOllamaConfig, reviewContractFieldsWithOllama } from './ollama-contract.js'
@@ -21,6 +23,30 @@ import {
 } from './vision-field-crops.js'
 
 const app = express()
+app.use(cookieParser())
+
+// JWT 驗證：與 FastAPI 共用同一組 JWT_SECRET（都從根目錄 .env 讀取）。
+// FastAPI 登入時簽發的 HttpOnly cookie，這裡直接驗證，未登入者無法呼叫 OCR
+// （防止任何人匿名上傳檔案燒光 Google Vision API 額度）。
+const jwtSecret = process.env.JWT_SECRET || ''
+if (!jwtSecret) {
+  console.error('❌ 缺少 JWT_SECRET 環境變數（需與 FastAPI 共用同一組值），OCR server 拒絕啟動。')
+  process.exit(1)
+}
+
+function requireAuth(req, res, next) {
+  const token = req.cookies?.access_token
+  if (!token) {
+    return res.status(401).json({ error: '未登入，請先登入後再使用 OCR 功能。' })
+  }
+  try {
+    req.user = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] })
+    return next()
+  } catch {
+    return res.status(401).json({ error: '登入已過期或憑證無效，請重新登入。' })
+  }
+}
+
 const port = Number(process.env.OCR_API_PORT || 8787)
 const maxFileSizeMb = Number(process.env.OCR_MAX_FILE_SIZE_MB || 20)
 const maxTotalSizeMb = Number(process.env.OCR_MAX_TOTAL_SIZE_MB || 80)
@@ -524,7 +550,7 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
-app.get('/api/ocr/review/:jobId', (req, res) => {
+app.get('/api/ocr/review/:jobId', requireAuth, (req, res) => {
   const job = aiReviewJobs.get(req.params.jobId)
   if (!job) return res.status(404).json({ error: '找不到這次 AI 複核工作，可能已逾期。' })
   return res.json(job)
@@ -568,7 +594,7 @@ function createOcrProgressResponse(req, res) {
   }
 }
 
-app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
+app.post('/api/ocr', requireAuth, upload.array('files', maxFileCount), async (req, res) => {
   let progressResponse
 
   try {
