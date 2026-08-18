@@ -9,10 +9,13 @@ import traceback
 
 from database import get_db
 import models
+from security import get_current_user
 
 router = APIRouter(
     prefix="/api/contract",
-    tags=["AI 租屋合約智慧審查與 RAG 分析"]
+    tags=["AI 租屋合約智慧審查與 RAG 分析"],
+    # 整個合約審查模組都需要登入：未帶有效 JWT cookie 一律 401
+    dependencies=[Depends(get_current_user)],
 )
 
 # ========================================================

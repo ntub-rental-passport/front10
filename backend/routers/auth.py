@@ -16,7 +16,7 @@ import requests as http_requests
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from dotenv import dotenv_values, load_dotenv
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleRequest
@@ -30,6 +30,13 @@ from email_service import EmailConfigurationError, send_verification_email
 from models import (
     PendingRegistration,
     User,
+)
+from security import (
+    CurrentUser,
+    clear_auth_cookie,
+    create_access_token,
+    get_current_user,
+    set_auth_cookie,
 )
 from verification import (
     generate_verification_code,
@@ -249,6 +256,7 @@ def _normalize_email(value: str | None) -> str:
 @router.post("/login", response_model=EmailLoginResponse)
 def login_with_email(
     payload: EmailLoginRequest,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> EmailLoginResponse:
     email = _normalize_email(payload.email)
@@ -271,6 +279,9 @@ def login_with_email(
     if password_hasher.check_needs_rehash(user.password_hash):
         user.password_hash = password_hasher.hash(payload.password)
         db.commit()
+
+    # 登入成功：簽發 JWT 並放進 HttpOnly cookie，後續請求以此驗證身分
+    set_auth_cookie(response, create_access_token(user.id, user.email, user.role))
 
     return EmailLoginResponse(
         email=user.email,
@@ -449,6 +460,7 @@ def google_oauth_callback(
 @router.post("/google/session", response_model=GoogleOAuthSessionResponse)
 def exchange_google_ticket(
     payload: GoogleTicketRequest,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> GoogleOAuthSessionResponse:
     with _ticket_lock:
@@ -503,6 +515,9 @@ def exchange_google_ticket(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"此帳號的角色為「{'租客' if user.role == 'tenant' else '房東'}」，請切換頁籤登入。",
             )
+
+    # Google 登入成功：與一般登入相同，簽發 JWT cookie
+    set_auth_cookie(response, create_access_token(user.id, user.email, user.role))
 
     return GoogleOAuthSessionResponse(
         **account.model_dump(),
@@ -656,6 +671,7 @@ def resend_registration_code(
 @router.post("/registration/verify", response_model=RegistrationVerifyResponse)
 def verify_registration(
     payload: RegistrationVerifyRequest,
+    http_response: Response,
     db: Session = Depends(get_db),
 ) -> RegistrationVerifyResponse:
     now = datetime.utcnow()
@@ -693,8 +709,9 @@ def verify_registration(
         created_at=now,
     )
     db.add(user)
-    
+
     try:
+        db.flush()  # 先取得新使用者的自增 id，才能簽發 token
         response = RegistrationVerifyResponse(
             email=pending.email,
             role=pending.role,
@@ -703,7 +720,36 @@ def verify_registration(
         )
         db.delete(pending)
         db.commit()
+        # 註冊完成即視為已登入：簽發 JWT cookie，免去再登入一次
+        set_auth_cookie(http_response, create_access_token(user.id, user.email, user.role))
         return response
     except IntegrityError as error:
         db.rollback()
         raise HTTPException(status_code=409, detail="帳號已由另一個驗證程序建立，請直接登入。") from error
+
+
+# ==========================================
+# 5. Session 查詢與登出
+# ==========================================
+@router.get("/me", response_model=EmailLoginResponse)
+def get_me(
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmailLoginResponse:
+    """回傳目前登入者資料。前端重新整理頁面時以此還原登入狀態。"""
+    user = db.query(User).filter(User.id == current.id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="帳號不存在，請重新登入。")
+    return EmailLoginResponse(
+        email=user.email,
+        role=user.role,
+        displayName=user.display_name,
+        avatarUrl=getattr(user, "avatar_url", None),
+    )
+
+
+@router.post("/logout")
+def logout(response: Response) -> dict[str, bool]:
+    """登出：清除 HttpOnly 認證 cookie。"""
+    clear_auth_cookie(response)
+    return {"ok": True}
