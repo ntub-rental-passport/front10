@@ -1,48 +1,61 @@
-# RentMate Nginx 安全閘道
-# P1：反向代理與網段隔離的唯一入口
-# P2：rate limiting + 安全標頭（TLS 設定見 nginx-tls.conf.example，網域到手後啟用）
+# RentMate Nginx TLS 正式設定範本
+# 使用方式（網域到手、certbot 首次簽發成功後）：
+#   1. 全檔把 rentmate.example.me 換成你的網域
+#   2. 覆蓋 deploy/nginx.conf 的內容（保留這份的結構）
+#   3. compose 設定 COOKIE_SECURE=true，docker compose up -d --build
+#   4. SSL Labs 掃描驗證，目標 A+
+# 首次簽發指令見 deploy/README.md 的 TLS 章節。
 
-# ===== Rate Limiting 區域定義（以來源 IP 為 key）=====
-# 登入端點：每秒 2 次 —— 防暴力破解
 limit_req_zone $binary_remote_addr zone=login_limit:10m rate=2r/s;
-# 一般 API：每秒 10 次 —— 防灌爆
 limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
-# OCR 上傳最貴（燒 Vision 額度）：每分鐘 5 次，限制最嚴
 limit_req_zone $binary_remote_addr zone=ocr_limit:10m rate=5r/m;
-# 被限流時回 429 Too Many Requests（預設是 503，429 語意才正確）
 limit_req_status 429;
 
+# HTTP：只留 ACME 驗證，其餘 301 到 HTTPS
 server {
     listen 80;
-    server_name _;
+    server_name rentmate.example.me;
+    server_tokens off;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name rentmate.example.me;
+
+    # ===== TLS（目標 SSL Labs A+）=====
+    ssl_certificate     /etc/letsencrypt/live/rentmate.example.me/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/rentmate.example.me/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;                 # 停用 TLS 1.0/1.1
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
 
     root /usr/share/nginx/html;
     index index.html;
-
-    # 隱藏 Nginx 版本號
     server_tokens off;
-
-    # OCR 上傳上限，對齊 OCR_MAX_TOTAL_SIZE_MB（預設 80MB）
     client_max_body_size 80m;
 
-    # ===== 安全標頭（always：連 4xx/5xx 回應也帶）=====
-    # 防點擊劫持：不允許被任何網站 iframe
+    # ===== 安全標頭 =====
     add_header X-Frame-Options "DENY" always;
-    # 防 MIME sniffing
     add_header X-Content-Type-Options "nosniff" always;
-    # 控制 Referrer 洩漏
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    # 關閉不需要的瀏覽器權限
     add_header Permissions-Policy "camera=(), microphone=(), payment=()" always;
-    # CSP：先用 Report-Only 觀察（違規只記 console 不阻擋），
-    # 確認營運一段時間 console 無誤擋後，把標頭名稱改成 Content-Security-Policy 轉正式。
-    # 外部來源依實際盤點：openfreemap（地圖磚）、nominatim（地理編碼）；
-    # 圖片放寬 https:（Google 頭像、QR code、placeholder 服務）；maplibre 需要 blob: worker。
+    # HSTS：先用短 max-age（600）觀察幾天，確認全站 HTTPS 無誤後改 31536000
+    add_header Strict-Transport-Security "max-age=600; includeSubDomains" always;
+    # CSP：Report-Only 觀察期結束後，把標頭名稱改成 Content-Security-Policy 轉正式
     add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; frame-ancestors 'none'" always;
-    # HSTS：啟用 TLS 後再打開（見 nginx-tls.conf.example），在純 HTTP 下加了沒意義
 
-    # ===== 路由 + 分段限流 =====
-    # 登入/註冊/OAuth：最嚴格的暴力破解防護
+    # ===== 路由 + 分段限流（與 HTTP 版相同）=====
     location /api/auth/ {
         limit_req zone=login_limit burst=5 nodelay;
         proxy_pass http://fastapi:8000;
@@ -52,7 +65,6 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # OCR 端點 → ocr 容器（prefix 比 /api/ 長，Nginx 會優先匹配）
     location /api/ocr {
         limit_req zone=ocr_limit burst=2 nodelay;
         proxy_pass http://ocr:8787;
@@ -60,11 +72,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # OCR + AI 審查耗時較長
         proxy_read_timeout 300s;
     }
 
-    # 其餘 API → fastapi 容器
     location /api/ {
         limit_req zone=api_limit burst=20 nodelay;
         proxy_pass http://fastapi:8000;
@@ -72,16 +82,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # LLM 分析端點耗時較長
         proxy_read_timeout 300s;
     }
 
-    # Let's Encrypt HTTP-01 驗證（certbot webroot），不經限流
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    # SPA fallback：非 API 路徑一律回 index.html，由 vue-router 處理
     location / {
         try_files $uri $uri/ /index.html;
     }

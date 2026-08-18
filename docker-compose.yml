@@ -15,13 +15,29 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.web
     ports:
-      - "80:80"        # 唯一對外的服務（P2 加上 TLS 後補 443）
+      - "80:80"        # 唯一對外的服務
+      - "443:443"      # TLS（憑證簽發前 nginx 不聽 443，開著無妨）
+    volumes:
+      - certbot_conf:/etc/letsencrypt:ro     # Let's Encrypt 憑證（certbot 服務寫入）
+      - certbot_www:/var/www/certbot:ro      # ACME HTTP-01 驗證檔
     depends_on:
       - fastapi
       - ocr
     networks:
       - frontend_net
     restart: unless-stopped
+
+  # 憑證簽發/續期（不常駐）：
+  #   首簽：docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d <網域> --email <信箱> --agree-tos
+  #   續期：docker compose run --rm certbot renew（建議放 cron，每週跑一次）
+  certbot:
+    image: certbot/certbot
+    profiles: ["certbot"]    # 平常 up 不會啟動，只在手動 run 時使用
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    networks:
+      - frontend_net
 
   fastapi:
     build: ./backend
@@ -85,3 +101,5 @@ networks:
 
 volumes:
   mysql_data:
+  certbot_conf:
+  certbot_www:

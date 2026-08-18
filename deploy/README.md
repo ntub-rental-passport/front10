@@ -82,3 +82,47 @@ ollama pull gemma3:4b
 git pull
 docker compose up -d --build   # 只重建有變動的 image
 ```
+
+## 七、TLS 啟用（網域到手後）
+
+```bash
+# 0. 前提：網域 DNS A 紀錄指向 VM 公網 IP，且 http://<網域> 已可連到本站
+
+# 1. 首次簽發憑證（HTTP-01 webroot 驗證，nginx.conf 已預留 acme 路徑）
+docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
+  -d <網域> --email <你的信箱> --agree-tos --no-eff-email
+
+# 2. 套用 TLS 設定：把 deploy/nginx-tls.conf.example 內容覆蓋到 deploy/nginx.conf
+#    （全檔把 rentmate.example.me 換成你的網域）
+
+# 3. Cookie 加上 Secure 旗標：compose 的 fastapi 服務 COOKIE_SECURE 改 "true"
+
+# 4. 重建上線
+docker compose up -d --build web fastapi
+
+# 5. 續期排程（Let's Encrypt 憑證 90 天效期）
+( crontab -l ; echo '0 3 * * 1 cd ~/rentmate && docker compose run --rm certbot renew && docker compose exec web nginx -s reload' ) | crontab -
+```
+
+注意：HSTS 先以 max-age=600 試跑幾天，確認全站 HTTPS 正常再改 31536000；
+CSP 目前是 Report-Only，開瀏覽器 console 觀察一段時間沒有誤擋後，
+把標頭名稱改成 `Content-Security-Policy` 轉正式。
+
+## 八、P2 驗證與蒐證
+
+```bash
+# Rate limit 實測：連打登入端點，前幾次 401/422，之後開始 429（截圖放簡報）
+for i in $(seq 1 20); do curl -s -o /dev/null -w "%{http_code}\n" \
+  https://<網域>/api/auth/login -X POST -H "Content-Type: application/json" -d '{}'; done
+
+# OCR 限流：每分鐘 5 次，連打第 8 次起應 429
+for i in $(seq 1 8); do curl -s -o /dev/null -w "%{http_code}\n" \
+  -X POST https://<網域>/api/ocr; done
+
+# 安全標頭確認
+curl -sI https://<網域> | grep -iE "x-frame|x-content|referrer|strict-transport|content-security|permissions"
+```
+
+線上掃描（截圖放簡報）：
+- https://securityheaders.com —— 目標 A 以上
+- https://www.ssllabs.com/ssltest/ —— 目標 A+
