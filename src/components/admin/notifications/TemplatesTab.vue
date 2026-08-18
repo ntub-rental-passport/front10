@@ -29,14 +29,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { useAdminNotifications, type NotifRecipient } from '@/src/composables/admin/useAdminNotifications'
-import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
-import { extractVariables, renderTemplate } from '@/src/utils/notif-template'
+import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
+import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
+import { useExpandedRows } from '@/src/composables/admin/useExpandedRows'
+import { useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
+import { extractVariables } from '@/src/utils/notif-template'
 import { formatDateTime } from '@/src/utils/admin-format'
 import type { NotifCategory, NotifChannel, NotifTemplate } from '@/src/mocks/admin-seed'
 
-const { templates, saveTemplate, removeTemplate, toggleTemplate, sendFromTemplate, resolveRecipients } = useAdminNotifications()
-const { users } = useAdminUsers()
+const { templates, saveTemplate, removeTemplate, toggleTemplate } = useAdminNotifications()
+const { isExpanded, toggle } = useExpandedRows()
+
+const variablesOf = (item: NotifTemplate) => extractVariables(`${item.title} ${item.body}`)
 
 const channelLabels: Record<NotifChannel, string> = {
   inapp: '站內',
@@ -51,8 +56,6 @@ const CHANNEL_OPTIONS: { key: NotifChannel; label: string }[] = [
 ]
 
 const CATEGORY_OPTIONS: NotifCategory[] = ['系統', '租約', '補貼', '帳務']
-
-const nonAdminUsers = computed(() => users.value.filter((user) => user.role !== 'admin'))
 
 /* -------------------- 編輯 Dialog -------------------- */
 
@@ -139,110 +142,20 @@ function confirmDelete(): void {
 }
 
 /* -------------------- 發送 Dialog -------------------- */
+// 實際的發送流程（含二次確認）搬進 SendNotificationDialog，這裡只保留「點哪一列的發送」的狀態。
 
 const sendTarget = ref<NotifTemplate | null>(null)
-const sendVars = ref<Record<string, string>>({})
-const recipientKind = ref<'all' | 'user' | 'landlord' | 'single'>('all')
-const recipientEmail = ref('')
-const sentMessage = ref('')
-
-const sendVariableNames = computed(() =>
-  sendTarget.value ? extractVariables(`${sendTarget.value.title} ${sendTarget.value.body}`) : [],
-)
-
-// 只把「有填」的變數交給 renderTemplate；留空的會保留 {{變數}} 原樣，方便看出遺漏
-const filledVars = computed<Record<string, string>>(() => {
-  const result: Record<string, string> = {}
-  for (const [name, value] of Object.entries(sendVars.value)) {
-    if (value.trim() !== '') result[name] = value
-  }
-  return result
-})
-
-const previewTitle = computed(() =>
-  sendTarget.value ? renderTemplate(sendTarget.value.title, filledVars.value) : '',
-)
-const previewBody = computed(() =>
-  sendTarget.value ? renderTemplate(sendTarget.value.body, filledVars.value) : '',
-)
-
-const canSend = computed(() => {
-  if (!sendTarget.value) return false
-  if (recipientKind.value === 'single' && !recipientEmail.value) return false
-  return true
-})
-
-// 指定單一使用者的影響範圍很小、又已經在下拉選單裡明確點名，不需要再確認一次；
-// 選到角色群組（全部使用者／全部租客／全部房東）一次會發給一整批人，且發出去無法收回，
-// 這種才需要多一層確認，並且把真實解析出的人數秀出來，不能用「一批人」帶過。
-const isRoleRecipient = computed(() => recipientKind.value !== 'single')
-
-const resolvedRecipientCount = computed(() => {
-  const kind = recipientKind.value
-  if (kind === 'single') return recipientEmail.value ? 1 : 0
-  return resolveRecipients({ kind: 'role', role: kind }).length
-})
-
-// 發送框與確認框的開關各自獨立管理，不用 sendTarget 反推。
-// 兩個框不能同時開著（Dialog 遮罩是 bg-black/80，疊兩層等於九成以上全黑），
-// 但關掉發送框時 sendTarget 與已填的變數必須留著，使用者在確認框按取消才回得來。
 const sendDialogOpen = ref(false)
-const confirmSendOpen = ref(false)
-
-function closeSendFlow(): void {
-  sendDialogOpen.value = false
-  confirmSendOpen.value = false
-  sendTarget.value = null
-}
-
-// 確認框會蓋掉發送表單，所以要把「發什麼、發給誰」原封不動帶過來，
-// 否則使用者是在看不到內容的情況下確認一次無法復原的群發。
-const RECIPIENT_LABELS: Record<'all' | 'user' | 'landlord' | 'single', string> = {
-  all: '全部使用者',
-  user: '全部租客',
-  landlord: '全部房東',
-  single: '指定使用者',
-}
-
-const recipientLabel = computed(() => RECIPIENT_LABELS[recipientKind.value])
+const sentMessage = ref('')
 
 function openSend(item: NotifTemplate): void {
   sendTarget.value = item
-  const vars = extractVariables(`${item.title} ${item.body}`)
-  const initial: Record<string, string> = {}
-  for (const name of vars) initial[name] = ''
-  sendVars.value = initial
-  recipientKind.value = 'all'
-  recipientEmail.value = ''
   sentMessage.value = ''
   sendDialogOpen.value = true
-  confirmSendOpen.value = false
 }
 
-function requestSend(): void {
-  if (isRoleRecipient.value) {
-    sendDialogOpen.value = false
-    confirmSendOpen.value = true
-    return
-  }
-  void performSend()
-}
-
-/** 確認框按取消：退回填好的發送表單，不清掉任何已輸入的內容。 */
-function cancelConfirm(): void {
-  confirmSendOpen.value = false
-  sendDialogOpen.value = true
-}
-
-async function performSend(): Promise<void> {
-  const target = sendTarget.value
-  if (!target) return
-  const kind = recipientKind.value
-  const recipient: NotifRecipient =
-    kind === 'single' ? { kind: 'user', email: recipientEmail.value } : { kind: 'role', role: kind }
-  const count = await sendFromTemplate(target.id, filledVars.value, recipient)
-  sentMessage.value = `已成功發送給 ${count} 位使用者。`
-  closeSendFlow()
+function onSent(payload: { count: number; recipientNames: string[] }): void {
+  sentMessage.value = `已成功發送給 ${payload.count} 位使用者。`
 }
 </script>
 
@@ -266,33 +179,65 @@ async function performSend(): Promise<void> {
         </TableRow>
       </TableHeader>
       <TableBody>
-        <TableRow v-for="item in templates" :key="item.id">
-          <TableCell class="font-medium">{{ item.name }}</TableCell>
-          <TableCell>{{ item.category }}</TableCell>
-          <TableCell>
-            <div class="flex flex-wrap gap-1">
-              <Badge v-for="ch in item.channels" :key="ch" variant="secondary">
-                {{ channelLabels[ch] }}
+        <template v-for="item in templates" :key="item.id">
+          <TableRow
+            :class="['cursor-pointer', !item.enabled && 'opacity-55']"
+            @click="toggle(item.id)"
+          >
+            <TableCell class="font-medium">
+              <div class="flex items-center gap-2">
+                <component
+                  :is="isExpanded(item.id) ? ChevronDown : ChevronRight"
+                  class="h-4 w-4 shrink-0 text-muted-foreground"
+                />
+                <span>{{ item.name }}</span>
+              </div>
+            </TableCell>
+            <TableCell class="text-sm text-muted-foreground">{{ item.category }}</TableCell>
+            <TableCell>
+              <div class="flex flex-wrap gap-1">
+                <Badge v-for="ch in item.channels" :key="ch" variant="secondary">
+                  {{ channelLabels[ch] }}
+                </Badge>
+              </div>
+            </TableCell>
+            <TableCell>
+              <Badge :variant="item.enabled ? 'default' : 'secondary'">
+                {{ item.enabled ? '已啟用' : '已停用' }}
               </Badge>
-            </div>
-          </TableCell>
-          <TableCell>
-            <Badge :variant="item.enabled ? 'default' : 'secondary'">
-              {{ item.enabled ? '已啟用' : '已停用' }}
-            </Badge>
-          </TableCell>
-          <TableCell class="text-sm text-muted-foreground">{{ formatDateTime(item.updatedAt) }}</TableCell>
-          <TableCell class="text-right">
-            <div class="flex justify-end gap-2">
-              <Button size="sm" @click="openSend(item)">發送</Button>
-              <Button variant="outline" size="sm" @click="openEdit(item)">編輯</Button>
-              <Button variant="outline" size="sm" @click="toggleTemplate(item.id)">
-                {{ item.enabled ? '停用' : '啟用' }}
-              </Button>
-              <Button variant="destructive" size="sm" @click="deleteTarget = item">刪除</Button>
-            </div>
-          </TableCell>
-        </TableRow>
+            </TableCell>
+            <TableCell class="text-sm text-muted-foreground">
+              {{ formatDateTime(item.updatedAt) }}
+            </TableCell>
+            <TableCell class="text-right" @click.stop>
+              <AdminRowActions
+                :actions="[
+                  { label: '編輯', onSelect: () => openEdit(item) },
+                  { label: item.enabled ? '停用' : '啟用', onSelect: () => toggleTemplate(item.id) },
+                  { label: '刪除', danger: true, onSelect: () => (deleteTarget = item) },
+                ]"
+              >
+                <Button size="sm" @click="openSend(item)">發送</Button>
+              </AdminRowActions>
+            </TableCell>
+          </TableRow>
+
+          <TableRow v-if="isExpanded(item.id)" class="hover:bg-transparent">
+            <TableCell colspan="6" class="bg-muted/30">
+              <p class="mb-1 text-xs font-medium text-muted-foreground">標題</p>
+              <p class="text-sm font-medium">{{ item.title }}</p>
+              <p class="mb-1 mt-3 text-xs font-medium text-muted-foreground">內文</p>
+              <p class="whitespace-pre-wrap text-sm text-muted-foreground">{{ item.body }}</p>
+              <div v-if="variablesOf(item).length > 0" class="mt-3 flex flex-wrap items-center gap-1">
+                <span class="mr-1 text-xs font-medium text-muted-foreground">變數</span>
+                <Badge v-for="name in variablesOf(item)" :key="name" variant="outline">
+                  {{ name }}
+                </Badge>
+              </div>
+            </TableCell>
+          </TableRow>
+        </template>
+
         <TableRow v-if="templates.length === 0">
           <TableCell colspan="6" class="py-8 text-center text-muted-foreground">尚無通知模板。</TableCell>
         </TableRow>
@@ -363,88 +308,8 @@ async function performSend(): Promise<void> {
       </DialogContent>
     </Dialog>
 
-    <!-- 發送 Dialog -->
-    <Dialog :open="sendDialogOpen" @update:open="(o: boolean) => { if (!o) closeSendFlow() }">
-      <DialogContent v-if="sendTarget">
-        <DialogHeader>
-          <DialogTitle>發送通知</DialogTitle>
-          <DialogDescription>模板：{{ sendTarget.name }}</DialogDescription>
-        </DialogHeader>
-        <div class="space-y-4">
-          <div v-if="sendVariableNames.length > 0" class="space-y-3">
-            <div v-for="name in sendVariableNames" :key="name" class="space-y-2">
-              <Label :for="`send-var-${name}`">{{ name }}</Label>
-              <Input :id="`send-var-${name}`" v-model="sendVars[name]" />
-            </div>
-          </div>
-          <p v-else class="text-sm text-muted-foreground">此模板未使用變數</p>
-
-          <div class="space-y-2">
-            <Label>收件人</Label>
-            <Select v-model="recipientKind">
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部使用者</SelectItem>
-                <SelectItem value="user">全部租客</SelectItem>
-                <SelectItem value="landlord">全部房東</SelectItem>
-                <SelectItem value="single">指定使用者</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div v-if="recipientKind === 'single'" class="space-y-2">
-            <Label>選擇使用者</Label>
-            <Select v-model="recipientEmail">
-              <SelectTrigger><SelectValue placeholder="請選擇使用者" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="user in nonAdminUsers" :key="user.id" :value="user.email">
-                  {{ user.nickname ?? user.email }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div class="space-y-1 rounded-xl border bg-muted/30 p-3 text-sm">
-            <p class="text-xs font-medium text-muted-foreground">即時預覽</p>
-            <p class="font-bold">{{ previewTitle }}</p>
-            <p class="text-muted-foreground">{{ previewBody }}</p>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" @click="closeSendFlow">取消</Button>
-          <Button :disabled="!canSend" @click="requestSend">發送</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    <!-- 發送二次確認 Dialog：只有收件人是角色群組（會一次發給一整批人）才會走到這裡 -->
-    <!-- Esc 或點外面關掉確認框時，也要退回發送表單而不是把整個流程丟掉 -->
-    <Dialog :open="confirmSendOpen" @update:open="(o: boolean) => { if (!o) cancelConfirm() }">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>確認發送</DialogTitle>
-          <DialogDescription>
-            即將發送給 {{ resolvedRecipientCount }} 位使用者，此操作無法復原。
-          </DialogDescription>
-        </DialogHeader>
-        <div class="space-y-3 text-sm">
-          <div class="flex items-center justify-between rounded-xl border px-3 py-2">
-            <span class="text-muted-foreground">收件人</span>
-            <span class="font-semibold">{{ recipientLabel }}</span>
-          </div>
-          <div class="space-y-1 rounded-xl border bg-muted/30 p-3">
-            <p class="text-xs font-medium text-muted-foreground">
-              模板：{{ sendTarget?.name }}
-            </p>
-            <p class="font-bold">{{ previewTitle }}</p>
-            <p class="text-muted-foreground">{{ previewBody }}</p>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" @click="cancelConfirm">取消</Button>
-          <Button @click="performSend">確認發送</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <!-- 發送 Dialog：實際流程在 SendNotificationDialog，這裡只負責帶入鎖定的模板 -->
+    <SendNotificationDialog v-model:open="sendDialogOpen" :template="sendTarget" @sent="onSent" />
 
     <!-- 刪除確認 Dialog -->
     <Dialog :open="deleteTarget !== null" @update:open="(o: boolean) => { if (!o) deleteTarget = null }">

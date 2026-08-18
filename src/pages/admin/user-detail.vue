@@ -30,9 +30,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { ArrowLeft, BadgeCheck, ExternalLink, Plus, ShieldAlert } from 'lucide-vue-next'
+import { ArrowLeft, BadgeCheck, ExternalLink, Plus, Send, ShieldAlert } from 'lucide-vue-next'
 import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
+import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import {
   adminRoleLabels,
@@ -253,15 +254,41 @@ function handlePlanChange(value: unknown): void {
 function goToTickets(): void {
   void router.push({ path: '/admin/maintenance-tickets', query: { user: userId.value } })
 }
+
+// ── 發送通知 ────────────────────────────────────────────────────
+
+const sendDialogOpen = ref(false)
+const sentMessage = ref('')
+const presetEmails = computed(() => (row.value ? [row.value.user.email] : []))
+
+function openSendDialog(): void {
+  sentMessage.value = ''
+  sendDialogOpen.value = true
+}
+
+// 發完留在原頁顯示提示，不導頁——管理員多半是看完這個人的資料才想到要發通知，
+// 導走反而要重新導航回來。
+function onSent(payload: { count: number; recipientNames: string[] }): void {
+  const name = payload.recipientNames[0] ?? row.value?.user.nickname ?? row.value?.user.email
+  sentMessage.value = name ? `已發送給 ${name}。` : `已成功發送給 ${payload.count} 位使用者。`
+}
 </script>
 
 <template>
   <div v-if="row" class="space-y-6">
     <div class="space-y-3">
-      <Button variant="ghost" size="sm" class="-ml-2" @click="router.push('/admin/users')">
-        <ArrowLeft class="mr-1 h-4 w-4" />
-        返回使用者列表
-      </Button>
+      <div class="flex items-center justify-between">
+        <Button variant="ghost" size="sm" class="-ml-2" @click="router.push('/admin/users')">
+          <ArrowLeft class="mr-1 h-4 w-4" />
+          返回使用者列表
+        </Button>
+        <Button size="sm" @click="openSendDialog">
+          <Send class="mr-1 h-4 w-4" />
+          發送通知
+        </Button>
+      </div>
+
+      <p v-if="sentMessage" class="text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
 
       <div class="flex flex-wrap items-center gap-3">
         <h1 class="text-3xl font-black tracking-tight">
@@ -721,6 +748,8 @@ function goToTickets(): void {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <SendNotificationDialog v-model:open="sendDialogOpen" :preset-emails="presetEmails" @sent="onSent" />
   </div>
 
   <div v-else class="space-y-4 py-16 text-center">

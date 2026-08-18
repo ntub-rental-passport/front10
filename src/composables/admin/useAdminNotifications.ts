@@ -3,7 +3,12 @@ import { useAdminAudit } from './useAdminAudit'
 import { adminUsersCollection } from './useAdminUsers'
 import { renderTemplate } from '@/src/utils/notif-template'
 import { notifMessagesCollection, sendNotification } from '@/src/services/notificationApi'
-import { seedNotifTemplates, type NotifTemplate } from '@/src/mocks/admin-seed'
+import {
+  seedNotifTemplates,
+  type NotifCategory,
+  type NotifChannel,
+  type NotifTemplate,
+} from '@/src/mocks/admin-seed'
 
 const templates = createAdminCollection<NotifTemplate[]>('notif-templates', seedNotifTemplates)
 
@@ -13,7 +18,29 @@ export { notifMessagesCollection }
 
 export type NotifRecipient =
   | { kind: 'role'; role: 'user' | 'landlord' | 'all' }
-  | { kind: 'user'; email: string }
+  | { kind: 'users'; emails: string[] }
+
+/** 自由撰寫（不套模板）發送時要填的欄位，與模板發送共用同一套收件人／確認流程 */
+export interface OneOffNotification {
+  title: string
+  body: string
+  category: NotifCategory
+  channels: NotifChannel[]
+}
+
+const ROLE_LABELS: Record<'user' | 'landlord' | 'all', string> = {
+  all: '全部使用者',
+  user: '全部租客',
+  landlord: '全部房東',
+}
+
+/** 一次性撰寫沒有模板名稱可記，固定用這個字串標示來源 */
+export const ONE_OFF_SOURCE_LABEL = '一次性撰寫'
+
+/** 發送當下就把收件人條件記進通知，事後光看 email 清單無法還原「當初是選了哪個群組」。 */
+export function describeRecipient(recipient: NotifRecipient): string {
+  return recipient.kind === 'users' ? '指定使用者' : ROLE_LABELS[recipient.role]
+}
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -52,7 +79,7 @@ export function useAdminNotifications() {
   }
 
   function resolveRecipients(recipient: NotifRecipient): string[] {
-    if (recipient.kind === 'user') return [recipient.email]
+    if (recipient.kind === 'users') return recipient.emails
     const nonAdmins = adminUsersCollection.value.filter((user) => user.role !== 'admin')
     if (recipient.role === 'all') return nonAdmins.map((user) => user.email)
     return nonAdmins.filter((user) => user.role === recipient.role).map((user) => user.email)
@@ -75,9 +102,33 @@ export function useAdminNotifications() {
       body: renderTemplate(template.body, vars),
       category: template.category,
       channels: template.channels,
+      recipientLabel: describeRecipient(recipient),
+      sourceLabel: template.name,
     })
 
     logAction('通知管理', template.name, `發送給 ${emails.length} 位使用者`)
+    return result.successCount
+  }
+
+  /** 自由撰寫發送：不套模板、不新增模板，來源固定記成「一次性撰寫」。 */
+  async function sendOneOff(
+    notice: OneOffNotification,
+    recipient: NotifRecipient,
+  ): Promise<number> {
+    const emails = resolveRecipients(recipient)
+    if (emails.length === 0) return 0
+
+    const result = await sendNotification({
+      emails,
+      title: notice.title,
+      body: notice.body,
+      category: notice.category,
+      channels: notice.channels,
+      recipientLabel: describeRecipient(recipient),
+      sourceLabel: ONE_OFF_SOURCE_LABEL,
+    })
+
+    logAction('通知管理', ONE_OFF_SOURCE_LABEL, `發送給 ${emails.length} 位使用者`)
     return result.successCount
   }
 
@@ -88,6 +139,7 @@ export function useAdminNotifications() {
     removeTemplate,
     toggleTemplate,
     sendFromTemplate,
+    sendOneOff,
     resolveRecipients,
   }
 }

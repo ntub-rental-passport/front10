@@ -9,6 +9,8 @@
  */
 import { createAdminCollection, newId } from '@/src/composables/admin/useAdminStore'
 import { computeDeliveryStatus, migrateUserNotifications } from '@/src/utils/notif-delivery'
+import { migrateNotifBatches } from '@/src/utils/notif-batch'
+import { migrateNotifSourceLabel } from '@/src/utils/notif-source'
 import {
   seedUserNotifications,
   type NotifCategory,
@@ -17,10 +19,16 @@ import {
   type UserNotification,
 } from '@/src/mocks/admin/notifications'
 
+// 三次欄位擴充（deliveryStatus、batchId、sourceLabel）都要能升級同一份舊資料，
+// 所以串起來跑而不是各自掛一個 collection。
+function migrateMessages(list: UserNotification[]): UserNotification[] {
+  return migrateNotifSourceLabel(migrateNotifBatches(migrateUserNotifications(list)))
+}
+
 export const notifMessagesCollection = createAdminCollection<UserNotification[]>(
   'notif-messages',
   seedUserNotifications,
-  migrateUserNotifications,
+  migrateMessages,
 )
 
 export interface SendNotificationPayload {
@@ -29,6 +37,10 @@ export interface SendNotificationPayload {
   body: string
   category: NotifCategory
   channels: NotifChannel[]
+  /** 收件人條件（全部使用者／全部租客／指定使用者），發送紀錄的批次列要顯示 */
+  recipientLabel: string
+  /** 這次發送的來源（模板名稱或「一次性撰寫」），只在批次詳情頁顯示 */
+  sourceLabel: string
 }
 
 export interface SendResult {
@@ -37,13 +49,18 @@ export interface SendResult {
 }
 
 export async function sendNotification(payload: SendNotificationPayload): Promise<SendResult> {
-  const { emails, title, body, category, channels } = payload
+  const { emails, title, body, category, channels, recipientLabel, sourceLabel } = payload
   const deliveryStatus = computeDeliveryStatus(channels)
   const createdAt = new Date().toISOString()
+  // 同一次發送共用一個 batchId，發送紀錄才聚合得回來
+  const batchId = newId('nb')
 
   for (const email of emails) {
     notifMessagesCollection.value.unshift({
       id: newId('nm'),
+      batchId,
+      recipientLabel,
+      sourceLabel,
       userEmail: email,
       title,
       body,

@@ -26,6 +26,12 @@ export interface UserNotification {
   category: NotifCategory
   channels: NotifChannel[]
   deliveryStatus: Partial<Record<NotifChannel, NotifDeliveryStatus>>
+  /** 同一次發送共用，發送紀錄以此聚合成批次 */
+  batchId: string
+  /** 當初挑選的收件人條件（全部使用者／全部租客／指定使用者），純顯示用 */
+  recipientLabel: string
+  /** 這次發送的來源：套用模板時存模板名稱，自由撰寫時存「一次性撰寫」，只在批次詳情頁顯示 */
+  sourceLabel: string
   createdAt: string
   read: boolean
 }
@@ -89,6 +95,9 @@ export function seedUserNotifications(): UserNotification[] {
   return [
     {
       id: 'nm-1',
+      batchId: 'nb-1',
+      recipientLabel: '指定使用者',
+      sourceLabel: '帳單待繳提醒',
       userEmail: 'amy.wang@example.com',
       title: '本期帳單 12,400 元待繳',
       body: '您的本期帳單金額為 12,400 元，應繳日為 2026/08/10，逾期將產生滯納金。',
@@ -100,6 +109,9 @@ export function seedUserNotifications(): UserNotification[] {
     },
     {
       id: 'nm-2',
+      batchId: 'nb-2',
+      recipientLabel: '指定使用者',
+      sourceLabel: '補貼審核通過',
       userEmail: 'amy.wang@example.com',
       title: '租金補貼審核通過',
       body: '小艾 您好，您申請的租金補貼已審核通過，每月核定金額為 3,200 元，將於 2026/08/15 起撥款。',
@@ -111,6 +123,9 @@ export function seedUserNotifications(): UserNotification[] {
     },
     {
       id: 'nm-3',
+      batchId: 'nb-3',
+      recipientLabel: '指定使用者',
+      sourceLabel: '租約到期提醒',
       userEmail: 'amy.wang@example.com',
       title: '您的租約將於 2026/12/31 到期',
       body: '小艾 您好，您位於 台北市中正區杭州南路一段 88 號 6 樓 的租約即將於 2026/12/31 到期，請儘早與房東確認續約意願。',
@@ -122,6 +137,9 @@ export function seedUserNotifications(): UserNotification[] {
     },
     {
       id: 'nm-4',
+      batchId: 'nb-4',
+      recipientLabel: '指定使用者',
+      sourceLabel: '合約分析完成',
       userEmail: 'amy.wang@example.com',
       title: '合約分析完成',
       body: '您上傳的「租賃契約_中正區.pdf」已完成 AI 分析，可至合約專區查看結果。',

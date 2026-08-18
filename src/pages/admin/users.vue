@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
@@ -22,7 +22,9 @@ import {
 } from '@/components/ui/table/index'
 import { BadgeCheck, Search, ShieldAlert, X } from 'lucide-vue-next'
 import AdminRoleCountCard from '@/src/components/admin/AdminRoleCountCard.vue'
+import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vue'
+import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
 import { userAlertLabels, type UserAlert } from '@/src/utils/admin-user-directory'
@@ -88,6 +90,25 @@ function handleFilterChange<K extends keyof typeof filter.value>(
 ): void {
   filter.value[key] = value as (typeof filter.value)[K]
 }
+
+// ── 發送通知 ────────────────────────────────────────────────────
+
+const sendTarget = ref<UserDirectoryRow | null>(null)
+const sendDialogOpen = ref(false)
+const sentMessage = ref('')
+const presetEmails = computed(() => (sendTarget.value ? [sendTarget.value.user.email] : []))
+
+function openSend(row: UserDirectoryRow): void {
+  sendTarget.value = row
+  sentMessage.value = ''
+  sendDialogOpen.value = true
+}
+
+// 發完留在原頁顯示提示，不導頁——管理員多半是要接著看下一列，導走反而打斷篩選狀態。
+function onSent(payload: { count: number; recipientNames: string[] }): void {
+  const name = payload.recipientNames[0] ?? sendTarget.value?.user.nickname ?? sendTarget.value?.user.email
+  sentMessage.value = name ? `已發送給 ${name}。` : `已成功發送給 ${payload.count} 位使用者。`
+}
 </script>
 
 <template>
@@ -97,6 +118,7 @@ function handleFilterChange<K extends keyof typeof filter.value>(
       <p class="mt-1 text-muted-foreground">
         以使用者為中心檢視訂閱容量、押金對帳與報修工單，點選任一列進入詳情。
       </p>
+      <p v-if="sentMessage" class="mt-2 text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
     </div>
 
     <!--
@@ -193,6 +215,7 @@ function handleFilterChange<K extends keyof typeof filter.value>(
               <TableHead class="whitespace-nowrap">押金對帳</TableHead>
               <TableHead class="whitespace-nowrap">工單待處理</TableHead>
               <TableHead class="whitespace-nowrap">狀態</TableHead>
+              <TableHead class="text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -255,10 +278,16 @@ function handleFilterChange<K extends keyof typeof filter.value>(
                   {{ row.user.status === 'active' ? '正常' : '停用' }}
                 </Badge>
               </TableCell>
+
+              <TableCell class="text-right" @click.stop>
+                <AdminRowActions :actions="[]">
+                  <Button variant="outline" size="sm" @click="openSend(row)">發送通知</Button>
+                </AdminRowActions>
+              </TableCell>
             </TableRow>
 
             <TableRow v-if="filteredRows.length === 0">
-              <TableCell colspan="6" class="py-10 text-center text-muted-foreground">
+              <TableCell colspan="7" class="py-10 text-center text-muted-foreground">
                 <p>沒有符合條件的使用者。</p>
                 <Button v-if="filterActive" variant="outline" size="sm" class="mt-3" @click="clearFilter">
                   清除篩選
@@ -269,5 +298,7 @@ function handleFilterChange<K extends keyof typeof filter.value>(
         </Table>
       </CardContent>
     </Card>
+
+    <SendNotificationDialog v-model:open="sendDialogOpen" :preset-emails="presetEmails" @sent="onSent" />
   </div>
 </template>
