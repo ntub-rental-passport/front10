@@ -18,6 +18,9 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
+# Ollama 位址：本機開發預設 127.0.0.1，容器內由 compose 覆寫為 host.docker.internal
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
 # ========================================================
 # 📦 Pydantic 資料模型 (對齊前端分析頁面 request/response)
 # ========================================================
@@ -116,7 +119,7 @@ async def analyze_contract(req: AnalyzeRequest):
             print("🧠 [AI 核心] 正發送 Prompt 至地端 Ollama (gemma3:4b)，將無限制等待至推論完成...")
             
             ollama_res = requests.post(
-                "http://127.0.0.1:11434/api/generate",
+                f"{OLLAMA_URL}/api/generate",
                 json={
                     "model": "gemma3:4b",
                     "prompt": prompt,
@@ -238,7 +241,7 @@ async def contract_chat(req: ChatRequest):
         try:
             print("💬 [Law Chat] 發送對話 Prompt 至 Ollama...")
             ollama_res = requests.post(
-                "http://127.0.0.1:11434/api/generate",
+                f"{OLLAMA_URL}/api/generate",
                 json={"model": "gemma3:4b", "prompt": prompt, "stream": False},
                 timeout=None  # 💡 設為 None，讓聊天對話也跑到底
             )

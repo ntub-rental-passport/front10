@@ -20,6 +20,8 @@ lerna-debug.log*
 
 .env*
 !.env.example
+# 正式環境前端 build 變數：只有可公開的值（/api 路徑），必須進版控
+!.env.production
 
 .vscode/*
 !.vscode/extensions.json
