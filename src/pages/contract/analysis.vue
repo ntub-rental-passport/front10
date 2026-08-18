@@ -2,6 +2,9 @@
 import { onMounted } from 'vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+// 與 authApi.ts 相同的 API 位址來源：開發模式讀 VITE_API_BASE_URL，正式環境走同源 /api
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
 import {
   CONTRACT_FIELD_DEFINITIONS,
@@ -393,9 +396,10 @@ async function loadBackendRagAndAiAnalysis() {
   if (!ocrResult?.text) return
 
   try {
-    const response = await fetch('http://localhost:8000/api/contract/analyze', {
+    const response = await fetch(`${API_BASE_URL}/contract/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
         ocr_text: ocrResult.text,
         page_texts: ocrResult.pageTexts ?? [ocrResult.text],
@@ -403,6 +407,11 @@ async function loadBackendRagAndAiAnalysis() {
       })
     })
 
+    if (response.status === 401) {
+      // 登入逾期：導回登入頁，完成後回到本頁
+      window.location.assign('/login?redirect=' + encodeURIComponent(window.location.pathname))
+      return
+    }
     if (!response.ok) return
     const data = await response.json()
 
@@ -568,9 +577,10 @@ async function fetchAiChatResponse(
   activeRisk: RiskItem | undefined
 ): Promise<void> {
   try {
-    const response = await fetch('http://localhost:8000/api/contract/chat', {
+    const response = await fetch(`${API_BASE_URL}/contract/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
         message: userMessage,
         contract_text: ocrResult?.text ?? '',
@@ -578,6 +588,10 @@ async function fetchAiChatResponse(
       }),
     })
 
+    if (response.status === 401) {
+      window.location.assign('/login?redirect=' + encodeURIComponent(window.location.pathname))
+      return
+    }
     if (!response.ok) throw new Error('API 響應失敗')
 
     const data = await response.json()

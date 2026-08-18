@@ -61,6 +61,9 @@ export async function exchangeGoogleTicket(ticket: string): Promise<GoogleOAuthS
     headers: {
       'Content-Type': 'application/json',
     },
+    // credentials: 'include'：開發模式下 API 是跨網域（5173 → 8000），
+    // 不加這個瀏覽器會忽略後端回傳的 Set-Cookie，JWT cookie 存不進去
+    credentials: 'include',
     body: JSON.stringify({ ticket }),
   })
 
@@ -88,6 +91,7 @@ async function postAuth<T>(path: string, payload: unknown): Promise<T> {
   const response = await fetch(`${API_BASE_URL}/auth${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(payload),
   })
   const body = await response.json().catch(() => null) as (T & { detail?: string }) | null
@@ -96,6 +100,27 @@ async function postAuth<T>(path: string, payload: unknown): Promise<T> {
   }
   if (!body) throw new Error('驗證服務沒有回傳資料。')
   return body
+}
+
+/** 以 JWT cookie 向後端查詢目前登入者；未登入（401）回傳 null。 */
+export async function fetchCurrentUser(): Promise<EmailLoginResponse | null> {
+  const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    credentials: 'include',
+  })
+  if (!response.ok) return null
+  return await response.json().catch(() => null)
+}
+
+/** 登出：請後端清除 HttpOnly JWT cookie（前端讀不到、也刪不掉這個 cookie）。 */
+export async function logoutFromServer(): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+  } catch {
+    // 後端暫時連不上時仍讓前端完成登出流程；cookie 會在 24 小時後自然過期
+  }
 }
 
 export function startRegistration(payload: StartRegistrationPayload): Promise<PendingRegistrationResponse> {

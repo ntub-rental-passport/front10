@@ -1,5 +1,6 @@
 import {
   loginWithEmail,
+  logoutFromServer,
   resendRegistration,
   startRegistration,
   verifyRegistration,
@@ -195,6 +196,8 @@ export function registerWithGoogle(email: string, role: AuthRole = 'tenant'): Au
 export function signOut(): void {
   if (!canUseStorage()) return
   window.localStorage.removeItem(AUTH_STORAGE_KEY)
+  // HttpOnly cookie 前端刪不掉，必須請後端清除（fire-and-forget，不阻塞 UI）
+  void logoutFromServer()
 }
 
 export function resolveRoleHome(role: AuthRole): '/app' | '/landlord' | '/admin' {
