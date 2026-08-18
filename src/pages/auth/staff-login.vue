@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { resolveRoleHome, signIn } from '@/src/composables/useAuth'
-import { adminUsersCollection } from '@/src/composables/admin/useAdminUsers'
+import { adminUsersCollection, recordLogin } from '@/src/composables/admin/useAdminUsers'
 import { resolveStaffAccess, staffAccessMessages } from '@/src/utils/staff-access'
 
 const router = useRouter()
@@ -33,6 +33,7 @@ async function handleLogin(): Promise<void> {
     return
   }
 
+  recordLogin(access.user.email)
   const session = signIn('admin', access.user.email)
   await router.push(resolveRoleHome(session.role))
 }

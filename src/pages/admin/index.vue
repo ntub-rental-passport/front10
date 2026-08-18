@@ -21,6 +21,7 @@ import TrendAreaCard from '@/src/components/admin/TrendAreaCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
+import { activeWindowDays, countActiveUsers } from '@/src/utils/admin-activity'
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { resetAdminData } from '@/src/composables/admin/useAdminStore'
@@ -97,9 +98,17 @@ const roleSegments = computed(() => {
   }))
 })
 
+/*
+ * 「近 N 天活躍」而不是「在線人數」：本專案沒有 session heartbeat、沒有連線數、
+ * 也沒有後端 access log，即時人數只能用編的。這個數字數的是實際登入過的帳號，
+ * 是現有資料撐得起的最強說法。
+ */
+const activeUserCount = computed(() => countActiveUsers(users.value, activeWindowDays))
+
 const suspendedNote = computed(() => {
   const suspended = users.value.filter((user) => user.status === 'suspended').length
-  return suspended > 0 ? `停用中 ${suspended} 筆` : '目前沒有停用帳號'
+  const active = `近 ${activeWindowDays} 天活躍 ${activeUserCount.value} 位`
+  return suspended > 0 ? `${active} · 停用中 ${suspended} 筆` : active
 })
 
 const depositSegments = computed(() =>
