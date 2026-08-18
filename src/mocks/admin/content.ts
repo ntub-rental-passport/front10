@@ -18,29 +18,6 @@ export interface Announcement {
   updatedAt: string
 }
 
-export type FaqCategory = '租屋流程' | '契約分析' | '租金補貼' | '帳號問題'
-
-export interface FaqEntry {
-  id: string
-  question: string
-  answer: string
-  category: FaqCategory
-  order: number
-  published: boolean
-  updatedAt: string
-}
-
-export type LegalDocSlug = 'terms' | 'privacy'
-
-export interface LegalDoc {
-  id: string
-  slug: LegalDocSlug
-  title: string
-  body: string
-  version: number
-  updatedAt: string
-}
-
 export interface Banner {
   id: string
   title: string
@@ -77,7 +54,7 @@ export function seedAnnouncements(): Announcement[] {
     },
     {
       id: 'an-3',
-      title: '颱風假服務調整（已過期）',
+      title: '颱風假服務調整',
       body: '颱風期間客服回覆較慢，敬請見諒。',
       level: 'urgent',
       audience: 'all',
@@ -88,7 +65,7 @@ export function seedAnnouncements(): Announcement[] {
     },
     {
       id: 'an-4',
-      title: '新功能預告（未發布）',
+      title: '新功能預告',
       body: '點交存證影像比對即將上線，敬請期待。',
       level: 'info',
       audience: 'tenant',
@@ -97,22 +74,6 @@ export function seedAnnouncements(): Announcement[] {
       endAt: null,
       updatedAt: daysAgo(2),
     },
-  ]
-}
-
-export function seedFaqs(): FaqEntry[] {
-  return [
-    { id: 'faq-1', question: '如何上傳租約進行分析？', answer: '於「契約分析」頁點選上傳，支援 PNG、JPG、JPEG、WEBP、BMP 圖檔。', category: '契約分析', order: 0, published: true, updatedAt: daysAgo(10) },
-    { id: 'faq-2', question: '押金最多可以收幾個月？', answer: '依租賃專法，押金不得逾二個月租金總額。', category: '租屋流程', order: 1, published: true, updatedAt: daysAgo(10) },
-    { id: 'faq-3', question: '租金補貼要準備什麼文件？', answer: '身分證明、租賃契約、存摺影本等，詳見租補專區的應備文件清單。', category: '租金補貼', order: 0, published: true, updatedAt: daysAgo(8) },
-    { id: 'faq-4', question: '忘記密碼怎麼辦？', answer: '請於登入頁點選「忘記密碼」，系統會寄送重設連結至註冊信箱。', category: '帳號問題', order: 0, published: false, updatedAt: daysAgo(5) },
-  ]
-}
-
-export function seedLegalDocs(): LegalDoc[] {
-  return [
-    { id: 'legal-terms', slug: 'terms', title: '服務條款', body: '歡迎使用 RentMate 租隊友。使用本服務即表示您同意以下條款……', version: 2, updatedAt: daysAgo(40) },
-    { id: 'legal-privacy', slug: 'privacy', title: '隱私政策', body: '我們重視您的個人資料保護。本政策說明我們如何蒐集與使用您的資料……', version: 3, updatedAt: daysAgo(25) },
   ]
 }
 
