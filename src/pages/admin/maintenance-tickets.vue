@@ -31,6 +31,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
 import { Search, X } from 'lucide-vue-next'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import {
+  maintenanceQueueTab,
   maintenanceStatusTabs,
   useAdminMaintenance,
   type MaintenanceTicketView,
@@ -48,7 +49,7 @@ import { formatDate, formatDateTime } from '@/src/utils/admin-format'
 const route = useRoute()
 const router = useRouter()
 
-const { ticketViews, statusTab, categoryFilter, keyword, userFilter, filteredTickets } =
+const { ticketViews, statusTab, categoryFilter, keyword, userFilter, filteredTickets, queueCount } =
   useAdminMaintenance()
 
 const categoryOptions = Object.keys(maintenanceCategoryLabels) as MaintenanceCategory[]
@@ -62,8 +63,8 @@ watch(
   { immediate: true },
 )
 
-// 總覽的待辦佇列用 ?tab= 指定要落在哪個狀態分頁
-const validTabs = new Set(maintenanceStatusTabs.map((tab) => tab.value))
+// 總覽的待辦佇列用 ?tab= 指定要落在哪個狀態分頁；待處理不是狀態，要另外併入合法值
+const validTabs = new Set([maintenanceQueueTab.value, ...maintenanceStatusTabs.map((tab) => tab.value)])
 watch(
   () => route.query.tab,
   (value) => {
@@ -160,6 +161,14 @@ function clearFilters(): void {
     <Tabs :model-value="statusTab" @update:model-value="handleStatusTabChange">
       <TabsList class="rounded-full bg-muted/60">
         <TabsTrigger
+          :value="maintenanceQueueTab.value"
+          class="rounded-full px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+        >
+          {{ maintenanceQueueTab.label }} {{ queueCount }}
+        </TabsTrigger>
+        <!-- 待處理不是工單狀態，跟下面的狀態頁籤用分隔線隔開，避免被誤認成第八種狀態 -->
+        <div class="mx-2 h-4 w-px bg-border" aria-hidden="true" />
+        <TabsTrigger
           v-for="tab in maintenanceStatusTabs"
           :key="tab.value"
           :value="tab.value"
@@ -235,7 +244,20 @@ function clearFilters(): void {
                 {{ formatDateTime(ticket.lastUpdatedAt) }}
               </TableCell>
             </TableRow>
-            <TableRow v-if="filteredTickets.length === 0">
+            <TableRow v-if="filteredTickets.length === 0 && statusTab === 'queue'">
+              <TableCell colspan="9" class="py-10 text-center text-muted-foreground">
+                <p>目前沒有需要管理員處理的工單，租客與房東的報修流程都在正常進行。</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  class="mt-3"
+                  @click="handleStatusTabChange('all')"
+                >
+                  查看全部工單
+                </Button>
+              </TableCell>
+            </TableRow>
+            <TableRow v-else-if="filteredTickets.length === 0">
               <TableCell colspan="9" class="py-10 text-center text-muted-foreground">
                 <p>沒有符合條件的工單。</p>
                 <Button variant="outline" size="sm" class="mt-3" @click="clearFilters">

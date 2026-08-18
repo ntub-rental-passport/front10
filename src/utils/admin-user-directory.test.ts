@@ -48,6 +48,8 @@ function ticket(id: string, over: Partial<MaintenanceTicket> = {}): MaintenanceT
     completedAt: null,
     timeline: [],
     adminNote: '',
+    interventionRequested: false,
+    manuallyQueued: false,
     ...over,
   }
 }

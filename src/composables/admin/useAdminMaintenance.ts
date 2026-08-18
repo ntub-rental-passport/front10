@@ -8,21 +8,35 @@ import { userDisplayName } from '@/src/utils/admin-user-directory'
 import {
   canTransition,
   elapsedDays,
+  isInAdminQueue,
   maintenanceStatusLabels,
+  migrateMaintenanceQueueFlags,
   type MaintenanceCategory,
   type MaintenanceStatus,
 } from '@/src/utils/admin-maintenance'
 
-// 舊格式的 tenant 是顯示名字串，無法與使用者對接，直接丟棄重 seed。
+// 舊格式的 tenant 是顯示名字串，無法與使用者對接，直接丟棄重 seed；
+// 丟棄重 seed 之後仍要跑一次欄位補值，涵蓋「格式沒變但少了佇列旗標」的舊資料。
+function migrateTickets(raw: MaintenanceTicket[]): MaintenanceTicket[] {
+  return migrateMaintenanceQueueFlags(discardLegacy(seedMaintenanceTickets, 'tenantUserId')(raw))
+}
+
 export const adminMaintenanceCollection = createAdminCollection<MaintenanceTicket[]>(
   `maintenance-tickets-${ADMIN_DATASET_VERSION}`,
   seedMaintenanceTickets,
-  discardLegacy(seedMaintenanceTickets, 'tenantUserId'),
+  migrateTickets,
 )
 const tickets = adminMaintenanceCollection
 
 /** 列表頁的狀態頁籤：pending 涵蓋送出／已通報，done 涵蓋完成／結案 */
-export type MaintenanceStatusTab = 'all' | 'pending' | 'processing' | 'overdue' | 'disputed' | 'done'
+export type MaintenanceStatusTab =
+  | 'queue'
+  | 'all'
+  | 'pending'
+  | 'processing'
+  | 'overdue'
+  | 'disputed'
+  | 'done'
 
 export const maintenanceStatusTabs: { value: MaintenanceStatusTab; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -32,6 +46,15 @@ export const maintenanceStatusTabs: { value: MaintenanceStatusTab; label: string
   { value: 'disputed', label: '爭議中' },
   { value: 'done', label: '已完成' },
 ]
+
+/**
+ * 「待處理」不是工單狀態，是衍生的佇列成員資格，跟 maintenanceStatusTabs 分開匯出 ——
+ * 頁面才能刻意把它跟狀態頁籤用間距或分隔線隔開，不讓人誤以為它是第八種狀態。
+ */
+export const maintenanceQueueTab: { value: 'queue'; label: string } = {
+  value: 'queue',
+  label: '待處理',
+}
 
 function matchesStatusTab(status: MaintenanceStatus, tab: MaintenanceStatusTab): boolean {
   switch (tab) {
@@ -74,7 +97,8 @@ export function useAdminMaintenance() {
   const { logAction } = useAdminAudit()
   const error = ref('')
 
-  const statusTab = ref<MaintenanceStatusTab>('all')
+  // 預設落在待處理佇列 —— 管理員打開這頁該先看到自己要處理的事，不是全部工單
+  const statusTab = ref<MaintenanceStatusTab>('queue')
   const categoryFilter = ref<MaintenanceCategory | 'all'>('all')
   const keyword = ref('')
   /** 從使用者詳情跳轉過來時預選的使用者，空字串代表不限 */
@@ -95,10 +119,19 @@ export function useAdminMaintenance() {
     })),
   )
 
+  /** 待處理佇列不是狀態，成員資格用 isInAdminQueue 衍生判斷，不查狀態表 */
+  const queueCount = computed(
+    () => ticketViews.value.filter((ticket) => isInAdminQueue(ticket)).length,
+  )
+
   const filteredTickets = computed(() => {
     const kw = keyword.value.trim().toLowerCase()
     return ticketViews.value
-      .filter((ticket) => matchesStatusTab(ticket.status, statusTab.value))
+      .filter((ticket) =>
+        statusTab.value === 'queue'
+          ? isInAdminQueue(ticket)
+          : matchesStatusTab(ticket.status, statusTab.value),
+      )
       .filter((ticket) => categoryFilter.value === 'all' || ticket.category === categoryFilter.value)
       .filter((ticket) => {
         if (!userFilter.value) return true
@@ -147,6 +180,13 @@ export function useAdminMaintenance() {
       return false
     }
 
+    // 日常流程本來就該由租客與房東自己走完，不在待處理佇列裡的工單不能被管理員推進。
+    // 這一關擋在資料層，不能只靠 UI 藏按鈕。
+    if (!isInAdminQueue(ticket)) {
+      error.value = '工單不在待處理佇列中，請先將工單加入待處理'
+      return false
+    }
+
     if (!canTransition(ticket.status, next)) {
       error.value = `無法從「${maintenanceStatusLabels[ticket.status]}」變更為「${maintenanceStatusLabels[next]}」`
       return false
@@ -158,6 +198,11 @@ export function useAdminMaintenance() {
     if (next === 'notified' && ticket.notifiedAt === null) ticket.notifiedAt = now
     if (next === 'in_progress' && ticket.firstResponseAt === null) ticket.firstResponseAt = now
     if (next === 'completed' && ticket.completedAt === null) ticket.completedAt = now
+    // 結案代表這張工單已經處理完畢，不該繼續留在待辦佇列裡
+    if (next === 'closed') {
+      ticket.interventionRequested = false
+      ticket.manuallyQueued = false
+    }
     ticket.timeline.push({ at: now, actor: 'admin', from: previous, to: next, note })
 
     logAction(
@@ -182,6 +227,38 @@ export function useAdminMaintenance() {
     return true
   }
 
+  /** 管理員手動把工單拉進待處理佇列 —— 用於分流時判斷這單需要人工介入，但租客房東都沒主動求助的情況 */
+  function queueTicket(id: string): boolean {
+    const ticket = tickets.value.find((item) => item.id === id)
+    if (!ticket) {
+      error.value = '找不到工單'
+      return false
+    }
+
+    ticket.manuallyQueued = true
+    logAction('報修工單', ticket.id, '手動加入待處理佇列')
+    error.value = ''
+    return true
+  }
+
+  /**
+   * 把工單移出待處理佇列。
+   * 兩個旗標都要清，只清 manuallyQueued 的話，原本用 interventionRequested 進來的工單移不出去。
+   */
+  function dequeueTicket(id: string): boolean {
+    const ticket = tickets.value.find((item) => item.id === id)
+    if (!ticket) {
+      error.value = '找不到工單'
+      return false
+    }
+
+    ticket.interventionRequested = false
+    ticket.manuallyQueued = false
+    logAction('報修工單', ticket.id, '移出待處理佇列')
+    error.value = ''
+    return true
+  }
+
   return {
     tickets,
     ticketViews,
@@ -191,8 +268,11 @@ export function useAdminMaintenance() {
     userFilter,
     filteredTickets,
     stats,
+    queueCount,
     advanceStatus,
     saveAdminNote,
+    queueTicket,
+    dequeueTicket,
     error,
   }
 }

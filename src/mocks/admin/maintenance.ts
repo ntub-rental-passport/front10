@@ -25,6 +25,10 @@ export interface MaintenanceTicket {
   completedAt: string | null
   timeline: MaintenanceEvent[]
   adminNote: string
+  /** 租客或房東主動要求平台介入，不是管理員自己判斷的 */
+  interventionRequested: boolean
+  /** 管理員手動把工單拉進待處理佇列，用於分流以外的個別情況 */
+  manuallyQueued: boolean
 }
 
 const DESCRIPTIONS: Record<MaintenanceCategory, string[]> = {
@@ -137,6 +141,10 @@ export function seedMaintenanceTickets(
       const atOf = (target: MaintenanceStatus): string | null =>
         timeline.find((event) => event.to === target)?.at ?? null
 
+      // 少數案件租客或房東會主動要求平台介入，跟案齡、狀態無關，
+      // 用低機率骰一次即可讓佇列在畫面上散落在不同狀態，而不是全部塞在 disputed。
+      const interventionRequested = status !== 'closed' && random() < 0.04
+
       index += 1
       tickets.push({
         id: `mt-${index}`,
@@ -152,6 +160,8 @@ export function seedMaintenanceTickets(
         completedAt: atOf('completed'),
         timeline,
         adminNote: '',
+        interventionRequested,
+        manuallyQueued: false,
       })
     }
   })

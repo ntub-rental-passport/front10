@@ -14,16 +14,21 @@ import {
   type MaintenanceTicketView,
 } from '@/src/composables/admin/useAdminMaintenance'
 import {
+  adminQueueReason,
+  adminQueueReasonLabels,
+  isInAdminQueue,
   maintenanceCategoryLabels,
   maintenanceStatusLabels,
+  isStatusDrivenQueueReason,
   maintenanceTransitions,
+  type AdminQueueReason,
   type MaintenanceStatus,
 } from '@/src/utils/admin-maintenance'
 import { formatDate, formatDateTime } from '@/src/utils/admin-format'
 
 const props = defineProps<{ ticket: MaintenanceTicketView }>()
 
-const { advanceStatus, saveAdminNote, error } = useAdminMaintenance()
+const { advanceStatus, saveAdminNote, queueTicket, dequeueTicket, error } = useAdminMaintenance()
 
 const changeNote = ref('')
 const adminNoteDraft = ref(props.ticket.adminNote)
@@ -42,10 +47,19 @@ const nextStatuses = computed<MaintenanceStatus[]>(
   () => maintenanceTransitions[props.ticket.status],
 )
 
+// 只有在待處理佇列裡的工單才能推進狀態，日常流程本來就該由租客與房東自己走完
+const inQueue = computed(() => isInAdminQueue(props.ticket))
+const queueReason = computed<AdminQueueReason | null>(() => adminQueueReason(props.ticket))
+
 function statusBadgeVariant(status: MaintenanceStatus): 'default' | 'secondary' | 'destructive' {
   if (status === 'overdue' || status === 'disputed') return 'destructive'
   if (status === 'completed' || status === 'closed') return 'secondary'
   return 'default'
+}
+
+function queueReasonBadgeVariant(reason: AdminQueueReason): 'default' | 'secondary' | 'destructive' {
+  // 爭議與逾期是系統判定的異常，要比管理員自己標記的更顯眼
+  return isStatusDrivenQueueReason(reason) ? 'destructive' : 'secondary'
 }
 
 function handleAdvance(next: MaintenanceStatus): void {
@@ -56,6 +70,14 @@ function handleAdvance(next: MaintenanceStatus): void {
 
 function handleSaveNote(): void {
   saveAdminNote(props.ticket.id, adminNoteDraft.value)
+}
+
+function handleQueue(): void {
+  queueTicket(props.ticket.id)
+}
+
+function handleDequeue(): void {
+  dequeueTicket(props.ticket.id)
 }
 </script>
 
@@ -116,13 +138,34 @@ function handleSaveNote(): void {
 
     <div>
       <p class="mb-2 font-semibold">狀態推進</p>
-      <Textarea v-model="changeNote" placeholder="變更備註（選填）" class="mb-2" />
-      <div v-if="nextStatuses.length > 0" class="flex flex-wrap gap-2">
-        <Button v-for="next in nextStatuses" :key="next" size="sm" @click="handleAdvance(next)">
-          推進至「{{ maintenanceStatusLabels[next] }}」
+      <template v-if="inQueue">
+        <Badge v-if="queueReason" :variant="queueReasonBadgeVariant(queueReason)" class="mb-2">
+          待處理原因：{{ adminQueueReasonLabels[queueReason] }}
+        </Badge>
+        <Textarea v-model="changeNote" placeholder="變更備註（選填）" class="mb-2" />
+        <div v-if="nextStatuses.length > 0" class="flex flex-wrap gap-2">
+          <Button v-for="next in nextStatuses" :key="next" size="sm" @click="handleAdvance(next)">
+            推進至「{{ maintenanceStatusLabels[next] }}」
+          </Button>
+        </div>
+        <p v-else class="text-muted-foreground">已是終態</p>
+        <!-- 爭議中與逾期是由狀態決定的，得靠推進狀態才離得開佇列，這顆在那兩種情況不會有效果 -->
+        <Button
+          v-if="!isStatusDrivenQueueReason(queueReason)"
+          variant="outline"
+          size="sm"
+          class="mt-2"
+          @click="handleDequeue"
+        >
+          移出待處理
         </Button>
-      </div>
-      <p v-else class="text-muted-foreground">已是終態</p>
+      </template>
+      <template v-else>
+        <p class="mb-2 text-muted-foreground">
+          此工單不在待處理佇列中，租客與房東的報修流程由雙方自行走完，管理員不主動推進狀態。
+        </p>
+        <Button size="sm" @click="handleQueue">加入待處理</Button>
+      </template>
       <p v-if="error" class="mt-2 text-sm text-destructive">{{ error }}</p>
     </div>
 

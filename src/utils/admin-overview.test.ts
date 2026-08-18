@@ -33,6 +33,8 @@ function ticket(id: string, createdAt: string): MaintenanceTicket {
     completedAt: null,
     timeline: [],
     adminNote: '',
+    interventionRequested: false,
+    manuallyQueued: false,
   }
 }
 
