@@ -6,7 +6,7 @@ import {
   type GoogleOAuthSession,
 } from '@/src/services/authApi'
 
-export type AuthRole = 'tenant' | 'landlord' | 'admin' | 'reviewer'
+export type AuthRole = 'tenant' | 'landlord' | 'admin'
 
 export interface AuthSession {
   email: string
@@ -197,12 +197,11 @@ export function signOut(): void {
   window.localStorage.removeItem(AUTH_STORAGE_KEY)
 }
 
-export function resolveRoleHome(role: AuthRole): '/app' | '/landlord' | '/admin' | '/reviewer' {
-  const roleHomes: Record<AuthRole, '/app' | '/landlord' | '/admin' | '/reviewer'> = {
+export function resolveRoleHome(role: AuthRole): '/app' | '/landlord' | '/admin' {
+  const roleHomes: Record<AuthRole, '/app' | '/landlord' | '/admin'> = {
     tenant: '/app',
     landlord: '/landlord',
     admin: '/admin',
-    reviewer: '/reviewer',
   }
 
   return roleHomes[role]

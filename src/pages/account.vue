@@ -52,7 +52,6 @@ const roleLabels: Record<AuthRole, string> = {
   tenant: '一般租客',
   landlord: '房東',
   admin: '管理員',
-  reviewer: '審核人員',
 }
 
 const roleLabel = computed(() => roleLabels[session?.role || 'tenant'])

@@ -2,7 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/src/components/layout.vue'
 import AdminLayout from '@/src/components/admin-layout.vue'
 import LandlordLayout from '@/src/components/landlord-layout.vue'
-import ReviewerLayout from '@/src/components/reviewer-layout.vue'
 import {
   getAuthSession,
   getPendingRegistration,
@@ -59,6 +58,7 @@ const router = createRouter({
         { path: 'deposits', redirect: '/admin/users' },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
         { path: 'notifications', component: () => import('@/src/pages/admin/notifications.vue') },
+        { path: 'notifications/:batchId', component: () => import('@/src/pages/admin/notifications-detail.vue') },
         { path: 'monitoring', component: () => import('@/src/pages/admin/monitoring.vue') },
         // AI 使用量已擴充為系統監控，保留舊路徑避免既有書籤 404
         { path: 'ai-usage', redirect: '/admin/monitoring' },
@@ -70,16 +70,6 @@ const router = createRouter({
         { path: 'settings', component: () => import('@/src/pages/admin/settings.vue') },
         // 已移除的後台模組（review、knowledge）留在書籤裡時，導回後台總覽而非公開首頁
         { path: ':pathMatch(.*)*', redirect: '/admin' },
-      ],
-    },
-    {
-      path: '/reviewer',
-      component: ReviewerLayout,
-      meta: { requiresAuth: true, roles: ['reviewer'] as AuthRole[] },
-      children: [
-        { path: '', component: () => import('@/src/pages/reviewer/dashboard.vue') },
-        { path: 'cases', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '待審案件', description: '認領案件並執行通過、駁回、補件與備註。' } },
-        { path: 'history', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '審核紀錄' } },
       ],
     },
     {
@@ -188,7 +178,7 @@ router.beforeEach((to) => {
 
   if (!session?.isAuthenticated) {
     return {
-      path: to.path.startsWith('/admin') || to.path.startsWith('/reviewer') ? '/staff-login' : '/login',
+      path: to.path.startsWith('/admin') ? '/staff-login' : '/login',
       query: { redirect: to.fullPath },
     }
   }
