@@ -13,14 +13,40 @@ import {
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Switch } from '@/components/ui/switch/index'
-import { ChevronDown, ChevronUp, ImageOff } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, GripVertical, ImageOff } from 'lucide-vue-next'
+import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { isValidImageUrl } from '@/src/utils/banner-url'
 import type { Banner } from '@/src/mocks/admin/content'
 
-const { banners, saveBanner, removeBanner, moveBanner } = useAdminContent()
+const { banners, saveBanner, removeBanner, moveBanner, reorderBanner } = useAdminContent()
 
 const ordered = computed(() => [...banners.value].sort((a, b) => a.order - b.order))
+
+/*
+ * 排序用原生 HTML5 drag and drop，不引入拖曳套件——這裡只有一份短清單，
+ * 為它加一個相依套件不值得。dropTargetId 只用於顯示要插入哪一列的邊框提示。
+ */
+const draggingId = ref<string | null>(null)
+const dropTargetId = ref<string | null>(null)
+
+function onDragStart(id: string): void {
+  draggingId.value = id
+}
+
+function onDragOver(id: string): void {
+  dropTargetId.value = id
+}
+
+function onDragEnd(): void {
+  draggingId.value = null
+  dropTargetId.value = null
+}
+
+function onDrop(targetIndex: number): void {
+  if (draggingId.value) reorderBanner(draggingId.value, targetIndex)
+  onDragEnd()
+}
 
 const dialogOpen = ref(false)
 const deleteTarget = ref<Banner | null>(null)
@@ -100,8 +126,18 @@ const showUrlFormatWarning = computed(
     <div
       v-for="(item, index) in ordered"
       :key="item.id"
-      class="flex items-center gap-4 rounded-2xl border bg-muted/10 p-4"
+      draggable="true"
+      :class="[
+        'flex items-center gap-4 rounded-2xl border bg-muted/10 p-4 transition-colors',
+        draggingId === item.id && 'opacity-40',
+        dropTargetId === item.id && draggingId !== item.id && 'border-primary bg-primary/5',
+      ]"
+      @dragstart="onDragStart(item.id)"
+      @dragend="onDragEnd"
+      @dragover.prevent="onDragOver(item.id)"
+      @drop.prevent="onDrop(index)"
     >
+      <GripVertical class="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
       <img :src="item.imageUrl" :alt="item.title" class="h-16 w-28 shrink-0 rounded-lg object-cover" />
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
@@ -112,15 +148,34 @@ const showUrlFormatWarning = computed(
         </div>
         <p class="mt-1 truncate text-sm text-muted-foreground">{{ item.linkUrl }}</p>
       </div>
+      <!--
+        拖曳是主要的排序方式，但它對鍵盤使用者不可用，所以 ▲▼ 保留當替代路徑，
+        並補上 aria-label——原本這兩顆只有圖示，讀螢幕的人完全不知道它們是做什麼的。
+      -->
       <div class="flex shrink-0 items-center gap-1">
-        <Button variant="ghost" size="icon" :disabled="index === 0" @click="moveBanner(item.id, 'up')">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="往前移一位"
+          :disabled="index === 0"
+          @click="moveBanner(item.id, 'up')"
+        >
           <ChevronUp class="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" :disabled="index === ordered.length - 1" @click="moveBanner(item.id, 'down')">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="往後移一位"
+          :disabled="index === ordered.length - 1"
+          @click="moveBanner(item.id, 'down')"
+        >
           <ChevronDown class="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="sm" @click="openEdit(item)">編輯</Button>
-        <Button variant="destructive" size="sm" @click="deleteTarget = item">刪除</Button>
+        <AdminRowActions
+          :actions="[{ label: '刪除', danger: true, onSelect: () => (deleteTarget = item) }]"
+        >
+          <Button variant="outline" size="sm" @click="openEdit(item)">編輯</Button>
+        </AdminRowActions>
       </div>
     </div>
 

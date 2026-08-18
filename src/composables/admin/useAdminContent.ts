@@ -6,15 +6,12 @@ import {
   isAnnouncementVisibleToTenant,
   migrateAnnouncements,
 } from '@/src/utils/announcement'
+import { reorderByIndex } from '@/src/utils/reorder'
 import {
   seedAnnouncements,
   seedBanners,
-  seedFaqs,
-  seedLegalDocs,
   type Announcement,
   type Banner,
-  type FaqEntry,
-  type LegalDoc,
 } from '@/src/mocks/admin-seed'
 
 const announcements = createAdminCollection<Announcement[]>(
@@ -22,8 +19,6 @@ const announcements = createAdminCollection<Announcement[]>(
   seedAnnouncements,
   migrateAnnouncements,
 )
-const faqs = createAdminCollection<FaqEntry[]>('content-faqs', seedFaqs)
-const legalDocs = createAdminCollection<LegalDoc[]>('content-legal', seedLegalDocs)
 const banners = createAdminCollection<Banner[]>('content-banners', seedBanners)
 
 function nowIso(): string {
@@ -79,42 +74,6 @@ export function useAdminContent() {
     logAction('內容管理', '公告', `刪除公告「${target.title}」`)
   }
 
-  // --- FAQ ---
-  function saveFaq(input: Omit<FaqEntry, 'id' | 'updatedAt' | 'order'> & { id?: string; order?: number }): void {
-    if (input.id) {
-      const target = faqs.value.find((item) => item.id === input.id)
-      if (!target) return
-      Object.assign(target, input, { updatedAt: nowIso() })
-      logAction('內容管理', 'FAQ', `更新問答「${input.question}」`)
-    } else {
-      const maxOrder = faqs.value.reduce((max, item) => Math.max(max, item.order), -1)
-      faqs.value.push({ ...input, order: maxOrder + 1, id: newId('faq'), updatedAt: nowIso() })
-      logAction('內容管理', 'FAQ', `新增問答「${input.question}」`)
-    }
-  }
-
-  function removeFaq(id: string): void {
-    const target = faqs.value.find((item) => item.id === id)
-    if (!target) return
-    faqs.value = faqs.value.filter((item) => item.id !== id)
-    logAction('內容管理', 'FAQ', `刪除問答「${target.question}」`)
-  }
-
-  function moveFaq(id: string, direction: 'up' | 'down'): void {
-    move(faqs.value, id, direction)
-  }
-
-  // --- 法律文件 ---
-  function saveLegalDoc(id: string, title: string, body: string): void {
-    const target = legalDocs.value.find((item) => item.id === id)
-    if (!target) return
-    target.title = title
-    target.body = body
-    target.version += 1
-    target.updatedAt = nowIso()
-    logAction('內容管理', '法律文件', `更新「${title}」至 v${target.version}`)
-  }
-
   // --- Banner ---
   function saveBanner(input: Omit<Banner, 'id' | 'updatedAt' | 'order'> & { id?: string; order?: number }): void {
     if (input.id) {
@@ -140,21 +99,24 @@ export function useAdminContent() {
     move(banners.value, id, direction)
   }
 
+  /** 拖曳排序用：一次跨越多個位置，相鄰交換的 move() 做不到。 */
+  function reorderBanner(id: string, targetIndex: number): void {
+    const target = banners.value.find((item) => item.id === id)
+    if (!target) return
+    reorderByIndex(banners.value, id, targetIndex)
+    logAction('內容管理', 'Banner', `調整輪播「${target.title}」的順序`)
+  }
+
   return {
     announcements,
-    faqs,
-    legalDocs,
     banners,
     activeAnnouncements,
     tenantAnnouncements,
     saveAnnouncement,
     removeAnnouncement,
-    saveFaq,
-    removeFaq,
-    moveFaq,
-    saveLegalDoc,
     saveBanner,
     removeBanner,
     moveBanner,
+    reorderBanner,
   }
 }

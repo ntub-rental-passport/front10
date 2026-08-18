@@ -29,11 +29,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
+import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
+import LevelBadge from '@/src/components/admin/LevelBadge.vue'
+import StatusBadge from '@/src/components/admin/StatusBadge.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { useExpandedRows } from '@/src/composables/admin/useExpandedRows'
+import { resolveAnnouncementPhase } from '@/src/utils/announcement'
 import { formatDate } from '@/src/utils/admin-format'
 import type { Announcement, AnnouncementAudience, AnnouncementLevel } from '@/src/mocks/admin/content'
 
 const { announcements, saveAnnouncement, removeAnnouncement } = useAdminContent()
+const { isExpanded, toggle } = useExpandedRows()
+
+// 每次渲染都用同一個「現在」判斷所有列的階段，避免逐列各取一次而在跨秒時出現不一致
+const phaseOf = (item: Announcement) => resolveAnnouncementPhase(item, new Date())
 
 const levelLabels: Record<AnnouncementLevel, string> = {
   info: '一般',
@@ -142,27 +152,49 @@ const canSubmit = () => draft.value.title.trim() !== '' && draft.value.body.trim
         </TableRow>
       </TableHeader>
       <TableBody>
-        <TableRow v-for="item in announcements" :key="item.id">
-          <TableCell class="font-medium">{{ item.title }}</TableCell>
-          <TableCell>{{ levelLabels[item.level] }}</TableCell>
-          <TableCell>
-            <Badge variant="outline">{{ audienceLabels[item.audience] }}</Badge>
-          </TableCell>
-          <TableCell>
-            <Badge :variant="item.published ? 'default' : 'secondary'">
-              {{ item.published ? '已發布' : '未發布' }}
-            </Badge>
-          </TableCell>
-          <TableCell class="text-sm text-muted-foreground">
-            {{ formatDate(item.startAt) }} ～ {{ item.endAt ? formatDate(item.endAt) : '長期' }}
-          </TableCell>
-          <TableCell class="text-right">
-            <div class="flex justify-end gap-2">
-              <Button variant="outline" size="sm" @click="openEdit(item)">編輯</Button>
-              <Button variant="destructive" size="sm" @click="deleteTarget = item">刪除</Button>
-            </div>
-          </TableCell>
-        </TableRow>
+        <template v-for="item in announcements" :key="item.id">
+          <!-- 已過期的公告整列降低對比，掃視時可以直接跳過 -->
+          <TableRow
+            :class="['cursor-pointer', phaseOf(item) === 'expired' && 'opacity-55']"
+            @click="toggle(item.id)"
+          >
+            <TableCell class="font-medium">
+              <div class="flex items-center gap-2">
+                <component
+                  :is="isExpanded(item.id) ? ChevronDown : ChevronRight"
+                  class="h-4 w-4 shrink-0 text-muted-foreground"
+                />
+                <span>{{ item.title }}</span>
+              </div>
+            </TableCell>
+            <TableCell><LevelBadge :level="item.level" /></TableCell>
+            <TableCell class="text-sm text-muted-foreground">
+              {{ audienceLabels[item.audience] }}
+            </TableCell>
+            <TableCell><StatusBadge :phase="phaseOf(item)" /></TableCell>
+            <TableCell class="text-sm text-muted-foreground">
+              {{ formatDate(item.startAt) }} ～ {{ item.endAt ? formatDate(item.endAt) : '長期' }}
+            </TableCell>
+            <TableCell class="text-right" @click.stop>
+              <AdminRowActions
+                :actions="[{ label: '刪除', danger: true, onSelect: () => (deleteTarget = item) }]"
+              >
+                <Button variant="outline" size="sm" @click="openEdit(item)">編輯</Button>
+              </AdminRowActions>
+            </TableCell>
+          </TableRow>
+
+          <TableRow v-if="isExpanded(item.id)" class="hover:bg-transparent">
+            <TableCell colspan="6" class="bg-muted/30">
+              <p class="mb-1 text-xs font-medium text-muted-foreground">公告內文</p>
+              <p class="whitespace-pre-wrap text-sm">{{ item.body }}</p>
+              <p class="mt-2 text-xs text-muted-foreground">
+                最後更新 {{ formatDate(item.updatedAt) }}
+              </p>
+            </TableCell>
+          </TableRow>
+        </template>
+
         <TableRow v-if="announcements.length === 0">
           <TableCell colspan="6" class="py-8 text-center text-muted-foreground">尚無公告。</TableCell>
         </TableRow>

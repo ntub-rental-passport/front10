@@ -6,6 +6,7 @@ import {
   isAnnouncementVisibleToTenant,
   isDashboardAnnouncementLevel,
   migrateAnnouncements,
+  resolveAnnouncementPhase,
 } from './announcement'
 import type { Announcement } from '@/src/mocks/admin/content'
 
@@ -126,5 +127,67 @@ describe('announcementDismissKey / isAnnouncementDismissed', () => {
     const userBKeys: string[] = []
     expect(isAnnouncementDismissed(userAKeys, a)).toBe(true)
     expect(isAnnouncementDismissed(userBKeys, a)).toBe(false)
+  })
+})
+
+describe('resolveAnnouncementPhase', () => {
+  const base = {
+    id: 'an-1',
+    title: '公告',
+    body: '內文',
+    level: 'info' as const,
+    audience: 'all' as const,
+    updatedAt: '2026-08-01T00:00:00.000Z',
+  }
+  const now = new Date('2026-08-15T00:00:00.000Z')
+
+  it('未發布一律是草稿，即使日期在區間內', () => {
+    const phase = resolveAnnouncementPhase(
+      { ...base, published: false, startAt: '2026-08-10T00:00:00.000Z', endAt: null },
+      now,
+    )
+    expect(phase).toBe('draft')
+  })
+
+  it('開始時間還沒到是排程中', () => {
+    const phase = resolveAnnouncementPhase(
+      { ...base, published: true, startAt: '2026-08-20T00:00:00.000Z', endAt: null },
+      now,
+    )
+    expect(phase).toBe('scheduled')
+  })
+
+  it('結束時間已過是已過期', () => {
+    const phase = resolveAnnouncementPhase(
+      {
+        ...base,
+        published: true,
+        startAt: '2026-08-01T00:00:00.000Z',
+        endAt: '2026-08-10T00:00:00.000Z',
+      },
+      now,
+    )
+    expect(phase).toBe('expired')
+  })
+
+  it('沒有結束時間的已發布公告持續生效', () => {
+    const phase = resolveAnnouncementPhase(
+      { ...base, published: true, startAt: '2026-08-01T00:00:00.000Z', endAt: null },
+      now,
+    )
+    expect(phase).toBe('active')
+  })
+
+  it('落在區間內是生效中', () => {
+    const phase = resolveAnnouncementPhase(
+      {
+        ...base,
+        published: true,
+        startAt: '2026-08-10T00:00:00.000Z',
+        endAt: '2026-08-20T00:00:00.000Z',
+      },
+      now,
+    )
+    expect(phase).toBe('active')
   })
 })

@@ -2,6 +2,7 @@
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import MaintenanceStatusPanel from '@/src/components/MaintenanceStatusPanel.vue'
+import LevelBadge from '@/src/components/admin/LevelBadge.vue'
 import { useNotifications, type InboxItem } from '@/src/composables/useNotifications'
 import { formatDateTime } from '@/src/utils/admin-format'
 import type { AnnouncementLevel, NotifChannel } from '@/src/mocks/admin-seed'
@@ -12,19 +13,6 @@ const channelLabels: Record<NotifChannel, string> = {
   inapp: '站內',
   email: 'Email',
   push: '推播',
-}
-
-const levelLabels: Record<AnnouncementLevel, string> = {
-  info: '一般',
-  warning: '注意',
-  urgent: '緊急',
-}
-
-// 公告依等級著色，通知維持中性色
-const levelClasses: Record<AnnouncementLevel, string> = {
-  info: 'border-primary/40 bg-primary/10 text-primary',
-  warning: 'border-amber-300 bg-amber-50 text-amber-700',
-  urgent: 'border-destructive/40 bg-destructive/10 text-destructive',
 }
 
 function unreadAccent(item: InboxItem): string {
@@ -91,13 +79,11 @@ function unreadAccent(item: InboxItem): string {
         </div>
 
         <div class="mt-2 flex flex-wrap items-center gap-1.5">
-          <Badge
+          <LevelBadge
             v-if="item.source === 'announcement' && item.level"
-            variant="outline"
-            :class="levelClasses[item.level]"
-          >
-            公告 · {{ levelLabels[item.level] }}
-          </Badge>
+            :level="item.level"
+            prefixed
+          />
           <Badge v-else variant="secondary">{{ item.category }}</Badge>
 
           <Badge v-for="ch in item.channels" :key="ch" variant="secondary">

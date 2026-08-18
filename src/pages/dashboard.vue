@@ -43,10 +43,22 @@ const { isDismissed, dismiss } = useAnnouncementDismissal()
 
 // 首頁只放最緊急的訊息（urgent／warning），一般公告仍在通知中心看得到；
 // 使用者關掉的公告（依 id+updatedAt 判斷）不再重複出現，除非管理員又更新了內容。
-const dashboardAnnouncements = computed(() =>
+const visibleAnnouncements = computed(() =>
   tenantAnnouncements.value.filter(
     (item) => isDashboardAnnouncementLevel(item.level) && !isDismissed(item),
   ),
+)
+
+// 就算全是緊急公告也不能無上限堆疊——租客來首頁是要看自己的租約與帳單，
+// 超過的筆數改成一行提示導向通知中心，版面才不會被公告整片吃掉。
+const DASHBOARD_ANNOUNCEMENT_LIMIT = 2
+
+const dashboardAnnouncements = computed(() =>
+  visibleAnnouncements.value.slice(0, DASHBOARD_ANNOUNCEMENT_LIMIT),
+)
+
+const overflowAnnouncementCount = computed(() =>
+  Math.max(0, visibleAnnouncements.value.length - DASHBOARD_ANNOUNCEMENT_LIMIT),
 )
 // 首頁有兩個直接通往「合約 OCR」功能的入口，該功能維護關閉時要標記出來——
 // 使用者在首頁看到一張正常的卡片、點下去卻是維護頁，那一下的落差可以避免，
@@ -102,6 +114,13 @@ const {
         dismissible
         @dismiss="dismiss(item)"
       />
+      <RouterLink
+        v-if="overflowAnnouncementCount > 0"
+        to="/app/notifications"
+        class="self-start text-sm font-medium text-primary underline-offset-4 hover:underline"
+      >
+        另有 {{ overflowAnnouncementCount }} 則公告，前往通知中心查看
+      </RouterLink>
     </div>
 
     <!-- ── 頁面標題 ─────────────────────────────────────────────────────────── -->

@@ -8,6 +8,20 @@ export function isAnnouncementActive(a: Announcement, now: Date): boolean {
   return true
 }
 
+/**
+ * 後台列表原本只顯示日期區間，看不出「現在生效中／已過期／還沒開始」，
+ * seed 資料因此把「（已過期）」寫進標題來補救——那是介面沒把話說完的徵兆。
+ */
+export type AnnouncementPhase = 'draft' | 'scheduled' | 'active' | 'expired'
+
+export function resolveAnnouncementPhase(a: Announcement, now: Date): AnnouncementPhase {
+  if (!a.published) return 'draft'
+  const current = now.getTime()
+  if (current < new Date(a.startAt).getTime()) return 'scheduled'
+  if (a.endAt !== null && current > new Date(a.endAt).getTime()) return 'expired'
+  return 'active'
+}
+
 /** 租客端（首頁、通知中心）只該看到跟自己身分有關的公告，房東專屬的公告不該混進來。 */
 export function isAnnouncementVisibleToTenant(a: Announcement): boolean {
   return a.audience === 'all' || a.audience === 'tenant'
