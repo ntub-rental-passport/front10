@@ -20,6 +20,7 @@ services:
     volumes:
       - certbot_conf:/etc/letsencrypt:ro     # Let's Encrypt 憑證（certbot 服務寫入）
       - certbot_www:/var/www/certbot:ro      # ACME HTTP-01 驗證檔
+      - ./logs/nginx:/var/log/nginx          # log 掛出主機，給 VM 上的 fail2ban 讀
     depends_on:
       - fastapi
       - ocr

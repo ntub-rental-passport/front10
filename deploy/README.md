@@ -126,3 +126,37 @@ curl -sI https://<網域> | grep -iE "x-frame|x-content|referrer|strict-transpor
 線上掃描（截圖放簡報）：
 - https://securityheaders.com —— 目標 A 以上
 - https://www.ssllabs.com/ssltest/ —— 目標 A+
+
+## 九、fail2ban（P3，VM 主機上安裝）
+
+Nginx log 已由 compose 掛載到 `./logs/nginx/`，主機上的 fail2ban 直接讀取：
+
+```bash
+sudo apt install -y fail2ban
+sudo cp deploy/fail2ban/jail.local /etc/fail2ban/jail.local
+# 修改 jail.local 裡 logpath 的家目錄為實際路徑，然後：
+sudo systemctl enable --now fail2ban
+
+# 驗證與蒐證
+sudo fail2ban-client status nginx-limit-req   # 看目前封鎖清單
+sudo fail2ban-client status sshd
+# Demo：從另一台機器狂打觸發 429 x10 → IP 被封 1 小時 → 截圖封鎖清單
+```
+
+log 輪替（避免 log 無限長大）：
+
+```bash
+sudo tee /etc/logrotate.d/rentmate-nginx << 'EOF'
+/home/ubuntu/rentmate/logs/nginx/*.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    sharedscripts
+    postrotate
+        docker compose -f /home/ubuntu/rentmate/docker-compose.yml exec web nginx -s reopen
+    endscript
+}
+EOF
+```
