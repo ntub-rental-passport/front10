@@ -7,6 +7,9 @@
 # 封鎖 1 小時；60 秒內達到 maxretry 次數就封
 bantime  = 3600
 findtime = 60
+# 永不封鎖的來源 —— 務必包含自己的管理網段，否則測試時會把自己鎖在 VM 外面。
+# 60.250.79.0/24 是目前的開發/管理出口網段，換網路環境時要一併更新。
+ignoreip = 127.0.0.1/8 ::1 60.250.79.0/24
 
 # 短時間內大量觸發 Nginx 限流（429）的 IP —— 自動 iptables 封鎖
 # filter「nginx-limit-req」為 fail2ban 內建，比對 error.log 的 limiting requests 紀錄
