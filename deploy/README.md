@@ -38,9 +38,9 @@ rsync -avz --delete \
 |------|-----|
 | `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | 產生強密碼（`openssl rand -base64 24`） |
 | `JWT_SECRET` | 與開發環境**不同**的新值（`openssl rand -hex 32`） |
-| `GOOGLE_REDIRECT_URI` | `https://<網域>/api/auth/google/callback`（GCP console 也要加這條） |
-| `FRONTEND_URL` | `https://<網域>` |
-| `CORS_ORIGINS` | `https://<網域>`（拿掉 localhost） |
+| `GOOGLE_REDIRECT_URI` | `https://rentmate.software/api/auth/google/callback`（GCP console 也要加這條） |
+| `FRONTEND_URL` | `https://rentmate.software` |
+| `CORS_ORIGINS` | `https://rentmate.software`（拿掉 localhost） |
 | `COOKIE_SECURE` | 上 TLS 後在 compose 或 .env 改 `true` |
 
 ## 三、啟動
@@ -90,11 +90,11 @@ docker compose up -d --build   # 只重建有變動的 image
 ## 七、TLS 啟用（網域到手後）
 
 ```bash
-# 0. 前提：網域 DNS A 紀錄指向 VM 公網 IP，且 http://<網域> 已可連到本站
+# 0. 前提：網域 DNS A 紀錄指向 VM 公網 IP，且 http://rentmate.software 已可連到本站
 
 # 1. 首次簽發憑證（HTTP-01 webroot 驗證，nginx.conf 已預留 acme 路徑）
 docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
-  -d <網域> --email <你的信箱> --agree-tos --no-eff-email
+  -d rentmate.software --email <你的信箱> --agree-tos --no-eff-email
 
 # 2. 套用 TLS 設定：把 deploy/nginx-tls.conf.example 內容覆蓋到 deploy/nginx.conf
 #    （全檔把 rentmate.example.me 換成你的網域）
@@ -117,14 +117,14 @@ CSP 目前是 Report-Only，開瀏覽器 console 觀察一段時間沒有誤擋�
 ```bash
 # Rate limit 實測：連打登入端點，前幾次 401/422，之後開始 429（截圖放簡報）
 for i in $(seq 1 20); do curl -s -o /dev/null -w "%{http_code}\n" \
-  https://<網域>/api/auth/login -X POST -H "Content-Type: application/json" -d '{}'; done
+  https://rentmate.software/api/auth/login -X POST -H "Content-Type: application/json" -d '{}'; done
 
 # OCR 限流：每分鐘 5 次，連打第 8 次起應 429
 for i in $(seq 1 8); do curl -s -o /dev/null -w "%{http_code}\n" \
-  -X POST https://<網域>/api/ocr; done
+  -X POST https://rentmate.software/api/ocr; done
 
 # 安全標頭確認
-curl -sI https://<網域> | grep -iE "x-frame|x-content|referrer|strict-transport|content-security|permissions"
+curl -sI https://rentmate.software | grep -iE "x-frame|x-content|referrer|strict-transport|content-security|permissions"
 ```
 
 線上掃描（截圖放簡報）：

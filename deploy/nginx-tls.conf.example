@@ -1,6 +1,6 @@
 # RentMate Nginx TLS 正式設定範本
 # 使用方式（網域到手、certbot 首次簽發成功後）：
-#   1. 全檔把 rentmate.example.me 換成你的網域
+#   1. 全檔把 rentmate.software 換成你的網域
 #   2. 覆蓋 deploy/nginx.conf 的內容（保留這份的結構）
 #   3. compose 設定 COOKIE_SECURE=true，docker compose up -d --build
 #   4. SSL Labs 掃描驗證，目標 A+
@@ -14,7 +14,7 @@ limit_req_status 429;
 # HTTP：只留 ACME 驗證，其餘 301 到 HTTPS
 server {
     listen 80;
-    server_name rentmate.example.me;
+    server_name rentmate.software;
     server_tokens off;
 
     location /.well-known/acme-challenge/ {
@@ -29,11 +29,11 @@ server {
 server {
     listen 443 ssl;
     http2 on;
-    server_name rentmate.example.me;
+    server_name rentmate.software;
 
     # ===== TLS（目標 SSL Labs A+）=====
-    ssl_certificate     /etc/letsencrypt/live/rentmate.example.me/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/rentmate.example.me/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/rentmate.software/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/rentmate.software/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;                 # 停用 TLS 1.0/1.1
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
