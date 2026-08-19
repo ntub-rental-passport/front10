@@ -84,8 +84,12 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), microphone=(), payment=()" always;
-    # HSTS：先用短 max-age（600）觀察幾天，確認全站 HTTPS 無誤後改 31536000
-    add_header Strict-Transport-Security "max-age=600; includeSubDomains" always;
+    # HSTS：2026-08-19 由觀察值 600 調整為正式值 31536000（1 年）。
+    # 調長前提已滿足：全站 HTTPS 運作正常、certbot 自動續期排程已設定。
+    # 意義：瀏覽器在期限內「只」以 HTTPS 連本站，連使用者手動輸入 http:// 也會自動改寫，
+    # 可阻斷 SSL stripping（中間人把連線降級為明文）攻擊。
+    # 注意：一旦瀏覽器記住，期限內無法以 HTTP 存取本網域，故需確保憑證續期不中斷。
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     # 隔離瀏覽環境，防止跨來源視窗操作本頁（allow-popups 保留 OAuth 彈窗流程的相容性）
     add_header Cross-Origin-Opener-Policy "same-origin-allow-popups" always;
     # CSP 正式模式（2026-08-19 由 Report-Only 轉正式）
