@@ -82,9 +82,19 @@ ollama pull gemma3:4b
 
 ## 六、更新部署
 
+⚠️ **第一次之後的 rsync 一定要加 `--exclude .env`**，否則會用開發機的 .env
+覆蓋掉 VM 上的正式金鑰（MySQL 密碼會消失，compose 直接起不來）。
+
+在本機執行：
+
 ```bash
-git pull
-docker compose up -d --build   # 只重建有變動的 image
+rsync -avz --delete --exclude node_modules --exclude dist --exclude .venv --exclude .git --exclude logs --exclude '__pycache__' --exclude .env ./ rentmate@140.131.114.157:~/rentmate/
+```
+
+在 VM 執行：
+
+```bash
+cd ~/rentmate && docker compose up -d --build
 ```
 
 ## 七、TLS 啟用（網域到手後）
