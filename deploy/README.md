@@ -161,7 +161,7 @@ log 輪替（避免 log 無限長大）：
 
 ```bash
 sudo tee /etc/logrotate.d/rentmate-nginx << 'EOF'
-/home/ubuntu/rentmate/logs/nginx/*.log {
+/home/rentmate/rentmate/logs/nginx/*.log {
     weekly
     rotate 8
     compress
@@ -169,7 +169,7 @@ sudo tee /etc/logrotate.d/rentmate-nginx << 'EOF'
     notifempty
     sharedscripts
     postrotate
-        docker compose -f /home/ubuntu/rentmate/docker-compose.yml exec web nginx -s reopen
+        docker compose -f /home/rentmate/rentmate/docker-compose.yml exec web nginx -s reopen
     endscript
 }
 EOF
