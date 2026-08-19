@@ -100,7 +100,14 @@ server {
     #   form-action 'self'  → 表單只能提交回本站，防止竄改後的表單把資料送到攻擊者伺服器
     #   base-uri 'self'     → 防止注入 <base href="evil.com"> 竄改全站相對路徑的解析目標
     #   frame-ancestors 'none' → 禁止被任何網站 iframe（點擊劫持防護）
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; form-action 'self'; base-uri 'self'; frame-ancestors 'none'" always;
+    # img-src 已由 https:（萬用）收斂為實際使用的來源清單（ZAP 規則 10055 Wildcard Directive）：
+    #   gstatic / jsdelivr      → 登入註冊頁的 Google 圖示 SVG
+    #   qrserver                → 邀請連結的 QR code 產生服務
+    #   placehold.co / picsum   → 房源示意圖佔位服務
+    #   tiles.openfreemap.org   → 地圖圖磚與 sprite
+    #   *.googleusercontent.com → Google 登入使用者的頭像
+    # 新增外部圖片來源時必須同步更新此清單，否則圖片會被瀏覽器擋下。
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gstatic.com https://cdn.jsdelivr.net https://api.qrserver.com https://placehold.co https://picsum.photos https://tiles.openfreemap.org https://*.googleusercontent.com; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; form-action 'self'; base-uri 'self'; frame-ancestors 'none'" always;
 
     # ===== 路由 + 分段限流（與 HTTP 版相同）=====
     location /api/auth/ {
