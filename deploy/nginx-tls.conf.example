@@ -86,8 +86,16 @@ server {
     add_header Permissions-Policy "camera=(), microphone=(), payment=()" always;
     # HSTS：先用短 max-age（600）觀察幾天，確認全站 HTTPS 無誤後改 31536000
     add_header Strict-Transport-Security "max-age=600; includeSubDomains" always;
-    # CSP：Report-Only 觀察期結束後，把標頭名稱改成 Content-Security-Policy 轉正式
-    add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; frame-ancestors 'none'" always;
+    # 隔離瀏覽環境，防止跨來源視窗操作本頁（allow-popups 保留 OAuth 彈窗流程的相容性）
+    add_header Cross-Origin-Opener-Policy "same-origin-allow-popups" always;
+    # CSP 正式模式（2026-08-19 由 Report-Only 轉正式）
+    # 已驗證：前端所有外部資源皆為圖片（Google 圖示、QR code）或頁面跳轉，
+    # 無任何外部 script/stylesheet，故 script-src 'self' 不會誤擋。
+    # 地圖功能需要 connect-src 放行 openfreemap（向量圖磚）與 nominatim（地理編碼），
+    # maplibre 使用 blob worker 故需 worker-src blob:。
+    # 注意：未加 Cross-Origin-Embedder-Policy —— require-corp 會擋掉上述跨域圖片，
+    # 而其防範的 Spectre 類跨域洩漏在本系統（未使用 SharedArrayBuffer）不適用。
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; frame-ancestors 'none'" always;
 
     # ===== 路由 + 分段限流（與 HTTP 版相同）=====
     location /api/auth/ {
