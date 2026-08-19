@@ -100,6 +100,11 @@ server {
     #   form-action 'self'  → 表單只能提交回本站，防止竄改後的表單把資料送到攻擊者伺服器
     #   base-uri 'self'     → 防止注入 <base href="evil.com"> 竄改全站相對路徑的解析目標
     #   frame-ancestors 'none' → 禁止被任何網站 iframe（點擊劫持防護）
+    # style-src 保留 'unsafe-inline'：Vue 的 :style 動態綁定（本專案 15 個元件使用，
+    # 如進度條寬度、圖表色塊、選單位移）產生的是執行時計算的行內樣式，nonce/hash 無法涵蓋。
+    # 風險等級遠低於 script-src 的 unsafe-inline —— XSS 的主要載體是 script，
+    # 而 script-src 維持 'self' 且不含 unsafe-inline，該防線完整。
+    #
     # img-src 已由 https:（萬用）收斂為實際使用的來源清單（ZAP 規則 10055 Wildcard Directive）：
     #   gstatic / jsdelivr      → 登入註冊頁的 Google 圖示 SVG
     #   qrserver                → 邀請連結的 QR code 產生服務
