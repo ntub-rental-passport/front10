@@ -95,7 +95,12 @@ server {
     # maplibre 使用 blob worker 故需 worker-src blob:。
     # 注意：未加 Cross-Origin-Embedder-Policy —— require-corp 會擋掉上述跨域圖片，
     # 而其防範的 Spectre 類跨域洩漏在本系統（未使用 SharedArrayBuffer）不適用。
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; frame-ancestors 'none'" always;
+    # form-action / base-uri / frame-ancestors 這三個指令「不會」繼承 default-src，
+    # 未明確宣告等於完全無防護（ZAP 規則 10055 即檢查此點）：
+    #   form-action 'self'  → 表單只能提交回本站，防止竄改後的表單把資料送到攻擊者伺服器
+    #   base-uri 'self'     → 防止注入 <base href="evil.com"> 竄改全站相對路徑的解析目標
+    #   frame-ancestors 'none' → 禁止被任何網站 iframe（點擊劫持防護）
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; form-action 'self'; base-uri 'self'; frame-ancestors 'none'" always;
 
     # ===== 路由 + 分段限流（與 HTTP 版相同）=====
     location /api/auth/ {
