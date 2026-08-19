@@ -1,0 +1,29 @@
+# RentMate fail2ban 設定
+# 安裝位置：/etc/fail2ban/jail.local（VM 主機，非容器內）
+# Nginx log 由 docker-compose 掛載到 ~/rentmate/logs/nginx/
+# 注意：logpath 的家目錄請依實際部署使用者調整
+
+[DEFAULT]
+# 封鎖 1 小時；60 秒內達到 maxretry 次數就封
+bantime  = 3600
+findtime = 60
+
+# 短時間內大量觸發 Nginx 限流（429）的 IP —— 自動 iptables 封鎖
+# filter「nginx-limit-req」為 fail2ban 內建，比對 error.log 的 limiting requests 紀錄
+[nginx-limit-req]
+enabled  = true
+port     = http,https
+filter   = nginx-limit-req
+# ⚠️ 必須明確指定 backend：Ubuntu 24.04 的 fail2ban 預設 backend = systemd，
+# 那個模式會忽略 logpath、改去 journald 找 nginx.service。但我們的 Nginx 跑在
+# Docker 容器裡不是 systemd 服務，會永遠比對不到任何紀錄（Total failed 恆為 0）。
+# polling 模式定期輪詢檔案，對 Docker bind mount 的 log 最可靠。
+backend  = polling
+logpath  = /home/rentmate/rentmate/logs/nginx/error.log
+maxretry = 10
+
+# SSH 暴力破解防護（順手一起開）
+[sshd]
+enabled  = true
+maxretry = 5
+bantime  = 7200
