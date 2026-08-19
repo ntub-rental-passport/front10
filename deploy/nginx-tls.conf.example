@@ -14,7 +14,7 @@ limit_req_status 429;
 # HTTP：只留 ACME 驗證，其餘 301 到 HTTPS
 server {
     listen 80;
-    server_name rentmate.software;
+    server_name rentmate.software www.rentmate.software;
     server_tokens off;
 
     location /.well-known/acme-challenge/ {
@@ -29,7 +29,7 @@ server {
 server {
     listen 443 ssl;
     http2 on;
-    server_name rentmate.software;
+    server_name rentmate.software www.rentmate.software;
 
     # ===== TLS（目標 SSL Labs A+）=====
     ssl_certificate     /etc/letsencrypt/live/rentmate.software/fullchain.pem;
