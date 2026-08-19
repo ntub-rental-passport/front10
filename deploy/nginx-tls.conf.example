@@ -43,6 +43,11 @@ real_ip_header CF-Connecting-IP;
 limit_req_zone $binary_remote_addr zone=login_limit:10m rate=2r/s;
 limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
 limit_req_zone $binary_remote_addr zone=ocr_limit:10m rate=5r/m;
+# 靜態資源／SPA 路徑：依實際流量分析新增。
+# 上線後的存取記錄顯示 89% 請求為外部掃描探測，且集中在靜態路徑（單一來源達 1890 次），
+# 原先僅 /api/ 有節流，此處完全不設防。額度取較寬鬆值以免影響正常頁面載入
+# （一次頁面載入約數十個請求），但足以壓制高速掃描。
+limit_req_zone $binary_remote_addr zone=static_limit:10m rate=30r/s;
 limit_req_status 429;
 
 # HTTP：只留 ACME 驗證，其餘 301 到 HTTPS
@@ -148,7 +153,29 @@ server {
         proxy_read_timeout 300s;
     }
 
+    # ACME 憑證驗證：以 ^~ 修飾，避免被下方的隱藏檔封鎖規則（regex location）攔截
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # 封鎖隱藏檔探測 —— 依實際攻擊記錄新增。
+    # 存取記錄顯示 /.env（226 次）與 /.git/*（197 次）是最主要的探測目標，
+    # 攻擊者意圖取得環境變數中的資料庫密碼、API 金鑰，或下載原始碼倉庫。
+    # 原本這些請求會落入下方 SPA fallback 而回傳 200（雖未洩密，但等同確認路徑存在）。
+    location ~ /\. {
+        deny all;
+        access_log off;
+    }
+
+    # 封鎖其他常見敏感檔案探測（wp-config、備份檔、設定檔等）
+    location ~* \.(env|sql|bak|old|conf|ini|log|sh)$|wp-config|phpinfo {
+        deny all;
+        access_log off;
+    }
+
+    # SPA fallback：非 API 路徑一律回 index.html，由 vue-router 處理
     location / {
+        limit_req zone=static_limit burst=60 nodelay;
         try_files $uri $uri/ /index.html;
     }
 }
