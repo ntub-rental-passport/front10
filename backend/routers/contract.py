@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 import requests
@@ -25,14 +25,36 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 # 📦 Pydantic 資料模型 (對齊前端分析頁面 request/response)
 # ========================================================
 
+# 輸入長度上限：這些文字會被整個拼進 LLM prompt 送往 Ollama。
+# 不設限的話，登入者可送超長字串讓 Ollama 吃光 CPU/記憶體造成阻斷式服務（DoS）。
+# 一份租賃合約 OCR 後約數千字，5 萬字元已是寬鬆上限。
+MAX_OCR_TEXT_LEN = 50_000      # 整份合約全文
+MAX_PAGE_TEXT_LEN = 20_000     # 單頁文字
+MAX_PAGE_COUNT = 50            # 合約頁數上限
+MAX_CHAT_MESSAGE_LEN = 2_000   # 單則對話訊息
+MAX_CONTRACT_TEXT_LEN = 50_000 # 對話時附帶的合約全文
+
+
 class AnalyzeRequest(BaseModel):
-    ocr_text: str
-    page_texts: Optional[List[str]] = []
+    # max_length：超過長度 FastAPI 直接回 422，請求進不到業務邏輯
+    ocr_text: str = Field(max_length=MAX_OCR_TEXT_LEN)
+    page_texts: Optional[List[str]] = Field(default=[], max_length=MAX_PAGE_COUNT)
     field_reviews: Optional[Dict[str, Any]] = {}
 
+    @field_validator("page_texts")
+    @classmethod
+    def _limit_each_page_length(cls, pages: Optional[List[str]]) -> Optional[List[str]]:
+        # Field 的 max_length 只限制「陣列長度（頁數）」，管不到「每頁字串長度」，
+        # 否則單頁塞爆仍可繞過。這裡逐頁檢查。
+        if pages:
+            for i, page in enumerate(pages):
+                if len(page) > MAX_PAGE_TEXT_LEN:
+                    raise ValueError(f"第 {i + 1} 頁文字超過長度上限 {MAX_PAGE_TEXT_LEN} 字元")
+        return pages
+
 class ChatRequest(BaseModel):
-    message: str
-    contract_text: Optional[str] = ""
+    message: str = Field(max_length=MAX_CHAT_MESSAGE_LEN)
+    contract_text: Optional[str] = Field(default="", max_length=MAX_CONTRACT_TEXT_LEN)
     active_risk: Optional[Dict[str, Any]] = None
 
 
