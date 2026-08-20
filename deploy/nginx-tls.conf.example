@@ -173,7 +173,16 @@ server {
         access_log off;
     }
 
-    # SPA fallback：非 API 路徑一律回 index.html，由 vue-router 處理
+    # 建置產生的靜態資源：找不到就回 404，不落入 SPA fallback。
+    # 原本 /assets/ 下不存在的路徑會回 index.html(200)，讓 ZAP 誤判為
+    # 「備份檔洩漏」(Backup File Disclosure)。真實的 .js/.css 有雜湊檔名，
+    # 不存在即應為 404，這也符合「靜態資源不該 fallback 成 HTML」的最佳實踐。
+    location /assets/ {
+        limit_req zone=static_limit burst=60 nodelay;
+        try_files $uri =404;
+    }
+
+    # SPA fallback：非 API、非靜態資源的路徑回 index.html，由 vue-router 處理
     location / {
         limit_req zone=static_limit burst=60 nodelay;
         try_files $uri $uri/ /index.html;
