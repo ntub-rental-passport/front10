@@ -173,11 +173,11 @@ server {
         access_log off;
     }
 
-    # 建置產生的靜態資源：找不到就回 404，不落入 SPA fallback。
-    # 原本 /assets/ 下不存在的路徑會回 index.html(200)，讓 ZAP 誤判為
-    # 「備份檔洩漏」(Backup File Disclosure)。真實的 .js/.css 有雜湊檔名，
-    # 不存在即應為 404，這也符合「靜態資源不該 fallback 成 HTML」的最佳實踐。
-    location /assets/ {
+    # 帶靜態資源副檔名的請求：找不到就回 404，不落入 SPA fallback。
+    # 原本任何不存在路徑都回 index.html(200)，讓 ZAP 對猜測的備份路徑
+    # （如 /assets - Copy/index.js）誤判為「備份檔洩漏」。真正的 SPA 路由不帶副檔名，
+    # 帶副檔名者一律視為靜態資源請求，不存在即 404，符合最佳實踐也消除假陽性。
+    location ~* \.(js|mjs|css|map|json|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot)$ {
         limit_req zone=static_limit burst=60 nodelay;
         try_files $uri =404;
     }
