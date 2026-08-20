@@ -173,11 +173,15 @@ server {
         access_log off;
     }
 
-    # 帶靜態資源副檔名的請求：找不到就回 404，不落入 SPA fallback。
-    # 原本任何不存在路徑都回 index.html(200)，讓 ZAP 對猜測的備份路徑
-    # （如 /assets - Copy/index.js）誤判為「備份檔洩漏」。真正的 SPA 路由不帶副檔名，
-    # 帶副檔名者一律視為靜態資源請求，不存在即 404，符合最佳實踐也消除假陽性。
-    location ~* \.(js|mjs|css|map|json|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot)$ {
+    # 任何「帶副檔名」的請求：檔案不存在即回 404，不落入 SPA fallback。
+    #
+    # 為何用通用規則而非列舉副檔名：原先列舉 js/css/png 等，ZAP 便改猜 .txt / .jar
+    #（如 /robots.jar、/Copy (2) of robots.txt），列舉永遠追不上猜測，形同打地鼠。
+    # 根因是 SPA fallback 對任何不存在路徑都回 index.html(200)，掃描器據此判定「檔案存在」。
+    #
+    # 安全性：真正的 SPA 路由一律不帶副檔名（/login、/contract），故不受影響；
+    # 實際存在的檔案（bundle、favicon、robots.txt、隱私權政策 PDF）由 try_files 正常提供。
+    location ~ "\.[A-Za-z0-9]{1,8}$" {
         limit_req zone=static_limit burst=60 nodelay;
         try_files $uri =404;
     }
