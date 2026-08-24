@@ -4,6 +4,7 @@ import {
   pendingMonitor,
   type MonitorReading,
 } from '@/src/utils/admin-monitoring'
+import { adminSettings } from './useAdminSettings'
 
 /**
  * 健康檢查打的是**後端自己的根路徑**，不是前端的。
@@ -31,6 +32,8 @@ function resolveHealthUrl(): string {
 const HEALTH_URL = resolveHealthUrl()
 
 const POLL_INTERVAL_MS = 30_000
+// 系統設定的 responseOkMs／responseDegradedMs 依此門檻分級回應時間；
+// 超過這個逾時就直接判定失敗、量不到數字，因此那兩個門檻設超過 5000 沒有意義。
 const TIMEOUT_MS = 5_000
 
 /**
@@ -74,7 +77,14 @@ export function useSystemHealth() {
 
   /** 已接上的監控項 */
   function liveMonitors(): MonitorReading[] {
-    return [backendMonitor(responseMs.value, checkedAt.value)]
+    return [
+      backendMonitor(
+        responseMs.value,
+        checkedAt.value,
+        adminSettings.value.responseOkMs,
+        adminSettings.value.responseDegradedMs,
+      ),
+    ]
   }
 
   /**

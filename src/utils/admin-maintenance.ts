@@ -29,8 +29,33 @@ export const maintenanceStatusLabels: Record<MaintenanceStatus, string> = {
   closed: '已關閉',
 }
 
-/** 通報房東後超過幾天未獲回應視為逾期 */
-export const overdueThresholdDays = 7
+/**
+ * 判斷一張工單「現在」是否該被系統自動標記為逾期未回應。
+ *
+ * 條件：狀態仍是 notified（已通報房東但房東還沒回應——in_progress 代表已經回應了，
+ * 不算「未獲回應」）、notifiedAt 有值，且自 notifiedAt 起算的經過天數嚴格大於門檻。
+ * 門檻由設定頁提供，這裡只收數字，不認識 SystemSettings 或 collection ——
+ * 呼叫端（useAdminMaintenance）自己讀設定、把天數傳進來，這個檔案才能維持純邏輯可測試。
+ * 門檻 <= 0 視為停用自動轉換。
+ *
+ * 這個函式同時是「該不該轉成 overdue」與「畫面上該不該提示」的唯一依據——
+ * 原本另外有一個只影響顯示、以 createdAt 為基準的 isAgingPastOverdueThreshold，
+ * 兩者語意重疊卻用不同時間基準，容易兜不起來，因此整併成這一個。
+ * 已經是 overdue／in_progress／disputed／completed／closed 的工單，狀態本身
+ * 已經不是 notified，天然就會被第一個條件擋掉，不需要額外的排除清單。
+ */
+export function shouldAutoMarkOverdue(
+  status: MaintenanceStatus,
+  notifiedAt: string | null,
+  thresholdDays: number,
+  now = new Date(),
+): boolean {
+  if (status !== 'notified') return false
+  if (notifiedAt === null) return false
+  if (!Number.isFinite(thresholdDays) || thresholdDays <= 0) return false
+
+  return elapsedDays(notifiedAt, now) > thresholdDays
+}
 
 /**
  * 合法的狀態轉換。

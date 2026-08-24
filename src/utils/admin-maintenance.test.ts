@@ -9,6 +9,7 @@ import {
   maintenanceStatusLabels,
   maintenanceTransitions,
   migrateMaintenanceQueueFlags,
+  shouldAutoMarkOverdue,
   type AdminQueueTicket,
   type MaintenanceStatus,
 } from './admin-maintenance'
@@ -115,6 +116,47 @@ describe('adminQueueReason', () => {
     expect(
       adminQueueReason(ticketOf({ interventionRequested: true, manuallyQueued: true })),
     ).toBe('intervention_requested')
+  })
+})
+
+describe('shouldAutoMarkOverdue', () => {
+  const now = new Date('2026-08-10T09:00:00')
+
+  it('已通報但超過門檻天數應自動轉為逾期', () => {
+    expect(shouldAutoMarkOverdue('notified', '2026-08-02T09:00:00', 7, now)).toBe(true)
+  })
+
+  it('恰好等於門檻天數不轉換（要嚴格大於）', () => {
+    expect(shouldAutoMarkOverdue('notified', '2026-08-03T09:00:00', 7, now)).toBe(false)
+  })
+
+  it('未超過門檻天數不轉換', () => {
+    expect(shouldAutoMarkOverdue('notified', '2026-08-08T09:00:00', 7, now)).toBe(false)
+  })
+
+  it('in_progress 代表房東已回應，即使天數再多也不轉換', () => {
+    expect(shouldAutoMarkOverdue('in_progress', '2026-01-01T00:00:00', 7, now)).toBe(false)
+  })
+
+  it('submitted、disputed、overdue、completed、closed 皆不轉換', () => {
+    const statuses: MaintenanceStatus[] = ['submitted', 'disputed', 'overdue', 'completed', 'closed']
+    for (const status of statuses) {
+      expect(shouldAutoMarkOverdue(status, '2026-01-01T00:00:00', 7, now)).toBe(false)
+    }
+  })
+
+  it('notifiedAt 為 null 不轉換', () => {
+    expect(shouldAutoMarkOverdue('notified', null, 7, now)).toBe(false)
+  })
+
+  it('門檻為 0 或負數視為停用自動轉換', () => {
+    expect(shouldAutoMarkOverdue('notified', '2026-01-01T00:00:00', 0, now)).toBe(false)
+    expect(shouldAutoMarkOverdue('notified', '2026-01-01T00:00:00', -1, now)).toBe(false)
+  })
+
+  it('壞掉的時間字串不會拋出例外，且視為未超過門檻', () => {
+    expect(() => shouldAutoMarkOverdue('notified', 'not-a-date', 7, now)).not.toThrow()
+    expect(shouldAutoMarkOverdue('notified', 'not-a-date', 7, now)).toBe(false)
   })
 })
 

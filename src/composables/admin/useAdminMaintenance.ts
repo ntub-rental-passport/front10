@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
 import { adminUsersCollection } from './useAdminUsers'
+import { adminSettings } from './useAdminSettings'
 import { seedMaintenanceTickets, type MaintenanceTicket } from '@/src/mocks/admin-seed'
 import { ADMIN_DATASET_VERSION, discardLegacy } from '@/src/utils/admin-collection-migrate'
 import { userDisplayName } from '@/src/utils/admin-user-directory'
@@ -11,6 +12,7 @@ import {
   isInAdminQueue,
   maintenanceStatusLabels,
   migrateMaintenanceQueueFlags,
+  shouldAutoMarkOverdue,
   type MaintenanceCategory,
   type MaintenanceStatus,
 } from '@/src/utils/admin-maintenance'
@@ -93,9 +95,62 @@ export interface MaintenanceStats {
   byCategory: Record<MaintenanceCategory, number>
 }
 
+/**
+ * 掃一次 tickets，把符合門檻的 notified 工單真的轉成 overdue，並寫入 timeline 與稽核紀錄。
+ *
+ * 執行時機：在 useAdminMaintenance() 初始化時呼叫一次（每次有元件掛載並呼叫這個
+ * composable 時跑一輪），刻意不放進 computed 或 watchEffect ——
+ * ticketViews 是 computed，如果在它的 getter 裡順手把符合條件的工單改成 overdue，
+ * 等於在計算 tickets.value 的過程中又寫回 tickets.value，
+ * 這個 computed 依賴的來源被自己的計算過程弄髒，下一次任何人存取 ticketViews.value
+ * 都會重新觸發、再檢查一次「該轉換嗎」，形成讀取觸發寫入、寫入又觸發下一輪讀取的
+ * 反應式迴圈。改成呼叫 useAdminMaintenance() 時同步跑一次的一般函式，
+ * 不建立任何反應式相依，就不會有這個問題。
+ *
+ * 冪等性：shouldAutoMarkOverdue 只會放行「目前仍是 notified 且超過門檻」的工單。
+ * 一轉成 overdue，狀態就不再是 notified，之後不管同一個分頁重新掛載元件、
+ * 還是別的分頁呼叫 useAdminMaintenance()，這張工單都會被 shouldAutoMarkOverdue
+ * 擋掉，不會重複 push timeline 事件，也不會重複呼叫 logAction。
+ */
+function applyAutoOverdueTransitions(logAction: ReturnType<typeof useAdminAudit>['logAction']): void {
+  const now = new Date()
+  for (const ticket of tickets.value) {
+    if (
+      !shouldAutoMarkOverdue(
+        ticket.status,
+        ticket.notifiedAt,
+        adminSettings.value.maintenanceOverdueDays,
+        now,
+      )
+    ) {
+      continue
+    }
+
+    const previous = ticket.status
+    ticket.status = 'overdue'
+    ticket.timeline.push({
+      at: now.toISOString(),
+      actor: 'system',
+      from: previous,
+      to: 'overdue',
+      note: '超過設定頁的逾期門檻仍未獲房東回應，系統自動標記為逾期',
+    })
+
+    logAction(
+      '報修工單',
+      ticket.id,
+      `狀態由「${maintenanceStatusLabels[previous]}」自動變更為「${maintenanceStatusLabels.overdue}」（系統依逾期門檻判定）`,
+    )
+  }
+}
+
 export function useAdminMaintenance() {
   const { logAction } = useAdminAudit()
   const error = ref('')
+
+  // 讀取工單前先讓系統把逾期未回應的工單真的轉成 overdue 狀態，
+  // 這樣底下的 ticketViews／isInAdminQueue／adminQueueReason 才看得到最新狀態。
+  applyAutoOverdueTransitions(logAction)
 
   // 預設落在待處理佇列 —— 管理員打開這頁該先看到自己要處理的事，不是全部工單
   const statusTab = ref<MaintenanceStatusTab>('queue')
