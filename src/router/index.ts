@@ -57,6 +57,7 @@ const router = createRouter({
         // 押金退還已併入使用者詳情，保留舊路徑避免既有書籤與稽核紀錄連結 404
         { path: 'deposits', redirect: '/admin/users' },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
+        { path: 'notification-center', component: () => import('@/src/pages/admin/notification-center.vue') },
         { path: 'notifications', component: () => import('@/src/pages/admin/notifications.vue') },
         { path: 'notifications/:batchId', component: () => import('@/src/pages/admin/notifications-detail.vue') },
         { path: 'monitoring', component: () => import('@/src/pages/admin/monitoring.vue') },

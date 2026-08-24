@@ -2,6 +2,14 @@ import { daysAgo } from './helpers'
 
 export type NotifChannel = 'inapp' | 'email' | 'push'
 export type NotifCategory = '系統' | '租約' | '補貼' | '帳務'
+export type NotifSourceType = 'system' | 'landlord' | 'admin' | 'roommate'
+
+export const notifSourceLabels: Record<NotifSourceType, string> = {
+  system: '系統',
+  landlord: '房東',
+  admin: '管理員',
+  roommate: '室友',
+}
 
 export interface NotifTemplate {
   id: string
@@ -26,12 +34,18 @@ export interface UserNotification {
   category: NotifCategory
   channels: NotifChannel[]
   deliveryStatus: Partial<Record<NotifChannel, NotifDeliveryStatus>>
-  /** 同一次發送共用，發送紀錄以此聚合成批次 */
+  /** 同一次發送共用，發送紀錄以此聯合成批次 */
   batchId: string
   /** 當初挑選的收件人條件（全部使用者／全部租客／指定使用者），純顯示用 */
   recipientLabel: string
   /** 這次發送的來源：套用模板時存模板名稱，自由撰寫時存「一次性撰寫」，只在批次詳情頁顯示 */
   sourceLabel: string
+  /** 通知來源類型，用於通知中心的來源 badge */
+  sourceType?: NotifSourceType
+  /** 可選的操作連結，通知中心顯示為按鈕 */
+  actionUrl?: string
+  /** 操作按鈕文字，搭配 actionUrl 使用 */
+  actionLabel?: string
   createdAt: string
   read: boolean
 }
@@ -104,7 +118,44 @@ export function seedUserNotifications(): UserNotification[] {
       category: '帳務',
       channels: ['inapp', 'email', 'push'],
       deliveryStatus: { inapp: 'sent', email: 'pending', push: 'pending' },
+      sourceType: 'landlord',
+      actionUrl: '/app/billing',
+      actionLabel: '查看帳單',
       createdAt: daysAgo(1),
+      read: false,
+    },
+    {
+      id: 'nm-5',
+      batchId: 'nb-5',
+      recipientLabel: '指定使用者',
+      sourceLabel: '',
+      userEmail: 'amy.wang@example.com',
+      title: '報修工單已受理',
+      body: '您提報的「廚房水龍頭漏水」工單已受理，房東預計於三個工作天內安排維修。',
+      category: '租約',
+      channels: ['inapp'],
+      deliveryStatus: { inapp: 'sent' },
+      sourceType: 'landlord',
+      actionUrl: '/app/maintenance',
+      actionLabel: '查看工單',
+      createdAt: daysAgo(2),
+      read: false,
+    },
+    {
+      id: 'nm-6',
+      batchId: 'nb-6',
+      recipientLabel: '指定使用者',
+      sourceLabel: '',
+      userEmail: 'amy.wang@example.com',
+      title: '請補傳租賃合約影本',
+      body: '您的補貼申請尚缺租賃合約影本，請於 7 日內上傳，逾期將暫停審核。',
+      category: '補貼',
+      channels: ['inapp', 'email'],
+      deliveryStatus: { inapp: 'sent', email: 'pending' },
+      sourceType: 'admin',
+      actionUrl: '/app/subsidy',
+      actionLabel: '前往補件',
+      createdAt: daysAgo(3),
       read: false,
     },
     {
@@ -118,8 +169,24 @@ export function seedUserNotifications(): UserNotification[] {
       category: '補貼',
       channels: ['inapp', 'push'],
       deliveryStatus: { inapp: 'sent', push: 'pending' },
+      sourceType: 'admin',
       createdAt: daysAgo(4),
       read: false,
+    },
+    {
+      id: 'nm-7',
+      batchId: 'nb-7',
+      recipientLabel: '指定使用者',
+      sourceLabel: '',
+      userEmail: 'amy.wang@example.com',
+      title: '室友已繳納本月公共費用',
+      body: '您的室友 林小美 已繳納本月公共電費分攤 $680，目前所有室友均已繳清。',
+      category: '帳務',
+      channels: ['inapp'],
+      deliveryStatus: { inapp: 'sent' },
+      sourceType: 'roommate',
+      createdAt: daysAgo(5),
+      read: true,
     },
     {
       id: 'nm-3',
@@ -132,7 +199,23 @@ export function seedUserNotifications(): UserNotification[] {
       category: '租約',
       channels: ['inapp', 'email'],
       deliveryStatus: { inapp: 'sent', email: 'pending' },
+      sourceType: 'landlord',
       createdAt: daysAgo(12),
+      read: true,
+    },
+    {
+      id: 'nm-8',
+      batchId: 'nb-8',
+      recipientLabel: '指定使用者',
+      sourceLabel: '',
+      userEmail: 'amy.wang@example.com',
+      title: '新室友入住通知',
+      body: '您的房間（台北市中正區杭州南路一段 88 號 6 樓）將有新室友 陳大明 於 9/1 入住，請多多照顧。',
+      category: '租約',
+      channels: ['inapp'],
+      deliveryStatus: { inapp: 'sent' },
+      sourceType: 'roommate',
+      createdAt: daysAgo(15),
       read: true,
     },
     {
@@ -146,6 +229,9 @@ export function seedUserNotifications(): UserNotification[] {
       category: '系統',
       channels: ['inapp'],
       deliveryStatus: { inapp: 'sent' },
+      sourceType: 'system',
+      actionUrl: '/app/contracts',
+      actionLabel: '查看結果',
       createdAt: daysAgo(25),
       read: true,
     },
