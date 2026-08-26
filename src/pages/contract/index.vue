@@ -1,0 +1,934 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Badge } from '@/components/ui/badge/index'
+import { Button } from '@/components/ui/button/index'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card/index'
+import { Progress } from '@/components/ui/progress/index'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
+import { useRouter } from 'vue-router'
+import {
+  clearContractOcrResult,
+  normalizeContractOcrResult,
+  saveContractOcrResult,
+  type ContractAiReviewJob,
+  type ContractOcrResult,
+} from '@/src/utils/contract-ocr'
+import {
+  AlertTriangle,
+  ArrowRight,
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  CircleHelp,
+  Ellipsis,
+  FileCheck2,
+  FileSearch,
+  FileText,
+  Globe,
+  ImageIcon,
+  Languages,
+  LockKeyhole,
+  PenLine,
+  Plus,
+  RefreshCcw,
+  Scale,
+  ShieldCheck,
+  Trash2,
+  Upload,
+  WandSparkles,
+  X,
+  Zap,
+} from 'lucide-vue-next'
+
+const router = useRouter()
+
+type FilePickerMode = 'replace' | 'append'
+
+const fileInput = ref<HTMLInputElement | null>(null)
+const fileActionsMenu = ref<HTMLDetailsElement | null>(null)
+const selectedFiles = ref<File[]>([])
+const filePickerMode = ref<FilePickerMode>('replace')
+const isUploading = ref(false)
+const isDragOver = ref(false)
+const uploadProgress = ref(0)
+const uploadStatus = ref('尚未選擇檔案')
+const uploadError = ref('')
+const copySuccess = ref(false)
+const activeTab = ref('preview')
+const ocrResult = ref<ContractOcrResult | null>(null)
+
+const defaultLanguageHints = ['zh-TW', 'en']
+const maxFileSize = 20 * 1024 * 1024
+const maxTotalSize = 80 * 1024 * 1024
+const maxFileCount = 20
+const contractFileNameCollator = new Intl.Collator('zh-Hant-TW', {
+  numeric: true,
+  sensitivity: 'base',
+})
+const supportedExtensions = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif']
+const supportedMimeTypes = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/bmp',
+  'image/tiff',
+]
+
+const usageSteps = [
+  '上傳租賃契約圖片或 PDF 檔案',
+  '確認檔名與上傳順序後開始辨識',
+  '系統將契約轉換為可分析文字',
+  '逐頁校對 OCR 內容並進入條款風險分析',
+]
+
+const faqItems = [
+  {
+    question: '哪些檔案格式可以上傳？',
+    answer:
+      '支援單一 PDF，或一次最多 20 張 PNG、JPG、JPEG、WEBP、BMP、TIFF 圖片。單檔上限 20MB、全部檔案合計 80MB；MP4、MP3 與其他格式都會被拒絕。',
+  },
+  {
+    question: '上傳後會立刻進行 OCR 嗎？',
+    answer: '不會。選擇檔案後，你仍可檢查檔名與順序，按下「開始 OCR 辨識」後才會送出檔案。',
+  },
+  {
+    question: '上傳的照片會儲存在哪裡？',
+    answer:
+      '目前原始圖片與 PDF 只會在 OCR 伺服器記憶體中暫存，辨識請求結束後不會寫入本機磁碟、資料庫或 Google Cloud Storage；瀏覽器只暫存 OCR 文字結果。',
+  },
+  {
+    question: '辨識結果可以做什麼？',
+    answer:
+      'OCR 結果可供你預覽、複製與進入契約編輯，後續也能銜接條文切段、租賃法規比對、風險標註與 AI 溝通建議。',
+  },
+  {
+    question: '可以辨識手寫文字嗎？',
+    answer:
+      '系統可嘗試辨識掃描文件中的手寫內容，但實際結果仍會受到字跡、光線、傾斜與影像清晰度影響。重要欄位請在辨識後再次確認。',
+  },
+]
+
+const benefits = [
+  {
+    icon: Scale,
+    title: '租賃情境導向',
+    description: '辨識後可直接銜接押金、修繕、電費與終止條款等租約風險分析。',
+  },
+  {
+    icon: Languages,
+    title: '繁中優先',
+    description: '預設以繁體中文與英文作為語言提示，更貼近台灣租賃契約內容。',
+  },
+  {
+    icon: LockKeyhole,
+    title: '原始檔不留存',
+    description: '檔案只在 OCR 處理期間暫存於伺服器記憶體，不會寫入磁碟或雲端儲存空間。',
+  },
+  {
+    icon: WandSparkles,
+    title: '銜接 AI 解析',
+    description: 'OCR 文字可繼續進行條款切段、白話說明、法源比對與談判建議。',
+  },
+]
+
+const uploadButtonLabel = computed(() => (selectedFiles.value.length ? '重新選擇' : '選擇檔案'))
+
+const startButtonLabel = computed(() => {
+  if (isUploading.value) return 'OCR 辨識中...'
+  return '開始 OCR 辨識'
+})
+
+const canAnalyze = computed(() => Boolean(ocrResult.value?.text))
+const canStartRecognition = computed(() => selectedFiles.value.length > 0 && !isUploading.value)
+const selectedTotalSize = computed(() =>
+  selectedFiles.value.reduce((total, file) => total + file.size, 0),
+)
+const selectedFileNames = computed(() => selectedFiles.value.map((file) => file.name).join('、'))
+const canAppendFiles = computed(
+  () =>
+    selectedFiles.value.length < maxFileCount &&
+    !selectedFiles.value.some((file) => file.name.toLowerCase().endsWith('.pdf')),
+)
+
+function formatFileSize(size: number): string {
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
+  return `${(size / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function openFilePicker(mode: FilePickerMode = 'replace'): void {
+  filePickerMode.value = mode
+  fileInput.value?.click()
+}
+
+function resetOcrState(keepFile = true): void {
+  clearContractOcrResult()
+  ocrResult.value = null
+  uploadError.value = ''
+  uploadProgress.value = 0
+  uploadStatus.value =
+    keepFile && selectedFiles.value.length ? '檔案已就緒，可以開始辨識' : '尚未選擇檔案'
+  copySuccess.value = false
+}
+
+function removeSelectedFile(index: number): void {
+  selectedFiles.value = selectedFiles.value.filter((_, fileIndex) => fileIndex !== index)
+  resetOcrState(selectedFiles.value.length > 0)
+}
+
+function closeFileActionsMenu(): void {
+  if (fileActionsMenu.value) fileActionsMenu.value.open = false
+}
+
+function replaceAllFiles(): void {
+  closeFileActionsMenu()
+  openFilePicker('replace')
+}
+
+function clearAllFiles(): void {
+  selectedFiles.value = []
+  if (fileInput.value) fileInput.value.value = ''
+  closeFileActionsMenu()
+  resetOcrState(false)
+}
+
+function onFileActionsFocusOut(event: FocusEvent): void {
+  const nextTarget = event.relatedTarget
+  if (!(nextTarget instanceof Node) || !fileActionsMenu.value?.contains(nextTarget)) {
+    closeFileActionsMenu()
+  }
+}
+
+function validateFiles(files: File[]): string | null {
+  if (!files.length) return '請至少選擇一個檔案。'
+  if (files.length > maxFileCount) return `一次最多上傳 ${maxFileCount} 張圖片。`
+
+  const pdfFiles = files.filter((file) => file.name.toLowerCase().endsWith('.pdf'))
+  if (pdfFiles.length && files.length > 1) {
+    return 'PDF 請單獨上傳；多檔上傳僅支援契約圖片。'
+  }
+
+  for (const file of files) {
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
+
+    if (
+      extension === 'mp4' ||
+      extension === 'mp3' ||
+      file.type.startsWith('video/') ||
+      file.type.startsWith('audio/')
+    ) {
+      return '禁止上傳 MP4 影片或 MP3 音樂檔案。'
+    }
+
+    if (
+      !supportedExtensions.includes(extension) ||
+      (file.type && !supportedMimeTypes.includes(file.type))
+    ) {
+      return `「${file.name}」格式不支援，請上傳 PDF、PNG、JPG、WEBP、BMP 或 TIFF。`
+    }
+
+    if (file.size > maxFileSize) {
+      return `「${file.name}」超過單檔 20MB 上限，請壓縮後再試。`
+    }
+  }
+
+  const totalSize = files.reduce((total, file) => total + file.size, 0)
+  if (totalSize > maxTotalSize) return '全部檔案合計不可超過 80MB。'
+
+  return null
+}
+
+function sortContractFiles(files: File[]): File[] {
+  return [...files].sort((firstFile, secondFile) =>
+    contractFileNameCollator.compare(firstFile.name, secondFile.name),
+  )
+}
+
+function prepareFiles(files: File[], preserveExistingOnError = false): void {
+  const validationError = validateFiles(files)
+
+  if (validationError) {
+    if (!preserveExistingOnError) selectedFiles.value = []
+    uploadError.value = validationError
+    uploadStatus.value = '檔案無法使用'
+    uploadProgress.value = 0
+    return
+  }
+
+  selectedFiles.value = sortContractFiles(files)
+  resetOcrState(true)
+}
+
+function appendFiles(files: File[]): void {
+  const existingFileKeys = new Set(
+    selectedFiles.value.map((file) => `${file.name}-${file.size}-${file.lastModified}`),
+  )
+  const newFiles = files.filter(
+    (file) => !existingFileKeys.has(`${file.name}-${file.size}-${file.lastModified}`),
+  )
+
+  if (!newFiles.length) {
+    uploadError.value = '選取的檔案已經在清單中。'
+    uploadStatus.value = '沒有新增檔案'
+    return
+  }
+
+  prepareFiles([...selectedFiles.value, ...newFiles], true)
+}
+
+async function copyRecognizedText(): Promise<void> {
+  if (!ocrResult.value?.text) return
+
+  await navigator.clipboard.writeText(ocrResult.value.text)
+  copySuccess.value = true
+  window.setTimeout(() => {
+    copySuccess.value = false
+  }, 1800)
+}
+
+type OcrStreamEvent =
+  | { type: 'progress'; progress: number; status: string }
+  | { type: 'result'; progress: 100; status: string; result: Partial<ContractOcrResult> }
+  | { type: 'error'; error: string }
+
+async function readOcrResponse(response: Response): Promise<Partial<ContractOcrResult>> {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/x-ndjson') || !response.body) {
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(payload?.error || 'OCR 服務發生錯誤，請稍後再試。')
+    return payload as Partial<ContractOcrResult>
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result: Partial<ContractOcrResult> | null = null
+  let streamError = ''
+
+  function processLine(line: string): void {
+    if (!line.trim()) return
+    const event = JSON.parse(line) as OcrStreamEvent
+
+    if (event.type === 'progress') {
+      uploadProgress.value = Math.max(uploadProgress.value, event.progress)
+      uploadStatus.value = event.status
+    } else if (event.type === 'result') {
+      uploadProgress.value = event.progress
+      uploadStatus.value = event.status
+      result = event.result
+    } else if (event.type === 'error') {
+      streamError = event.error
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    lines.forEach(processLine)
+    if (done) break
+  }
+
+  processLine(buffer)
+  if (streamError) throw new Error(streamError)
+  if (!result) throw new Error('OCR 串流回應未包含辨識結果，請重新嘗試。')
+  return result
+}
+
+async function sendToOcr(files: File[]): Promise<void> {
+  uploadError.value = ''
+  ocrResult.value = null
+  copySuccess.value = false
+  isUploading.value = true
+  uploadProgress.value = 0
+  uploadStatus.value = '正在上傳檔案'
+
+  const formData = new FormData()
+  files.forEach((file) => formData.append('files', file))
+  formData.append('languageHints', JSON.stringify(defaultLanguageHints))
+  formData.append('progressStream', 'ndjson')
+
+  try {
+    const response = await fetch('/api/ocr', {
+      method: 'POST',
+      body: formData,
+    })
+    const payload = await readOcrResponse(response)
+    const result = normalizeContractOcrResult(payload as Partial<ContractOcrResult>)
+    if (!result) {
+      throw new Error('OCR 回傳資料缺少可用的逐頁文字，請重新辨識文件。')
+    }
+
+    // 瀏覽器的 File.name 保留使用者選取時的正確 Unicode 檔名。
+    result.fileName = files.map((file) => file.name).join('、')
+
+    ocrResult.value = result
+    uploadStatus.value =
+      result.aiReview?.status === 'pending'
+        ? '分級 OCR 完成，規則結果已可使用；低信心欄位正在背景複核'
+        : '分級 OCR 完成，可以檢視契約文字與規則抽取結果'
+    saveContractOcrResult(result)
+    activeTab.value = 'preview'
+    if (result.aiReview?.status === 'pending' && result.aiReview.jobId) {
+      void pollAiReview(result.aiReview.jobId)
+    }
+  } catch (error) {
+    uploadError.value = error instanceof Error ? error.message : 'OCR 服務發生未知錯誤。'
+    uploadStatus.value = '辨識失敗，請確認檔案後重新嘗試'
+  } finally {
+    isUploading.value = false
+  }
+}
+
+function waitFor(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
+function formatProcessingTime(milliseconds: number | undefined): string {
+  const value = Number(milliseconds) || 0
+  return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} 秒`
+}
+
+async function pollAiReview(jobId: string): Promise<void> {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await waitFor(3000)
+    if (ocrResult.value?.aiReview?.jobId !== jobId) return
+
+    try {
+      const response = await fetch(`/api/ocr/review/${encodeURIComponent(jobId)}`)
+      if (!response.ok) {
+        if (response.status === 404) return
+        continue
+      }
+
+      const reviewJob = (await response.json()) as ContractAiReviewJob
+      if (reviewJob.status === 'pending') continue
+      const currentResult = ocrResult.value
+      if (!currentResult || currentResult.aiReview?.jobId !== jobId) return
+
+      currentResult.fieldReviews = {
+        ...currentResult.fieldReviews,
+        ...Object.fromEntries(
+          Object.entries(reviewJob.fieldReviews ?? {}).map(([fieldId, review]) => [
+            fieldId,
+            {
+              ...currentResult.fieldReviews?.[fieldId],
+              ...review,
+              reviewSource: 'ai' as const,
+            },
+          ]),
+        ),
+      }
+      currentResult.cropRegions = reviewJob.cropRegions ?? []
+      currentResult.warnings = [
+        ...new Set([...(currentResult.warnings ?? []), ...(reviewJob.warnings ?? [])]),
+      ]
+      currentResult.timings = {
+        googleVisionMs: currentResult.timings?.googleVisionMs ?? 0,
+        normalizationMs: currentResult.timings?.normalizationMs ?? 0,
+        ruleExtractionMs: currentResult.timings?.ruleExtractionMs ?? 0,
+        cropGenerationMs: reviewJob.timings?.cropGenerationMs ?? 0,
+        ollamaMs: reviewJob.timings?.ollamaMs ?? 0,
+      }
+      currentResult.aiReview = {
+        ...currentResult.aiReview,
+        status: reviewJob.status,
+        model: reviewJob.model,
+        fieldCount: Object.keys(reviewJob.fieldReviews ?? {}).length,
+        cropCount: reviewJob.cropCount,
+        mode: reviewJob.mode,
+        durationMs: reviewJob.durationMs,
+        performanceMetrics: reviewJob.performanceMetrics,
+      }
+      uploadStatus.value =
+        reviewJob.status === 'completed'
+          ? '背景 AI 複核完成，已更新需要校對的欄位'
+          : '背景 AI 複核未完成，規則式欄位結果仍可正常使用'
+      saveContractOcrResult(currentResult)
+      return
+    } catch {
+      // 暫時性網路錯誤由下一輪輪詢重試，不阻塞規則式 OCR 結果。
+    }
+  }
+}
+
+async function startOcrRecognition(): Promise<void> {
+  if (!selectedFiles.value.length || isUploading.value) return
+  await sendToOcr(selectedFiles.value)
+}
+
+async function enterContractEditor(): Promise<void> {
+  if (!ocrResult.value?.text) return
+
+  if (!saveContractOcrResult(ocrResult.value)) {
+    uploadError.value = '無法暫存 OCR 結果，請確認瀏覽器允許工作階段儲存後再試。'
+    return
+  }
+
+  await router.push('/app/contract/editor')
+}
+
+function onFileChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+
+  if (!files.length) return
+  if (filePickerMode.value === 'append') appendFiles(files)
+  else prepareFiles(files)
+
+  filePickerMode.value = 'replace'
+  input.value = ''
+}
+
+function onDrop(event: DragEvent): void {
+  event.preventDefault()
+  isDragOver.value = false
+
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (!files.length) return
+
+  if (selectedFiles.value.length) appendFiles(files)
+  else prepareFiles(files)
+}
+
+function onDragOver(event: DragEvent): void {
+  event.preventDefault()
+  isDragOver.value = true
+}
+
+function onDragLeave(): void {
+  isDragOver.value = false
+}
+</script>
+
+<template>
+  <div class="contract-index-page">
+    <header class="contract-hero">
+      <div class="hero-copy">
+        <div class="hero-icon" aria-hidden="true">
+          <FileSearch />
+        </div>
+        <div>
+          <p class="eyebrow">AI CONTRACT REVIEW</p>
+          <h1>契約分析</h1>
+        </div>
+      </div>
+      <div class="hero-trust-badge">
+        <ShieldCheck />
+        <span>辨識前可先確認檔案</span>
+      </div>
+    </header>
+
+    <section class="capability-grid" aria-label="OCR 支援能力">
+      <article class="capability-card">
+        <div class="capability-icon capability-icon--image"><ImageIcon /></div>
+        <div>
+          <h2>圖片辨識</h2>
+          <p>PNG / JPG / WEBP</p>
+        </div>
+      </article>
+
+      <article class="capability-card">
+        <div class="capability-icon capability-icon--pdf"><FileText /></div>
+        <div>
+          <h2>PDF 支援</h2>
+          <p>多頁文件辨識</p>
+        </div>
+      </article>
+
+      <article class="capability-card">
+        <div class="capability-icon capability-icon--language"><Globe /></div>
+        <div>
+          <h2>多語言</h2>
+          <p>繁中 / 簡中 / 日文 / 英文</p>
+        </div>
+      </article>
+
+      <article class="capability-card">
+        <div class="capability-icon capability-icon--handwriting"><PenLine /></div>
+        <div>
+          <h2>手寫辨識</h2>
+          <p>支援掃描手寫內容</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="ocr-workspace">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">UPLOAD & RECOGNIZE</p>
+          <h2>上傳租屋契約</h2>
+        </div>
+        <Badge variant="outline" class="workspace-badge">單檔 20MB・合計 80MB</Badge>
+      </div>
+
+      <input
+        ref="fileInput"
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff,.tif"
+        multiple
+        class="sr-only"
+        @change="onFileChange"
+      />
+
+      <div
+        class="upload-dropzone"
+        :class="{
+          'upload-dropzone--active': isDragOver,
+          'upload-dropzone--selected': selectedFiles.length,
+        }"
+        :role="selectedFiles.length ? undefined : 'button'"
+        :tabindex="selectedFiles.length ? undefined : 0"
+        @click="!selectedFiles.length && openFilePicker()"
+        @keydown.enter.prevent="!selectedFiles.length && openFilePicker()"
+        @keydown.space.prevent="!selectedFiles.length && openFilePicker()"
+        @drop="onDrop"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+      >
+        <template v-if="selectedFiles.length">
+          <div class="selected-file-list">
+            <div
+              v-for="(file, index) in selectedFiles"
+              :key="`${file.name}-${file.size}-${file.lastModified}`"
+              class="selected-file-row"
+            >
+              <div class="selected-file-row-icon"><FileCheck2 /></div>
+              <div class="selected-file-copy">
+                <p class="selected-file-name">{{ file.name }}</p>
+                <p>{{ file.type || '未知格式' }} ・ {{ formatFileSize(file.size) }}</p>
+              </div>
+              <button
+                type="button"
+                class="remove-file-button"
+                :disabled="isUploading"
+                :aria-label="`移除 ${file.name}`"
+                @click.stop="removeSelectedFile(index)"
+              >
+                <X />
+              </button>
+            </div>
+            <button
+              type="button"
+              class="append-files-button"
+              :disabled="isUploading || !canAppendFiles"
+              :title="
+                canAppendFiles
+                  ? '保留現有檔案並加入更多圖片'
+                  : 'PDF 必須單獨上傳，或圖片已達 20 張上限'
+              "
+              @click.stop="openFilePicker('append')"
+            >
+              <span><Plus />新增其他檔案</span>
+              <small>拖放檔案或點擊選擇，將追加至清單</small>
+            </button>
+            <p class="selected-file-total">
+              已選 {{ selectedFiles.length }} 個檔案・合計 {{ formatFileSize(selectedTotalSize) }}
+            </p>
+          </div>
+          <details
+            ref="fileActionsMenu"
+            class="file-actions-menu"
+            :class="{ 'file-actions-menu--disabled': isUploading }"
+            @click.stop
+            @focusout="onFileActionsFocusOut"
+            @keydown.esc.prevent="closeFileActionsMenu"
+          >
+            <summary :aria-label="'更多檔案操作'" :aria-disabled="isUploading">
+              <Ellipsis />
+            </summary>
+            <div class="file-actions-popover">
+              <button type="button" :disabled="isUploading" @click="replaceAllFiles">
+                <RefreshCcw />
+                <span>
+                  <strong>重新選擇全部</strong>
+                  <small>將取代目前所有檔案</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="file-actions-danger"
+                :disabled="isUploading"
+                @click="clearAllFiles"
+              >
+                <Trash2 />
+                <span>
+                  <strong>清除全部檔案</strong>
+                  <small>清空目前清單</small>
+                </span>
+              </button>
+            </div>
+          </details>
+        </template>
+
+        <template v-else>
+          <div class="upload-icon"><Upload /></div>
+          <div class="upload-copy">
+            <h3>拖放多張契約圖片，或選擇一個 PDF</h3>
+            <p>最多 20 張圖片；單檔 20MB、合計 80MB；禁止 MP4、MP3</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            class="select-file-button"
+            @click.stop="openFilePicker()"
+          >
+            <Upload />
+            {{ uploadButtonLabel }}
+          </Button>
+        </template>
+      </div>
+
+      <div
+        v-if="selectedFiles.length || uploadError || isUploading || ocrResult"
+        class="recognition-status"
+        aria-live="polite"
+      >
+        <div class="status-heading">
+          <div>
+            <p>{{ uploadStatus }}</p>
+            <small v-if="selectedFiles.length">{{ selectedFileNames }}</small>
+          </div>
+          <strong>{{ uploadProgress }}%</strong>
+        </div>
+        <Progress :model-value="uploadProgress" />
+
+        <div v-if="uploadError" class="status-message status-message--error">
+          <AlertTriangle />
+          <span>{{ uploadError }}</span>
+        </div>
+
+        <div
+          v-for="warning in ocrResult?.warnings || []"
+          :key="warning"
+          class="status-message status-message--warning"
+        >
+          <AlertTriangle />
+          <span>{{ warning }}</span>
+        </div>
+      </div>
+
+      <Button
+        class="recognize-button"
+        size="lg"
+        :disabled="!canStartRecognition"
+        @click="startOcrRecognition"
+      >
+        <Zap />
+        {{ startButtonLabel }}
+      </Button>
+    </section>
+
+    <Tabs v-if="canAnalyze" v-model="activeTab" class="result-tabs">
+      <TabsList class="result-tab-list">
+        <TabsTrigger value="preview">契約預覽</TabsTrigger>
+        <TabsTrigger value="analysis">分析準備</TabsTrigger>
+        <TabsTrigger value="negotiation">AI 談判輔助</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="preview" class="result-tab-content">
+        <Card class="result-card">
+          <CardHeader>
+            <CardTitle class="result-title">
+              <FileSearch />
+              OCR 辨識結果
+            </CardTitle>
+            <CardDescription
+              >辨識完成後可進入契約編輯器，依頁碼逐頁校對文字，再進行後續契約分析。</CardDescription
+            >
+          </CardHeader>
+          <CardContent class="result-content">
+            <div class="result-metrics">
+              <div>
+                <span>檔案名稱</span>
+                <strong>{{ ocrResult?.fileName }}</strong>
+              </div>
+              <div>
+                <span>檔案格式</span>
+                <strong>{{ ocrResult?.mimeType }}</strong>
+              </div>
+              <div>
+                <span>辨識頁數</span>
+                <strong>{{ ocrResult?.pageCount }} 頁</strong>
+              </div>
+              <div>
+                <span>OCR 引擎</span>
+                <strong>{{ ocrResult?.engine }}</strong>
+              </div>
+              <div v-if="ocrResult?.aiReview">
+                <span>
+                  {{ ocrResult.aiReview.status === 'pending' ? '分級 AI 背景複核' : '欄位抽取' }}
+                </span>
+                <strong v-if="ocrResult.aiReview.status === 'completed'">
+                  {{ ocrResult.aiReview.model }} · {{ ocrResult.aiReview.fieldCount }} 個欄位
+                  <template v-if="ocrResult.aiReview.cropCount">
+                    · {{ ocrResult.aiReview.cropCount }} 個裁切區域
+                  </template>
+                </strong>
+                <strong v-else-if="ocrResult.aiReview.status === 'pending'">
+                  已先取得 {{ ocrResult.aiReview.ruleFieldCount }} 個規則欄位，背景複核
+                  {{ ocrResult.aiReview.targetFieldIds.length }} 個低信心欄位
+                </strong>
+                <strong v-else-if="ocrResult.aiReview.status === 'skipped'">
+                  規則式抽取 · {{ ocrResult.aiReview.ruleFieldCount }} 個欄位
+                </strong>
+                <strong v-else>AI 未完成，已採用規則式欄位結果</strong>
+              </div>
+              <div v-if="ocrResult?.timings">
+                <span>第一、二層耗時</span>
+                <strong>
+                  Google {{ formatProcessingTime(ocrResult.timings.googleVisionMs) }} · 規則
+                  {{ formatProcessingTime(ocrResult.timings.ruleExtractionMs) }}
+                </strong>
+              </div>
+              <div v-if="ocrResult?.aiReview?.performanceMetrics">
+                <span>背景 AI 效能</span>
+                <strong>
+                  Prompt
+                  {{ formatProcessingTime(ocrResult.aiReview.performanceMetrics.promptEvalMs) }} ·
+                  {{ ocrResult.aiReview.performanceMetrics.tokensPerSecond }} tokens/s
+                </strong>
+              </div>
+            </div>
+
+            <div class="recognized-text">
+              {{ ocrResult?.text }}
+            </div>
+          </CardContent>
+          <CardFooter class="result-footer">
+            <Button variant="outline" @click="openFilePicker()">重新選擇檔案</Button>
+            <div>
+              <Button variant="outline" @click="copyRecognizedText">
+                {{ copySuccess ? '已複製文字' : '複製辨識結果' }}
+              </Button>
+              <Button @click="enterContractEditor">
+                進入契約編輯
+                <ArrowRight />
+              </Button>
+            </div>
+          </CardFooter>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="analysis" class="result-tab-content">
+        <div class="analysis-grid">
+          <Card>
+            <CardHeader class="pb-2">
+              <CardTitle class="result-title">
+                <CheckCircle2 class="success-icon" />
+                已具備後續分析基礎
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="analysis-copy">
+              <p>
+                目前系統已將契約轉成可分析文字，下一步可進行條號切段、法規比對、風險標註與摘要說明。
+              </p>
+              <div>
+                <strong>建議流程</strong>
+                <span>1. 依條號切段</span>
+                <span>2. 對照租賃規範與高風險規則</span>
+                <span>3. 產生白話解析與調整建議</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader class="pb-2">
+              <CardTitle class="result-title">
+                <AlertTriangle class="warning-icon" />
+                辨識後仍需人工確認
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="analysis-copy">
+              印章、手寫欄位、模糊影像與表格內容可能存在誤差。進入 AI
+              分析前，請優先確認租金、押金、日期與地址。
+            </CardContent>
+          </Card>
+        </div>
+      </TabsContent>
+
+      <TabsContent value="negotiation" class="result-tab-content">
+        <Card>
+          <CardHeader>
+            <CardTitle class="result-title">
+              <Bot />
+              AI 談判輔助
+            </CardTitle>
+            <CardDescription>依照辨識後的高風險條款，產生可直接調整的溝通話術。</CardDescription>
+          </CardHeader>
+          <CardContent class="analysis-copy">
+            <div>
+              <strong>預計輸出內容</strong>
+              <span>1. 高風險條款白話解析</span>
+              <span>2. 房東溝通腳本與修改方向</span>
+              <span>3. 對應法規依據與注意事項</span>
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
+
+    <section class="usage-card">
+      <div class="guide-heading">
+        <CircleHelp />
+        <div>
+          <h2>如何使用 RentMate 契約辨識</h2>
+          <p>從文件上傳到風險分析，只需要四個步驟。</p>
+        </div>
+      </div>
+      <ol class="usage-steps">
+        <li v-for="(step, index) in usageSteps" :key="step">
+          <span>{{ index + 1 }}</span>
+          <p>{{ step }}</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="faq-card">
+      <div class="guide-heading">
+        <CircleHelp />
+        <div>
+          <h2>常見問題</h2>
+          <p>上傳前先了解檔案格式、處理方式與後續用途。</p>
+        </div>
+      </div>
+      <div class="faq-list">
+        <details v-for="item in faqItems" :key="item.question" class="faq-item">
+          <summary>
+            <span>{{ item.question }}</span>
+            <ChevronDown />
+          </summary>
+          <p>{{ item.answer }}</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="benefits-card">
+      <div class="benefits-heading">
+        <p class="section-kicker">WHY RENTMATE OCR</p>
+        <h2>為租賃契約而設計，不只把文字掃出來</h2>
+        <p>保留 RentMate 的租屋管理特色，讓 OCR 成為契約風險分析的第一步。</p>
+      </div>
+      <div class="benefits-grid">
+        <article v-for="benefit in benefits" :key="benefit.title">
+          <div><component :is="benefit.icon" /></div>
+          <span>
+            <strong>{{ benefit.title }}</strong>
+            <small>{{ benefit.description }}</small>
+          </span>
+        </article>
+      </div>
+    </section>
+  </div>
+</template>
+
+<style scoped src="./index.css"></style>

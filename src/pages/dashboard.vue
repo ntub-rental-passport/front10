@@ -1,0 +1,733 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
+import { Badge } from '@/components/ui/badge/index'
+import { Button } from '@/components/ui/button/index'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
+import {
+  ArrowRight,
+  BookOpen,
+  Building2,
+  CalendarClock,
+  Check,
+  CheckSquare,
+  ChevronRight,
+  Droplets,
+  MapPin,
+  PiggyBank,
+  RotateCcw,
+  ShieldAlert,
+  User,
+  Zap,
+} from 'lucide-vue-next'
+
+import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
+import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
+import { useDashboard } from '@/src/composables/useDashboard'
+import { paymentMethodLabel } from '@/src/mocks/dashboard-seed'
+import {
+  describeDaysLeft,
+  formatCurrency,
+  formatDate,
+  formatOptionalAmount,
+} from '@/src/utils/rent-format'
+import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
+import BannerCarousel from '@/src/components/BannerCarousel.vue'
+import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { useAnnouncementDismissal } from '@/src/composables/useAnnouncementDismissal'
+import { useFeatureGate } from '@/src/composables/useFeatureGate'
+import { isDashboardAnnouncementLevel } from '@/src/utils/announcement'
+
+const { tenantAnnouncements } = useAdminContent()
+const { isDismissed, dismiss } = useAnnouncementDismissal()
+
+// 首頁只放最緊急的訊息（urgent／warning），一般公告仍在通知中心看得到；
+// 使用者關掉的公告（依 id+updatedAt 判斷）不再重複出現，除非管理員又更新了內容。
+const visibleAnnouncements = computed(() =>
+  tenantAnnouncements.value.filter(
+    (item) => isDashboardAnnouncementLevel(item.level) && !isDismissed(item),
+  ),
+)
+
+// 就算全是緊急公告也不能無上限堆疊——租客來首頁是要看自己的租約與帳單，
+// 超過的筆數改成一行提示導向通知中心，版面才不會被公告整片吃掉。
+const DASHBOARD_ANNOUNCEMENT_LIMIT = 2
+
+const dashboardAnnouncements = computed(() =>
+  visibleAnnouncements.value.slice(0, DASHBOARD_ANNOUNCEMENT_LIMIT),
+)
+
+const overflowAnnouncementCount = computed(() =>
+  Math.max(0, visibleAnnouncements.value.length - DASHBOARD_ANNOUNCEMENT_LIMIT),
+)
+// 首頁有兩個直接通往「合約 OCR」功能的入口，該功能維護關閉時要標記出來——
+// 使用者在首頁看到一張正常的卡片、點下去卻是維護頁，那一下的落差可以避免，
+// 但入口本身仍保留可點（維護說明就在那個網址上）。
+//
+// 教學文章那幾列雖然也連到 /app/contract，但它們是內容不是功能入口，
+// 掛「維護中」等於在說文章壞了。那些連結指向功能頁本身是既有的資訊架構
+// 問題，不該由維護開關來補。
+const { isPathUnderMaintenance } = useFeatureGate()
+
+const {
+  accentStyles,
+  activeContractView,
+  activeCurrentCycle,
+  confirmDialogOpen,
+  contractViews,
+  cycleRowClass,
+  defenseReminder,
+  featuredArticles,
+  filterTab,
+  filteredCycles,
+  focusCycle,
+  globalStats,
+  leaseTermLabel,
+  openPaymentDialog,
+  paymentDialogOpen,
+  paymentTargetCycle,
+  reminderActionLine,
+  reminderAmountLine,
+  reminderTitle,
+  requestUndoCyclePaid,
+  riskTags,
+  selectContract,
+  selectedContractId,
+  selectedCycleId,
+  statusBadgeClass,
+  statusLabel,
+  submitPaymentRecord,
+  totalAmountLabel,
+  confirmUndoCyclePaid,
+} = useDashboard()
+</script>
+
+<template>
+  <div class="flex min-h-full min-w-0 flex-col gap-5 pb-6">
+    <BannerCarousel />
+
+    <div v-if="dashboardAnnouncements.length > 0" class="flex flex-col gap-3">
+      <AnnouncementBanner
+        v-for="item in dashboardAnnouncements"
+        :key="item.id"
+        :announcement="item"
+        dismissible
+        @dismiss="dismiss(item)"
+      />
+      <RouterLink
+        v-if="overflowAnnouncementCount > 0"
+        to="/app/notifications"
+        class="self-start text-sm font-medium text-primary underline-offset-4 hover:underline"
+      >
+        另有 {{ overflowAnnouncementCount }} 則公告，前往通知中心查看
+      </RouterLink>
+    </div>
+
+    <!-- ── 頁面標題 ─────────────────────────────────────────────────────────── -->
+    <header class="space-y-1">
+      <h1 class="text-3xl font-bold tracking-tight text-slate-900">租屋總覽</h1>
+      <p class="text-sm text-slate-500">
+        {{ activeContractView ? `${activeContractView.title} · ${activeContractView.city}` : '尚未選擇租約' }}
+      </p>
+    </header>
+
+    <!-- ── 四格統計卡片（月租金 / 待繳合計 / 最近應繳日 / 整體進度） ────────── -->
+    <section class="grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4">
+      <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
+        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+          <div class="min-w-0">
+            <CardTitle class="text-xs font-semibold text-slate-500">月租金合計</CardTitle>
+            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {{ globalStats.totalMonthlyRent === 0 ? '--' : formatCurrency(globalStats.totalMonthlyRent) }}
+            </div>
+            <p class="mt-0.5 text-xs text-slate-500">所有租約合計</p>
+          </div>
+          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <Building2 class="h-4 w-4" />
+          </div>
+        </CardHeader>
+      </Card>
+
+      <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
+        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+          <div class="min-w-0">
+            <CardTitle class="text-xs font-semibold text-slate-500">本期待繳合計</CardTitle>
+            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {{ globalStats.totalPending === 0 ? '已清繳' : formatCurrency(globalStats.totalPending) }}
+            </div>
+            <p class="mt-0.5 text-xs text-slate-500">所有租約本期已知待繳金額</p>
+          </div>
+          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <PiggyBank class="h-4 w-4" />
+          </div>
+        </CardHeader>
+      </Card>
+
+      <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
+        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+          <div class="min-w-0">
+            <CardTitle class="text-xs font-semibold text-slate-500">最近應繳日</CardTitle>
+            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {{ globalStats.nearestDue ? formatDate(globalStats.nearestDue, true) : '已清繳' }}
+            </div>
+            <p
+              class="mt-0.5 text-xs"
+              :class="globalStats.overdueCount > 0 ? 'font-medium text-red-500' : 'text-slate-500'"
+            >
+              {{ globalStats.overdueCount > 0 ? `有 ${globalStats.overdueCount} 筆逾期帳單` : '最近待繳期限' }}
+            </p>
+          </div>
+          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <CalendarClock class="h-4 w-4" />
+          </div>
+        </CardHeader>
+      </Card>
+
+      <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
+        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+          <div class="min-w-0">
+            <CardTitle class="text-xs font-semibold text-slate-500">整體租約進度</CardTitle>
+            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {{ globalStats.totalPaid }} / {{ globalStats.totalCycles }}
+            </div>
+            <p class="mt-0.5 text-xs text-slate-500">已繳期數 / 全部期數</p>
+            <p v-if="globalStats.pendingUtilityCount > 0" class="text-xs text-slate-500">
+              另有 {{ globalStats.pendingUtilityCount }} 期水電資料待匯入
+            </p>
+          </div>
+          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <CheckSquare class="h-4 w-4" />
+          </div>
+        </CardHeader>
+      </Card>
+    </section>
+
+    <!-- ── 主要內容區：左側租約列表 + 右側帳單詳情 ─────────────────────────── -->
+    <section class="grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 lg:grid-cols-[240px_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
+      <!-- 左側標題：row 1, col 1 -->
+      <div class="lg:col-start-1 lg:row-start-1">
+        <h2 class="text-lg font-bold tracking-tight text-slate-900">我的租約</h2>
+        <p class="text-xs text-slate-500">選擇租約查看完整帳單</p>
+      </div>
+
+      <!-- 左側：我的租約清單 row 2, col 1 -->
+      <aside class="lg:col-start-1 lg:row-start-2">
+        <div class="max-h-[44rem] space-y-2.5 overflow-y-auto pr-1">
+          <div
+            v-for="contract in contractViews"
+            :key="contract.id"
+            role="button"
+            tabindex="0"
+            :class="[
+              'group cursor-pointer rounded-2xl border p-3.5 shadow-sm transition-all duration-200',
+              selectedContractId === contract.id
+                ? accentStyles[contract.accent].selected
+                : ['border-slate-200 bg-[#FFFFFF] hover:shadow-md', accentStyles[contract.accent].hoverBg, accentStyles[contract.accent].hoverBorder],
+            ]"
+            @click="selectContract(contract.id)"
+            @keydown.enter.space.prevent="selectContract(contract.id)"
+          >
+            <div class="flex items-start gap-2.5">
+              <span :class="['mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedDot : [accentStyles[contract.accent].dot, accentStyles[contract.accent].hoverDot]]" />
+              <div class="min-w-0 flex-1 space-y-2.5">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <p :class="['truncate text-sm font-bold transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedText : ['text-slate-900', accentStyles[contract.accent].hoverText]]">{{ contract.title }}</p>
+                    <p :class="['truncate text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-500', accentStyles[contract.accent].hoverSubText]]">{{ contract.city }} · {{ contract.landlord }}</p>
+                  </div>
+                  <RouterLink
+                    to="/app/contract"
+                    :class="['shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors', isPathUnderMaintenance('/app/contract') ? 'opacity-60' : '', selectedContractId === contract.id ? 'border-white/50 bg-white/20 text-white hover:bg-white/30' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700']"
+                    @click.stop
+                  >
+                    完整租約
+                  </RouterLink>
+                </div>
+
+                <div class="space-y-1.5">
+                  <div :class="['flex items-center justify-between text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-600', accentStyles[contract.accent].hoverSubText]]">
+                    <span>已繳 {{ contract.paidCount }}/{{ contract.cycles.length }} 期</span>
+                    <span class="font-semibold">{{ contract.progressPercent }}%</span>
+                  </div>
+                  <div :class="['h-1.5 overflow-hidden rounded-full transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedTrack : ['bg-slate-100', accentStyles[contract.accent].hoverTrack]]">
+                    <div
+                      :class="['h-full rounded-full transition-all', accentStyles[contract.accent].progress]"
+                      :style="{ width: `${contract.progressPercent}%` }"
+                    />
+                  </div>
+                </div>
+
+                <div :class="['flex flex-wrap items-center gap-1.5 text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-500', accentStyles[contract.accent].hoverSubText]]">
+                  <Badge
+                    variant="outline"
+                    :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', accentStyles[contract.accent].badge]"
+                  >
+                    {{ leaseTermLabel(contract.leaseMonths) }}
+                  </Badge>
+                  <span>{{ contract.leaseMonths }} 期繳款</span>
+                  <span>每月 {{ contract.dueDay }} 號繳費</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 右側：選中租約詳情 row 2, col 2 -->
+      <div v-if="activeContractView" class="min-w-0 space-y-3 lg:col-start-2 lg:row-start-2">
+        <!-- 租約資訊 Header Card -->
+        <Card :class="['overflow-hidden rounded-2xl border shadow-sm', accentStyles[activeContractView.accent].selected]">
+          <CardContent class="p-5">
+            <div class="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div class="min-w-0 space-y-2">
+                <Badge
+                  variant="outline"
+                  :class="['rounded-full px-3 py-1 text-xs font-semibold', accentStyles[activeContractView.accent].headerBadge]"
+                >
+                  {{ leaseTermLabel(activeContractView.leaseMonths) }}
+                </Badge>
+                <h3 :class="['text-xl font-bold tracking-tight', accentStyles[activeContractView.accent].headerText]">
+                  {{ activeContractView.title }}
+                </h3>
+                <div :class="['flex flex-wrap items-center gap-x-4 gap-y-1 text-sm', accentStyles[activeContractView.accent].headerSubText]">
+                  <span class="flex items-center gap-1.5">
+                    <MapPin class="h-3.5 w-3.5 shrink-0" />
+                    {{ activeContractView.city }} · {{ activeContractView.address }}
+                  </span>
+                  <span class="flex items-center gap-1.5">
+                    <User class="h-3.5 w-3.5 shrink-0" />
+                    房東 {{ activeContractView.landlord }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex shrink-0 items-center gap-3">
+                <div class="min-w-0 rounded-xl border border-white/80 bg-white/90 px-4 py-2.5 text-center shadow-sm">
+                  <p class="text-xs font-medium text-slate-500">月租金</p>
+                  <p class="mt-0.5 text-lg font-bold tracking-tight text-slate-900">
+                    {{ formatCurrency(activeContractView.cycles[0]?.cycle.rentAmount ?? 0) }}
+                  </p>
+                </div>
+                <div class="min-w-0 rounded-xl border border-white/80 bg-white/90 px-4 py-2.5 text-center shadow-sm">
+                  <p class="text-xs font-medium text-slate-500">租約進度</p>
+                  <p class="mt-0.5 text-lg font-bold tracking-tight text-slate-900">
+                    {{ activeContractView.paidCount }}/{{ activeContractView.cycles.length }}
+                  </p>
+                </div>
+                <div class="min-w-0 rounded-xl border border-white/80 bg-white/90 px-4 py-2.5 text-center shadow-sm">
+                  <p class="text-xs font-medium text-slate-500">每月繳款日</p>
+                  <p class="mt-0.5 text-lg font-bold tracking-tight text-slate-900">{{ activeContractView.dueDay }} 號</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- 本期帳單提醒 Card -->
+        <Card
+          :class="[
+            'rounded-2xl border shadow-sm',
+            activeCurrentCycle?.status === 'overdue'
+              ? 'border-red-100 bg-[linear-gradient(180deg,_rgba(255,251,251,0.98),_rgba(255,247,247,0.95))]'
+              : 'border-slate-200 bg-white',
+          ]"
+        >
+          <CardContent class="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+            <div class="space-y-1">
+              <p class="text-xl font-bold tracking-tight text-slate-900">
+                {{ reminderTitle }}
+              </p>
+              <p class="text-sm text-slate-600">
+                應繳日：{{ activeCurrentCycle ? formatDate(activeCurrentCycle.cycle.dueDate) : '無' }}
+              </p>
+              <p
+                :class="[
+                  'text-sm font-medium',
+                  activeCurrentCycle?.status === 'overdue' ? 'text-red-500' : 'text-slate-600',
+                ]"
+              >
+                {{ reminderAmountLine }}
+              </p>
+              <p
+                :class="[
+                  'text-xs',
+                  activeCurrentCycle?.status === 'overdue' ? 'text-red-400' : 'text-slate-500',
+                ]"
+              >
+                {{ reminderActionLine }}
+              </p>
+            </div>
+
+            <div class="flex shrink-0 items-start">
+              <span class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
+                本期提醒
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- 帳單明細表格 Card -->
+        <Card class="overflow-hidden rounded-2xl border border-slate-200/80 shadow-sm">
+          <CardContent class="p-0">
+            <div class="border-b border-slate-100 bg-white px-4 pt-2">
+              <div class="overflow-x-auto">
+                <div class="flex min-w-max items-center gap-5">
+                  <button
+                    type="button"
+                    :class="[
+                      'flex h-11 items-center gap-1.5 border-b-2 px-1 text-sm font-semibold transition-colors',
+                      filterTab === 'all' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700',
+                    ]"
+                    @click="filterTab = 'all'"
+                  >
+                    所有帳單
+                    <span :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', filterTab === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600']">
+                      {{ activeContractView.cycles.length }}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    :class="[
+                      'flex h-11 items-center gap-1.5 border-b-2 px-1 text-sm font-semibold transition-colors',
+                      filterTab === 'paid' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700',
+                    ]"
+                    @click="filterTab = 'paid'"
+                  >
+                    已繳費
+                    <span :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', filterTab === 'paid' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600']">
+                      {{ activeContractView.paidCount }}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    :class="[
+                      'flex h-11 items-center gap-1.5 border-b-2 px-1 text-sm font-semibold transition-colors',
+                      filterTab === 'pending' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700',
+                    ]"
+                    @click="filterTab = 'pending'"
+                  >
+                    待繳費
+                    <span :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', filterTab === 'pending' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600']">
+                      {{ activeContractView.remainingCount }}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="max-h-[34rem] overflow-auto bg-slate-50/70">
+              <table class="w-full min-w-[700px] border-collapse text-left">
+                <colgroup>
+                  <col style="width: 52px" />
+                  <col style="width: 88px" />
+                  <col style="width: 96px" />
+                  <col style="width: 84px" />
+                  <col style="width: 76px" />
+                  <col style="width: 68px" />
+                  <col style="width: 96px" />
+                  <col />
+                </colgroup>
+                <thead class="sticky top-0 z-10 bg-white/95 shadow-[0_1px_0_rgba(226,232,240,1)] backdrop-blur">
+                  <tr class="text-xs font-semibold text-slate-500">
+                    <th class="px-3 py-2.5">期數</th>
+                    <th class="px-3 py-2.5">狀態</th>
+                    <th class="px-3 py-2.5">應繳日</th>
+                    <th class="px-3 py-2.5">租金</th>
+                    <th class="px-3 py-2.5">電費</th>
+                    <th class="px-3 py-2.5">水費</th>
+                    <th class="px-3 py-2.5 text-right">合計</th>
+                    <th class="px-3 py-2.5 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
+                  <tr
+                    v-for="cycleItem in filteredCycles"
+                    :id="`cycle-${cycleItem.cycle.id}`"
+                    :key="cycleItem.cycle.id"
+                    :class="[
+                      'cursor-pointer transition-colors',
+                      cycleRowClass(cycleItem.status),
+                      cycleItem.cycle.id === selectedCycleId ? 'outline outline-2 outline-offset-[-2px] outline-slate-300' : '',
+                    ]"
+                    @click="focusCycle(cycleItem.cycle.id)"
+                  >
+                    <td class="px-3 py-3 align-middle">
+                      <span
+                        :class="[
+                          'flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold',
+                          cycleItem.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : '',
+                          cycleItem.status === 'current' ? 'bg-amber-100 text-amber-700' : '',
+                          cycleItem.status === 'overdue' ? 'bg-red-100 text-red-600' : '',
+                          cycleItem.status === 'upcoming' ? 'bg-slate-100 text-slate-500' : '',
+                        ]"
+                      >
+                        {{ cycleItem.cycle.periodIndex }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-3 align-middle">
+                      <Badge
+                        variant="outline"
+                        :class="['rounded-full px-2.5 py-0.5 text-[11px] font-semibold', statusBadgeClass(cycleItem.status)]"
+                      >
+                        {{ statusLabel(cycleItem.status) }}
+                      </Badge>
+                      <p v-if="cycleItem.status === 'overdue'" class="mt-0.5 text-[11px] font-medium text-red-500">
+                        已逾期 {{ Math.abs(cycleItem.daysLeft) }} 天
+                      </p>
+                      <p v-else-if="cycleItem.status === 'current'" class="mt-0.5 text-[11px] font-medium text-amber-600">
+                        {{ describeDaysLeft(cycleItem.daysLeft) }}
+                      </p>
+                      <p v-else-if="cycleItem.cycle.paidAt" class="mt-0.5 text-[11px] text-slate-400">
+                        {{ formatDate(cycleItem.cycle.paidAt) }} · {{ paymentMethodLabel(cycleItem.cycle.paymentMethod) }}
+                      </p>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatDate(cycleItem.cycle.dueDate) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatCurrency(cycleItem.cycle.rentAmount) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatOptionalAmount(cycleItem.cycle.electricityAmount) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatOptionalAmount(cycleItem.cycle.waterAmount) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 text-right align-middle">
+                      <p :class="['text-sm font-bold tracking-tight', cycleItem.status === 'paid' ? 'text-emerald-700' : 'text-slate-900']">
+                        {{ totalAmountLabel(cycleItem) }}
+                      </p>
+                      <p v-if="cycleItem.totalAmount == null" class="text-[11px] text-slate-400">
+                        已知 {{ formatCurrency(cycleItem.partialAmount) }}
+                      </p>
+                    </td>
+                    <td class="px-3 py-3 text-right align-middle">
+                      <Button
+                        v-if="!cycleItem.cycle.paidAt && cycleItem.status !== 'upcoming'"
+                        size="sm"
+                        class="h-7 rounded-lg bg-slate-900 px-2.5 text-[11px] font-semibold text-white hover:bg-slate-800"
+                        @click.stop="openPaymentDialog(cycleItem.cycle.id)"
+                      >
+                        <Check class="mr-1 h-3 w-3" aria-hidden="true" />
+                        標記已繳
+                      </Button>
+                      <Button
+                        v-else-if="cycleItem.cycle.paidAt"
+                        size="sm"
+                        class="h-7 rounded-lg border border-amber-400 bg-amber-50 px-2.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 hover:border-amber-500"
+                        @click.stop="requestUndoCyclePaid(cycleItem.cycle.id)"
+                      >
+                        <RotateCcw class="mr-1 h-3 w-3" aria-hidden="true" />
+                        撤銷已繳
+                      </Button>
+                      <span v-else class="text-[11px] font-medium text-slate-400">待匯入</span>
+                    </td>
+                  </tr>
+
+                  <tr v-if="filteredCycles.length === 0">
+                    <td colspan="8" class="px-3 py-12 text-center text-sm text-slate-500">
+                      目前沒有符合篩選條件的帳單。
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div v-else class="flex items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 py-20">
+        <p class="text-sm text-slate-500">請先從左側選擇租約</p>
+      </div>
+    </section>
+
+    <!-- ── 停水停電通報 ──────────────────────────────────────────────────────── -->
+    <section>
+      <!-- 手機版：簡單橫幅連結（sm 以下顯示） -->
+      <RouterLink v-if="false" to="/app/outage" class="block sm:hidden">
+        <Card class="group cursor-pointer overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm transition-all hover:border-amber-300 hover:shadow-md">
+          <CardContent class="p-5">
+            <div class="flex items-center gap-4">
+              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 transition-colors group-hover:bg-amber-200">
+                <Zap class="h-6 w-6" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-base font-bold text-slate-900">停水停電通報</p>
+                <p class="mt-0.5 text-sm text-slate-500">查詢或回報住家附近的停水停電資訊，掌握即時狀況。</p>
+              </div>
+              <ArrowRight class="h-5 w-5 shrink-0 text-amber-500 transition-transform group-hover:translate-x-1" />
+            </div>
+          </CardContent>
+        </Card>
+      </RouterLink>
+
+      <!-- 桌面版：直接顯示資訊卡（sm 以上顯示） -->
+      <div v-if="false" class="hidden sm:block space-y-3">
+        <!-- 標題列 -->
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-bold tracking-tight text-slate-900">停水停電通報</h2>
+            <p class="text-sm text-slate-500">住家附近最新停水停電資訊</p>
+          </div>
+          <RouterLink
+            to="/app/outage"
+            class="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+          >
+            前往完整頁面 <ArrowRight class="h-3.5 w-3.5" />
+          </RouterLink>
+        </div>
+
+        <!-- 兩欄資訊卡 -->
+        <div class="grid gap-4 md:grid-cols-2">
+          <!-- 停電資訊 -->
+          <Card class="rounded-2xl border-amber-200 bg-amber-50 shadow-sm">
+            <CardHeader class="pb-2 pt-4 px-5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Zap class="h-4 w-4 text-amber-500" />
+                  <CardTitle class="text-base font-bold text-slate-900">停電資訊</CardTitle>
+                </div>
+                <Badge variant="outline" class="rounded-full border-amber-300 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                  明日
+                </Badge>
+              </div>
+              <CardDescription class="mt-1 text-amber-700">台北市大安區</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-1.5 px-5 pb-4 text-sm text-slate-700">
+              <p><span class="font-semibold text-slate-900">計畫性工作停電</span></p>
+              <p class="text-xs text-slate-600">🕐 2026/04/09　14:00 – 16:00</p>
+              <p class="text-xs text-slate-600">📍 和平東路二段 80 巷至 120 巷</p>
+              <p class="text-xs text-slate-500">原因：變壓器更換工程</p>
+            </CardContent>
+          </Card>
+
+          <!-- 停水資訊 -->
+          <Card class="rounded-2xl border-slate-200 bg-white shadow-sm">
+            <CardHeader class="pb-2 pt-4 px-5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Droplets class="h-4 w-4 text-blue-500" />
+                  <CardTitle class="text-base font-bold text-slate-900">停水資訊</CardTitle>
+                </div>
+                <Badge variant="outline" class="rounded-full border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                  正常
+                </Badge>
+              </div>
+              <CardDescription class="mt-1 text-slate-500">台北市大安區</CardDescription>
+            </CardHeader>
+            <CardContent class="px-5 pb-4">
+              <p class="text-sm font-semibold text-slate-500">目前供水正常</p>
+              <p class="mt-1 text-xs text-slate-400">台北市大安區目前無停水計畫。</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 租客防禦指南區塊（AI 防禦卡 + 精選文章） ──────────────────────────── -->
+    <section class="space-y-4">
+      <div>
+        <h2 class="text-lg font-semibold tracking-tight">租客防禦指南</h2>
+        <p class="text-sm text-muted-foreground">快速補齊租屋常見爭議與判斷基礎。</p>
+      </div>
+
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
+        <Card class="overflow-hidden border-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.18),_transparent_24%),linear-gradient(145deg,_rgba(49,46,129,0.98),_rgba(67,56,202,0.96)_55%,_rgba(99,102,241,0.94))] text-white shadow-lg">
+          <CardContent class="relative flex h-full min-h-[320px] flex-col p-6">
+            <div class="pointer-events-none absolute right-0 top-0 h-44 w-44 translate-x-10 -translate-y-10 rounded-full border border-white/12 bg-white/8 blur-2xl" />
+            <div class="pointer-events-none absolute bottom-6 right-6 text-white/12">
+              <ShieldAlert class="h-28 w-28" />
+            </div>
+            <div class="relative space-y-5">
+              <div class="flex flex-wrap items-center gap-2">
+                <Badge class="w-fit border-white/20 bg-white/14 text-white hover:bg-white/14">
+                  {{ defenseReminder.eyebrow }}
+                </Badge>
+                <Badge
+                  v-if="isPathUnderMaintenance(defenseReminder.actionTo)"
+                  class="w-fit border-white/20 bg-white/10 text-white/80 hover:bg-white/10"
+                >
+                  維護中
+                </Badge>
+              </div>
+              <div class="space-y-3">
+                <h3 class="text-3xl font-bold tracking-tight">{{ defenseReminder.title }}</h3>
+                <p class="max-w-sm text-base leading-8 text-white/90">{{ defenseReminder.summary }}</p>
+                <p class="max-w-sm text-sm leading-6 text-white/72">{{ defenseReminder.source }}</p>
+              </div>
+            </div>
+            <Button
+              as-child
+              :class="['relative z-10 mt-auto h-12 rounded-full border border-white/15 bg-white/12 text-base font-semibold text-white hover:bg-white/20', isPathUnderMaintenance(defenseReminder.actionTo) ? 'opacity-60' : '']"
+            >
+              <RouterLink :to="defenseReminder.actionTo">{{ defenseReminder.actionLabel }}</RouterLink>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card class="rounded-3xl">
+          <CardHeader class="space-y-4">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="space-y-2">
+                <div class="flex items-center gap-3">
+                  <div class="rounded-2xl bg-primary/10 p-2 text-primary">
+                    <BookOpen class="h-5 w-5" />
+                  </div>
+                  <CardTitle class="text-2xl">精選文章</CardTitle>
+                </div>
+                <CardDescription>從熱門風險關鍵字快速延伸到對應教學與案例。</CardDescription>
+              </div>
+              <Button as-child variant="ghost" class="h-auto rounded-full px-0 text-sm font-semibold text-primary hover:bg-transparent hover:text-primary/80">
+                <RouterLink to="/app/contract">
+                  文章總目錄
+                  <ChevronRight class="h-4 w-4" />
+                </RouterLink>
+              </Button>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <Badge
+                v-for="tag in riskTags"
+                :key="tag.label"
+                variant="outline"
+                :class="['rounded-full px-3 py-1 text-sm font-semibold', tag.className]"
+              >
+                {{ tag.label }} ({{ tag.count }})
+              </Badge>
+            </div>
+          </CardHeader>
+
+          <CardContent class="space-y-2">
+            <RouterLink
+              v-for="article in featuredArticles"
+              :key="article.title"
+              :to="article.to"
+              class="group flex items-start justify-between gap-4 rounded-2xl border border-transparent px-3 py-4 transition-colors hover:border-border hover:bg-muted/30"
+            >
+              <div class="space-y-2">
+                <p class="text-lg font-semibold leading-7 text-foreground">{{ article.title }}</p>
+                <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <Badge variant="outline" class="rounded-full border-primary/20 bg-primary/5 text-primary">
+                    {{ article.category }}
+                  </Badge>
+                  <span>{{ article.publishedAt }}</span>
+                </div>
+              </div>
+              <div class="pt-1 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary">
+                <ArrowRight class="h-4 w-4" />
+              </div>
+            </RouterLink>
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+
+    <!-- ── Dialogs ────────────────────────────────────────────────────────────── -->
+    <PaymentDialog
+      :open="paymentDialogOpen"
+      :target-cycle="paymentTargetCycle"
+      @update:open="(v: boolean) => { paymentDialogOpen = v }"
+      @submit="submitPaymentRecord"
+    />
+
+    <ConfirmDialog
+      :open="confirmDialogOpen"
+      title="撤銷已繳紀錄"
+      message="要撤銷這筆已繳紀錄嗎？撤銷後將重新標示為未繳費。"
+      @update:open="(v: boolean) => { confirmDialogOpen = v }"
+      @confirm="confirmUndoCyclePaid"
+    />
+  </div>
+</template>

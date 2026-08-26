@@ -1,0 +1,35 @@
+import tailwindcss from '@tailwindcss/vite';
+import vue from '@vitejs/plugin-vue';
+import path from 'path';
+import { loadEnv } from 'vite';
+import { defineConfig } from 'vitest/config';
+import vueDevTools from 'vite-plugin-vue-devtools';
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '.', '');
+  const apiTarget = env.VITE_OCR_API_URL || 'http://127.0.0.1:8000';
+  return {
+    plugins: [vue(), vueDevTools(), tailwindcss()],
+    define: {
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+    },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
+    },
+    server: {
+      hmr: process.env.DISABLE_HMR !== 'true',
+      proxy: {
+        '/api': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
+      },
+    },
+    test: {
+      environment: 'node',
+      include: ['src/**/*.test.ts'],
+    },
+  };
+});

@@ -1,0 +1,92 @@
+// 1. 使用者 (帳號管理)
+Table users {
+  id integer [primary key]
+  email varchar [unique]
+  password varchar
+  created_at timestamp
+}
+
+// 2. 租屋資訊 (核心表：租完屋後的案件紀錄)
+Table rentals {
+  id integer [primary key]
+  user_id integer [ref: > users.id]
+  address text [note: '租屋地址']
+  start_date date [note: '租期開始']
+  end_date date [note: '租期結束']
+  rent_amount integer [note: '租金']
+  deposit_amount integer [note: '押金']
+  other_info text [note: '相關資訊備註']
+  rental_status varchar
+  payment_day integer [note: '每月應繳租金日期 (例如: 5 代表每月5號)']
+  electricity_type enum('meter', 'flat', 'included') [note: '電費計價方式: 依度數、固定、內含']
+  electricity_rate numeric [note: '若依度數計費，每度多少元；若固定，則是每期固定金額']
+  water_fee_info varchar [note: '水費說明 (例如: 隨水單、每人100元、內含)']
+}
+
+// 3. 契約掃描與風險分析 (連結至特定租屋案)
+Table contract_analyses {
+  id integer [primary key]
+  rental_id integer [ref: - rentals.id] // 一個租屋案對應一份分析
+  contract_file_url varchar
+  ocr_raw_text text
+  risk_report text
+  negotiation_script text // AI 談判腳本
+}
+
+// 4. 點交存證管理 (連結至特定租屋案)
+Table inspection_records {
+  id integer [primary key]
+  rental_id integer [ref: > rentals.id]
+  type enum('check_in', 'check_out')
+  photo_url varchar
+  description text
+  captured_at timestamp [note: '系統自動記錄時間']
+}
+
+// 5. 記事板 (連結至特定租屋案，支援多人)
+Table message_boards {
+  id integer [primary key]
+  rental_id integer [ref: > rentals.id]
+  content text
+  last_editor_id integer [ref: > users.id]
+  updated_at timestamp
+}
+
+// 6. 生活提醒與垃圾車收藏 (個人化功能)
+Table notifications {
+  id integer [primary key]
+  user_id integer [ref: > users.id]
+  category enum('payment', 'trash', 'inspection', 'contract_end')
+  content text
+  remind_at timestamp
+  is_sent boolean [default: false]
+}
+
+Table trash_favorites {
+  id integer [primary key]
+  user_id integer [ref: > users.id]
+  station_id varchar
+  station_name varchar
+}
+
+// 在原有語法的基礎上，新增或更新以下部分
+
+// 7. 租屋補助申請管理 (FR-06)
+Table subsidy_applications {
+  id integer [primary key]
+  user_id integer [ref: > users.id]
+  rental_id integer [ref: > rentals.id] // 關聯到特定租屋案
+  application_status varchar [note: '審核中、補件中、已通過、已撥款']
+  remark text [note: '官方回傳的審核備註']
+}
+// 8. 停水停電即時查詢快取表 (當使用者點擊時紀錄/快取結果)
+Table utility_outages {
+  id integer [primary key]
+  rental_id integer [ref: > rentals.id, note: '關聯特定租屋案，記錄是哪間房子的查詢結果']
+  type enum('water', 'electricity') [note: '停水或停電']
+  
+  // 記錄政府網站回傳的實際狀態
+  is_outage boolean [note: '目前是否停水電 (True/False)']
+  status_message text [note: '政府網站回傳的文字 (例如: 正常供水、或是 5/22 09:00施工停水)']
+  
+}

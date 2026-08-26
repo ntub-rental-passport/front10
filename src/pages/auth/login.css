@@ -1,0 +1,377 @@
+@reference "../../index.css";
+
+/*
+ * Desktop uses three explicit viewport rows so the page fits at 100% zoom:
+ * header / title bar / remaining authentication content.
+ */
+.login-page {
+  @apply min-h-dvh bg-white text-foreground;
+}
+
+.login-header {
+  @apply flex h-16 items-center justify-between px-6 sm:px-8 lg:h-[72px] lg:px-10;
+}
+
+.login-brand {
+  @apply flex items-center gap-3 text-xl font-bold tracking-tight text-foreground lg:text-2xl;
+}
+
+.login-brand__icon {
+  @apply h-8 w-8 object-contain lg:h-9 lg:w-9;
+  filter: brightness(0);
+}
+
+.login-title-bar {
+  @apply mx-5 flex min-h-16 items-center bg-zinc-100 px-4 sm:mx-6 sm:px-5 lg:mx-8 lg:min-h-[72px];
+}
+
+.login-title-bar h1 {
+  @apply w-full text-center text-3xl font-medium tracking-tight;
+}
+
+.login-content {
+  @apply mx-auto grid w-full max-w-[1440px] lg:min-h-0 lg:grid-cols-2 lg:items-start;
+}
+
+.login-panel {
+  @apply px-6 py-7 sm:px-10 lg:min-h-0 lg:px-12 lg:py-5;
+}
+
+.login-panel--register {
+  @apply border-t border-border lg:border-l lg:border-t-0;
+}
+
+.login-panel__inner,
+.register-promo {
+  @apply mx-auto w-full max-w-[500px];
+}
+
+/* Reduced the empty area above “會員登入”. */
+.login-section-title {
+  @apply mb-4 text-center text-xl font-semibold;
+}
+
+.auth-page-form {
+  @apply space-y-5;
+}
+
+.auth-role-tabs {
+  @apply grid grid-cols-2 border border-border;
+}
+
+.auth-role-tab {
+  @apply relative h-12 bg-white text-sm font-medium text-muted-foreground transition-colors;
+}
+
+.auth-role-tab + .auth-role-tab {
+  @apply border-l border-border;
+}
+
+.auth-role-tab:hover {
+  @apply bg-zinc-50 text-foreground;
+}
+
+.auth-role-tab--selected {
+  @apply font-semibold text-foreground;
+}
+
+.auth-role-tab--selected::after {
+  content: '';
+  @apply absolute inset-x-0 bottom-0 h-0.5 bg-primary;
+}
+
+.auth-form-section {
+  @apply space-y-5;
+}
+
+.auth-field-block {
+  @apply space-y-1.5;
+}
+
+.auth-field-label {
+  @apply block text-sm font-semibold text-foreground;
+}
+
+.auth-input-wrap {
+  @apply relative;
+}
+
+.auth-input {
+  @apply h-10 rounded-none border-x-0 border-t-0 bg-transparent px-0 text-sm shadow-none transition-colors focus-visible:ring-0;
+}
+
+.auth-input--with-leading {
+  @apply pl-9;
+}
+
+.auth-input--with-status {
+  @apply pr-10;
+}
+
+.auth-input--default {
+  @apply border-border;
+}
+
+.auth-input--valid {
+  @apply border-emerald-500;
+}
+
+.auth-input--error {
+  @apply border-destructive;
+}
+
+.auth-input-icon {
+  @apply pointer-events-none absolute left-1 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground;
+}
+
+.auth-input-status-icon,
+.auth-input-toggle {
+  @apply absolute right-1 top-1/2 -translate-y-1/2;
+}
+
+.auth-input-status-icon {
+  @apply pointer-events-none h-[18px] w-[18px];
+}
+
+.auth-input-status-icon--valid {
+  @apply text-emerald-500;
+}
+
+.auth-input-status-icon--error,
+.auth-feedback--error {
+  @apply text-destructive;
+}
+
+.auth-input-toggle {
+  @apply text-muted-foreground transition-colors hover:text-foreground;
+}
+
+.auth-input-toggle-icon {
+  @apply h-[18px] w-[18px];
+}
+
+.auth-feedback {
+  @apply text-xs;
+}
+
+.auth-feedback--valid {
+  @apply text-emerald-600;
+}
+
+.auth-forgot-row {
+  @apply -mt-3 flex justify-end;
+}
+
+.auth-inline-link {
+  @apply text-xs font-medium text-primary hover:underline;
+}
+
+.auth-checkbox-row {
+  @apply flex min-h-6 items-center gap-2 text-sm text-foreground;
+}
+
+.auth-checkbox {
+  @apply rounded-none border-border;
+}
+
+.auth-primary-button,
+.register-promo__button {
+  @apply h-12 w-full rounded-none bg-zinc-950 text-sm font-semibold text-white hover:bg-zinc-800;
+  box-shadow: none;
+}
+
+.auth-login-actions {
+  @apply space-y-3;
+}
+
+.auth-staff-hint {
+  @apply pt-1 text-center text-xs text-muted-foreground;
+}
+
+.auth-divider {
+  @apply flex w-full items-center gap-3 text-xs text-muted-foreground;
+}
+
+.auth-divider-line {
+  @apply h-px flex-1 bg-border;
+}
+
+.auth-google-button {
+  @apply relative flex h-12 w-full items-center justify-center gap-3 border border-[#747775] bg-white px-3 text-sm font-medium text-[#1f1f1f] transition-colors hover:bg-zinc-50;
+  font-family: Arial, sans-serif;
+}
+
+.auth-google-icon {
+  @apply h-[18px] w-[18px] shrink-0;
+}
+
+.auth-login-error {
+  @apply w-full text-center leading-5;
+}
+
+.register-promo {
+  @apply flex flex-col items-center text-center;
+}
+
+.register-promo h2 {
+  @apply text-xl font-semibold tracking-tight lg:text-2xl;
+}
+
+.register-promo__lead {
+  @apply mt-4 text-sm text-muted-foreground;
+}
+
+.register-feature-list {
+  @apply my-4 w-full text-left;
+}
+
+.register-feature-list li {
+  @apply flex gap-5 border-b border-border px-3 py-4 first:border-t;
+}
+
+.register-feature-list li > svg {
+  @apply mt-0.5 h-7 w-7 shrink-0 stroke-[1.6];
+}
+
+.register-feature-list h3 {
+  @apply text-sm font-semibold;
+}
+
+.register-feature-list p {
+  @apply mt-0.5 text-xs leading-5 text-muted-foreground;
+}
+
+@media (min-width: 1024px) {
+  .login-page {
+    display: grid;
+    min-height: 100dvh;
+    grid-template-rows: 64px 64px auto;
+    align-content: start;
+    overflow-x: hidden;
+  }
+
+  .login-header {
+    height: 64px;
+  }
+
+  .login-title-bar {
+    min-height: 64px;
+  }
+
+  /*
+   * Let each column follow its content height. Do not pin actions to the
+   * viewport bottom; that created the large empty block in the screenshot.
+   */
+  .login-content {
+    height: 540px;
+    min-height: 540px;
+    padding-bottom: 24px;
+  }
+
+  .login-panel--form {
+    @apply flex justify-end;
+  }
+
+  .login-panel--register {
+    @apply flex justify-start;
+  }
+
+  .login-panel__inner,
+  .register-promo {
+    height: 100%;
+    position: relative;
+    box-sizing: border-box;
+    padding-bottom: 72px;
+  }
+
+  .auth-form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .auth-form-section > :not([hidden]) {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  .auth-forgot-row {
+    margin-top: -2px;
+  }
+
+  .auth-checkbox-row {
+    margin-top: 2px;
+    margin-bottom: 0;
+  }
+
+  .auth-login-actions,
+  .register-promo__button {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    top: 325px;
+  }
+}
+
+/* Extra compact mode for notebook screens / browser toolbars with less height. */
+@media (min-width: 1024px) and (max-height: 760px) {
+  .login-page {
+    grid-template-rows: 64px 56px auto;
+  }
+
+  .login-content {
+    height: 540px;
+    min-height: 540px;
+    padding-bottom: 16px;
+  }
+
+  .login-header {
+    height: 64px;
+  }
+
+  .login-title-bar {
+    min-height: 56px;
+  }
+
+  .login-title-bar h1 {
+    font-size: 1.75rem;
+  }
+
+  .login-panel {
+    padding-top: 30px;
+    padding-bottom: 14px;
+  }
+
+  .login-section-title {
+    margin-bottom: 15px;
+  }
+
+  .auth-page-form > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 16px;
+  }
+
+  .register-feature-list {
+    margin-top: 10px;
+    margin-bottom: 10px;
+  }
+
+  .register-feature-list li {
+    padding-top: 11px;
+    padding-bottom: 11px;
+  }
+}
+
+@media (max-width: 639px) {
+  .login-brand {
+    @apply text-xl;
+  }
+
+  .login-brand__icon {
+    @apply h-8 w-8;
+  }
+
+  .login-title-bar h1 {
+    @apply text-2xl;
+  }
+}
