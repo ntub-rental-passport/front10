@@ -471,6 +471,15 @@ function focusRisk(risk: RiskItem): void {
   void scrollToReaderHighlight()
 }
 
+function toggleRiskDetails(risk: RiskItem): void {
+  if (activeRiskId.value === risk.id) {
+    activeRiskId.value = null
+    riskFocusText.value = ''
+    return
+  }
+  focusRisk(risk)
+}
+
 function focusRiskDetail(detail: RiskDetail): void {
   if (detail.pageIndex === null) return
   riskFocusText.value = detail.focusText
@@ -625,8 +634,9 @@ function copyMessage(message: ChatMessage): void {
         <div class="analysis-title-row">
           <span class="analysis-ai-mark">AI</span>
           <div>
+            <span class="analysis-eyebrow">CONTRACT REVIEW · 01</span>
             <h1>契約 AI 診斷分析</h1>
-            <p>整合關鍵欄位、RAG 法規比對與 AI 語意分析，協助你看懂租約風險。</p>
+            <p>把複雜條文整理成可採取行動的重點，先看風險，再回到原文確認。</p>
           </div>
         </div>
       </div>
@@ -637,25 +647,30 @@ function copyMessage(message: ChatMessage): void {
 
     <section class="analysis-overview" aria-label="AI 診斷結果總覽">
       <div class="analysis-overview-heading">
-        <div>
-          <span>AI 診斷結果總覽</span>
-          <strong>共發現 {{ risks.length }} 項需留意內容</strong>
+        <div class="analysis-overview-copy">
+          <span class="analysis-section-index">DIAGNOSIS · 02</span>
+          <div class="analysis-total-risk">
+            <strong>{{ risks.length }}</strong>
+            <span>項內容<br />需要留意</span>
+          </div>
+          <p v-if="highRiskCount">優先確認 {{ highRiskCount }} 項高風險，再依序檢視其他提醒。</p>
+          <p v-else>目前沒有高風險項目，可依序確認其餘提醒。</p>
         </div>
         <span class="analysis-status-pill"><CheckCircle2 :size="15" /> 分析完成</span>
       </div>
       <div class="analysis-stats">
-        <div><span>總風險項目</span><strong>{{ risks.length }}</strong></div>
-        <div class="is-high"><span>高風險</span><strong>{{ highRiskCount }}</strong></div>
-        <div class="is-medium"><span>中風險</span><strong>{{ mediumRiskCount }}</strong></div>
-        <div class="is-low"><span>低風險</span><strong>{{ lowRiskCount }}</strong></div>
+        <div class="is-high"><span>HIGH · 高風險</span><strong>{{ highRiskCount }}</strong><small>建議優先處理</small></div>
+        <div class="is-medium"><span>MED · 中風險</span><strong>{{ mediumRiskCount }}</strong><small>簽約前再確認</small></div>
+        <div class="is-low"><span>LOW · 低風險</span><strong>{{ lowRiskCount }}</strong><small>閱讀時留意</small></div>
       </div>
     </section>
 
     <section class="legal-scope-panel" aria-labelledby="legal-scope-title">
       <div class="legal-scope-heading">
         <div>
-          <strong id="legal-scope-title"><Scale :size="16" /> 法律依據範圍</strong>
-          <span>依契約條文比對適用法規，風險卡只顯示實際相關的條文。</span>
+          <span class="analysis-section-index">LEGAL BASIS · 03</span>
+          <strong id="legal-scope-title"><Scale :size="16" /> 本次分析參照法規</strong>
+          <span>只列出與這份契約相關的依據。</span>
         </div>
         <span class="legal-scope-relation">住宅租賃依租賃住宅條例第 5 條視為具消費關係</span>
       </div>
@@ -681,8 +696,9 @@ function copyMessage(message: ChatMessage): void {
       <section class="analysis-reader-card" aria-labelledby="analysis-reader-title">
         <div class="analysis-panel-heading">
           <div>
+            <span class="analysis-section-index">DOCUMENT · 04</span>
             <h2 id="analysis-reader-title"><FileText :size="19" /> 契約 PDF 閱讀器</h2>
-            <p>一次顯示一頁 OCR 內容，可搜尋全文並定位風險條文。</p>
+            <p>搜尋全文，或從右側風險直接定位原文。</p>
           </div>
         </div>
 
@@ -767,8 +783,9 @@ function copyMessage(message: ChatMessage): void {
         <section class="risk-panel" aria-labelledby="risk-panel-title">
           <div class="analysis-panel-heading risk-panel-heading">
             <div>
+              <span class="analysis-section-index">RISK MAP · 05</span>
               <h2 id="risk-panel-title"><AlertTriangle :size="19" /> 偵測到的風險項次</h2>
-              <p>依來源分類；點擊頁碼即可定位條文，亦可返回欄位修改。</p>
+              <p>先看摘要，展開後再定位條文或詢問 AI。</p>
             </div>
           </div>
 
@@ -817,7 +834,7 @@ function copyMessage(message: ChatMessage): void {
                       <FileSearch :size="12" /> 第 {{ risk.pageIndex + 1 }} 頁
                     </button>
                   </span>
-                  <ul v-if="risk.details?.length" class="risk-detail-list">
+                  <ul v-if="risk.details?.length && activeRiskId === risk.id" class="risk-detail-list">
                     <li v-for="detail in risk.details" :key="detail.label">
                       <span>{{ detail.label }}</span>
                       <button
@@ -833,13 +850,22 @@ function copyMessage(message: ChatMessage): void {
                     </li>
                   </ul>
                   <span v-else class="risk-clause">{{ risk.clause }}</span>
-                  <span class="risk-description">{{ risk.description }}</span>
-                  <span v-if="risk.legalBasis?.length" class="risk-legal-basis">
+                  <span v-show="activeRiskId === risk.id" class="risk-description">{{ risk.description }}</span>
+                  <span v-if="risk.legalBasis?.length && activeRiskId === risk.id" class="risk-legal-basis">
                     <span v-for="basis in risk.legalBasis" :key="basis">{{ basis }}</span>
                   </span>
                 </span>
               </div>
               <div class="risk-actions">
+                <button
+                  type="button"
+                  class="risk-summary-button"
+                  :aria-expanded="activeRiskId === risk.id"
+                  @click="toggleRiskDetails(risk)"
+                >
+                  {{ activeRiskId === risk.id ? '收合摘要' : '查看摘要' }}
+                  <ChevronRight :size="14" aria-hidden="true" />
+                </button>
                 <button
                   v-if="risk.source === 'field' && risk.groupId"
                   type="button"
