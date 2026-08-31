@@ -1193,7 +1193,7 @@ textarea:focus-visible {
 .risk-list,
 .chat-messages {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--violet) 35%, transparent) transparent;
+  scrollbar-color: #4b5563 transparent;
 }
 
 .analysis-page-text::-webkit-scrollbar,
@@ -1216,7 +1216,7 @@ textarea:focus-visible {
 .chat-messages::-webkit-scrollbar-thumb {
   border: 0.125rem solid transparent;
   border-radius: 999px;
-  background-color: color-mix(in srgb, var(--violet) 28%, transparent);
+  background-color: #4b5563;
   background-clip: padding-box;
 }
 
@@ -1224,7 +1224,7 @@ textarea:focus-visible {
 .analysis-reader-canvas:hover::-webkit-scrollbar-thumb,
 .risk-list:hover::-webkit-scrollbar-thumb,
 .chat-messages:hover::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--violet) 45%, transparent);
+  background-color: #374151;
 }
 
 .risk-tabs,
