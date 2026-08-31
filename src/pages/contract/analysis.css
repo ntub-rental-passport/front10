@@ -454,7 +454,7 @@
   border-radius: 0.25rem;
   background: #fff;
   box-shadow: 0 12px 28px rgb(15 23 42 / 12%);
-  color: #17213b;
+  color: var(--ink, #17213b);
 }
 
 .analysis-pdf-page::before {
@@ -594,7 +594,7 @@
 }
 
 .risk-card.is-low {
-  border-left-color: #10b981;
+  border-left-color: #17b26a;
 }
 
 .risk-card-main {
@@ -802,7 +802,7 @@
 }
 
 .risk-empty-state svg {
-  color: #10b981;
+  color: #17b26a;
 }
 
 .risk-empty-state strong {
@@ -1188,28 +1188,87 @@ textarea:focus-visible {
   }
 }
 
+.analysis-page-text,
+.analysis-reader-canvas,
+.risk-list,
+.chat-messages {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--violet) 35%, transparent) transparent;
+}
+
+.analysis-page-text::-webkit-scrollbar,
+.analysis-reader-canvas::-webkit-scrollbar,
+.risk-list::-webkit-scrollbar,
+.chat-messages::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.analysis-page-text::-webkit-scrollbar-track,
+.analysis-reader-canvas::-webkit-scrollbar-track,
+.risk-list::-webkit-scrollbar-track,
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.analysis-page-text::-webkit-scrollbar-thumb,
+.analysis-reader-canvas::-webkit-scrollbar-thumb,
+.risk-list::-webkit-scrollbar-thumb,
+.chat-messages::-webkit-scrollbar-thumb {
+  border: 0.125rem solid transparent;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--violet) 28%, transparent);
+  background-clip: padding-box;
+}
+
+.analysis-page-text:hover::-webkit-scrollbar-thumb,
+.analysis-reader-canvas:hover::-webkit-scrollbar-thumb,
+.risk-list:hover::-webkit-scrollbar-thumb,
+.chat-messages:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--violet) 45%, transparent);
+}
+
+.risk-tabs,
+.chat-suggestions {
+  scrollbar-width: none;
+}
+
+.risk-tabs::-webkit-scrollbar,
+.chat-suggestions::-webkit-scrollbar {
+  display: none;
+}
+
 /* =========================================================
    Editorial paper-cut redesign
    ========================================================= */
 .contract-analysis-page {
-  --paper: #fffdf8;
-  --paper-warm: #f6f1e8;
-  --paper-deep: #eae3d7;
-  --ink: #202138;
-  --ink-soft: #65677a;
-  --violet: #5146a8;
-  --violet-soft: #e9e6f6;
-  --coral: #c96057;
-  --coral-soft: #f7e5e0;
-  --ochre: #b47a2b;
-  --ochre-soft: #f5ead5;
-  --sage: #4f806d;
-  --sage-soft: #e1eee7;
+  --paper: #ffffff;
+  --paper-warm: color-mix(in srgb, #ede9ff 42%, #ffffff);
+  --paper-deep: #e6e6ec;
+  --ink: #121212;
+  --ink-soft: #6b6b73;
+  --violet: #5b46e5;
+  --violet-strong: #4b35d6;
+  --violet-soft: #ede9ff;
+  --coral: #ef4444;
+  --coral-soft: color-mix(in srgb, #ef4444 10%, #ffffff);
+  --ochre: #f59e0b;
+  --ochre-soft: color-mix(in srgb, #f59e0b 12%, #ffffff);
+  --sage: #17b26a;
+  --sage-soft: color-mix(in srgb, #17b26a 12%, #ffffff);
   position: relative;
   isolation: isolate;
   padding: clamp(1.25rem, 2.4vw, 2.5rem);
-  background: var(--paper-warm);
+  background: transparent;
   color: var(--ink);
+}
+
+.contract-analysis-page::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background: var(--paper-warm);
+  pointer-events: none;
+  content: '';
 }
 
 .analysis-page-header,
@@ -1249,8 +1308,8 @@ textarea:focus-visible {
   height: 3.1rem;
   margin-top: 0.15rem;
   border-radius: 0.85rem;
-  background: var(--violet);
-  box-shadow: 0 10px 20px rgb(81 70 168 / 20%);
+  background: linear-gradient(145deg, var(--violet), var(--violet-strong));
+  box-shadow: 0 10px 20px rgb(91 70 229 / 20%);
   font-size: 0.9rem;
 }
 
@@ -1304,11 +1363,11 @@ textarea:focus-visible {
   grid-template-columns: minmax(18rem, 0.82fr) minmax(28rem, 1.18fr);
   gap: clamp(1.25rem, 2.8vw, 2.75rem);
   margin-bottom: 1.5rem;
-  border: 1px solid #e5dfd3;
+  border: 1px solid #e6e6ec;
   border-radius: 1.35rem;
   background: var(--paper);
   padding: clamp(1.4rem, 2.4vw, 2.1rem);
-  box-shadow: 0 14px 32px rgb(58 47 36 / 6%);
+  box-shadow: 0 14px 32px rgb(18 18 18 / 6%);
   animation: paper-rise 560ms 70ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -1377,7 +1436,7 @@ textarea:focus-visible {
 
 .analysis-stats > div:hover {
   transform: translateY(-3px);
-  box-shadow: 0 10px 22px rgb(58 47 36 / 8%);
+  box-shadow: 0 10px 22px rgb(18 18 18 / 8%);
 }
 
 .analysis-stats span {
@@ -1403,27 +1462,27 @@ textarea:focus-visible {
 
 .analysis-stats .is-high {
   background: var(--coral-soft);
-  color: #a4433e;
+  color: #b42318;
 }
 
 .analysis-stats .is-medium {
   background: var(--ochre-soft);
-  color: #8f5d1d;
+  color: #92400e;
 }
 
 .analysis-stats .is-low {
   background: var(--sage-soft);
-  color: #386a57;
+  color: #0f7a4d;
 }
 
 .legal-scope-panel {
   position: relative;
   margin-bottom: 1.5rem;
-  border-color: #e5dfd3;
+  border-color: #e6e6ec;
   border-radius: 1.1rem;
   background: rgb(255 253 248 / 82%);
   padding: 1rem 1.1rem 1.1rem;
-  box-shadow: 0 8px 20px rgb(58 47 36 / 4%);
+  box-shadow: 0 8px 20px rgb(18 18 18 / 4%);
   animation: paper-rise 560ms 130ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -1462,7 +1521,7 @@ textarea:focus-visible {
 
 .legal-scope-grid > a {
   min-height: 3.35rem;
-  border-color: #e1dbd1;
+  border-color: #e6e6ec;
   border-radius: 0.75rem;
   background: transparent;
   padding: 0.6rem 0.72rem;
@@ -1472,7 +1531,7 @@ textarea:focus-visible {
 .legal-scope-grid > a:hover {
   border-color: #b8afd9;
   background: var(--paper);
-  box-shadow: 0 8px 16px rgb(58 47 36 / 7%);
+  box-shadow: 0 8px 16px rgb(18 18 18 / 7%);
   transform: translateY(-2px);
 }
 
@@ -1489,10 +1548,10 @@ textarea:focus-visible {
 .analysis-reader-card,
 .risk-panel,
 .legal-chat-panel {
-  border-color: #e5dfd3;
+  border-color: #e6e6ec;
   border-radius: 1.25rem;
   background: var(--paper);
-  box-shadow: 0 14px 30px rgb(58 47 36 / 6%);
+  box-shadow: 0 14px 30px rgb(18 18 18 / 6%);
 }
 
 .analysis-reader-card {
@@ -1524,20 +1583,20 @@ textarea:focus-visible {
 }
 
 .analysis-reader-toolbar {
-  border-color: #e2dcd2;
-  background: #f2eee7;
+  border-color: #e6e6ec;
+  background: #f1f0f6;
   padding: 0.7rem 0.9rem;
 }
 
 .analysis-search {
-  border-color: #d9d2c7;
+  border-color: #dcdce3;
   border-radius: 999px;
   background: var(--paper);
 }
 
 .analysis-search:focus-within {
   border-color: #998fc8;
-  box-shadow: 0 0 0 3px rgb(81 70 168 / 10%);
+  box-shadow: 0 0 0 3px rgb(91 70 229 / 10%);
 }
 
 .analysis-page-number,
@@ -1546,7 +1605,7 @@ textarea:focus-visible {
 }
 
 .analysis-page-number {
-  border-color: #d9d2c7;
+  border-color: #dcdce3;
   background: var(--paper);
 }
 
@@ -1556,13 +1615,13 @@ textarea:focus-visible {
 }
 
 .analysis-reader-canvas {
-  background: #ece8e1;
+  background: #e9e9ee;
 }
 
 .analysis-pdf-page {
-  border-color: #d9d3c8;
+  border-color: #dcdce3;
   border-radius: 0.5rem;
-  box-shadow: 0 16px 30px rgb(58 47 36 / 10%);
+  box-shadow: 0 16px 30px rgb(18 18 18 / 10%);
 }
 
 .analysis-page-marker {
@@ -1572,7 +1631,7 @@ textarea:focus-visible {
 
 .analysis-reader-highlight--risk {
   background: #e6e0f3;
-  box-shadow: 0 0 0 2px rgb(81 70 168 / 35%);
+  box-shadow: 0 0 0 2px rgb(91 70 229 / 35%);
   animation: soft-pulse 1.4s ease-out 1;
 }
 
@@ -1582,8 +1641,8 @@ textarea:focus-visible {
 
 .risk-tabs {
   gap: 0.4rem;
-  border-color: #e2dcd2;
-  background: #f8f4ed;
+  border-color: #e6e6ec;
+  background: #f4f3f9;
   padding: 0.5rem 0.75rem;
 }
 
@@ -1604,7 +1663,7 @@ textarea:focus-visible {
   border-color: #d8d2ea;
   background: var(--paper);
   color: var(--violet);
-  box-shadow: 0 4px 10px rgb(58 47 36 / 7%);
+  box-shadow: 0 4px 10px rgb(18 18 18 / 7%);
 }
 
 .risk-tabs button span {
@@ -1614,17 +1673,17 @@ textarea:focus-visible {
 .risk-list {
   gap: 0.9rem;
   padding: 1rem;
-  background: #f3efe8;
+  background: #f4f3f9;
 }
 
 .risk-card {
   position: relative;
   overflow: visible;
-  border-color: #e5dfd3;
+  border-color: #e6e6ec;
   border-left-width: 1px;
   border-radius: 0.9rem;
   background: var(--paper);
-  box-shadow: 0 4px 12px rgb(58 47 36 / 4%);
+  box-shadow: 0 4px 12px rgb(18 18 18 / 4%);
   transition: transform 210ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 210ms ease, border-color 210ms ease;
   animation: card-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -1651,12 +1710,12 @@ textarea:focus-visible {
 
 .risk-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgb(58 47 36 / 9%);
+  box-shadow: 0 10px 20px rgb(18 18 18 / 9%);
 }
 
 .risk-card.is-active {
   border-color: #bcb3dc;
-  box-shadow: 0 0 0 1px var(--violet-soft), 0 12px 24px rgb(58 47 36 / 9%);
+  box-shadow: 0 0 0 1px var(--violet-soft), 0 12px 24px rgb(18 18 18 / 9%);
   transform: translateY(-2px);
 }
 
@@ -1669,7 +1728,7 @@ textarea:focus-visible {
   width: 2.35rem;
   height: 2.35rem;
   flex-basis: 2.35rem;
-  border: 1px solid rgb(81 70 168 / 10%);
+  border: 1px solid rgb(91 70 229 / 10%);
   border-radius: 0.65rem;
   background: var(--violet-soft);
   color: var(--violet);
@@ -1697,17 +1756,17 @@ textarea:focus-visible {
 
 .risk-card.is-high .risk-severity {
   background: var(--coral-soft);
-  color: #a4433e;
+  color: #b42318;
 }
 
 .risk-card.is-medium .risk-severity {
   background: var(--ochre-soft);
-  color: #8f5d1d;
+  color: #92400e;
 }
 
 .risk-card.is-low .risk-severity {
   background: var(--sage-soft);
-  color: #386a57;
+  color: #0f7a4d;
 }
 
 .risk-clause {
@@ -1727,12 +1786,12 @@ textarea:focus-visible {
 }
 
 .risk-detail-list li {
-  border-color: #ddd7cd;
+  border-color: #e6e6ec;
 }
 
 .risk-actions {
   justify-content: flex-start;
-  border-color: #e6e0d7;
+  border-color: #e6e6ec;
   padding: 0.48rem 0.65rem;
 }
 
@@ -1771,11 +1830,11 @@ textarea:focus-visible {
 
 .chat-bot-mark {
   border-radius: 0.75rem;
-  background: var(--violet);
+  background: linear-gradient(145deg, var(--violet), var(--violet-strong));
 }
 
 .chat-messages {
-  background: #f5f1ea;
+  background: #f4f3f9;
 }
 
 @keyframes paper-rise {
@@ -1794,9 +1853,9 @@ textarea:focus-visible {
 }
 
 @keyframes soft-pulse {
-  0% { box-shadow: 0 0 0 0 rgb(81 70 168 / 32%); }
-  70% { box-shadow: 0 0 0 7px rgb(81 70 168 / 0%); }
-  100% { box-shadow: 0 0 0 2px rgb(81 70 168 / 35%); }
+  0% { box-shadow: 0 0 0 0 rgb(91 70 229 / 32%); }
+  70% { box-shadow: 0 0 0 7px rgb(91 70 229 / 0%); }
+  100% { box-shadow: 0 0 0 2px rgb(91 70 229 / 35%); }
 }
 
 @keyframes chat-open {
@@ -1847,7 +1906,7 @@ textarea:focus-visible {
   }
 
   .risk-tabs {
-    border-block: 1px solid #e2dcd2;
+    border-block: 1px solid #e6e6ec;
   }
 }
 

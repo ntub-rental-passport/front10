@@ -17,7 +17,11 @@ const SIDEBAR_PIN_KEY = 'rentmate-sidebar-pinned'
 const isSidebarPinned = ref(false)
 const isSidebarHovered = ref(false)
 
-const isSidebarExpanded = computed(() => isSidebarPinned.value || isSidebarHovered.value)
+// 契約診斷頁需要在文件與風險之間來回閱讀，保留完整功能名稱可避免只剩圖示而失去脈絡。
+const keepsSidebarExpanded = computed(() => route.path === '/app/contract-analysis')
+const isSidebarExpanded = computed(
+  () => keepsSidebarExpanded.value || isSidebarPinned.value || isSidebarHovered.value,
+)
 const desktopNavItems = computed(() => [...navItems, accountItem])
 const isWideContentRoute = computed(() => route.path.startsWith('/app/notes'))
 
