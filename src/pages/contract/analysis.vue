@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
 import {
@@ -114,6 +114,38 @@ const legalSourceScopes = [
     href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=D0130038',
   },
 ] as const
+
+const prefersReducedMotion =
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+function useAnimatedNumber(source: () => number) {
+  const display = ref(0)
+  let frame = 0
+  watch(
+    source,
+    (target) => {
+      cancelAnimationFrame(frame)
+      if (prefersReducedMotion) {
+        display.value = target
+        return
+      }
+      const start = display.value
+      const delta = target - start
+      const startTime = performance.now()
+      const duration = 640
+      const tick = (now: number) => {
+        const progress = Math.min((now - startTime) / duration, 1)
+        const eased = 1 - Math.pow(1 - progress, 3)
+        display.value = Math.round(start + delta * eased)
+        if (progress < 1) frame = requestAnimationFrame(tick)
+      }
+      frame = requestAnimationFrame(tick)
+    },
+    { immediate: true },
+  )
+  onBeforeUnmount(() => cancelAnimationFrame(frame))
+  return display
+}
 
 const router = useRouter()
 const ocrResult = loadContractOcrResult()
@@ -384,6 +416,10 @@ const filteredRisks = computed(() => risks.value.filter((risk) => risk.source ==
 const highRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'high').length)
 const mediumRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'medium').length)
 const lowRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'low').length)
+const displayTotalRisk = useAnimatedNumber(() => risks.value.length)
+const displayHighRisk = useAnimatedNumber(() => highRiskCount.value)
+const displayMediumRisk = useAnimatedNumber(() => mediumRiskCount.value)
+const displayLowRisk = useAnimatedNumber(() => lowRiskCount.value)
 const riskTabs = computed(() => [
   { id: 'field' as const, label: '關鍵欄位檢查', count: risks.value.filter((risk) => risk.source === 'field').length },
   { id: 'rag' as const, label: 'RAG 風險分析', count: risks.value.filter((risk) => risk.source === 'rag').length },
@@ -650,7 +686,7 @@ function copyMessage(message: ChatMessage): void {
         <div class="analysis-overview-copy">
           <span class="analysis-section-index">DIAGNOSIS · 02</span>
           <div class="analysis-total-risk">
-            <strong>{{ risks.length }}</strong>
+            <strong>{{ displayTotalRisk }}</strong>
             <span>項內容<br />需要留意</span>
           </div>
           <p v-if="highRiskCount">優先確認 {{ highRiskCount }} 項高風險，再依序檢視其他提醒。</p>
@@ -659,9 +695,9 @@ function copyMessage(message: ChatMessage): void {
         <span class="analysis-status-pill"><CheckCircle2 :size="15" /> 分析完成</span>
       </div>
       <div class="analysis-stats">
-        <div class="is-high"><span>HIGH · 高風險</span><strong>{{ highRiskCount }}</strong><small>建議優先處理</small></div>
-        <div class="is-medium"><span>MED · 中風險</span><strong>{{ mediumRiskCount }}</strong><small>簽約前再確認</small></div>
-        <div class="is-low"><span>LOW · 低風險</span><strong>{{ lowRiskCount }}</strong><small>閱讀時留意</small></div>
+        <div class="is-high"><span>HIGH · 高風險</span><strong>{{ displayHighRisk }}</strong><small>建議優先處理</small></div>
+        <div class="is-medium"><span>MED · 中風險</span><strong>{{ displayMediumRisk }}</strong><small>簽約前再確認</small></div>
+        <div class="is-low"><span>LOW · 低風險</span><strong>{{ displayLowRisk }}</strong><small>閱讀時留意</small></div>
       </div>
     </section>
 

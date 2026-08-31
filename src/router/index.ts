@@ -21,8 +21,16 @@ const router = createRouter({
   routes: [
     { path: '/', component: () => import('@/src/pages/home.vue') },
     { path: '/maintenance', component: () => import('@/src/pages/maintenance.vue') },
-    { path: '/login', component: () => import('@/src/pages/auth/login.vue') },
-    { path: '/register', component: () => import('@/src/pages/auth/register.vue') },
+    {
+      path: '/login',
+      alias: '/auth/login',
+      component: () => import('@/src/pages/auth/login.vue'),
+    },
+    {
+      path: '/register',
+      alias: '/auth/register',
+      component: () => import('@/src/pages/auth/register.vue'),
+    },
     { path: '/staff-login', component: () => import('@/src/pages/auth/staff-login.vue') },
     { path: '/verify-email', component: () => import('@/src/pages/auth/verify-code.vue') },
     {
@@ -172,6 +180,13 @@ router.beforeEach((to) => {
 
   if (to.path === '/verify-email' && !pendingRegistration) {
     return '/register'
+  }
+
+  if (
+    session?.isAuthenticated &&
+    ['/login', '/auth/login', '/register', '/auth/register'].includes(to.path)
+  ) {
+    return resolveRoleHome(session.role)
   }
 
   if (!requiresAuth) return true

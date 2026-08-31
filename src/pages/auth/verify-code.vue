@@ -12,6 +12,7 @@ import {
   resendEmailVerification,
   resolveRoleHome,
 } from '@/src/composables/useAuth'
+import { normalizeAuthRedirect } from '@/src/utils/auth-redirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,6 +27,14 @@ onUnmounted(() => window.clearInterval(timer))
 const email = computed(() =>
   typeof route.query.email === 'string' ? route.query.email : pendingRegistration.value?.email ?? 'your@email.com',
 )
+const redirectTarget = computed(() => normalizeAuthRedirect(route.query.redirect))
+const registerLink = computed(() => ({
+  path: '/register',
+  query: {
+    ...(typeof route.query.role === 'string' ? { role: route.query.role } : {}),
+    ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
+  },
+}))
 const resendAvailableIn = computed(() => Math.max(
   0,
   Math.ceil(((pendingRegistration.value?.resendAvailableAt ?? 0) - now.value) / 1000),
@@ -119,7 +128,12 @@ async function handleVerification(): Promise<void> {
     const session = await completeEmailVerification(getCode())
     if (!session) throw new Error('找不到待驗證資料，請重新註冊。')
     errorMessage.value = ''
-    await router.push(needsNicknameSetup(session) ? '/welcome' : resolveRoleHome(session.role))
+    const target = redirectTarget.value || resolveRoleHome(session.role)
+    await router.push(
+      needsNicknameSetup(session)
+        ? { path: '/welcome', query: { redirect: target } }
+        : target,
+    )
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '驗證失敗，請稍後再試。'
   } finally {
@@ -223,7 +237,7 @@ async function handleResend(): Promise<void> {
           {{ resendAvailableIn > 0 ? `${resendAvailableIn} 秒後可重新寄送` : '重新寄送驗證碼' }}
         </Button>
         <Button as-child size="lg" variant="outline" class="h-14 w-full rounded-[1rem] text-base">
-          <RouterLink to="/register">返回註冊</RouterLink>
+          <RouterLink :to="registerLink">返回註冊</RouterLink>
         </Button>
       </div>
     </form>

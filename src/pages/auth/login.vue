@@ -45,6 +45,7 @@ import {
   exchangeGoogleTicket,
   getGoogleLoginUrl,
 } from '@/src/services/authApi'
+import { normalizeAuthRedirect } from '@/src/utils/auth-redirect'
 
 const email = ref('')
 const password = ref('')
@@ -65,8 +66,11 @@ const registerLink = computed(() => ({
   path: '/register',
   query: {
     role: selectedIdentity.value,
+    ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
   },
 }))
+
+const redirectTarget = computed(() => normalizeAuthRedirect(route.query.redirect))
 
 function selectIdentity(identity: AuthIdentity): void {
   selectedIdentity.value = identity
@@ -79,8 +83,7 @@ function selectIdentity(identity: AuthIdentity): void {
 }
 
 function getPostLoginTarget(): string {
-  const redirectTarget = typeof route.query.redirect === 'string' ? route.query.redirect : null
-  return redirectTarget || resolveRoleHome(selectedOption.value.authRole)
+  return redirectTarget.value || resolveRoleHome(selectedOption.value.authRole)
 }
 
 const googleLoginUrl = computed(() =>
@@ -187,9 +190,14 @@ async function handleGoogleOAuthReturn(): Promise<void> {
     const account = await exchangeGoogleTicket(ticket)
     if (account.registrationRequired === true) {
       saveGoogleRegistrationContext(account)
+      const accountRedirect = normalizeAuthRedirect(account.redirectPath)
       await router.replace({
         path: '/register',
-        query: { role: account.role, google: '1' },
+        query: {
+          role: account.role,
+          google: '1',
+          ...(accountRedirect ? { redirect: accountRedirect } : {}),
+        },
       })
       return
     }

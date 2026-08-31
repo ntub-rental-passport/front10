@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/src/components/auth-layout.vue'
 import { Button } from '@/components/ui/button/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Sparkles, UserRound } from 'lucide-vue-next'
 import { finishNicknameSetup } from '@/src/composables/useAuth'
+import { normalizeAuthRedirect } from '@/src/utils/auth-redirect'
 
 const router = useRouter()
+const route = useRoute()
 const nickname = ref('')
 const errorMessage = ref('')
 
@@ -20,7 +22,7 @@ async function handleStart(): Promise<void> {
 
   errorMessage.value = ''
   finishNicknameSetup(nickname.value)
-  await router.push('/app')
+  await router.push(normalizeAuthRedirect(route.query.redirect) || '/app')
 }
 </script>
 
