@@ -17,11 +17,8 @@ const SIDEBAR_PIN_KEY = 'rentmate-sidebar-pinned'
 const isSidebarPinned = ref(false)
 const isSidebarHovered = ref(false)
 
-// 契約診斷頁需要在文件與風險之間來回閱讀，保留完整功能名稱可避免只剩圖示而失去脈絡。
-const keepsSidebarExpanded = computed(() => route.path === '/app/contract-analysis')
-const isSidebarExpanded = computed(
-  () => keepsSidebarExpanded.value || isSidebarPinned.value || isSidebarHovered.value,
-)
+const hidesDesktopSidebar = computed(() => route.path === '/app/contract-analysis')
+const isSidebarExpanded = computed(() => isSidebarPinned.value || isSidebarHovered.value)
 const desktopNavItems = computed(() => [...navItems, accountItem])
 const isWideContentRoute = computed(() => route.path.startsWith('/app/notes'))
 
@@ -47,6 +44,7 @@ watch(isSidebarPinned, (value) => {
   <div class="flex h-screen w-full bg-muted/20">
     <!-- Desktop Sidebar -->
     <aside
+      v-if="!hidesDesktopSidebar"
       class="relative hidden flex-col border-r bg-sidebar-background transition-[width] duration-300 ease-out sm:flex"
       :class="isSidebarExpanded ? 'w-64' : 'w-20'"
       @mouseenter="isSidebarHovered = true"
