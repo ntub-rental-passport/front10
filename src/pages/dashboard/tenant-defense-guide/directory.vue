@@ -214,7 +214,7 @@ function clearFilters(): void {
           <p
             class="mx-auto mt-4 max-w-2xl text-pretty text-base leading-8 text-white/90 sm:text-lg"
           >
-            彙整違約金、設備修繕、押金返還、租約續約與水電費用，協助你快速找到處理方向。
+            彙整違約金、設備修繕、押金返還、租約續約與水電費用，快速找到處理方向。
           </p>
         </div>
       </div>
