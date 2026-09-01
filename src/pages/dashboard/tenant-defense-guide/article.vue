@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent } from '@/components/ui/card/index'
@@ -8,7 +8,6 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
-  BookOpen,
   Calculator,
   Check,
   CheckCircle2,
@@ -18,60 +17,12 @@ import {
   HelpCircle,
   Landmark,
   MailCheck,
-  Search,
   Scale,
   Share2,
   ShieldCheck,
   WalletCards,
 } from 'lucide-vue-next'
-
-const route = useRoute()
-const router = useRouter()
-
-const guideTopics = [
-  {
-    key: 'penalty',
-    label: '違約金',
-    count: 12,
-    to: '/app/contract',
-    tone: 'border-rose-200 bg-rose-50 text-rose-600',
-  },
-  {
-    key: 'repair',
-    label: '設備修繕',
-    count: 8,
-    to: '/app/contract/air-conditioner-repair',
-    tone: 'border-amber-200 bg-amber-50 text-amber-700',
-  },
-  {
-    key: 'deposit',
-    label: '押金返還',
-    count: 15,
-    to: '/app/tenant-guide?category=押金返還',
-    tone: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-  },
-  {
-    key: 'renewal',
-    label: '租約續約',
-    count: 10,
-    to: '/app/tenant-guide?category=租約續約',
-    tone: 'border-cyan-200 bg-cyan-50 text-cyan-700',
-  },
-  {
-    key: 'utilities',
-    label: '水電費用',
-    count: 22,
-    to: '/app/contract/electricity-fee',
-    tone: 'border-slate-200 bg-slate-100 text-slate-600',
-  },
-]
-
-const searchQuery = ref(typeof route.query.q === 'string' ? route.query.q : '')
-
-function submitSearch(): void {
-  const query = searchQuery.value.trim()
-  void router.push({ path: '/app/tenant-guide', query: query ? { q: query } : {} })
-}
+import TenantGuideHeader from '@/src/pages/dashboard/tenant-defense-guide/TenantGuideHeader.vue'
 
 const heroImage = new URL('./images/early-termination-hero.webp', import.meta.url).href
 
@@ -215,65 +166,8 @@ const formatCurrency = (value: number) =>
 </script>
 
 <template>
-  <article class="min-h-full overflow-x-hidden bg-[#f7f5ef] pb-10 text-slate-900">
-    <header class="relative isolate z-10 border-b border-slate-200 bg-white">
-      <div class="mx-auto w-full max-w-[1540px] px-4 py-5 sm:px-6 lg:px-8">
-        <div class="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-          <div class="flex min-w-0 items-center gap-3">
-            <div
-              class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700"
-            >
-              <BookOpen aria-hidden="true" class="h-6 w-6" />
-            </div>
-            <div class="min-w-0">
-              <p class="text-xl font-black text-slate-950 sm:text-2xl">租客防禦指南</p>
-              <p class="mt-1 text-sm text-slate-500">快速補齊租屋常見爭議與判斷基礎</p>
-            </div>
-          </div>
-
-          <form class="relative w-full xl:max-w-md" role="search" @submit.prevent="submitSearch">
-            <label for="guide-search" class="sr-only">搜尋租客指南文章</label>
-            <Search
-              aria-hidden="true"
-              class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              id="guide-search"
-              v-model="searchQuery"
-              name="guide-search"
-              type="search"
-              autocomplete="off"
-              placeholder="搜尋租屋爭議、法條或關鍵字…"
-              class="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-12 pr-24 text-sm text-slate-900 outline-none transition-[border-color,background-color,box-shadow] placeholder:text-slate-400 focus-visible:border-indigo-300 focus-visible:bg-white focus-visible:ring-4 focus-visible:ring-indigo-100"
-            />
-            <button
-              type="submit"
-              class="absolute right-1.5 top-1.5 h-9 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white transition-colors hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
-            >
-              搜尋
-            </button>
-          </form>
-        </div>
-
-        <nav aria-label="租客指南文章主題" class="-mx-1 mt-5 overflow-x-auto px-1 pb-2 pt-1">
-          <div class="flex min-w-max items-center gap-2">
-            <RouterLink
-              v-for="topic in guideTopics"
-              :key="topic.key"
-              :to="topic.to"
-              :aria-current="topic.key === 'penalty' ? 'page' : undefined"
-              class="rounded-full border px-4 py-2 text-sm font-bold transition-[box-shadow,filter,opacity,transform] hover:-translate-y-0.5 hover:opacity-100 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-indigo-500"
-              :class="[
-                topic.tone,
-                topic.key === 'penalty' ? 'shadow-sm brightness-[0.98]' : 'opacity-80',
-              ]"
-            >
-              {{ topic.label }} ({{ topic.count }})
-            </RouterLink>
-          </div>
-        </nav>
-      </div>
-    </header>
+  <article class="min-h-full overflow-x-clip bg-[#f7f5ef] pb-10 text-slate-900">
+    <TenantGuideHeader active-topic="penalty" />
 
     <div class="mx-auto flex w-full max-w-[1540px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between gap-3">

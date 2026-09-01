@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  BookOpen,
   Building2,
   Calculator,
   Check,
@@ -19,10 +18,10 @@ import {
   Info,
   MessageSquareText,
   Scale,
-  Search,
   Share2,
   ShieldCheck,
 } from 'lucide-vue-next'
+import TenantGuideHeader from '@/src/pages/dashboard/tenant-defense-guide/TenantGuideHeader.vue'
 
 import heroImage from '@/src/assets/tenant-defense-guide/electricity-fee/electricity-fee-hero-16x9.png'
 import calculationImage from '@/src/assets/tenant-defense-guide/electricity-fee/electricity-fee-calculation-1x1.png'
@@ -30,8 +29,6 @@ import limitImage from '@/src/assets/tenant-defense-guide/electricity-fee/unit-p
 import allocationImage from '@/src/assets/tenant-defense-guide/electricity-fee/shared-electricity-allocation-1x1.png'
 import complaintImage from '@/src/assets/tenant-defense-guide/electricity-fee/overcharge-evidence-complaint-1x1.png'
 
-const router = useRouter()
-const searchQuery = ref('')
 const openFaq = ref<number | null>(0)
 const copyState = ref<'idle' | 'copied'>('idle')
 const units = ref(300)
@@ -52,48 +49,6 @@ const money = (value: number) =>
     currency: 'TWD',
     maximumFractionDigits: 0,
   }).format(value)
-
-const sections = [
-  { id: 'rule', label: '新制怎麼判斷' },
-  { id: 'calculator', label: '快速試算' },
-  { id: 'shared', label: '公用電怎麼分' },
-  { id: 'action', label: '疑似超收怎麼辦' },
-  { id: 'faq', label: '常見問題' },
-]
-
-const guideTopics = [
-  {
-    label: '違約金',
-    count: 12,
-    to: '/app/contract',
-    tone: 'border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100',
-  },
-  {
-    label: '設備修繕',
-    count: 8,
-    to: '/app/contract/air-conditioner-repair',
-    tone: 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100',
-  },
-  {
-    label: '押金返還',
-    count: 15,
-    to: '/app/tenant-guide?category=押金返還',
-    tone: 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100',
-  },
-  {
-    label: '租約續約',
-    count: 10,
-    to: '/app/tenant-guide?category=租約續約',
-    tone: 'border-cyan-200 bg-cyan-50 text-cyan-700 hover:bg-cyan-100',
-  },
-  {
-    label: '水電費用',
-    count: 22,
-    to: '/app/contract/electricity-fee',
-    tone: 'border-slate-200 bg-slate-100 text-slate-600',
-    active: true,
-  },
-]
 
 const evidenceItems = [
   '租賃契約中的電費條款與簽約日期',
@@ -180,14 +135,6 @@ const sources = [
   ],
 ] as const
 
-function submitSearch(): void {
-  const query = searchQuery.value.trim().toLowerCase()
-  if (!query) return
-  const match = sections.find((item) => item.label.toLowerCase().includes(query))
-  if (match) document.getElementById(match.id)?.scrollIntoView({ behavior: 'smooth' })
-  else void router.push({ path: '/app/tenant-guide', query: { q: searchQuery.value.trim() } })
-}
-
 async function copyArticleLink(): Promise<void> {
   try {
     await navigator.clipboard.writeText(window.location.href)
@@ -200,66 +147,8 @@ async function copyArticleLink(): Promise<void> {
 </script>
 
 <template>
-  <article class="min-h-full overflow-x-hidden bg-[#f6f4ee] pb-12 text-slate-900">
-    <header class="border-b border-slate-200 bg-white">
-      <div class="mx-auto max-w-[1540px] px-4 py-6 sm:px-6 lg:px-8">
-        <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <RouterLink
-            to="/app/tenant-guide"
-            class="flex w-fit items-center gap-4 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-          >
-            <span
-              class="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100 text-indigo-700"
-              ><BookOpen class="h-7 w-7"
-            /></span>
-            <span
-              ><strong class="block text-2xl font-black tracking-tight text-slate-950"
-                >租客防禦指南</strong
-              ><span class="mt-1 block text-base text-slate-500"
-                >快速補齊租屋常見爭議與判斷基礎</span
-              ></span
-            >
-          </RouterLink>
-          <form
-            class="relative w-full lg:max-w-[510px]"
-            role="search"
-            @submit.prevent="submitSearch"
-          >
-            <label for="electricity-guide-search" class="sr-only">搜尋租屋指南</label>
-            <Search
-              class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              id="electricity-guide-search"
-              v-model="searchQuery"
-              type="search"
-              autocomplete="off"
-              placeholder="搜尋租屋爭議、法條或關鍵字…"
-              class="h-14 w-full rounded-full border border-slate-200 bg-slate-50 pl-14 pr-24 text-base text-slate-800 outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-            />
-            <button
-              type="submit"
-              class="absolute right-1.5 top-1.5 h-11 rounded-full bg-indigo-600 px-6 text-base font-black text-white transition-colors hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
-            >
-              搜尋
-            </button>
-          </form>
-        </div>
-        <nav aria-label="租客指南文章分類" class="-mx-1 mt-8 overflow-x-auto px-1 pb-1">
-          <div class="flex min-w-max gap-2.5">
-            <RouterLink
-              v-for="topic in guideTopics"
-              :key="topic.label"
-              :to="topic.to"
-              :aria-current="topic.active ? 'page' : undefined"
-              class="rounded-full border px-5 py-2.5 text-base font-black transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
-              :class="[topic.tone, topic.active ? 'cursor-default ring-1 ring-slate-200' : '']"
-              >{{ topic.label }} ({{ topic.count }})</RouterLink
-            >
-          </div>
-        </nav>
-      </div>
-    </header>
+  <article class="min-h-full overflow-x-clip bg-[#f6f4ee] pb-12 text-slate-900">
+    <TenantGuideHeader active-topic="utilities" />
 
     <main class="mx-auto flex max-w-[1440px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between gap-3">
