@@ -95,14 +95,14 @@ const questions: GuideQuestion[] = [
     summary: '先核對計費方式、用電度數、台電帳單與現行住宅租賃電費規範。',
     category: '水電費用',
     source: '住宅租賃電費規範',
-    to: '/app/contract',
+    to: '/app/contract/electricity-fee',
   },
   {
     title: '公共電費可以平均分攤給所有房客嗎？',
     summary: '契約應清楚記載計費方式，房東也應提供可供核對的用電資訊。',
     category: '水電費用',
     source: '住宅租賃定型化契約',
-    to: '/app/contract',
+    to: '/app/contract/electricity-fee',
   },
 ]
 

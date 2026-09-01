@@ -143,6 +143,6 @@ export const featuredArticles: FeaturedArticle[] = [
     title: '租屋電費新制上路！租屋一度電5元合法嗎？房東電費超收怎麼辦？',
     category: '水電費用 ',
     publishedAt: '2026-06-01',
-    to: '/app/contract',
+    to: '/app/contract/electricity-fee',
   },
 ]

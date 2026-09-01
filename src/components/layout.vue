@@ -21,6 +21,7 @@ const isTenantGuideRoute = computed(
   () =>
     route.path === '/app/contract' ||
     route.path === '/app/contract/air-conditioner-repair' ||
+    route.path === '/app/contract/electricity-fee' ||
     route.path === '/app/tenant-guide',
 )
 const hidesDesktopSidebar = computed(

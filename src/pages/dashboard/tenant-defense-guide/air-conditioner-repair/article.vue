@@ -60,7 +60,7 @@ const guideTopics = [
     label: '水電費用',
     count: 22,
     tone: 'border-slate-200 bg-slate-100 text-slate-600',
-    href: null,
+    href: '/app/contract/electricity-fee',
   },
 ]
 const availableTopics = guideTopics.filter((topic) => topic.href)

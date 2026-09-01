@@ -99,6 +99,11 @@ const router = createRouter({
           component: () =>
             import('@/src/pages/dashboard/tenant-defense-guide/air-conditioner-repair/article.vue'),
         },
+        {
+          path: 'contract/electricity-fee',
+          component: () =>
+            import('@/src/pages/dashboard/tenant-defense-guide/electricity-fee/article.vue'),
+        },
         { path: 'contract/scanner', component: () => import('@/src/pages/contract/index.vue') },
         { path: 'contract-analysis', component: () => import('@/src/pages/contract/analysis.vue') },
         { path: 'contract/editor', component: () => import('@/src/pages/contract/editor.vue') },
