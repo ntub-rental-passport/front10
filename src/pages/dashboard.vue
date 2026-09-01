@@ -670,7 +670,7 @@ const {
                 <CardDescription>從熱門風險關鍵字快速延伸到對應教學與案例。</CardDescription>
               </div>
               <Button as-child variant="ghost" class="h-auto rounded-full px-0 text-sm font-semibold text-primary hover:bg-transparent hover:text-primary/80">
-                <RouterLink to="/app/contract">
+                <RouterLink to="/app/tenant-guide">
                   文章總目錄
                   <ChevronRight class="h-4 w-4" />
                 </RouterLink>

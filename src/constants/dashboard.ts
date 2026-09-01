@@ -134,15 +134,15 @@ export const featuredArticles: FeaturedArticle[] = [
     to: '/app/contract',
   },
   {
-    title: '冷氣壞了誰修？圖解修繕責任與存證信函寫法',
+    title: '冷氣壞了是房東要修嗎？房東不回應該怎麼辦？',
     category: '設備修繕',
-    publishedAt: '2026-03-28',
-    to: '/app/contract',
+    publishedAt: '2026-08-31',
+    to: '/app/contract/air-conditioner-repair',
   },
   {
-    title: '退租時被扣押金？這 3 種自然損耗房東不能扣',
-    category: '押金退還',
-    publishedAt: '2026-03-15',
+    title: '租屋電費新制上路！租屋一度電5元合法嗎？房東電費超收怎麼辦？',
+    category: '水電費用 ',
+    publishedAt: '2026-06-01',
     to: '/app/contract',
   },
 ]

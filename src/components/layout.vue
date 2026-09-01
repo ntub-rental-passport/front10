@@ -17,10 +17,20 @@ const SIDEBAR_PIN_KEY = 'rentmate-sidebar-pinned'
 const isSidebarPinned = ref(false)
 const isSidebarHovered = ref(false)
 
-const hidesDesktopSidebar = computed(() => route.path === '/app/contract-analysis')
+const isTenantGuideRoute = computed(
+  () =>
+    route.path === '/app/contract' ||
+    route.path === '/app/contract/air-conditioner-repair' ||
+    route.path === '/app/tenant-guide',
+)
+const hidesDesktopSidebar = computed(
+  () => isTenantGuideRoute.value || route.path === '/app/contract-analysis',
+)
 const isSidebarExpanded = computed(() => isSidebarPinned.value || isSidebarHovered.value)
 const desktopNavItems = computed(() => [...navItems, accountItem])
-const isWideContentRoute = computed(() => route.path.startsWith('/app/notes'))
+const isWideContentRoute = computed(
+  () => isTenantGuideRoute.value || route.path.startsWith('/app/notes'),
+)
 
 function isActive(path: string): boolean {
   if (path === '/app') return route.path === '/app'

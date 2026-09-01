@@ -86,7 +86,20 @@ const router = createRouter({
       meta: { requiresAuth: true, roles: ['tenant'] as AuthRole[] },
       children: [
         { path: '', component: () => import('@/src/pages/dashboard.vue') },
-        { path: 'contract', component: () => import('@/src/pages/contract/index.vue') },
+        {
+          path: 'tenant-guide',
+          component: () => import('@/src/pages/dashboard/tenant-defense-guide/directory.vue'),
+        },
+        {
+          path: 'contract',
+          component: () => import('@/src/pages/dashboard/tenant-defense-guide/article.vue'),
+        },
+        {
+          path: 'contract/air-conditioner-repair',
+          component: () =>
+            import('@/src/pages/dashboard/tenant-defense-guide/air-conditioner-repair/article.vue'),
+        },
+        { path: 'contract/scanner', component: () => import('@/src/pages/contract/index.vue') },
         { path: 'contract-analysis', component: () => import('@/src/pages/contract/analysis.vue') },
         { path: 'contract/editor', component: () => import('@/src/pages/contract/editor.vue') },
         { path: 'contract/combined', component: () => import('@/src/pages/contract/combined.vue') },
