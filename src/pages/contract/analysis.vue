@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
+import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'
 import {
   CONTRACT_FIELD_DEFINITIONS,
   CONTRACT_FIELD_GROUPS,
@@ -20,12 +21,14 @@ import {
   Copy,
   Database,
   ExternalLink,
+  FileDown,
   FileSearch,
   FileText,
   MessageSquareText,
   Search,
   Scale,
   Send,
+  ShieldCheck,
   Sparkles,
   UserRound,
   X,
@@ -169,6 +172,10 @@ const chatPanelRef = ref<HTMLElement | null>(null)
 const chatPosition = reactive({ x: 24, y: 72 })
 const chatDragOffset = reactive({ x: 0, y: 0 })
 const chatDragging = ref(false)
+const exportDialogOpen = ref(false)
+const exportPrivacyMode = ref(true)
+const exportingReport = ref(false)
+const exportError = ref('')
 let chatHasBeenPositioned = false
 
 const pageCount = computed(() => pages.value.length)
@@ -658,6 +665,38 @@ async function sendChat(message = chatInput.value): Promise<void> {
 function copyMessage(message: ChatMessage): void {
   void navigator.clipboard.writeText(message.text)
 }
+
+function openExportDialog(): void {
+  exportError.value = ''
+  exportDialogOpen.value = true
+}
+
+async function exportAnalysisReport(): Promise<void> {
+  if (exportingReport.value) return
+  exportingReport.value = true
+  exportError.value = ''
+
+  try {
+    const fieldValues = Object.fromEntries(
+      Object.entries(ocrResult?.fieldReviews ?? {}).map(([fieldId, review]) => [
+        fieldId,
+        review.value,
+      ]),
+    )
+    const report = await generateContractReportPdf({
+      fileName: ocrResult?.fileName || '租屋契約.pdf',
+      risks: risks.value,
+      fieldValues,
+      privacyMode: exportPrivacyMode.value,
+    })
+    downloadPdf(report.bytes, report.fileName)
+    exportDialogOpen.value = false
+  } catch (error) {
+    exportError.value = error instanceof Error ? error.message : '報告產生失敗，請稍後再試。'
+  } finally {
+    exportingReport.value = false
+  }
+}
 </script>
 
 <template>
@@ -676,10 +715,71 @@ function copyMessage(message: ChatMessage): void {
           </div>
         </div>
       </div>
-      <Button variant="outline" @click="router.push('/app/contract')">
-        重新上傳
-      </Button>
+      <div class="analysis-header-actions">
+        <Button class="analysis-export-button" @click="openExportDialog">
+          <FileDown :size="17" /> 匯出診斷報告
+        </Button>
+        <Button variant="outline" @click="router.push('/app/contract')">
+          重新上傳
+        </Button>
+      </div>
     </header>
+
+    <div
+      v-if="exportDialogOpen"
+      class="analysis-export-backdrop"
+      role="presentation"
+      @click.self="exportDialogOpen = false"
+    >
+      <section
+        class="analysis-export-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-dialog-title"
+      >
+        <button
+          type="button"
+          class="analysis-export-close"
+          aria-label="關閉匯出視窗"
+          @click="exportDialogOpen = false"
+        >
+          <X :size="19" />
+        </button>
+        <span class="analysis-section-index">EXPORT REPORT</span>
+        <h2 id="export-dialog-title">匯出契約 AI 診斷分析報告書</h2>
+        <p>每頁都會加入 RentMate 浮水印、產出日期、報告編號與頁碼。</p>
+
+        <label class="analysis-export-option" :class="{ 'is-selected': exportPrivacyMode }">
+          <input v-model="exportPrivacyMode" type="radio" :value="true" />
+          <span>
+            <strong>隱私保護版（建議）</strong>
+            <small>遮蔽已辨識的姓名、身分證、電話、Email、地址與銀行帳號，適合分享。</small>
+          </span>
+        </label>
+        <label class="analysis-export-option" :class="{ 'is-selected': !exportPrivacyMode }">
+          <input v-model="exportPrivacyMode" type="radio" :value="false" />
+          <span>
+            <strong>完整資料版</strong>
+            <small>保留診斷內容中的原始資料，僅建議本人保存，分享前請再次確認。</small>
+          </span>
+        </label>
+
+        <div class="analysis-export-notice">
+          <ShieldCheck :size="18" />
+          <span>PDF 會以點陣頁面輸出，不附個資對照表；去識別化仍可能遺漏，分享前請人工快速檢查。</span>
+        </div>
+        <p v-if="exportError" class="analysis-export-error" role="alert">{{ exportError }}</p>
+        <div class="analysis-export-actions">
+          <Button variant="outline" :disabled="exportingReport" @click="exportDialogOpen = false">
+            取消
+          </Button>
+          <Button :disabled="exportingReport" @click="exportAnalysisReport">
+            <FileDown :size="17" />
+            {{ exportingReport ? '正在產生 PDF…' : '下載 PDF 報告' }}
+          </Button>
+        </div>
+      </section>
+    </div>
 
     <section class="analysis-overview" aria-label="AI 診斷結果總覽">
       <div class="analysis-overview-heading">
