@@ -7,7 +7,14 @@ from sqlalchemy.orm import sessionmaker
 
 from database import Base
 from models import LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, User
-from routers.landlord_tenants import _assert_no_overlap, _is_effective, _lease_display, _owned_tenant
+from routers.landlord_tenants import (
+    TenantPayload,
+    _assert_no_overlap,
+    _is_effective,
+    _lease_display,
+    _owned_tenant,
+    _resolve_room,
+)
 
 
 class LandlordTenantRulesTest(unittest.TestCase):
@@ -63,6 +70,44 @@ class LandlordTenantRulesTest(unittest.TestCase):
         self.assertEqual(found.id, self.tenant.id)
         with self.assertRaises(HTTPException) as caught:
             _owned_tenant(self.db, self.landlord_b.id, self.tenant.id)
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def tenant_payload(self, **overrides):
+        data = {
+            "name": "新租客",
+            "phone": "0987654321",
+            "property_id": self.room.property_id,
+            "room_id": self.room.id,
+            "lease_start": date.today() + timedelta(days=40),
+            "lease_end": date.today() + timedelta(days=400),
+            "monthly_rent": 12000,
+            "deposit_amount": 24000,
+            "payment_day": 5,
+        }
+        data.update(overrides)
+        return TenantPayload(**data)
+
+    def test_room_must_come_from_landlord_property_data(self):
+        property_item, room = _resolve_room(self.db, self.landlord_a.id, self.tenant_payload())
+        self.assertEqual(property_item.id, self.room.property_id)
+        self.assertEqual(room.id, self.room.id)
+
+        invalid = self.tenant_payload(
+            property_id=None,
+            room_id=None,
+            property_name="不存在的棟別",
+            room_number="999",
+        )
+        with self.assertRaises(HTTPException) as caught:
+            _resolve_room(self.db, self.landlord_a.id, invalid)
+        self.assertEqual(caught.exception.status_code, 404)
+        self.assertIsNone(
+            self.db.query(LandlordProperty).filter(LandlordProperty.name == "不存在的棟別").first()
+        )
+
+    def test_room_selection_is_scoped_to_landlord(self):
+        with self.assertRaises(HTTPException) as caught:
+            _resolve_room(self.db, self.landlord_b.id, self.tenant_payload())
         self.assertEqual(caught.exception.status_code, 404)
 
 

@@ -174,16 +174,18 @@ def _resolve_room(db: Session, landlord_id: int, payload: TenantPayload) -> tupl
         if not room:
             raise HTTPException(status_code=404, detail="找不到房東名下的棟別或房間。")
         return room.property, room
+    property_name = (payload.property_name or "").strip()
+    room_number = (payload.room_number or "").strip()
     property_item = db.query(LandlordProperty).filter(
-        LandlordProperty.landlord_id == landlord_id, LandlordProperty.name == payload.property_name.strip()
+        LandlordProperty.landlord_id == landlord_id, LandlordProperty.name == property_name
     ).first()
     if not property_item:
-        property_item = LandlordProperty(landlord_id=landlord_id, name=payload.property_name.strip())
-        db.add(property_item); db.flush()
-    room = db.query(LandlordRoom).filter(LandlordRoom.property_id == property_item.id, LandlordRoom.number == payload.room_number.strip()).first()
+        raise HTTPException(status_code=404, detail="棟別不存在，請先至房務管理建立資料。")
+    room = db.query(LandlordRoom).filter(
+        LandlordRoom.property_id == property_item.id, LandlordRoom.number == room_number
+    ).first()
     if not room:
-        room = LandlordRoom(property_id=property_item.id, number=payload.room_number.strip(), status="vacant")
-        db.add(room); db.flush()
+        raise HTTPException(status_code=404, detail="房間不存在，請先至房務管理建立資料。")
     return property_item, room
 
 

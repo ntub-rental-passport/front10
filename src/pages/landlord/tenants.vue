@@ -5,6 +5,7 @@ import { RouterLink } from 'vue-router'
 import {
   AlertCircle,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
@@ -66,6 +67,9 @@ const pageSize = 10
 const total = ref(0)
 const tenantDialog = ref(false)
 const editingId = ref<number | null>(null)
+const moreInfoOpen = ref(false)
+const propertyChoice = ref('')
+const roomChoice = ref('')
 const moveOutDialog = ref(false)
 const importDialog = ref(false)
 const formError = ref('')
@@ -113,6 +117,16 @@ const quickFilters = computed(() => [
   { value: 'moved_out' as const, label: '已退租', count: filterCounts.value.moved_out ?? 0 },
 ])
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const selectedProperty = computed(() =>
+  properties.value.find((item) => item.id === Number(propertyChoice.value)),
+)
+const availableRooms = computed(() =>
+  (selectedProperty.value?.rooms ?? []).filter(
+    (room) =>
+      ['vacant', 'turnover'].includes(room.status) ||
+      (editingId.value !== null && room.id === selected.value?.room_id),
+  ),
+)
 const money = (value: number) => `NT$${value.toLocaleString('zh-TW')}`
 const dateRange = (tenant: LandlordTenant) =>
   tenant.lease_start && tenant.lease_end
@@ -236,6 +250,9 @@ function resetForm() {
     lease_status: 'active',
   })
   formError.value = ''
+  propertyChoice.value = ''
+  roomChoice.value = ''
+  moreInfoOpen.value = false
 }
 function openCreate() {
   editingId.value = null
@@ -267,11 +284,30 @@ function openEdit(tenant = selected.value) {
     lease_status: tenant.lease_status === 'pending' ? 'pending' : 'active',
   })
   formError.value = ''
+  propertyChoice.value = tenant.property_id ? String(tenant.property_id) : ''
+  roomChoice.value = tenant.room_id ? String(tenant.room_id) : ''
+  moreInfoOpen.value = false
   tenantDialog.value = true
+}
+function applyPropertyChoice() {
+  roomChoice.value = ''
+  form.property_name = selectedProperty.value?.name ?? ''
+  form.room_number = ''
+}
+function applyRoomChoice() {
+  const room = availableRooms.value.find((item) => item.id === Number(roomChoice.value))
+  if (!room || !selectedProperty.value) {
+    form.room_number = ''
+    return
+  }
+  form.property_name = selectedProperty.value.name
+  form.room_number = room.number
 }
 function payload(): TenantPayload {
   return {
     ...form,
+    property_id: Number(propertyChoice.value),
+    room_id: Number(roomChoice.value),
     email: form.email || undefined,
     national_id: form.national_id || undefined,
     birth_date: form.birth_date || undefined,
@@ -283,8 +319,13 @@ function payload(): TenantPayload {
   }
 }
 async function saveTenant() {
-  saving.value = true
   formError.value = ''
+  const room = availableRooms.value.find((item) => item.id === Number(roomChoice.value))
+  if (!selectedProperty.value || !room) {
+    formError.value = '請從房務資料中選擇有效的棟別與房號。'
+    return
+  }
+  saving.value = true
   try {
     const saved = editingId.value
       ? await updateTenant(editingId.value, payload())
@@ -796,104 +837,256 @@ onMounted(async () => {
 
     <Teleport to="body"
       ><div v-if="tenantDialog" class="backdrop" @click.self="tenantDialog = false">
-        <section class="dialog max-h-[92vh] max-w-3xl overflow-y-auto">
-          <header class="dialog-head">
+        <section
+          class="dialog tenant-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tenant-form-title"
+        >
+          <header class="dialog-head shrink-0">
             <div>
-              <h2>{{ editingId ? '編輯租客' : '新增租客' }}</h2>
-              <p>基本資料、房間與租約會一併儲存</p>
+              <h2 id="tenant-form-title">{{ editingId ? '編輯租客' : '新增租客' }}</h2>
+              <p>先選房間，再填租約、月租與押金資料。</p>
             </div>
-            <button class="icon-btn" @click="tenantDialog = false"><X /></button>
-          </header>
-          <form class="space-y-5 p-5" @submit.prevent="saveTenant">
-            <p v-if="formError" class="error-box">{{ formError }}</p>
-            <fieldset>
-              <legend>基本資料</legend>
-              <div class="form-grid">
-                <label>姓名 *<input v-model="form.name" required class="field" /></label
-                ><label>手機 *<input v-model="form.phone" required class="field" /></label
-                ><label>Email<input v-model="form.email" type="email" class="field" /></label
-                ><label
-                  >身分證字號<input
-                    v-model="form.national_id"
-                    class="field"
-                    autocomplete="off" /></label
-                ><label>生日<input v-model="form.birth_date" type="date" class="field" /></label
-                ><label>聯絡地址<input v-model="form.contact_address" class="field" /></label
-                ><label>緊急聯絡人<input v-model="form.emergency_name" class="field" /></label
-                ><label>緊急聯絡電話<input v-model="form.emergency_phone" class="field" /></label>
-              </div>
-              <label class="mt-3 block"
-                >備註<textarea v-model="form.notes" class="field mt-1 min-h-20" />
-              </label>
-            </fieldset>
-            <fieldset>
-              <legend>房間指派</legend>
-              <div class="form-grid">
-                <label
-                  >棟別 *<input
-                    v-model="form.property_name"
-                    required
-                    class="field"
-                    list="property-list" /><datalist id="property-list">
-                    <option
-                      v-for="item in properties"
-                      :key="item.id"
-                      :value="item.name"
-                    /></datalist></label
-                ><label>房號 *<input v-model="form.room_number" required class="field" /></label>
-              </div>
-              <p class="mt-2 text-xs text-[#7a827c]">
-                若棟別或房號尚不存在，後端會在此房東帳號下建立；租期衝突仍會被拒絕。
-              </p>
-            </fieldset>
-            <fieldset>
-              <legend>租約資料</legend>
-              <div class="form-grid">
-                <label
-                  >開始日 *<input
-                    v-model="form.lease_start"
-                    required
-                    type="date"
-                    class="field" /></label
-                ><label
-                  >結束日 *<input
-                    v-model="form.lease_end"
-                    required
-                    type="date"
-                    class="field" /></label
-                ><label
-                  >月租 *<input
-                    v-model.number="form.monthly_rent"
-                    required
-                    min="0"
-                    type="number"
-                    class="field" /></label
-                ><label
-                  >押金 *<input
-                    v-model.number="form.deposit_amount"
-                    required
-                    min="0"
-                    type="number"
-                    class="field" /></label
-                ><label
-                  >每月繳租日 *<input
-                    v-model.number="form.payment_day"
-                    required
-                    min="1"
-                    max="31"
-                    type="number"
-                    class="field" /></label
-                ><label
-                  >入住狀態<select v-model="form.lease_status" class="field">
-                    <option value="active">已入住</option>
-                    <option value="pending">待入住</option>
-                  </select></label
-                >
-              </div>
-            </fieldset>
-            <button class="btn-primary w-full" :disabled="saving">
-              {{ saving ? '儲存中…' : '儲存租客' }}
+            <button type="button" class="icon-btn" aria-label="關閉" @click="tenantDialog = false">
+              <X />
             </button>
+          </header>
+
+          <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="saveTenant">
+            <div class="tenant-form-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
+              <p v-if="formError" class="error-box">{{ formError }}</p>
+
+              <section class="space-y-3">
+                <label class="form-label">選擇房間 *</label>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="form-label">
+                    棟別 *
+                    <select
+                      v-model="propertyChoice"
+                      required
+                      class="tenant-field mt-2"
+                      @change="applyPropertyChoice"
+                    >
+                      <option value="" disabled>請選擇棟別</option>
+                      <option
+                        v-for="propertyItem in properties"
+                        :key="propertyItem.id"
+                        :value="String(propertyItem.id)"
+                      >
+                        {{ propertyItem.name }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="form-label">
+                    房號 *
+                    <select
+                      v-model="roomChoice"
+                      required
+                      class="tenant-field mt-2"
+                      :disabled="!propertyChoice || !availableRooms.length"
+                      @change="applyRoomChoice"
+                    >
+                      <option value="" disabled>
+                        {{
+                          !propertyChoice
+                            ? '請先選擇棟別'
+                            : availableRooms.length
+                              ? '請選擇房號'
+                              : '此棟目前沒有可用房間'
+                        }}
+                      </option>
+                      <option
+                        v-for="room in availableRooms"
+                        :key="room.id"
+                        :value="String(room.id)"
+                      >
+                        {{ room.number }} · {{ room.status === 'vacant' ? '空房' : '待整理' }}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+                <p class="text-xs leading-5 text-[#818982]">
+                  房號只會顯示房務中已建立且目前可用的房間；已有重疊租期的房間無法重複指派。
+                </p>
+                <div
+                  v-if="!properties.length"
+                  class="rounded-2xl border border-[#ead4ad] bg-[#fff6e5] px-4 py-3 text-sm text-[#8a642d]"
+                >
+                  尚未建立棟別與房間，請先前往
+                  <RouterLink
+                    class="font-bold underline"
+                    to="/landlord/properties"
+                    @click="tenantDialog = false"
+                  >
+                    房務管理
+                  </RouterLink>
+                  建立資料後再新增租客。
+                </div>
+              </section>
+
+              <section class="space-y-3">
+                <input v-model="form.name" required class="tenant-field" placeholder="租客姓名 *" />
+                <input
+                  v-model="form.phone"
+                  required
+                  class="tenant-field"
+                  inputmode="tel"
+                  placeholder="聯絡電話 *"
+                />
+                <input v-model="form.email" type="email" class="tenant-field" placeholder="Email" />
+              </section>
+
+              <div
+                class="rounded-[1.25rem] border border-dashed border-[#ded8cc] bg-[#fbfaf6] px-4 py-3 text-sm leading-6 text-[#747d76]"
+              >
+                LINE 綁定請到通知設定產生綁定碼，租客再透過 LINE 完成綁定，不需要在這裡手動輸入 LINE
+                ID。
+              </div>
+
+              <section class="space-y-3">
+                <div class="form-grid">
+                  <label class="form-label"
+                    >租屋日期<input
+                      v-model="form.lease_start"
+                      required
+                      type="date"
+                      class="tenant-field mt-2"
+                  /></label>
+                  <label class="form-label"
+                    >到租日期<input
+                      v-model="form.lease_end"
+                      required
+                      type="date"
+                      class="tenant-field mt-2"
+                  /></label>
+                  <label
+                    ><input
+                      v-model.number="form.monthly_rent"
+                      required
+                      min="0"
+                      type="number"
+                      class="tenant-field"
+                      placeholder="月租金 *"
+                  /></label>
+                  <label
+                    ><input
+                      v-model.number="form.deposit_amount"
+                      required
+                      min="0"
+                      type="number"
+                      class="tenant-field"
+                      placeholder="押金 *"
+                  /></label>
+                  <label
+                    ><input
+                      v-model.number="form.payment_day"
+                      required
+                      min="1"
+                      max="31"
+                      type="number"
+                      class="tenant-field"
+                      placeholder="每月繳租日 *"
+                  /></label>
+                  <label
+                    ><select v-model="form.payment_frequency" class="tenant-field">
+                      <option value="monthly">每月繳租</option>
+                      <option value="bimonthly">每 2 個月繳租</option>
+                      <option value="quarterly">每季繳租</option>
+                    </select></label
+                  >
+                  <label
+                    ><select v-model="form.lease_status" class="tenant-field">
+                      <option value="active">已入住</option>
+                      <option value="pending">待入住</option>
+                    </select></label
+                  >
+                  <label
+                    ><input
+                      v-model="form.contract_id"
+                      class="tenant-field"
+                      placeholder="合約編號（選填）"
+                  /></label>
+                </div>
+                <div
+                  class="rounded-[1.25rem] bg-[#e6f0ec] px-4 py-3 text-xs leading-6 text-[#5f7669]"
+                >
+                  每月繳租日會決定租金排程，以及 LINE 的到期提醒、今日到期提醒與逾期通知時間。
+                </div>
+              </section>
+
+              <section class="overflow-hidden rounded-[1.25rem] border border-[#e4ded2] bg-white">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between px-4 py-3.5 text-left"
+                  :aria-expanded="moreInfoOpen"
+                  @click="moreInfoOpen = !moreInfoOpen"
+                >
+                  <span
+                    ><strong class="block text-sm">更多資料</strong
+                    ><small class="mt-0.5 block text-[#7d857f]"
+                      >身分證、緊急聯絡人與備註放在這裡。</small
+                    ></span
+                  >
+                  <ChevronDown
+                    :class="['h-4 w-4 transition-transform', moreInfoOpen ? 'rotate-180' : '']"
+                  />
+                </button>
+                <div v-if="moreInfoOpen" class="space-y-3 border-t border-[#e8e2d6] p-4">
+                  <div class="form-grid">
+                    <input
+                      v-model="form.national_id"
+                      class="tenant-field"
+                      autocomplete="off"
+                      placeholder="身分證字號"
+                    />
+                    <input
+                      v-model="form.birth_date"
+                      type="date"
+                      class="tenant-field"
+                      aria-label="生日"
+                    />
+                    <input
+                      v-model="form.emergency_name"
+                      class="tenant-field"
+                      placeholder="緊急聯絡人"
+                    />
+                    <input
+                      v-model="form.emergency_phone"
+                      class="tenant-field"
+                      inputmode="tel"
+                      placeholder="緊急聯絡電話"
+                    />
+                  </div>
+                  <input
+                    v-model="form.contact_address"
+                    class="tenant-field"
+                    placeholder="聯絡地址"
+                  />
+                  <textarea
+                    v-model="form.notes"
+                    class="tenant-field min-h-24 resize-y !rounded-[1.25rem]"
+                    placeholder="備註"
+                  />
+                </div>
+              </section>
+            </div>
+
+            <footer class="tenant-dialog-footer shrink-0">
+              <button
+                class="btn-primary min-w-0 flex-1"
+                :disabled="saving || !propertyChoice || !roomChoice"
+              >
+                {{ saving ? '儲存中…' : editingId ? '儲存變更' : '確認送出' }}
+              </button>
+              <button
+                type="button"
+                class="rounded-full px-5 py-3 text-sm font-bold text-[#657068] hover:bg-[#f3f0e8]"
+                @click="tenantDialog = false"
+              >
+                先不要
+              </button>
+            </footer>
           </form>
         </section>
       </div>
@@ -1171,5 +1364,51 @@ fieldset > label {
 th,
 td {
   @apply px-4 py-3;
+}
+.tenant-dialog {
+  display: flex;
+  height: min(760px, calc(100dvh - 24px));
+  max-width: 540px;
+  flex-direction: column;
+}
+.tenant-form-scroll {
+  overscroll-behavior: contain;
+  scrollbar-color: #aeb8af transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.tenant-form-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.tenant-form-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tenant-form-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #aeb8af;
+}
+.tenant-form-scroll::-webkit-scrollbar-thumb:hover {
+  background: #87968a;
+}
+.tenant-field {
+  @apply w-full rounded-full border border-[#ded7ca] bg-[#fffefa] px-4 py-3 text-sm outline-none placeholder:text-[#9ba09c] focus:border-[#7a9a80] focus:ring-4 focus:ring-[#dcebdd];
+}
+.tenant-field:disabled {
+  @apply cursor-not-allowed bg-[#f2f0ea] text-[#9ba09c];
+}
+.form-label {
+  @apply mb-2 block text-sm font-bold text-[#4d5951];
+}
+.tenant-dialog-footer {
+  @apply flex items-center gap-2 border-t border-[#e5ded2] bg-[#fffdf8]/95 px-5 py-3 shadow-[0_-8px_24px_rgba(55,60,54,0.06)] backdrop-blur;
+}
+@media (max-width: 639px) {
+  .tenant-dialog {
+    height: calc(100dvh - 16px);
+    border-radius: 1.35rem;
+  }
+  .tenant-dialog-footer {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
 }
 </style>

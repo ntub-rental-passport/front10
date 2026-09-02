@@ -6,6 +6,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -314,6 +315,7 @@ class LandlordProperty(Base):
     landlord_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     address = Column(Text, nullable=True)
+    city = Column(String(50), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
 
     landlord = relationship("User", back_populates="landlord_properties")
@@ -328,6 +330,9 @@ class LandlordRoom(Base):
     property_id = Column(Integer, ForeignKey("landlord_properties.id", ondelete="CASCADE"), nullable=False, index=True)
     number = Column(String(50), nullable=False)
     status = Column(Enum("vacant", "occupied", "turnover", "maintenance"), nullable=False, default="vacant")
+    floor = Column(Integer, nullable=True)
+    area = Column(Float, nullable=True)
+    expected_rent = Column(Integer, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
 
     property = relationship("LandlordProperty", back_populates="rooms")

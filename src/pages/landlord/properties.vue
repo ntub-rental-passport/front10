@@ -1,275 +1,197 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
+  AlertCircle,
   Building2,
   Check,
   Eye,
-  Filter,
   Home,
-  MoreVertical,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Users,
   X,
 } from 'lucide-vue-next'
+import {
+  createProperty,
+  createRooms,
+  fetchProperties,
+  updateProperty,
+  type LandlordProperty,
+  type PropertyRoom,
+  type PropertyRoomStatus,
+} from '@/src/services/landlordPropertyApi'
 
-type Status = 'rented' | 'vacant' | 'maintenance'
-type Room = {
-  id: number
-  number: string
-  status: Status
-  tenant: string
-  rent: number | null
-  leaseEnd: string | null
-  floor: number | null
-  area: number | null
-}
-type Building = { id: number; name: string; address: string; city: string; rooms: Room[] }
-
-const buildings = ref<Building[]>([
-  {
-    id: 1,
-    name: '松庭公寓',
-    address: '松山區南京東路五段 123 號',
-    city: '臺北市',
-    rooms: [
-      {
-        id: 101,
-        number: '2A',
-        status: 'rented',
-        tenant: '陳怡君',
-        rent: 12500,
-        leaseEnd: '2027/01/31',
-        floor: 2,
-        area: 8.5,
-      },
-      {
-        id: 102,
-        number: '2B',
-        status: 'rented',
-        tenant: '林承翰',
-        rent: 12000,
-        leaseEnd: '2026/11/30',
-        floor: 2,
-        area: 8,
-      },
-      {
-        id: 103,
-        number: '3A',
-        status: 'rented',
-        tenant: '王雅婷',
-        rent: 13000,
-        leaseEnd: '2026/09/30',
-        floor: 3,
-        area: 9,
-      },
-      {
-        id: 104,
-        number: '3B',
-        status: 'vacant',
-        tenant: '—',
-        rent: 12500,
-        leaseEnd: null,
-        floor: 3,
-        area: 8.5,
-      },
-      {
-        id: 105,
-        number: '4A',
-        status: 'maintenance',
-        tenant: '—',
-        rent: 13500,
-        leaseEnd: null,
-        floor: 4,
-        area: 9,
-      },
-      {
-        id: 106,
-        number: '4B',
-        status: 'rented',
-        tenant: '張維哲',
-        rent: 12800,
-        leaseEnd: '2027/03/31',
-        floor: 4,
-        area: 8.5,
-      },
-    ],
-  },
-  {
-    id: 2,
-    name: '晴光小築',
-    address: '中山區雙城街 28 巷 6 號',
-    city: '臺北市',
-    rooms: [
-      {
-        id: 201,
-        number: '101',
-        status: 'rented',
-        tenant: '劉宇晨',
-        rent: 11000,
-        leaseEnd: '2027/02/28',
-        floor: 1,
-        area: 7.5,
-      },
-      {
-        id: 202,
-        number: '102',
-        status: 'vacant',
-        tenant: '—',
-        rent: 11500,
-        leaseEnd: null,
-        floor: 1,
-        area: 8,
-      },
-      {
-        id: 203,
-        number: '201',
-        status: 'rented',
-        tenant: '許婉庭',
-        rent: 11800,
-        leaseEnd: '2026/12/31',
-        floor: 2,
-        area: 8,
-      },
-      {
-        id: 204,
-        number: '202',
-        status: 'rented',
-        tenant: '蔡明軒',
-        rent: 12000,
-        leaseEnd: '2027/05/31',
-        floor: 2,
-        area: 8.5,
-      },
-    ],
-  },
-  {
-    id: 3,
-    name: '河畔居',
-    address: '板橋區文化路二段 188 號',
-    city: '新北市',
-    rooms: [
-      {
-        id: 301,
-        number: '5A',
-        status: 'rented',
-        tenant: '黃子芸',
-        rent: 14500,
-        leaseEnd: '2027/04/30',
-        floor: 5,
-        area: 10,
-      },
-      {
-        id: 302,
-        number: '5B',
-        status: 'rented',
-        tenant: '周柏廷',
-        rent: 14200,
-        leaseEnd: '2026/10/31',
-        floor: 5,
-        area: 9.5,
-      },
-      {
-        id: 303,
-        number: '6A',
-        status: 'vacant',
-        tenant: '—',
-        rent: 15000,
-        leaseEnd: null,
-        floor: 6,
-        area: 10,
-      },
-    ],
-  },
-])
-
-const selectedId = ref(1)
+const buildings = ref<LandlordProperty[]>([])
+const selectedId = ref<number | null>(null)
+const buildingKeyword = ref('')
 const keyword = ref('')
-const statusFilter = ref<'all' | Status>('all')
+const statusFilter = ref<'all' | PropertyRoomStatus>('all')
+const loading = ref(true)
+const saving = ref(false)
+const error = ref('')
+const success = ref('')
 const buildingDialog = ref(false)
 const roomDialog = ref(false)
+const roomDetail = ref<PropertyRoom | null>(null)
+const editingBuildingId = ref<number | null>(null)
 const batchMode = ref(true)
 const buildingForm = ref({ name: '', address: '', city: '臺北市' })
 const roomForm = ref({ numbers: '', floor: '', area: '', rent: '' })
 
 const allRooms = computed(() => buildings.value.flatMap((building) => building.rooms))
 const current = computed(
-  () => buildings.value.find((building) => building.id === selectedId.value) ?? buildings.value[0],
+  () => buildings.value.find((building) => building.id === selectedId.value) ?? null,
 )
-const count = (rooms: Room[], status: Status) =>
+const filteredBuildings = computed(() => {
+  const query = buildingKeyword.value.trim().toLowerCase()
+  return query
+    ? buildings.value.filter((item) => item.name.toLowerCase().includes(query))
+    : buildings.value
+})
+const count = (rooms: PropertyRoom[], status: PropertyRoomStatus) =>
   rooms.filter((room) => room.status === status).length
 const rented = computed(() => count(allRooms.value, 'rented'))
 const vacant = computed(() => count(allRooms.value, 'vacant'))
-const currentRented = computed(() => count(current.value.rooms, 'rented'))
-const rate = (building: Building) =>
+const currentRented = computed(() => (current.value ? count(current.value.rooms, 'rented') : 0))
+const rate = (building: LandlordProperty) =>
   building.rooms.length
     ? Math.round((count(building.rooms, 'rented') / building.rooms.length) * 100)
     : 0
 const filteredRooms = computed(() => {
+  if (!current.value) return []
   const query = keyword.value.trim().toLowerCase()
   return current.value.rooms.filter(
     (room) =>
       (statusFilter.value === 'all' || room.status === statusFilter.value) &&
       (!query ||
         room.number.toLowerCase().includes(query) ||
-        room.tenant.toLowerCase().includes(query)),
+        (room.tenant ?? '').toLowerCase().includes(query)),
   )
 })
-const tabs = computed(() => [
-  { value: 'all' as const, label: `全部 ${current.value.rooms.length}` },
-  { value: 'rented' as const, label: `已出租 ${currentRented.value}` },
-  { value: 'vacant' as const, label: `空房 ${count(current.value.rooms, 'vacant')}` },
-  { value: 'maintenance' as const, label: `維修 ${count(current.value.rooms, 'maintenance')}` },
-])
-const statusMeta: Record<Status, { label: string; cls: string }> = {
+const tabs = computed(() => {
+  const rooms = current.value?.rooms ?? []
+  return [
+    { value: 'all' as const, label: `全部 ${rooms.length}` },
+    { value: 'rented' as const, label: `已出租 ${count(rooms, 'rented')}` },
+    { value: 'vacant' as const, label: `空房 ${count(rooms, 'vacant')}` },
+    { value: 'maintenance' as const, label: `維修 ${count(rooms, 'maintenance')}` },
+  ]
+})
+const statusMeta: Record<PropertyRoomStatus, { label: string; cls: string }> = {
   rented: { label: '已出租', cls: 'bg-[#e8f4e9] text-[#4f7958] border-[#cde2d0]' },
   vacant: { label: '空房', cls: 'bg-[#fff3df] text-[#a46d22] border-[#efd6ae]' },
   maintenance: { label: '維修中', cls: 'bg-[#fbe9e5] text-[#a65e50] border-[#eccbc4]' },
 }
 const money = (amount: number | null) =>
   amount === null ? '尚未設定' : `NT$${amount.toLocaleString('zh-TW')}`
+const displayDate = (value: string | null) => value?.replaceAll('-', '/') ?? '—'
+
+async function loadProperties(preferredId?: number) {
+  loading.value = true
+  error.value = ''
+  try {
+    const result = await fetchProperties()
+    buildings.value = result.items
+    const nextId = preferredId ?? selectedId.value
+    selectedId.value = buildings.value.some((item) => item.id === nextId)
+      ? nextId
+      : (buildings.value[0]?.id ?? null)
+  } catch (cause) {
+    buildings.value = []
+    selectedId.value = null
+    error.value = cause instanceof Error ? cause.message : '房務資料讀取失敗。'
+  } finally {
+    loading.value = false
+  }
+}
 
 function selectBuilding(id: number) {
   selectedId.value = id
   keyword.value = ''
   statusFilter.value = 'all'
 }
-function addBuilding() {
-  if (!buildingForm.value.name.trim()) return
-  const id = Date.now()
-  buildings.value.push({
-    id,
-    name: buildingForm.value.name.trim(),
-    address: buildingForm.value.address.trim() || '尚未設定地址',
-    city: buildingForm.value.city.trim() || '未指定城市',
-    rooms: [],
-  })
-  selectedId.value = id
+
+function openCreateBuilding() {
+  editingBuildingId.value = null
   buildingForm.value = { name: '', address: '', city: '臺北市' }
-  buildingDialog.value = false
+  error.value = ''
+  buildingDialog.value = true
 }
-function addRooms() {
+
+function openEditBuilding() {
+  if (!current.value) return
+  editingBuildingId.value = current.value.id
+  buildingForm.value = {
+    name: current.value.name,
+    address: current.value.address,
+    city: current.value.city || '臺北市',
+  }
+  error.value = ''
+  buildingDialog.value = true
+}
+
+async function saveBuilding() {
+  if (!buildingForm.value.name.trim()) return
+  saving.value = true
+  error.value = ''
+  try {
+    const payload = {
+      name: buildingForm.value.name.trim(),
+      address: buildingForm.value.address.trim(),
+      city: buildingForm.value.city.trim(),
+    }
+    const saved = editingBuildingId.value
+      ? await updateProperty(editingBuildingId.value, payload)
+      : await createProperty(payload)
+    buildingDialog.value = false
+    success.value = editingBuildingId.value ? '棟別資料已更新。' : '棟別已建立。'
+    await loadProperties(saved.id)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '棟別儲存失敗。'
+  } finally {
+    saving.value = false
+  }
+}
+
+function openRoomDialog() {
+  if (!current.value) {
+    error.value = '請先建立棟別，再新增房間。'
+    return
+  }
+  roomForm.value = { numbers: '', floor: '', area: '', rent: '' }
+  error.value = ''
+  roomDialog.value = true
+}
+
+async function addRooms() {
+  if (!current.value) return
   const numbers = roomForm.value.numbers
     .split(/[\n,，]/)
     .map((value) => value.trim())
     .filter(Boolean)
   if (!numbers.length) return
-  current.value.rooms.push(
-    ...numbers.map((number, index) => ({
-      id: Date.now() + index,
-      number,
-      status: 'vacant' as const,
-      tenant: '—',
-      rent: Number(roomForm.value.rent) || null,
-      leaseEnd: null,
-      floor: Number(roomForm.value.floor) || null,
-      area: Number(roomForm.value.area) || null,
-    })),
-  )
-  roomForm.value = { numbers: '', floor: '', area: '', rent: '' }
-  roomDialog.value = false
+  saving.value = true
+  error.value = ''
+  try {
+    const saved = await createRooms(current.value.id, {
+      numbers,
+      floor: roomForm.value.floor ? Number(roomForm.value.floor) : undefined,
+      area: roomForm.value.area ? Number(roomForm.value.area) : undefined,
+      expected_rent: roomForm.value.rent ? Number(roomForm.value.rent) : undefined,
+    })
+    roomDialog.value = false
+    success.value = `已新增 ${numbers.length} 間房間。`
+    await loadProperties(saved.id)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '房間建立失敗。'
+  } finally {
+    saving.value = false
+  }
 }
+
+onMounted(() => loadProperties())
 </script>
 
 <template>
@@ -283,13 +205,23 @@ function addRooms() {
         <p class="mt-2 text-sm text-[#778078]">集中管理棟別、房間、出租狀態與租客資訊。</p>
       </div>
       <div class="flex gap-2">
-        <button class="btn-secondary" @click="buildingDialog = true">
-          <Building2 class="h-4 w-4" />新增棟樓</button
-        ><button class="btn-primary" @click="roomDialog = true">
+        <button class="btn-secondary" @click="openCreateBuilding">
+          <Building2 class="h-4 w-4" />新增棟樓
+        </button>
+        <button class="btn-primary" :disabled="!current" @click="openRoomDialog">
           <Plus class="h-4 w-4" />新增房間
         </button>
       </div>
     </header>
+
+    <div v-if="error" class="notice notice-error" role="alert">
+      <AlertCircle class="h-4 w-4" /><span class="flex-1">{{ error }}</span>
+      <button class="font-bold" @click="loadProperties()">重新載入</button>
+    </div>
+    <div v-if="success" class="notice notice-success" role="status">
+      <Check class="h-4 w-4" /><span class="flex-1">{{ success }}</span>
+      <button aria-label="關閉訊息" @click="success = ''"><X class="h-4 w-4" /></button>
+    </div>
 
     <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="房務統計">
       <article class="metric border-t-[#63856a]">
@@ -342,11 +274,17 @@ function addRooms() {
         </div>
         <div class="p-4">
           <label class="search"
-            ><Search /><input class="field h-11 pl-10" placeholder="搜尋棟樓名稱"
+            ><Search /><input
+              v-model="buildingKeyword"
+              class="field h-11 pl-10"
+              placeholder="搜尋棟樓名稱"
           /></label>
-          <div class="mt-4 space-y-2.5">
+          <div v-if="loading" class="grid min-h-52 place-items-center text-sm text-[#7a827c]">
+            <RefreshCw class="h-6 w-6 animate-spin" />
+          </div>
+          <div v-else-if="filteredBuildings.length" class="mt-4 space-y-2.5">
             <button
-              v-for="building in buildings"
+              v-for="building in filteredBuildings"
               :key="building.id"
               :class="[
                 'w-full rounded-2xl border p-3.5 text-left transition-all',
@@ -380,10 +318,21 @@ function addRooms() {
               </div>
             </button>
           </div>
+          <div v-else class="py-12 text-center text-sm text-[#7a827c]">
+            <Building2 class="mx-auto h-8 w-8" />
+            <p class="mt-3 font-bold">{{ buildings.length ? '找不到棟別' : '尚未建立棟別' }}</p>
+            <button
+              v-if="!buildings.length"
+              class="mt-3 font-bold text-[#55775d]"
+              @click="openCreateBuilding"
+            >
+              建立第一棟
+            </button>
+          </div>
         </div>
       </aside>
 
-      <div class="min-w-0 space-y-4">
+      <div v-if="current" class="min-w-0 space-y-4">
         <article class="rounded-[1.5rem] border border-[#e2ddcf] bg-white/90 p-5 shadow-sm">
           <div class="flex flex-col gap-4 lg:flex-row lg:justify-between">
             <div>
@@ -393,14 +342,16 @@ function addRooms() {
                   >出租率 {{ rate(current) }}%</span
                 >
               </div>
-              <p class="mt-1 text-sm text-[#7a827c]">{{ current.city }} · {{ current.address }}</p>
+              <p class="mt-1 text-sm text-[#7a827c]">
+                {{ current.city || '未設定城市' }} · {{ current.address || '尚未設定地址' }}
+              </p>
             </div>
             <div class="flex gap-2">
-              <button class="btn-primary !px-3.5 !py-2" @click="roomDialog = true">
+              <button class="btn-primary !px-3.5 !py-2" @click="openRoomDialog">
                 <Plus class="h-4 w-4" />新增房間</button
-              ><button class="btn-secondary !px-3.5 !py-2">
-                <Pencil class="h-4 w-4" />編輯資訊</button
-              ><button class="icon-btn" aria-label="更多操作"><MoreVertical /></button>
+              ><button class="btn-secondary !px-3.5 !py-2" @click="openEditBuilding">
+                <Pencil class="h-4 w-4" />編輯資訊
+              </button>
             </div>
           </div>
           <div
@@ -444,16 +395,12 @@ function addRooms() {
                 {{ tab.label }}
               </button>
             </div>
-            <div class="flex gap-2">
-              <label class="search min-w-0 flex-1 sm:w-56"
-                ><Search /><input
-                  v-model="keyword"
-                  class="field h-10 pl-9"
-                  placeholder="搜尋房號或租客" /></label
-              ><button class="btn-secondary !px-3 !py-2">
-                <Filter class="h-4 w-4" /><span class="hidden sm:inline">篩選</span>
-              </button>
-            </div>
+            <label class="search min-w-0 flex-1 sm:w-56 sm:flex-none"
+              ><Search /><input
+                v-model="keyword"
+                class="field h-10 pl-9"
+                placeholder="搜尋房號或租客"
+            /></label>
           </div>
           <div v-if="filteredRooms.length" class="overflow-x-auto">
             <table class="w-full min-w-[760px] text-left text-sm">
@@ -481,26 +428,22 @@ function addRooms() {
                     >
                   </td>
                   <td>
-                    <p class="font-semibold">{{ room.tenant }}</p>
+                    <p class="font-semibold">{{ room.tenant ?? '—' }}</p>
                     <span class="text-xs text-[#8a918c]">{{
                       room.status === 'rented' ? '聯絡資料已建立' : '尚無租客'
                     }}</span>
                   </td>
                   <td class="font-semibold">{{ money(room.rent) }}</td>
-                  <td>
-                    <p>{{ room.leaseEnd ?? '—' }}</p>
-                    <span
-                      v-if="room.leaseEnd === '2026/09/30'"
-                      class="text-xs font-bold text-[#b67824]"
-                      >即將到期</span
-                    >
-                  </td>
+                  <td>{{ displayDate(room.lease_end) }}</td>
                   <td>{{ room.area ? `${room.area} 坪` : '—' }}</td>
                   <td>
-                    <div class="flex justify-end gap-1">
-                      <button class="icon-btn" :aria-label="`查看 ${room.number}`"><Eye /></button
-                      ><button class="icon-btn" :aria-label="`${room.number} 更多操作`">
-                        <MoreVertical />
+                    <div class="flex justify-end">
+                      <button
+                        class="icon-btn"
+                        :aria-label="`查看 ${room.number}`"
+                        @click="roomDetail = room"
+                      >
+                        <Eye />
                       </button>
                     </div>
                   </td>
@@ -511,51 +454,89 @@ function addRooms() {
           <div v-else class="grid min-h-56 place-items-center p-8 text-center">
             <div>
               <Search class="mx-auto h-8 w-8 text-[#9ca49e]" />
-              <p class="mt-3 font-bold">找不到符合條件的房間</p>
-              <p class="mt-1 text-sm text-[#7a827c]">試著清除關鍵字或切換狀態。</p>
+              <p class="mt-3 font-bold">
+                {{ current.rooms.length ? '找不到符合條件的房間' : '尚未建立房間' }}
+              </p>
+              <p class="mt-1 text-sm text-[#7a827c]">
+                {{
+                  current.rooms.length
+                    ? '試著清除關鍵字或切換狀態。'
+                    : '建立房間後即可在新增租客時選取。'
+                }}
+              </p>
+              <button v-if="!current.rooms.length" class="btn-primary mt-4" @click="openRoomDialog">
+                <Plus class="h-4 w-4" />新增房間
+              </button>
             </div>
           </div>
         </article>
       </div>
+      <div
+        v-else
+        class="grid min-h-[620px] place-items-center rounded-[1.5rem] border border-dashed border-[#dcd5c8] bg-white/60 p-8 text-center"
+      >
+        <div>
+          <Building2 class="mx-auto h-10 w-10 text-[#8d9a90]" />
+          <h2 class="mt-4 text-xl font-black">尚未建立棟別</h2>
+          <p class="mt-2 text-sm text-[#7a827c]">
+            先建立房務資料，租客管理的房間選單就會同步顯示。
+          </p>
+          <button class="btn-primary mt-5" @click="openCreateBuilding">
+            <Building2 class="h-4 w-4" />新增棟樓
+          </button>
+        </div>
+      </div>
     </section>
-    <footer
-      class="flex flex-col gap-2 border-t border-[#e2ddcf] pt-4 text-xs text-[#8a908b] sm:flex-row sm:justify-between"
-    >
-      <span>RentMate 房東管理後台 v1.2.0</span><span>服務條款　｜　隱私權政策　｜　支援說明</span>
-    </footer>
 
     <Teleport to="body">
       <div v-if="buildingDialog" class="backdrop" @click.self="buildingDialog = false">
-        <section class="dialog" role="dialog" aria-modal="true">
+        <section
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="building-dialog-title"
+        >
           <header class="dialog-head">
-            <h2>新增棟樓</h2>
+            <h2 id="building-dialog-title">{{ editingBuildingId ? '編輯棟別' : '新增棟樓' }}</h2>
             <button class="icon-btn" aria-label="關閉" @click="buildingDialog = false">
               <X />
             </button>
           </header>
-          <form class="space-y-4 p-5" @submit.prevent="addBuilding">
+          <form class="space-y-4 p-5" @submit.prevent="saveBuilding">
             <label class="label"
               >棟別名稱<input
                 v-model="buildingForm.name"
                 required
+                maxlength="100"
                 class="field mt-2"
-                placeholder="例如：松庭公寓" /></label
-            ><label class="label"
+                placeholder="例如：松庭公寓"
+            /></label>
+            <label class="label"
               >地址<input
                 v-model="buildingForm.address"
                 class="field mt-2"
-                placeholder="輸入門牌地址" /></label
-            ><label class="label"
-              >城市<input v-model="buildingForm.city" class="field mt-2" /></label
-            ><button class="btn-primary w-full" type="submit">儲存棟別</button>
+                placeholder="輸入門牌地址"
+            /></label>
+            <label class="label"
+              >城市<input v-model="buildingForm.city" maxlength="50" class="field mt-2"
+            /></label>
+            <button class="btn-primary w-full" type="submit" :disabled="saving">
+              {{ saving ? '儲存中…' : '儲存棟別' }}
+            </button>
           </form>
         </section>
       </div>
-      <div v-if="roomDialog" class="backdrop" @click.self="roomDialog = false">
-        <section class="dialog max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+
+      <div v-if="roomDialog && current" class="backdrop" @click.self="roomDialog = false">
+        <section
+          class="dialog max-h-[90vh] overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="room-dialog-title"
+        >
           <header class="dialog-head">
             <div>
-              <h2>新增房間</h2>
+              <h2 id="room-dialog-title">新增房間</h2>
               <p>{{ current.name }}</p>
             </div>
             <button class="icon-btn" aria-label="關閉" @click="roomDialog = false"><X /></button>
@@ -607,6 +588,7 @@ function addRooms() {
                 >坪數<input
                   v-model="roomForm.area"
                   type="number"
+                  min="0.1"
                   step="0.1"
                   class="field mt-2"
                   placeholder="例如：7.8"
@@ -616,10 +598,40 @@ function addRooms() {
               >預計月租<input
                 v-model="roomForm.rent"
                 type="number"
+                min="0"
                 class="field mt-2"
-                placeholder="例如：12000" /></label
-            ><button class="btn-primary w-full" type="submit">建立房間</button>
+                placeholder="例如：12000"
+            /></label>
+            <button class="btn-primary w-full" type="submit" :disabled="saving">
+              {{ saving ? '建立中…' : '建立房間' }}
+            </button>
           </form>
+        </section>
+      </div>
+
+      <div v-if="roomDetail" class="backdrop" @click.self="roomDetail = null">
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="room-detail-title">
+          <header class="dialog-head">
+            <div>
+              <h2 id="room-detail-title">房間 {{ roomDetail.number }}</h2>
+              <p>{{ current?.name }}</p>
+            </div>
+            <button class="icon-btn" aria-label="關閉" @click="roomDetail = null"><X /></button>
+          </header>
+          <dl class="detail-list">
+            <dt>狀態</dt>
+            <dd>{{ statusMeta[roomDetail.status].label }}</dd>
+            <dt>租客</dt>
+            <dd>{{ roomDetail.tenant ?? '尚無租客' }}</dd>
+            <dt>預計／目前月租</dt>
+            <dd>{{ money(roomDetail.rent) }}</dd>
+            <dt>合約到期</dt>
+            <dd>{{ displayDate(roomDetail.lease_end) }}</dd>
+            <dt>樓層</dt>
+            <dd>{{ roomDetail.floor ?? '—' }}</dd>
+            <dt>坪數</dt>
+            <dd>{{ roomDetail.area ? `${roomDetail.area} 坪` : '—' }}</dd>
+          </dl>
         </section>
       </div>
     </Teleport>
@@ -630,7 +642,7 @@ function addRooms() {
 @reference "../../index.css";
 .btn-primary,
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold transition-colors;
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
 }
 .btn-primary {
   @apply bg-[#5b8263] text-white shadow-[0_9px_22px_rgba(76,112,83,.16)] hover:bg-[#4f7557];
@@ -681,6 +693,15 @@ th,
 td {
   @apply px-4 py-3.5;
 }
+.notice {
+  @apply flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm;
+}
+.notice-error {
+  @apply border-[#efc8bf] bg-[#fff0ed] text-[#a65347];
+}
+.notice-success {
+  @apply border-[#c9dfcc] bg-[#edf7ef] text-[#4f7758];
+}
 .backdrop {
   @apply fixed inset-0 z-50 grid place-items-center bg-[#263229]/45 p-4 backdrop-blur-[2px];
 }
@@ -695,5 +716,14 @@ td {
 }
 .dialog-head p {
   @apply text-xs text-[#7a827c];
+}
+.detail-list {
+  @apply grid grid-cols-[130px_1fr] gap-x-4 gap-y-3 p-5 text-sm;
+}
+.detail-list dt {
+  @apply text-[#7a827c];
+}
+.detail-list dd {
+  @apply font-bold;
 }
 </style>

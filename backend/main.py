@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
-from routers import auth, contract, landlord_tenants # 👈 引入剛才建立的 AI 路由功能
+from routers import auth, contract, landlord_properties, landlord_tenants # 👈 引入剛才建立的 AI 路由功能
 
 # 有設定 MySQL 時才建立資料表；Google 登入驗證本身不依賴資料庫。
 if engine is not None:
@@ -26,6 +26,7 @@ app.add_middleware(
 # 將 AI 合約審查模組註冊進 FastAPI 總開關
 app.include_router(contract.router)
 app.include_router(auth.router)
+app.include_router(landlord_properties.router)
 app.include_router(landlord_tenants.router)
 
 @app.get("/")
