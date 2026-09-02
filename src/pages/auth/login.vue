@@ -201,7 +201,7 @@ async function handleGoogleOAuthReturn(): Promise<void> {
       })
       return
     }
-    const session = registerWithGoogle(account.email, account.role)
+    const session = registerWithGoogle(account.email, account.role, account.accessToken)
     const target = needsNicknameSetup(session)
       ? '/welcome'
       : account.redirectPath || resolveRoleHome(session.role)

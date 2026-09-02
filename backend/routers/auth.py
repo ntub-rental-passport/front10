@@ -30,12 +30,16 @@ from email_service import EmailConfigurationError, send_verification_email
 from models import (
     PendingRegistration,
     User,
+    UserIdentity,
+    UserPasswordCredential,
+    UserRole,
 )
 from verification import (
     generate_verification_code,
     hash_verification_code,
     verification_code_matches,
 )
+from security import create_access_token
 
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -68,6 +72,7 @@ class EmailLoginResponse(BaseModel):
     role: str
     displayName: str | None = None
     avatarUrl: str | None = None
+    accessToken: str
 
 
 class GoogleLoginRequest(BaseModel):
@@ -92,6 +97,7 @@ class GoogleOAuthSessionResponse(GoogleAccountResponse):
     redirectPath: str | None = None
     registrationRequired: bool
     registrationToken: str | None = None
+    accessToken: str | None = None
 
 
 class RegistrationStartRequest(BaseModel):
@@ -124,6 +130,7 @@ class RegistrationVerifyResponse(BaseModel):
     role: str
     displayName: str | None = None
     avatarUrl: str | None = None
+    accessToken: str
 
 
 def _google_config() -> tuple[str, str, str, str]:
@@ -236,6 +243,41 @@ def _read_signed_state(state_value: str, signing_key: str) -> dict[str, object]:
         ) from error
 
 
+def _create_google_registration_token(
+    account: GoogleAccountResponse,
+    role: str,
+    redirect_path: str | None,
+    signing_key: str,
+) -> str:
+    payload = {
+        "account": account.model_dump(),
+        "role": _safe_role(role),
+        "redirectPath": _safe_redirect_path(redirect_path),
+        "expiresAt": int(time.time()) + REGISTRATION_TOKEN_MAX_AGE_SECONDS,
+    }
+    encoded_payload = _base64url_encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    )
+    signature = _base64url_encode(
+        hmac.new(signing_key.encode("utf-8"), encoded_payload.encode("ascii"), hashlib.sha256).digest()
+    )
+    return f"{encoded_payload}.{signature}"
+
+
+def _read_google_registration_token(token: str, signing_key: str) -> dict[str, object]:
+    try:
+        payload = _read_signed_state(token, signing_key)
+        account = payload.get("account")
+        if not isinstance(account, dict):
+            raise ValueError("missing Google account")
+        return payload
+    except (HTTPException, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google 註冊資料無效或已過期，請重新使用 Google 登入。",
+        ) from error
+
+
 def _normalize_email(value: str | None) -> str:
     email = (value or "").strip().lower()
     if not email or len(email) > 254 or "@" not in email:
@@ -256,27 +298,29 @@ def login_with_email(
         raise HTTPException(status_code=422, detail="role-mismatch")
 
     user = db.query(User).filter(User.email == email).first()
-    if user is None or user.password_hash is None:
+    if user is None or user.password_credential is None:
         raise HTTPException(status_code=404, detail="account-not-found")
     if user.email_verified_at is None:
         raise HTTPException(status_code=403, detail="email-not-verified")
-    if user.role != payload.role:
+    if not any(user_role.role == payload.role for user_role in user.roles):
         raise HTTPException(status_code=403, detail="role-mismatch")
 
     try:
-        password_hasher.verify(user.password_hash, payload.password)
+        password_hasher.verify(user.password_credential.password_hash, payload.password)
     except (InvalidHashError, VerificationError, VerifyMismatchError):
         raise HTTPException(status_code=401, detail="invalid-password")
 
-    if password_hasher.check_needs_rehash(user.password_hash):
-        user.password_hash = password_hasher.hash(payload.password)
+    if password_hasher.check_needs_rehash(user.password_credential.password_hash):
+        user.password_credential.password_hash = password_hasher.hash(payload.password)
+        user.password_credential.password_changed_at = datetime.utcnow()
         db.commit()
 
     return EmailLoginResponse(
         email=user.email,
-        role=user.role,
+        role=payload.role,
         displayName=user.display_name,
-        avatarUrl=getattr(user, "avatar_url", None),
+        avatarUrl=user.avatar_url,
+        accessToken=create_access_token(user.id, payload.role),
     )
 
 
@@ -286,6 +330,16 @@ def _registration_limits() -> tuple[int, int, int, int]:
     resend_cooldown = int(os.getenv("VERIFICATION_RESEND_COOLDOWN_SECONDS", "60"))
     max_sends = int(os.getenv("VERIFICATION_MAX_SENDS", "5"))
     return expires_seconds, max_attempts, resend_cooldown, max_sends
+
+
+def _google_http_session() -> http_requests.Session:
+    session = http_requests.Session()
+    session.trust_env = os.getenv("GOOGLE_OAUTH_TRUST_ENV_PROXY", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    return session
 
 
 def _pending_response(pending: PendingRegistration, now: datetime) -> RegistrationPendingResponse:
@@ -302,11 +356,12 @@ def _pending_response(pending: PendingRegistration, now: datetime) -> Registrati
 
 def _verify_google_id_token(credential: str, client_id: str) -> GoogleAccountResponse:
     try:
-        claims = id_token.verify_oauth2_token(
-            credential,
-            GoogleRequest(),
-            client_id,
-        )
+        with _google_http_session() as session:
+            claims = id_token.verify_oauth2_token(
+                credential,
+                GoogleRequest(session=session),
+                client_id,
+            )
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -411,17 +466,18 @@ def google_oauth_callback(
 
     try:
         state_payload = _read_signed_state(state_value, client_secret)
-        token_response = http_requests.post(
-            GOOGLE_TOKEN_URL,
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": redirect_uri,
-            },
-            timeout=15,
-        )
+        with _google_http_session() as session:
+            token_response = session.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": redirect_uri,
+                },
+                timeout=15,
+            )
         token_response.raise_for_status()
         credential = token_response.json().get("id_token")
         if not credential:
@@ -467,54 +523,44 @@ def exchange_google_ticket(
             detail="Google 登入資料格式錯誤。",
         )
 
+    identity = db.query(UserIdentity).filter(
+        UserIdentity.provider == "google",
+        UserIdentity.provider_subject == account.subject,
+    ).first()
+    registration_required = identity is None
     requested_role = _safe_role(str(ticket_data["role"]))
-
-    # 直接使用 google_sub 查詢 Users 表
-    user = db.query(User).filter(User.google_sub == account.subject).first()
-
-    if user is None:
-        # 首次 Google 登入：直接新增使用者
-        now = datetime.utcnow()
-        user = User(
-            email=account.email,
-            display_name=account.name,
-            google_sub=account.subject,
-            role=requested_role,
-            email_verified_at=now,
-            created_at=now,
+    if identity and not db.query(UserRole).filter(
+        UserRole.user_id == identity.user_id,
+        UserRole.role == requested_role,
+    ).first():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="此帳號尚未開通目前選擇的租客／房東身分。",
         )
-        db.add(user)
-        try:
-            db.commit()
-            db.refresh(user)
-        except IntegrityError:
-            db.rollback()
-            # 若已有此 Email 的一般密碼帳號，自動補上 google_sub 綁定
-            user = db.query(User).filter(User.email == account.email).first()
-            if user:
-                user.google_sub = account.subject
-                db.commit()
-            else:
-                raise HTTPException(status_code=409, detail="帳號建立失敗，請稍後再試。")
-    else:
-        # 已有 Google 帳號：比對角色
-        if user.role != requested_role:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"此帳號的角色為「{'租客' if user.role == 'tenant' else '房東'}」，請切換頁籤登入。",
-            )
+    _, client_secret, _, _ = _google_config()
+    registration_token = (
+        _create_google_registration_token(
+            account,
+            requested_role,
+            str(ticket_data["redirectPath"]) if ticket_data.get("redirectPath") else None,
+            client_secret,
+        )
+        if registration_required
+        else None
+    )
 
     return GoogleOAuthSessionResponse(
         **account.model_dump(),
         flowVersion=2,
-        role=user.role,
+        role=requested_role,
         redirectPath=(
             str(ticket_data["redirectPath"])
             if ticket_data.get("redirectPath")
             else None
         ),
-        registrationRequired=False,
-        registrationToken=None,
+        registrationRequired=registration_required,
+        registrationToken=registration_token,
+        accessToken=(create_access_token(identity.user_id, requested_role) if identity else None),
     )
 
 
@@ -539,18 +585,45 @@ def start_registration(
 ) -> RegistrationPendingResponse:
     now = datetime.utcnow()
     expires_seconds, _, resend_cooldown, max_sends = _registration_limits()
-    
-    email = _normalize_email(payload.email)
-    password = payload.password or ""
-    if len(password) < 8 or len(password) > 128:
-        raise HTTPException(status_code=422, detail="密碼長度必須介於 8 到 128 個字元。")
-    
-    password_hash = password_hasher.hash(password)
+    provider = "password"
+    provider_subject = None
+    display_name = None
+    avatar_url = None
+    password_hash = None
     role = _safe_role(payload.role)
+
+    if payload.googleRegistrationToken:
+        _, client_secret, _, _ = _google_config()
+        token_payload = _read_google_registration_token(
+            payload.googleRegistrationToken,
+            client_secret,
+        )
+        account = token_payload["account"]
+        if not isinstance(account, dict):
+            raise HTTPException(status_code=401, detail="Google 註冊資料格式錯誤。")
+        provider = "google"
+        email = _normalize_email(str(account.get("email") or ""))
+        provider_subject = str(account.get("subject") or "")
+        display_name = str(account.get("name")) if account.get("name") else None
+        avatar_url = str(account.get("picture")) if account.get("picture") else None
+        role = _safe_role(str(token_payload.get("role") or role))
+        if not provider_subject:
+            raise HTTPException(status_code=401, detail="Google 註冊資料缺少帳號識別碼。")
+    else:
+        email = _normalize_email(payload.email)
+        password = payload.password or ""
+        if len(password) < 8 or len(password) > 128:
+            raise HTTPException(status_code=422, detail="密碼長度必須介於 8 到 128 個字元。")
+        password_hash = password_hasher.hash(password)
 
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(status_code=409, detail="此電子信箱已經註冊，請直接登入。")
+    if provider_subject and db.query(UserIdentity).filter(
+        UserIdentity.provider == provider,
+        UserIdentity.provider_subject == provider_subject,
+    ).first():
+        raise HTTPException(status_code=409, detail="此 Google 帳號已經註冊，請直接登入。")
 
     pending = db.query(PendingRegistration).filter(
         PendingRegistration.email == email
@@ -571,6 +644,7 @@ def start_registration(
         pending = PendingRegistration(
             id=str(uuid.uuid4()),
             email=email,
+            provider=provider,
             send_count=1,
             created_at=now,
         )
@@ -578,12 +652,18 @@ def start_registration(
     else:
         pending.send_count += 1
 
+    pending.provider = provider
+    pending.provider_subject = provider_subject
+    pending.display_name = display_name
+    pending.avatar_url = avatar_url
     pending.password_hash = password_hash
     pending.role = role
+    pending.invite_code = payload.inviteCode.strip() if payload.inviteCode else None
     pending.verification_code_hash = hash_verification_code(pending.id, code)
     pending.expires_at = now + timedelta(seconds=expires_seconds)
     pending.resend_available_at = now + timedelta(seconds=resend_cooldown)
     pending.attempt_count = 0
+    pending.updated_at = now
 
     try:
         db.flush()
@@ -687,19 +767,38 @@ def verify_registration(
     # 建立正式的 User 紀錄
     user = User(
         email=pending.email,
-        password_hash=pending.password_hash,
-        role=pending.role,
+        display_name=pending.display_name,
+        avatar_url=pending.avatar_url,
         email_verified_at=now,
         created_at=now,
     )
     db.add(user)
-    
     try:
+        db.flush()
+        db.add(UserRole(user_id=user.id, role=pending.role, created_at=now))
+        if pending.provider == "google":
+            db.add(UserIdentity(
+                user_id=user.id,
+                provider="google",
+                provider_subject=pending.provider_subject,
+                provider_email=pending.email,
+                created_at=now,
+            ))
+        elif pending.password_hash:
+            db.add(UserPasswordCredential(
+                user_id=user.id,
+                password_hash=pending.password_hash,
+                password_changed_at=now,
+            ))
+        else:
+            raise HTTPException(status_code=500, detail="註冊資料缺少登入憑證。")
+
         response = RegistrationVerifyResponse(
             email=pending.email,
             role=pending.role,
-            displayName=None,
-            avatarUrl=None,
+            displayName=pending.display_name,
+            avatarUrl=pending.avatar_url,
+            accessToken=create_access_token(user.id, pending.role),
         )
         db.delete(pending)
         db.commit()

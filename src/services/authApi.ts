@@ -12,6 +12,7 @@ export interface GoogleOAuthSession extends VerifiedGoogleAccount {
   redirectPath: string | null
   registrationRequired: boolean
   registrationToken: string | null
+  accessToken: string | null
 }
 
 export interface PendingRegistrationResponse {
@@ -28,6 +29,7 @@ export interface VerifiedRegistrationResponse {
   role: 'tenant' | 'landlord'
   displayName: string | null
   avatarUrl: string | null
+  accessToken: string
 }
 
 export interface EmailLoginResponse {
@@ -35,6 +37,7 @@ export interface EmailLoginResponse {
   role: 'tenant' | 'landlord'
   displayName: string | null
   avatarUrl: string | null
+  accessToken: string
 }
 
 export interface StartRegistrationPayload {
@@ -45,7 +48,17 @@ export interface StartRegistrationPayload {
   googleRegistrationToken?: string
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const CONFIGURED_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const API_BASE_URL = import.meta.env.DEV ? '/api' : CONFIGURED_API_BASE_URL
+type FetchInit = NonNullable<Parameters<typeof fetch>[1]>
+
+async function authFetch(url: string, init: FetchInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch {
+    throw new Error('無法連線到帳號服務，請確認後端已啟動後再試。')
+  }
+}
 
 export function getGoogleLoginUrl(role: string, redirectPath: string): string {
   const params = new URLSearchParams({
@@ -56,7 +69,7 @@ export function getGoogleLoginUrl(role: string, redirectPath: string): string {
 }
 
 export async function exchangeGoogleTicket(ticket: string): Promise<GoogleOAuthSession> {
-  const response = await fetch(`${API_BASE_URL}/auth/google/session`, {
+  const response = await authFetch(`${API_BASE_URL}/auth/google/session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -64,7 +77,7 @@ export async function exchangeGoogleTicket(ticket: string): Promise<GoogleOAuthS
     body: JSON.stringify({ ticket }),
   })
 
-  const body = await response.json().catch(() => null) as
+  const body = (await response.json().catch(() => null)) as
     | (GoogleOAuthSession & { detail?: string })
     | null
 
@@ -85,12 +98,12 @@ export async function exchangeGoogleTicket(ticket: string): Promise<GoogleOAuthS
 }
 
 async function postAuth<T>(path: string, payload: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}/auth${path}`, {
+  const response = await authFetch(`${API_BASE_URL}/auth${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  const body = await response.json().catch(() => null) as (T & { detail?: string }) | null
+  const body = (await response.json().catch(() => null)) as (T & { detail?: string }) | null
   if (!response.ok) {
     throw new Error(body?.detail || '驗證服務暫時無法使用，請稍後再試。')
   }
@@ -98,7 +111,9 @@ async function postAuth<T>(path: string, payload: unknown): Promise<T> {
   return body
 }
 
-export function startRegistration(payload: StartRegistrationPayload): Promise<PendingRegistrationResponse> {
+export function startRegistration(
+  payload: StartRegistrationPayload,
+): Promise<PendingRegistrationResponse> {
   return postAuth('/registration/start', payload)
 }
 

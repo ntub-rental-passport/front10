@@ -1,0 +1,70 @@
+import unittest
+from datetime import date, timedelta
+
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from database import Base
+from models import LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, User
+from routers.landlord_tenants import _assert_no_overlap, _is_effective, _lease_display, _owned_tenant
+
+
+class LandlordTenantRulesTest(unittest.TestCase):
+    def setUp(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        self.db = sessionmaker(bind=engine)()
+        self.landlord_a = User(email="a@example.com", email_verified_at=None)
+        self.landlord_b = User(email="b@example.com", email_verified_at=None)
+        self.db.add_all([self.landlord_a, self.landlord_b])
+        self.db.flush()
+        property_item = LandlordProperty(landlord_id=self.landlord_a.id, name="A 棟")
+        self.db.add(property_item)
+        self.db.flush()
+        self.room = LandlordRoom(property_id=property_item.id, number="101")
+        self.tenant = LandlordTenant(landlord_id=self.landlord_a.id, name="測試租客", phone="0912345678")
+        self.db.add_all([self.room, self.tenant])
+        self.db.flush()
+        today = date.today()
+        self.lease = LandlordLease(
+            tenant_id=self.tenant.id,
+            property_id=property_item.id,
+            room_id=self.room.id,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=20),
+            monthly_rent=12000,
+            deposit_amount=24000,
+            payment_day=5,
+            status="active",
+        )
+        self.db.add(self.lease)
+        self.db.commit()
+
+    def tearDown(self):
+        self.db.close()
+
+    def test_effective_and_expiring_rules(self):
+        today = date.today()
+        self.assertTrue(_is_effective(self.lease, today))
+        self.assertEqual(_lease_display(self.lease, today), "expiring")
+        self.lease.status = "terminated"
+        self.assertFalse(_is_effective(self.lease, today))
+        self.assertEqual(_lease_display(self.lease, today), "moved_out")
+
+    def test_room_overlap_is_rejected(self):
+        today = date.today()
+        with self.assertRaises(HTTPException) as caught:
+            _assert_no_overlap(self.db, self.room.id, today, today + timedelta(days=30))
+        self.assertEqual(caught.exception.status_code, 409)
+
+    def test_tenant_id_is_scoped_to_landlord(self):
+        found = _owned_tenant(self.db, self.landlord_a.id, self.tenant.id)
+        self.assertEqual(found.id, self.tenant.id)
+        with self.assertRaises(HTTPException) as caught:
+            _owned_tenant(self.db, self.landlord_b.id, self.tenant.id)
+        self.assertEqual(caught.exception.status_code, 404)
+
+
+if __name__ == "__main__":
+    unittest.main()
