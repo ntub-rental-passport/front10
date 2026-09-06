@@ -68,6 +68,7 @@ class EmailLoginRequest(BaseModel):
 
 
 class EmailLoginResponse(BaseModel):
+    userId: int
     email: str
     role: str
     displayName: str | None = None
@@ -92,6 +93,7 @@ class GoogleAccountResponse(BaseModel):
 
 
 class GoogleOAuthSessionResponse(GoogleAccountResponse):
+    userId: int | None = None
     flowVersion: int = 2
     role: str
     redirectPath: str | None = None
@@ -126,6 +128,7 @@ class RegistrationPendingResponse(BaseModel):
 
 
 class RegistrationVerifyResponse(BaseModel):
+    userId: int
     email: str
     role: str
     displayName: str | None = None
@@ -316,6 +319,7 @@ def login_with_email(
         db.commit()
 
     return EmailLoginResponse(
+        userId=user.id,
         email=user.email,
         role=payload.role,
         displayName=user.display_name,
@@ -551,6 +555,7 @@ def exchange_google_ticket(
 
     return GoogleOAuthSessionResponse(
         **account.model_dump(),
+        userId=(identity.user_id if identity else None),
         flowVersion=2,
         role=requested_role,
         redirectPath=(
@@ -794,6 +799,7 @@ def verify_registration(
             raise HTTPException(status_code=500, detail="註冊資料缺少登入憑證。")
 
         response = RegistrationVerifyResponse(
+            userId=user.id,
             email=pending.email,
             role=pending.role,
             displayName=pending.display_name,

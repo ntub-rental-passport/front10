@@ -7,6 +7,7 @@ export interface VerifiedGoogleAccount {
 }
 
 export interface GoogleOAuthSession extends VerifiedGoogleAccount {
+  userId: number | null
   flowVersion: 2
   role: 'tenant' | 'landlord'
   redirectPath: string | null
@@ -25,6 +26,7 @@ export interface PendingRegistrationResponse {
 }
 
 export interface VerifiedRegistrationResponse {
+  userId: number
   email: string
   role: 'tenant' | 'landlord'
   displayName: string | null
@@ -33,6 +35,7 @@ export interface VerifiedRegistrationResponse {
 }
 
 export interface EmailLoginResponse {
+  userId: number
   email: string
   role: 'tenant' | 'landlord'
   displayName: string | null

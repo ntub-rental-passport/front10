@@ -9,6 +9,8 @@ import {
 export type AuthRole = 'tenant' | 'landlord' | 'admin'
 
 export interface AuthSession {
+  /** 後端帳號主鍵；所有租客資料授權皆以此欄位比對。 */
+  userId?: string
   email: string
   isAuthenticated: boolean
   role: AuthRole
@@ -117,9 +119,11 @@ function createSession(
   role: AuthRole,
   profile: UserProfile,
   accessToken?: string | null,
+  userId?: string | number | null,
 ): AuthSession {
   const session: AuthSession = {
     email: profile.email,
+    userId: userId === null || userId === undefined ? `email:${profile.email}` : String(userId),
     isAuthenticated: true,
     role,
     emailVerified: profile.emailVerified,
@@ -175,7 +179,10 @@ export async function signInWithEmail(
       nickname: result.displayName,
       role: result.role,
     })
-    return { ok: true, session: createSession(result.role, profile, result.accessToken) }
+    return {
+      ok: true,
+      session: createSession(result.role, profile, result.accessToken, result.userId),
+    }
   } catch (error) {
     const knownErrors: EmailSignInError[] = [
       'account-not-found',
@@ -193,13 +200,14 @@ export function registerWithGoogle(
   email: string,
   role: AuthRole = 'tenant',
   accessToken?: string | null,
+  userId?: string | number | null,
 ): AuthSession {
   const profile = upsertUserProfile(email, {
     emailVerified: true,
     nickname: null,
   })
 
-  return createSession(role, profile, accessToken)
+  return createSession(role, profile, accessToken, userId)
 }
 
 export function signOut(): void {
@@ -336,7 +344,7 @@ export async function completeEmailVerification(code: string): Promise<AuthSessi
 
   clearPendingRegistration()
   clearGoogleRegistrationContext()
-  return createSession(verified.role, profile, verified.accessToken)
+  return createSession(verified.role, profile, verified.accessToken, verified.userId)
 }
 
 export function finishNicknameSetup(nickname: string): AuthSession | null {
@@ -349,5 +357,10 @@ export function finishNicknameSetup(nickname: string): AuthSession | null {
     emailVerified: session.emailVerified,
   })
 
-  return createSession(session.role, profile, session.accessToken)
+  return createSession(session.role, profile, session.accessToken, session.userId)
+}
+
+export function getAuthenticatedUserId(session: AuthSession | null = getAuthSession()): string {
+  if (!session) return ''
+  return session.userId || `email:${session.email.trim().toLowerCase()}`
 }

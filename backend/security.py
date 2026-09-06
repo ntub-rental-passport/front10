@@ -60,3 +60,20 @@ def get_current_landlord(
     if not user or not role:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="房東權限不存在。")
     return user
+
+
+def get_current_tenant(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="請先登入租客帳號。")
+    payload = read_access_token(authorization[7:])
+    user_id = int(payload["sub"])
+    if payload.get("role") != "tenant":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限租客使用。")
+    user = db.query(User).filter(User.id == user_id).first()
+    role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "tenant").first()
+    if not user or not role:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租客權限不存在。")
+    return user

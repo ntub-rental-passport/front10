@@ -68,10 +68,11 @@ const scheduleDraft = ref<{
   note: '',
   needsTenant: selected.value?.accessPermission === 'present',
 })
-const costDraft = ref<{ actualCost: number | null; payer: string; receiptName: string }>({
+const costDraft = ref<{ actualCost: number | null; payer: string; receiptName: string; completionNote: string }>({
   actualCost: selected.value?.actualCost ?? null,
   payer: selected.value?.payer ?? '待確認',
   receiptName: selected.value?.receiptName ?? '',
+  completionNote: selected.value?.completionNote ?? '',
 })
 
 const count = (status: RepairStatus) =>
@@ -139,7 +140,9 @@ const actionStep = computed<ActionStep>(() => {
   if (ticket.status === 'inspection') return 'inspection'
   if (ticket.status === 'canceled') return 'canceled'
   if (ticket.status === 'completed') return 'done'
+  if (ticket.responsibilityAgreement === 'questioned') return 'responsibility'
   if (ticket.responsibility === 'pending') return 'responsibility'
+  if (ticket.rescheduleRequest?.status === 'pending' || ticket.inspectionResult === 'unresolved') return 'schedule'
   if (!ticket.scheduledAt) return 'schedule'
   return 'completion'
 })
@@ -190,7 +193,7 @@ function hydrateDrafts(item: RepairTicket): void {
     note: '',
     needsTenant: item.accessPermission === 'present',
   }
-  costDraft.value = { actualCost: item.actualCost, payer: item.payer, receiptName: item.receiptName }
+  costDraft.value = { actualCost: item.actualCost, payer: item.payer, receiptName: item.receiptName, completionNote: item.completionNote }
   receiptFile.value = null
 }
 function selectTicket(item: RepairTicket): void {
@@ -208,16 +211,16 @@ function toggleEmergencyFilter(): void {
 }
 function acceptTicket(): void {
   if (!selected.value) return
-  updateTicket(selected.value.id, { status: 'processing', landlordRead: true }, { title: '房東接受處理', detail: '案件已進入責任確認與安排維修階段。' })
+  updateTicket(selected.value.id, { status: 'processing', landlordRead: true }, { title: '房東接受處理', detail: '案件已進入責任確認與安排維修階段。', actorRole: 'landlord' })
   notify('已接受處理，租客將收到通知')
 }
 function submitAction(): void {
   if (!selected.value || !actionReason.value.trim()) return
   if (actionOpen.value === 'request') {
-    updateTicket(selected.value.id, { status: 'pending', landlordRead: true }, { title: '房東要求補充資料', detail: actionReason.value.trim() })
+    updateTicket(selected.value.id, { status: 'pending', landlordRead: true, supplementRequested: true, supplementRequestNote: actionReason.value.trim() }, { title: '房東要求補充資料', detail: actionReason.value.trim(), actorRole: 'landlord' })
     notify('已通知租客補充資料')
   } else {
-    updateTicket(selected.value.id, { status: 'canceled', landlordRead: true, responsibilityNote: actionReason.value.trim() }, { title: '房東判定不屬於報修範圍', detail: actionReason.value.trim() })
+    updateTicket(selected.value.id, { status: 'canceled', landlordRead: true, responsibilityNote: actionReason.value.trim() }, { title: '房東判定不屬於報修範圍', detail: actionReason.value.trim(), actorRole: 'landlord' })
     notify('已保存原因並通知租客')
   }
   actionOpen.value = null
@@ -233,7 +236,9 @@ function saveResponsibility(): void {
     responsibility: responsibilityDraft.value.responsibility,
     responsibilityNote: responsibilityDraft.value.note.trim(),
     payer: label,
-  }, { title: '更新責任與費用說明', detail: `${label}：${responsibilityDraft.value.note.trim() || '尚未補充說明'}` })
+    responsibilityAgreement: '',
+    responsibilityQuestion: '',
+  }, { title: '更新責任與費用說明', detail: `${label}：${responsibilityDraft.value.note.trim() || '尚未補充說明'}`, actorRole: 'landlord' })
   costDraft.value.payer = label
   notify('已保存責任歸屬與說明')
 }
@@ -258,7 +263,10 @@ function saveSchedule(): void {
     vendorPhone: scheduleDraft.value.vendorPhone.trim(),
     scheduledAt: scheduleDraft.value.scheduledAt,
     estimatedCost: numericOrNull(scheduleDraft.value.estimatedCost),
-  }, { title: '已安排維修人員', detail: `${scheduleDraft.value.vendorName}，預計 ${formatDateTime(scheduleDraft.value.scheduledAt)} 到場。${scheduleDraft.value.note.trim()}` })
+    tenantScheduleReply: '',
+    rescheduleRequest: null,
+    inspectionResult: '',
+  }, { title: '已安排維修人員', detail: `${scheduleDraft.value.vendorName}，預計 ${formatDateTime(scheduleDraft.value.scheduledAt)} 到場。${scheduleDraft.value.note.trim()}`, actorRole: 'landlord' })
   notify('已安排維修，租客可確認或申請改期')
 }
 function applyReceipt(file?: File): void {
@@ -295,7 +303,8 @@ function completeRepair(): void {
     actualCost,
     payer: costDraft.value.payer,
     receiptName: costDraft.value.receiptName,
-  }, { title: '維修完成，等待租客驗收', detail: `實際費用 ${money(actualCost)}，${costDraft.value.payer}。` })
+    completionNote: costDraft.value.completionNote.trim(),
+  }, { title: '維修完成，等待租客驗收', detail: `實際費用 ${money(actualCost)}，${costDraft.value.payer}。${costDraft.value.completionNote.trim()}`, actorRole: 'landlord' })
   completeConfirmOpen.value = false
   notify('已送出租客驗收，原始紀錄會完整保留')
 }
@@ -417,6 +426,7 @@ watch(filtered, (items) => {
           </dl>
 
           <section class="content-section"><h3>問題與照片</h3><p>{{ selected.description }}</p><div class="mt-3 flex flex-wrap gap-2"><span v-for="name in selected.photoNames" :key="name" class="file"><FileImage />{{ name }}</span></div></section>
+          <section v-if="selected.supplements.length" class="content-section"><h3>租客補充資料</h3><article v-for="item in [...selected.supplements].reverse()" :key="item.id" class="notice"><b>{{ formatDateTime(item.at) }}</b><p>{{ item.note || '租客補充照片' }}</p><div v-if="item.photoNames.length" class="mt-2 flex flex-wrap gap-2"><span v-for="name in item.photoNames" :key="name" class="file"><FileImage />{{ name }}</span></div></article></section>
           <section class="content-section inventory">
             <div class="flex items-center justify-between gap-3"><h3>家具點交存證</h3><span>自動串接</span></div>
             <dl><div><dt>品牌／型號</dt><dd>{{ selected.inventory.brand }}／{{ selected.inventory.model }}</dd></div><div><dt>入住狀況</dt><dd>{{ selected.inventory.moveInStatus }}</dd></div><div><dt>入住照片</dt><dd>{{ selected.inventory.moveInPhoto }}</dd></div><div><dt>過去報修</dt><dd>{{ selected.inventory.repairCount }} 次</dd></div></dl>
@@ -434,12 +444,15 @@ watch(filtered, (items) => {
 
           <section v-else-if="actionStep === 'responsibility'" class="action-block current-action">
             <span class="eyebrow">目前待辦</span><h3>確認責任與費用說明</h3><p>系統提供資料對照，不直接作法律判定；請由雙方確認最後結果。</p>
+            <p v-if="selected.responsibilityQuestion" class="notice"><b>租客提出疑問：</b>{{ selected.responsibilityQuestion }}</p>
             <div class="mt-4 grid gap-4 sm:grid-cols-2"><label>責任歸屬<select v-model="responsibilityDraft.responsibility"><option v-for="item in responsibilityOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select></label><label class="sm:col-span-2">判斷依據與說明<textarea v-model="responsibilityDraft.note" placeholder="說明設備狀況、契約約定與雙方協議" /></label></div>
             <button class="btn primary mt-4" @click="saveResponsibility">儲存責任說明</button>
           </section>
 
           <section v-else-if="actionStep === 'schedule'" class="action-block current-action">
             <span class="eyebrow">目前待辦</span><div class="action-title"><div><h3>安排維修時間</h3><p>儲存後租客會收到時間通知並可申請改期。</p></div><Store /></div>
+            <p v-if="selected.rescheduleRequest?.status === 'pending'" class="notice"><b>租客申請改期：</b>{{ selected.rescheduleRequest.date }} {{ selected.rescheduleRequest.startTime }}–{{ selected.rescheduleRequest.endTime }}<template v-if="selected.rescheduleRequest.note">・{{ selected.rescheduleRequest.note }}</template></p>
+            <p v-if="selected.inspectionResult === 'unresolved'" class="notice"><b>租客回報仍未解決：</b>{{ selected.unresolvedNote }}・可再次維修 {{ selected.revisitAvailableTime }}<template v-if="selected.unresolvedSafetyConcern">・仍有安全疑慮</template></p>
             <div class="mt-4 grid gap-4 sm:grid-cols-2">
               <label>廠商／人員名稱<span class="field-with-action"><input v-model="scheduleDraft.vendorName" placeholder="輸入名稱" /><button type="button" @click="vendorPickerOpen = true">選擇附近店家</button></span></label>
               <label>聯絡電話<input v-model="scheduleDraft.vendorPhone" placeholder="02-0000-0000" /></label>
@@ -455,6 +468,7 @@ watch(filtered, (items) => {
             <div class="mt-4 grid gap-4 sm:grid-cols-2">
               <label>實際費用<span class="money-input"><b>NT$</b><input v-model.number="costDraft.actualCost" min="0" type="number" placeholder="尚未填寫" /></span></label>
               <label>付款人<select v-model="costDraft.payer"><option>房東負擔</option><option>租客負擔</option><option>雙方協議分攤</option><option>待確認</option></select></label>
+              <label class="sm:col-span-2">完修說明<textarea v-model="costDraft.completionNote" rows="3" placeholder="說明已完成的工作與目前設備狀況" /></label>
               <div class="sm:col-span-2"><span class="form-label">收據或發票</span><span class="upload-zone" @dragover.prevent @drop.prevent="handleReceiptDrop"><input id="receipt-upload" class="sr-only" type="file" accept="image/jpeg,image/png,.pdf" @change="handleReceipt" /><label v-if="!costDraft.receiptName" for="receipt-upload"><FileUp /><b>拖曳或點擊上傳收據</b><small>支援 JPG、PNG、PDF，最大 10MB</small></label><span v-else class="upload-file"><FileImage /><span><b>{{ costDraft.receiptName }}</b><small>{{ receiptFile ? `${(receiptFile.size / 1024).toFixed(0)} KB` : '已附加至案件' }}</small></span><button type="button" aria-label="移除憑證" @click="removeReceipt"><Trash2 /></button></span></span></div>
             </div>
             <p class="notice">若從租金或押金扣除，請另外填寫說明並取得租客確認；系統不會自動扣除。</p>
@@ -488,7 +502,7 @@ watch(filtered, (items) => {
 
       <div v-if="vendorPickerOpen" class="backdrop" @click.self="vendorPickerOpen = false"><section class="dialog vendor-dialog" role="dialog" aria-modal="true" aria-labelledby="vendor-title"><header><div><p>{{ selected?.address }}</p><h2 id="vendor-title">選擇附近修繕店家</h2></div><button type="button" class="close" aria-label="關閉" @click="vendorPickerOpen = false"><X /></button></header><div class="space-y-3 p-5"><p class="dialog-copy">依案件地址提供參考，店家由房東自行聯絡與安排，平台不代為派工。</p><button v-for="vendor in vendors" :key="vendor.name" class="vendor-option" @click="useVendor(vendor)"><span><Store /></span><span><b>{{ vendor.name }}</b><small>{{ vendor.type }}・{{ vendor.distance }}・★ {{ vendor.rating }}</small><em><Phone />{{ vendor.phone }}</em></span><ChevronRight /></button></div></section></div>
 
-      <div v-if="completeConfirmOpen && selected" class="backdrop" @click.self="completeConfirmOpen = false"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="complete-title"><header><div><p>{{ selected.id }}</p><h2 id="complete-title">確認送出租客驗收</h2></div><button type="button" class="close" aria-label="關閉" @click="completeConfirmOpen = false"><X /></button></header><div class="p-5"><p class="dialog-copy">送出後案件會進入「待驗收」，請確認以下內容無誤。</p><dl class="confirm-list"><div><dt>實際費用</dt><dd class="numeric">{{ money(numericOrNull(costDraft.actualCost)) }}</dd></div><div><dt>付款人</dt><dd>{{ costDraft.payer }}</dd></div><div><dt>收據或發票</dt><dd>{{ costDraft.receiptName || '尚未附加' }}</dd></div><div><dt>通知租客</dt><dd>{{ selected.tenant }}・{{ selected.phone }}</dd></div></dl></div><footer><button type="button" class="btn secondary" @click="completeConfirmOpen = false">返回修改</button><button class="btn primary" @click="completeRepair"><CheckCircle2 />確認送出</button></footer></section></div>
+      <div v-if="completeConfirmOpen && selected" class="backdrop" @click.self="completeConfirmOpen = false"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="complete-title"><header><div><p>{{ selected.id }}</p><h2 id="complete-title">確認送出租客驗收</h2></div><button type="button" class="close" aria-label="關閉" @click="completeConfirmOpen = false"><X /></button></header><div class="p-5"><p class="dialog-copy">送出後案件會進入「待驗收」，請確認以下內容無誤。</p><dl class="confirm-list"><div><dt>完修說明</dt><dd>{{ costDraft.completionNote || '尚未填寫' }}</dd></div><div><dt>實際費用</dt><dd class="numeric">{{ money(numericOrNull(costDraft.actualCost)) }}</dd></div><div><dt>付款人</dt><dd>{{ costDraft.payer }}</dd></div><div><dt>收據或發票</dt><dd>{{ costDraft.receiptName || '尚未附加' }}</dd></div><div><dt>通知租客</dt><dd>{{ selected.tenant }}・{{ selected.phone }}</dd></div></dl></div><footer><button type="button" class="btn secondary" @click="completeConfirmOpen = false">返回修改</button><button class="btn primary" @click="completeRepair"><CheckCircle2 />確認送出</button></footer></section></div>
     </Teleport>
   </div>
 </template>
