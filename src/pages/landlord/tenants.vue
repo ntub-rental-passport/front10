@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   Clock3,
+  FileSearch,
   FileText,
   Link2,
   Pencil,
@@ -37,6 +38,12 @@ import {
   type TenantPayload,
   type TenantSummary,
 } from '@/src/services/landlordTenantApi'
+import ContractOcrImport from '@/src/components/landlord/ContractOcrImport.vue'
+import type { ContractAutofillData } from '@/src/utils/landlord-contract-import'
+import {
+  notifyContractsUpdated,
+  saveContractImportMetadata,
+} from '@/src/utils/landlord-contract-sync'
 
 type QuickFilter = 'all' | 'occupied' | 'expiring' | 'unbound' | 'incomplete' | 'moved_out'
 const summary = ref<TenantSummary>({
@@ -68,6 +75,9 @@ const total = ref(0)
 const tenantDialog = ref(false)
 const editingId = ref<number | null>(null)
 const moreInfoOpen = ref(false)
+const tenantOcrOpen = ref(false)
+const ocrAppliedCount = ref(0)
+const pendingContractOcr = ref<ContractAutofillData | null>(null)
 const propertyChoice = ref('')
 const roomChoice = ref('')
 const moveOutDialog = ref(false)
@@ -253,6 +263,9 @@ function resetForm() {
   propertyChoice.value = ''
   roomChoice.value = ''
   moreInfoOpen.value = false
+  tenantOcrOpen.value = false
+  ocrAppliedCount.value = 0
+  pendingContractOcr.value = null
 }
 function openCreate() {
   editingId.value = null
@@ -303,6 +316,42 @@ function applyRoomChoice() {
   form.property_name = selectedProperty.value.name
   form.room_number = room.number
 }
+function applyTenantOcr(data: ContractAutofillData) {
+  pendingContractOcr.value = data
+  Object.assign(form, {
+    name: data.tenantName || form.name,
+    phone: data.tenantPhone || form.phone,
+    national_id: data.tenantNationalId || form.national_id,
+    contact_address: data.tenantAddress || form.contact_address,
+    lease_start: data.leaseStart || form.lease_start,
+    lease_end: data.leaseEnd || form.lease_end,
+    monthly_rent: data.monthlyRent || form.monthly_rent,
+    deposit_amount: data.depositAmount || form.deposit_amount,
+    payment_day: data.paymentDay || form.payment_day,
+    payment_frequency: data.paymentFrequency,
+    contract_id:
+      form.contract_id || `OCR-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}`,
+    notes: form.notes || `由 AI 契約 OCR 自動帶入，來源：${data.sourceFileName}`,
+  })
+
+  if (data.roomNumber) {
+    const candidates = properties.value.flatMap((property) =>
+      property.rooms
+        .filter((room) => room.number.toLowerCase() === data.roomNumber.toLowerCase())
+        .map((room) => ({ property, room })),
+    )
+    if (candidates.length === 1 && candidates[0]) {
+      propertyChoice.value = String(candidates[0].property.id)
+      form.property_name = candidates[0].property.name
+      roomChoice.value = String(candidates[0].room.id)
+      form.room_number = candidates[0].room.number
+    }
+  }
+
+  moreInfoOpen.value = Boolean(data.tenantNationalId || data.tenantAddress)
+  ocrAppliedCount.value = data.fields.length
+  success.value = `AI 已帶入 ${data.fields.length} 個欄位；請確認租客身分、房間、日期與金額後再送出。`
+}
 function payload(): TenantPayload {
   return {
     ...form,
@@ -330,6 +379,18 @@ async function saveTenant() {
     const saved = editingId.value
       ? await updateTenant(editingId.value, payload())
       : await createTenant(payload())
+    if (pendingContractOcr.value) {
+      saveContractImportMetadata({
+        tenantId: saved.id,
+        leaseId: saved.lease_id,
+        contractId: saved.contract_id,
+        sourceFileName: pendingContractOcr.value.sourceFileName,
+        importedByOcr: true,
+        importedAt: new Date().toISOString(),
+      })
+    } else {
+      notifyContractsUpdated()
+    }
     tenantDialog.value = false
     success.value = editingId.value ? '租客資料已更新。' : '租客已新增。'
     await loadAll(saved.id)
@@ -857,6 +918,27 @@ onMounted(async () => {
             <div class="tenant-form-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
               <p v-if="formError" class="error-box">{{ formError }}</p>
 
+              <section v-if="!editingId" class="space-y-3">
+                <button
+                  v-if="!tenantOcrOpen"
+                  type="button"
+                  class="tenant-ai-trigger"
+                  @click="tenantOcrOpen = true"
+                >
+                  <span><FileSearch /><strong>從租賃契約 AI 自動填寫</strong></span>
+                  <small>自動擷取姓名、電話、身分資料、租期、租金、押金與繳租日</small>
+                </button>
+                <ContractOcrImport
+                  v-else
+                  compact
+                  title="AI 契約 OCR 自動填寫租客"
+                  @apply="applyTenantOcr"
+                />
+                <div v-if="ocrAppliedCount" class="tenant-ai-applied">
+                  <Check />已帶入 {{ ocrAppliedCount }} 個欄位，橘色或紅色信心標記的內容請特別確認。
+                </div>
+              </section>
+
               <section class="space-y-3">
                 <label class="form-label">選擇房間 *</label>
                 <div class="grid gap-3 sm:grid-cols-2">
@@ -960,52 +1042,52 @@ onMounted(async () => {
                       type="date"
                       class="tenant-field mt-2"
                   /></label>
-                  <label
-                    ><input
+                  <label class="form-label"
+                    >每期月租（NT$）*<input
                       v-model.number="form.monthly_rent"
                       required
                       min="0"
                       type="number"
-                      class="tenant-field"
-                      placeholder="月租金 *"
+                      class="tenant-field mt-2"
+                      placeholder="例如：18000"
                   /></label>
-                  <label
-                    ><input
+                  <label class="form-label"
+                    >押金（NT$）*<input
                       v-model.number="form.deposit_amount"
                       required
                       min="0"
                       type="number"
-                      class="tenant-field"
-                      placeholder="押金 *"
+                      class="tenant-field mt-2"
+                      placeholder="例如：36000"
                   /></label>
-                  <label
-                    ><input
+                  <label class="form-label"
+                    >每期繳租日 *<input
                       v-model.number="form.payment_day"
                       required
                       min="1"
                       max="31"
                       type="number"
-                      class="tenant-field"
-                      placeholder="每月繳租日 *"
+                      class="tenant-field mt-2"
+                      placeholder="例如：5"
                   /></label>
-                  <label
-                    ><select v-model="form.payment_frequency" class="tenant-field">
+                  <label class="form-label"
+                    >繳費週期<select v-model="form.payment_frequency" class="tenant-field mt-2">
                       <option value="monthly">每月繳租</option>
                       <option value="bimonthly">每 2 個月繳租</option>
                       <option value="quarterly">每季繳租</option>
                     </select></label
                   >
-                  <label
-                    ><select v-model="form.lease_status" class="tenant-field">
+                  <label class="form-label"
+                    >入住狀態<select v-model="form.lease_status" class="tenant-field mt-2">
                       <option value="active">已入住</option>
                       <option value="pending">待入住</option>
                     </select></label
                   >
-                  <label
-                    ><input
+                  <label class="form-label"
+                    >合約編號<input
                       v-model="form.contract_id"
-                      class="tenant-field"
-                      placeholder="合約編號（選填）"
+                      class="tenant-field mt-2"
+                      placeholder="選填，例如：CT-2026-001"
                   /></label>
                 </div>
                 <div
@@ -1368,8 +1450,26 @@ td {
 .tenant-dialog {
   display: flex;
   height: min(760px, calc(100dvh - 24px));
-  max-width: 540px;
+  max-width: 640px;
   flex-direction: column;
+}
+.tenant-ai-trigger {
+  @apply flex w-full flex-col gap-2 rounded-[1.25rem] border border-[#c7dac9] bg-[#edf7ee] px-4 py-3.5 text-left text-[#4f7557] transition-colors hover:bg-[#e5f2e7];
+}
+.tenant-ai-trigger > span {
+  @apply flex items-center gap-2;
+}
+.tenant-ai-trigger > span :deep(svg) {
+  @apply h-4 w-4;
+}
+.tenant-ai-trigger small {
+  @apply text-[11px] leading-5 text-[#6d7e71];
+}
+.tenant-ai-applied {
+  @apply flex items-start gap-2 rounded-xl bg-[#e8f3e9] px-3 py-2.5 text-xs leading-5 text-[#4e7456];
+}
+.tenant-ai-applied :deep(svg) {
+  @apply mt-0.5 h-4 w-4 shrink-0;
 }
 .tenant-form-scroll {
   overscroll-behavior: contain;

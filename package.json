@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port=5173 --strictPort --host=0.0.0.0",
     "dev:backend": "python -m uvicorn --app-dir backend main:app --port 8000",
-    "dev:all": "run-p dev dev:backend",
+    "dev:all": "run-p dev dev:backend dev:api",
     "dev:api": "tsx watch server/index.js",
     "start:api": "node server/index.js",
     "build": "vue-tsc -b && vite build",
