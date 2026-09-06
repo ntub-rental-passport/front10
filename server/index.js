@@ -423,7 +423,10 @@ function selectAiReviewFields(unresolvedFieldIds) {
 }
 
 function saveAiReviewJob(jobId, result) {
-  aiReviewJobs.set(jobId, result)
+  // 保留原本記錄的 ownerId —— 這裡是整個覆蓋寫入，若不保留，
+  // 建立時記下的擁有者會被洗掉，讀取端點的擁有權檢查就會失效。
+  const previous = aiReviewJobs.get(jobId)
+  aiReviewJobs.set(jobId, { ...result, ownerId: previous?.ownerId ?? result.ownerId })
   setTimeout(() => aiReviewJobs.delete(jobId), AI_REVIEW_JOB_TTL_MS).unref()
 }
 
@@ -553,6 +556,15 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/ocr/review/:jobId', requireAuth, (req, res) => {
   const job = aiReviewJobs.get(req.params.jobId)
   if (!job) return res.status(404).json({ error: '找不到這次 AI 複核工作，可能已逾期。' })
+
+  // 擁有權檢查（防 IDOR）：僅驗證「有沒有登入」是不夠的，
+  // 還必須確認這份工作屬於當前使用者，否則任何登入者只要取得他人的 jobId
+  // 即可讀取他人的合約辨識結果（姓名、地址、租金等個資）。
+  // 回傳 404 而非 403：403 等於告訴攻擊者「這個 ID 存在，只是你沒權限」，
+  // 404 則不透露該資源是否存在。
+  if (job.ownerId !== req.user?.sub) {
+    return res.status(404).json({ error: '找不到這次 AI 複核工作，可能已逾期。' })
+  }
   return res.json(job)
 })
 
@@ -659,6 +671,8 @@ app.post('/api/ocr', requireAuth, upload.array('files', maxFileCount), async (re
     if (jobId) {
       aiReviewJobs.set(jobId, {
         jobId,
+        // 記錄建立者，供讀取端點做擁有權檢查（req.user 由 requireAuth 從 JWT 解出）
+        ownerId: req.user?.sub,
         status: 'pending',
         model: ollamaConfig.model,
         fieldReviews: {},

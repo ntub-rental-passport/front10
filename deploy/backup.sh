@@ -78,8 +78,69 @@ EOF
 tar czf "$BACKUP_ROOT/rentmate-backup-$STAMP.tar.gz" -C "$BACKUP_ROOT" "rentmate-backup-$STAMP"
 rm -rf "$WORK"
 
+ARCHIVE="$BACKUP_ROOT/rentmate-backup-$STAMP.tar.gz"
+
 echo "=========================================="
-echo " 完成：$BACKUP_ROOT/rentmate-backup-$STAMP.tar.gz"
-du -h "$BACKUP_ROOT/rentmate-backup-$STAMP.tar.gz"
+echo " 完成：$ARCHIVE"
+du -h "$ARCHIVE"
 echo "=========================================="
-echo "⚠️  此檔含機密（金鑰、密碼），請下載到安全位置，勿放公開處。"
+
+# ---------- 6. 保留最近 7 份，舊的自動刪除 ----------
+echo "[6/7] 清理舊備份（保留最近 7 份）..."
+ls -1t "$BACKUP_ROOT"/rentmate-backup-*.tar.gz 2>/dev/null | tail -n +8 | while read -r old; do
+    rm -f "$old" && echo "    刪除 $(basename "$old")"
+done
+echo "    目前保留 $(ls -1 "$BACKUP_ROOT"/rentmate-backup-*.tar.gz 2>/dev/null | wc -l) 份"
+
+# ---------- 7. 寄送異地備份 ----------
+# 備份與正式站在同一台機器，VM 全毀就兩份一起沒。
+# 寄到 Gmail 當異地副本（檔案僅約 16KB，沿用專案既有的 SMTP 設定）。
+# 加上 --mail 參數才會寄送，手動執行時預設不寄。
+if [ "${1:-}" = "--mail" ]; then
+    echo "[7/7] 寄送異地備份..."
+    python3 - "$ARCHIVE" <<'PYEOF'
+import os, smtplib, ssl, sys
+from email.message import EmailMessage
+from pathlib import Path
+
+# 沿用專案 .env 的 SMTP 設定
+env = {}
+for line in Path(os.path.expanduser("~/rentmate/.env")).read_text(encoding="utf-8").splitlines():
+    if "=" in line and not line.strip().startswith("#"):
+        k, _, v = line.partition("=")
+        env[k.strip()] = v.strip().strip('"').strip("'")
+
+host = env.get("SMTP_HOST", "smtp.gmail.com")
+port = int(env.get("SMTP_PORT", "587"))
+user = env.get("SMTP_USERNAME", "")
+pw   = env.get("SMTP_APP_PASSWORD", "").replace(" ", "")
+sender = env.get("SMTP_FROM_EMAIL", user)
+
+archive = Path(sys.argv[1])
+msg = EmailMessage()
+msg["Subject"] = f"[RentMate] 系統備份 {archive.stem.replace('rentmate-backup-', '')}"
+msg["From"] = sender
+msg["To"] = sender          # 寄給自己
+msg.set_content(
+    f"RentMate 自動備份\n\n"
+    f"檔名：{archive.name}\n"
+    f"大小：{archive.stat().st_size / 1024:.1f} KB\n\n"
+    f"內容：MySQL 資料庫、.env 正式金鑰、Google 憑證、TLS 憑證\n"
+    f"還原方式：見 deploy/RESTORE.md\n\n"
+    f"⚠️ 此附件含機密，請勿轉寄。"
+)
+msg.add_attachment(archive.read_bytes(), maintype="application",
+                   subtype="gzip", filename=archive.name)
+
+with smtplib.SMTP(host, port, timeout=30) as s:
+    s.starttls(context=ssl.create_default_context())
+    s.login(user, pw)
+    s.send_message(msg)
+print(f"    ✅ 已寄至 {sender}")
+PYEOF
+else
+    echo "[7/7] 未加 --mail 參數，略過寄送"
+fi
+
+echo "=========================================="
+echo "⚠️  備份含機密（金鑰、密碼），勿放公開處。"
