@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   AlertTriangle,
   Bell,
@@ -18,63 +18,47 @@ import {
   Wrench,
   X,
 } from 'lucide-vue-next'
+import {
+  useLandlordFinance,
+  type LandlordPayment,
+  type PaymentKind,
+  type PaymentStatus,
+} from '@/src/composables/useLandlordFinance'
 
-type PaymentStatus = 'pending' | 'overdue' | 'paid' | 'partial'
-type PaymentKind = 'rent' | 'water' | 'other'
+const {
+  payments,
+  expenses,
+  total,
+  received,
+  awaiting,
+  overdue,
+  rate,
+  monthLabel,
+  recordPayment,
+  markPaymentReminded,
+  addExpense: saveExpense,
+} = useLandlordFinance()
 
-interface Payment {
-  id: number
-  group: string
-  room: string
-  tenant: string
-  kind: PaymentKind
-  title: string
-  period: string
-  amount: number
-  paid: number
-  due: string
-  status: PaymentStatus
-  reminded: boolean
-  activities: string[]
+const emptyPayment: LandlordPayment = {
+  id: '', tenantId: null, group: '尚無收款資料', room: '—', tenant: '—', kind: 'rent',
+  title: '尚無收款任務', period: monthLabel, amount: 0, paid: 0, due: '—', status: 'pending',
+  reminded: false, activities: ['新增有效租約後，系統會自動建立當月收款任務。'],
 }
-
-const payments = ref<Payment[]>([
-  { id: 1, group: '一棟房', room: '2A', tenant: '羅政偉', kind: 'rent', title: '逾期租金', period: '2026 年 5 月租金', amount: 7000, paid: 0, due: '2026-05-01', status: 'overdue', reminded: false, activities: ['05/01 系統建立收款任務'] },
-  { id: 2, group: '一棟房', room: '3C', tenant: '武哥', kind: 'rent', title: '逾期租金', period: '2026 年 5 月租金', amount: 4000, paid: 0, due: '2026-05-01', status: 'overdue', reminded: true, activities: ['05/01 系統建立收款任務', '05/03 已發送 LINE 提醒'] },
-  { id: 3, group: '一棟房', room: '4C', tenant: '阿雨', kind: 'rent', title: '逾期租金', period: '2026 年 5 月租金', amount: 4000, paid: 0, due: '2026-05-01', status: 'overdue', reminded: false, activities: ['05/01 系統建立收款任務'] },
-  { id: 4, group: '一棟房', room: '公區', tenant: '—', kind: 'water', title: '水電', period: '2026 年 5 月電費', amount: 4050, paid: 0, due: '2026-05-30', status: 'pending', reminded: false, activities: ['05/20 建立公用帳單'] },
-  { id: 5, group: '一棟房', room: '1A', tenant: '小王', kind: 'water', title: '水電', period: '2026 年 5 月電費', amount: 563, paid: 0, due: '2026-05-31', status: 'pending', reminded: false, activities: ['05/21 建立水電帳單'] },
-  { id: 6, group: '第一棟', room: '101', tenant: '王小明', kind: 'rent', title: '本月租金', period: '2026 年 5 月租金', amount: 18000, paid: 18000, due: '2026-05-05', status: 'paid', reminded: false, activities: ['05/05 已確認收款 NT$18,000'] },
-  { id: 7, group: '第二棟', room: '203', tenant: '大王', kind: 'rent', title: '部分收款', period: '2026 年 5 月租金', amount: 9000, paid: 5000, due: '2026-05-08', status: 'partial', reminded: true, activities: ['05/08 已入帳 NT$5,000', '05/10 已提醒餘額 NT$4,000'] },
-])
-
-const expenses = ref([
-  { title: '冷氣清洗與檢修', category: '維修', amount: 4500, date: '2026-05-12' },
-  { title: '公共區域網路', category: '網路', amount: 1199, date: '2026-05-15' },
-  { title: '住宅火險', category: '保險', amount: 1000, date: '2026-05-01' },
-  { title: '管理費', category: '管理費', amount: 100, date: '2026-05-01' },
-  { title: '浴室水管維修', category: '維修', amount: 3000, date: '2026-05-28' },
-])
 
 const tab = ref<'all' | PaymentStatus | PaymentKind>('pending')
 const keyword = ref('')
 const statusFilter = ref('all')
 const groupFilter = ref('all')
-const selectedId = ref(4)
+const selectedId = ref('')
 const toast = ref('')
 const paymentOpen = ref(false)
 const expenseOpen = ref(false)
 const paymentAmount = ref(0)
 const expenseForm = ref({ title: '', category: '維修', amount: 0, date: '2026-09-06' })
 
-const selected = computed(() => payments.value.find((item) => item.id === selectedId.value) ?? payments.value[0])
-const total = computed(() => payments.value.reduce((sum, item) => sum + item.amount, 0))
-const received = computed(() => payments.value.reduce((sum, item) => sum + item.paid, 0))
-const awaiting = computed(() => total.value - received.value)
-const overdue = computed(() => payments.value.filter((item) => item.status === 'overdue').reduce((sum, item) => sum + item.amount - item.paid, 0))
-const rate = computed(() => Math.round((received.value / total.value) * 100))
+const selected = computed(() => payments.value.find((item) => item.id === selectedId.value) ?? payments.value[0] ?? emptyPayment)
 const todayCount = computed(() => payments.value.filter((item) => item.status === 'pending' || item.status === 'overdue').length)
-const expenseTotal = computed(() => expenses.value.reduce((sum, item) => sum + item.amount, 0))
+const expenseTotal = computed(() => expenses.reduce((sum, item) => sum + item.amount, 0))
 const partialTotal = computed(() => payments.value.filter((item) => item.status === 'partial').reduce((sum, item) => sum + item.paid, 0))
 
 const filtered = computed(() => {
@@ -119,31 +103,33 @@ function openPayment(): void {
 function confirmPayment(): void {
   const item = selected.value
   const amount = Math.min(Math.max(0, paymentAmount.value), item.amount - item.paid)
-  item.paid += amount
-  item.status = item.paid >= item.amount ? 'paid' : 'partial'
-  item.activities.unshift(`${new Date().toLocaleDateString('zh-TW')} 已入帳 ${money(amount)}`)
+  recordPayment(item.id, amount)
   paymentOpen.value = false
   notify(`已確認 ${item.room} ${money(amount)} 收款`)
 }
 
 function sendReminder(): void {
-  selected.value.reminded = true
-  selected.value.activities.unshift(`${new Date().toLocaleDateString('zh-TW')} 已發送收款提醒`)
+  markPaymentReminded(selected.value.id)
   notify(`已向 ${selected.value.tenant === '—' ? '管理負責人' : selected.value.tenant} 發送提醒`)
 }
 
 function addExpense(): void {
   if (!expenseForm.value.title.trim() || expenseForm.value.amount <= 0) return
-  expenses.value.unshift({ ...expenseForm.value })
+  saveExpense({ ...expenseForm.value })
   expenseOpen.value = false
   notify('已新增支出紀錄')
   expenseForm.value = { title: '', category: '維修', amount: 0, date: '2026-09-06' }
 }
 
+watch(payments, (items) => {
+  if (items.some((item) => item.id === selectedId.value)) return
+  selectedId.value = items[0]?.id ?? ''
+}, { immediate: true, flush: 'sync' })
+
 function exportReport(): void {
   const rows = [['房號', '租客', '項目', '應收', '已收', '到期日', '狀態'], ...payments.value.map((item) => [item.room, item.tenant, item.period, item.amount, item.paid, item.due, statusMeta[item.status].label])]
   const url = URL.createObjectURL(new Blob([`\uFEFF${rows.map((row) => row.join(',')).join('\n')}`], { type: 'text/csv;charset=utf-8' }))
-  const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'RentMate-2026年05月財務報表.csv'; anchor.click(); URL.revokeObjectURL(url)
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = `RentMate-${monthLabel.replaceAll(' ', '')}財務報表.csv`; anchor.click(); URL.revokeObjectURL(url)
 }
 </script>
 
@@ -151,7 +137,7 @@ function exportReport(): void {
   <div class="mx-auto max-w-[1640px] space-y-5">
     <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div><h1 class="text-3xl font-black tracking-tight">財務管理</h1><p class="mt-1.5 text-sm text-[#758078]">掌握收支狀況與現金流，集中處理待收、逾期與水電帳單。</p></div>
-      <div class="flex flex-wrap gap-2"><button class="btn secondary"><CalendarDays />2026 年 5 月</button><button class="btn secondary" @click="exportReport"><Download />匯出報表</button><button class="btn primary" @click="expenseOpen = true"><Plus />新增支出</button></div>
+      <div class="flex flex-wrap gap-2"><button class="btn secondary"><CalendarDays />{{ monthLabel }}</button><button class="btn secondary" @click="exportReport"><Download />匯出報表</button><button class="btn primary" @click="expenseOpen = true"><Plus />新增支出</button></div>
     </header>
 
     <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">

@@ -14,7 +14,6 @@ import {
   FileUp,
   History,
   Phone,
-  RefreshCw,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -34,7 +33,7 @@ import {
 
 type ActionStep = 'decision' | 'responsibility' | 'schedule' | 'completion' | 'inspection' | 'done' | 'canceled'
 
-const { tickets, updateTicket, markRead, resetDemo } = useRepairTickets()
+const { tickets, updateTicket, markRead } = useRepairTickets()
 const statusFilter = ref<'all' | RepairStatus>('all')
 const emergencyOnly = ref(false)
 const keyword = ref('')
@@ -300,19 +299,6 @@ function completeRepair(): void {
   completeConfirmOpen.value = false
   notify('已送出租客驗收，原始紀錄會完整保留')
 }
-function reset(): void {
-  resetDemo()
-  selectedId.value = tickets.value[0]?.id ?? ''
-  if (tickets.value[0]) hydrateDrafts(tickets.value[0])
-  statusFilter.value = 'all'
-  emergencyOnly.value = false
-  keyword.value = ''
-  buildingFilter.value = 'all'
-  typeFilter.value = 'all'
-  urgencyFilter.value = 'all'
-  notify('已還原展示資料')
-}
-
 function resetWorkspaceFilters(): void {
   statusFilter.value = 'all'
   emergencyOnly.value = false
@@ -334,7 +320,6 @@ watch(filtered, (items) => {
     <header class="page-header">
       <div><h1>修繕管理</h1><p>掌握報修、責任、安排、費用與驗收，保留完整處理證明。</p></div>
       <div class="header-actions">
-        <button class="btn secondary" @click="reset"><RefreshCw />還原展示資料</button>
         <button
           class="emergency-button"
           :class="{ active: emergencyOnly }"

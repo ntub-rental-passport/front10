@@ -92,6 +92,16 @@ export interface TenantPayload {
   lease_status: 'pending' | 'active'
 }
 
+export interface LeaseUpdatePayload {
+  lease_start: string
+  lease_end: string
+  monthly_rent: number
+  deposit_amount: number
+  payment_day: number
+  payment_frequency: string
+  contract_id?: string
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/api\/?$/, '')
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>
 
@@ -143,6 +153,9 @@ export function createTenant(payload: TenantPayload) {
 }
 export function updateTenant(id: number, payload: TenantPayload) {
   return api<LandlordTenant>(`/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+export function updateTenantLease(id: number, payload: LeaseUpdatePayload) {
+  return api<LandlordTenant>(`/${id}/lease`, { method: 'PATCH', body: JSON.stringify(payload) })
 }
 export function moveOutTenant(id: number, payload: Record<string, unknown>) {
   return api<LandlordTenant>(`/${id}/move-out`, { method: 'POST', body: JSON.stringify(payload) })

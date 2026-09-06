@@ -8,12 +8,14 @@ from sqlalchemy.orm import sessionmaker
 from database import Base
 from models import LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, User
 from routers.landlord_tenants import (
+    LeaseUpdatePayload,
     TenantPayload,
     _assert_no_overlap,
     _is_effective,
     _lease_display,
     _owned_tenant,
     _resolve_room,
+    update_tenant_lease,
 )
 
 
@@ -109,6 +111,28 @@ class LandlordTenantRulesTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             _resolve_room(self.db, self.landlord_b.id, self.tenant_payload())
         self.assertEqual(caught.exception.status_code, 404)
+
+    def test_contract_workspace_can_update_shared_lease_fields(self):
+        today = date.today()
+        result = update_tenant_lease(
+            self.tenant.id,
+            LeaseUpdatePayload(
+                lease_start=today - timedelta(days=5),
+                lease_end=today + timedelta(days=365),
+                monthly_rent=13500,
+                deposit_amount=27000,
+                payment_day=10,
+                payment_frequency="monthly",
+                contract_id="CT-SYNC-001",
+            ),
+            self.db,
+            self.landlord_a,
+        )
+
+        self.assertEqual(result["monthly_rent"], 13500)
+        self.assertEqual(result["deposit_amount"], 27000)
+        self.assertEqual(result["payment_day"], 10)
+        self.assertEqual(result["contract_id"], "CT-SYNC-001")
 
 
 if __name__ == "__main__":

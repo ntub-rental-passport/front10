@@ -44,6 +44,7 @@ import {
   notifyContractsUpdated,
   saveContractImportMetadata,
 } from '@/src/utils/landlord-contract-sync'
+import { notifyLandlordWorkspaceUpdated } from '@/src/composables/useLandlordWorkspace'
 
 type QuickFilter = 'all' | 'occupied' | 'expiring' | 'unbound' | 'incomplete' | 'moved_out'
 const summary = ref<TenantSummary>({
@@ -394,6 +395,7 @@ async function saveTenant() {
     tenantDialog.value = false
     success.value = editingId.value ? '租客資料已更新。' : '租客已新增。'
     await loadAll(saved.id)
+    notifyLandlordWorkspaceUpdated('tenant')
   } catch (cause) {
     formError.value = cause instanceof Error ? cause.message : '儲存失敗。'
   } finally {
@@ -409,6 +411,8 @@ async function completeMoveOut() {
     moveOutDialog.value = false
     success.value = '退租已完成，歷史紀錄已保留。'
     await loadAll(saved.id)
+    notifyContractsUpdated()
+    notifyLandlordWorkspaceUpdated('tenant')
   } catch (cause) {
     formError.value = cause instanceof Error ? cause.message : '退租處理失敗。'
   } finally {
@@ -482,6 +486,8 @@ async function confirmImport() {
     const result = await confirmTenantCsv(csvPreview.value.preview_token)
     importResult.value = `匯入完成：成功 ${result.created_count} 筆，失敗 ${result.error_count} 筆。`
     await loadAll()
+    notifyContractsUpdated()
+    notifyLandlordWorkspaceUpdated('tenant')
   } catch (cause) {
     importResult.value = cause instanceof Error ? cause.message : 'CSV 匯入失敗。'
   } finally {

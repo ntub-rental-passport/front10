@@ -78,6 +78,22 @@ class MoveOutPayload(BaseModel):
     notes: str | None = None
 
 
+class LeaseUpdatePayload(BaseModel):
+    lease_start: date
+    lease_end: date
+    monthly_rent: int = Field(ge=0)
+    deposit_amount: int = Field(ge=0)
+    payment_day: int = Field(ge=1, le=31)
+    payment_frequency: str = Field(default="monthly", max_length=30)
+    contract_id: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.lease_end <= self.lease_start:
+            raise ValueError("租約結束日必須晚於開始日。")
+        return self
+
+
 class ImportConfirmPayload(BaseModel):
     preview_token: str
 
@@ -295,6 +311,25 @@ def update_tenant(tenant_id: int, payload: TenantPayload, db: Session = Depends(
     lease.monthly_rent = payload.monthly_rent; lease.deposit_amount = payload.deposit_amount; lease.payment_day = payload.payment_day
     lease.payment_frequency = payload.payment_frequency; lease.contract_id = payload.contract_id; lease.status = payload.lease_status
     db.add(LandlordTenantActivity(tenant_id=tenant.id, kind="updated", detail="更新租客與租約資料")); db.commit()
+    return _tenant_dict(_owned_tenant(db, landlord.id, tenant.id), date.today(), detailed=True)
+
+
+@router.patch("/{tenant_id}/lease")
+def update_tenant_lease(tenant_id: int, payload: LeaseUpdatePayload, db: Session = Depends(get_db), landlord: User = Depends(get_current_landlord)):
+    tenant = _owned_tenant(db, landlord.id, tenant_id)
+    lease = _current_lease(tenant, date.today())
+    if not lease:
+        raise HTTPException(status_code=404, detail="找不到可更新的租約。")
+    _assert_no_overlap(db, lease.room_id, payload.lease_start, payload.lease_end, lease.id)
+    lease.start_date = payload.lease_start
+    lease.end_date = payload.lease_end
+    lease.monthly_rent = payload.monthly_rent
+    lease.deposit_amount = payload.deposit_amount
+    lease.payment_day = payload.payment_day
+    lease.payment_frequency = payload.payment_frequency
+    lease.contract_id = payload.contract_id
+    db.add(LandlordTenantActivity(tenant_id=tenant.id, kind="lease_updated", detail="由合約管理更新租約資料"))
+    db.commit()
     return _tenant_dict(_owned_tenant(db, landlord.id, tenant.id), date.today(), detailed=True)
 
 

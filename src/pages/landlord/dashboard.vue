@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
   Building2,
@@ -11,48 +12,69 @@ import {
   Wrench,
 } from 'lucide-vue-next'
 import RentalCenterPopover from '@/src/components/landlord/RentalCenterPopover.vue'
+import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
+import { useLandlordFinance } from '@/src/composables/useLandlordFinance'
+import { useRepairTickets } from '@/src/composables/useRepairTickets'
 
-const stats = [
+const { rooms, tenants } = useLandlordWorkspace()
+const { payments, total, received, awaiting, rate, monthLabel } = useLandlordFinance()
+const { tickets } = useRepairTickets()
+
+const rentedRooms = computed(() => rooms.value.filter((room) => room.status === 'rented').length)
+const occupancyRate = computed(() => rooms.value.length
+  ? Math.round((rentedRooms.value / rooms.value.length) * 100)
+  : 0)
+const pendingPayments = computed(() => payments.value.filter((item) => item.status !== 'paid'))
+const completedPayments = computed(() => payments.value.filter((item) => item.status === 'paid').length)
+const openRepairs = computed(() => tickets.value.filter((item) => !['completed', 'canceled'].includes(item.status)))
+const contractReminders = computed(() => tenants.value.filter((item) =>
+  item.lease_status === 'expiring' || item.lease_status === 'expired',
+))
+const incompleteTenants = computed(() => tenants.value.filter((item) => item.completeness.percent < 100))
+const todayTasks = computed(() => pendingPayments.value.length + openRepairs.value.length + contractReminders.value.length)
+const money = (value: number) => `NT$${value.toLocaleString('zh-TW')}`
+
+const stats = computed(() => [
   {
     title: '本月已收',
-    value: 'NT$39,866',
+    value: money(received.value),
     note: '本月實收租金',
-    trend: '較上月同期',
+    trend: `資料來自 ${completedPayments.value} 筆收款紀錄`,
     icon: WalletCards,
     tone: 'green',
   },
   {
     title: '待收金額',
-    value: 'NT$23,000',
-    note: '5 筆租金待收',
+    value: money(awaiting.value),
+    note: `${pendingPayments.value.length} 筆租金待收`,
     trend: '優先處理',
     icon: CircleDollarSign,
     tone: 'amber',
   },
   {
     title: '入住率',
-    value: '75%',
-    note: '15 / 20 間',
-    trend: '較上月 +7%',
+    value: `${occupancyRate.value}%`,
+    note: `${rentedRooms.value} / ${rooms.value.length} 間`,
+    trend: '依房務管理即時計算',
     icon: Building2,
     tone: 'blue',
   },
   {
     title: '今日待處理',
-    value: '7 件',
-    note: '報修 2 · 合約 3 · 收款 2',
+    value: `${todayTasks.value} 件`,
+    note: `報修 ${openRepairs.value.length} · 合約 ${contractReminders.value.length} · 收款 ${pendingPayments.value.length}`,
     trend: '查看全部',
     icon: Wrench,
     tone: 'purple',
   },
-]
+])
 
-const priorities = [
-  { label: '待收款', detail: '5 筆待收 · 總額 NT$23,000', count: '5 筆', icon: WalletCards },
-  { label: '報修處理中', detail: '2 件處理中', count: '2 件', icon: Wrench },
-  { label: '合約提醒', detail: '30 天內到期 3 份', count: '3 份', icon: FileText },
-  { label: '租客資料', detail: '1 位租客待補資料', count: '1 位', icon: Users },
-]
+const priorities = computed(() => [
+  { label: '待收款', detail: `${pendingPayments.value.length} 筆待收 · 總額 ${money(awaiting.value)}`, count: `${pendingPayments.value.length} 筆`, icon: WalletCards },
+  { label: '報修處理中', detail: `${openRepairs.value.length} 件尚未結案`, count: `${openRepairs.value.length} 件`, icon: Wrench },
+  { label: '合約提醒', detail: `即將到期或已到期 ${contractReminders.value.length} 份`, count: `${contractReminders.value.length} 份`, icon: FileText },
+  { label: '租客資料', detail: `${incompleteTenants.value.length} 位租客待補資料`, count: `${incompleteTenants.value.length} 位`, icon: Users },
+])
 
 const toneClasses: Record<string, string> = {
   green: 'bg-[#e7f3e9] text-[#5b8263]',
@@ -73,7 +95,7 @@ const toneClasses: Record<string, string> = {
         <button
           class="inline-flex items-center gap-2 rounded-full border border-[#dfd9cc] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm"
         >
-          <CalendarDays class="h-4 w-4" />2026 年 7 月</button
+          <CalendarDays class="h-4 w-4" />{{ monthLabel }}</button
         ><RentalCenterPopover />
       </div>
     </header>
@@ -117,30 +139,30 @@ const toneClasses: Record<string, string> = {
           <div class="grid gap-3 sm:grid-cols-3">
             <div class="rounded-2xl border border-[#e7e0d4] p-4">
               <p class="text-sm font-semibold">應收金額</p>
-              <p class="mt-2 text-xl font-black">NT$62,866</p>
+              <p class="mt-2 text-xl font-black">{{ money(total) }}</p>
             </div>
             <div class="rounded-2xl border border-[#cfe2d2] bg-[#f1f8f2] p-4">
               <p class="text-sm font-semibold text-[#5b8263]">已收金額</p>
-              <p class="mt-2 text-xl font-black">NT$39,866</p>
+              <p class="mt-2 text-xl font-black">{{ money(received) }}</p>
             </div>
             <div class="rounded-2xl border border-[#efd4a7] bg-[#fff4e3] p-4">
               <p class="text-sm font-semibold text-[#a56d21]">待收金額</p>
-              <p class="mt-2 text-xl font-black">NT$23,000</p>
+              <p class="mt-2 text-xl font-black">{{ money(awaiting) }}</p>
             </div>
           </div>
           <div class="mt-6 flex justify-between text-sm font-bold">
-            <span>收款率</span><span>63%</span>
+            <span>收款率</span><span>{{ rate }}%</span>
           </div>
           <div class="mt-2 h-3 overflow-hidden rounded-full bg-[#e6e1d5]">
-            <div class="h-full w-[63%] rounded-full bg-[#5b8263]" />
+            <div class="h-full rounded-full bg-[#5b8263]" :style="{ width: `${rate}%` }" />
           </div>
-          <p class="mt-2 text-xs text-[#7d847f]">已收 8 / 13 筆 · 待收 5 筆</p>
+          <p class="mt-2 text-xs text-[#7d847f]">已收 {{ completedPayments }} / {{ payments.length }} 筆 · 待收 {{ pendingPayments.length }} 筆</p>
           <div
             class="mt-5 flex flex-col gap-3 rounded-2xl bg-[#eaf5eb] p-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
               <p class="font-bold">收款表現良好！</p>
-              <p class="text-sm text-[#66766a]">本月收款率維持在 63%，請持續追蹤待收款項。</p>
+              <p class="text-sm text-[#66766a]">本月收款率為 {{ rate }}%，資料會隨財務管理的收款紀錄同步更新。</p>
             </div>
             <RouterLink
               to="/landlord/finance"

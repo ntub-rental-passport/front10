@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   Check, ChevronLeft, ChevronRight, Download, EllipsisVertical, FileCheck2, FilePlus2,
   FileSearch, FileText, Home, Paperclip, RefreshCw, Search, Upload, UserRound, X,
 } from 'lucide-vue-next'
 import ContractOcrImport from '@/src/components/landlord/ContractOcrImport.vue'
 import type { ContractAutofillData } from '@/src/utils/landlord-contract-import'
-import { fetchTenants, type LandlordTenant } from '@/src/services/landlordTenantApi'
+import { createTenant, updateTenantLease, type LandlordTenant } from '@/src/services/landlordTenantApi'
+import {
+  notifyLandlordWorkspaceUpdated,
+  useLandlordWorkspace,
+} from '@/src/composables/useLandlordWorkspace'
 import {
   CONTRACTS_UPDATED_EVENT,
   findContractImportMetadata,
@@ -37,9 +41,14 @@ const showCreateOcr = ref(false); const formMode = ref<'create' | 'edit' | 'rene
 const uploadedAttachmentName = ref('')
 const syncing = ref(false)
 const usingSharedData = ref(false)
-const form = reactive({ id: '', tenant: '', phone: '', nationalId: '', contactAddress: '', property: '101', propertyAddress: '', room: '', start: '2026-09-01', end: '2027-09-01', rent: 0, deposit: 0, paymentDay: 5, paymentFrequency: 'monthly' as ContractRow['paymentFrequency'], attachmentName: '' })
+const { properties: sharedProperties, tenants: sharedTenants, tenantDataReady, refresh: refreshWorkspace } = useLandlordWorkspace()
+const form = reactive({ id: '', tenant: '', phone: '', nationalId: '', contactAddress: '', property: '', propertyAddress: '', room: '', start: '2026-09-01', end: '2027-09-01', rent: 0, deposit: 0, paymentDay: 5, paymentFrequency: 'monthly' as ContractRow['paymentFrequency'], attachmentName: '' })
 
 const selected = computed(() => contracts.value.find((item) => item.id === selectedId.value) ?? contracts.value[0])
+const selectedFormProperty = computed(() => sharedProperties.value.find((item) => item.name === form.property))
+const availableContractRooms = computed(() => (selectedFormProperty.value?.rooms ?? []).filter((room) =>
+  room.status === 'vacant' || (formMode.value !== 'create' && room.number === selected.value?.room),
+))
 const activeCount = computed(() => contracts.value.filter((item) => item.state === 'active' || item.state === 'expiring').length)
 const expiringCount = computed(() => contracts.value.filter((item) => item.state === 'expiring').length)
 const expiredCount = computed(() => contracts.value.filter((item) => item.state === 'expired').length)
@@ -101,28 +110,31 @@ function contractFromTenant(tenant: LandlordTenant): ContractRow | null {
 async function loadSharedContracts() {
   syncing.value = true
   try {
-    const params = new URLSearchParams({ quick_filter: 'all', status: 'all', page: '1', page_size: '100' })
-    const response = await fetchTenants(params)
-    const synced = response.items.map(contractFromTenant).filter((item): item is ContractRow => item !== null)
-    if (synced.length) {
-      contracts.value = synced
-      usingSharedData.value = true
-      if (!synced.some((item) => item.id === selectedId.value)) selectedId.value = synced[0].id
-    }
+    await refreshWorkspace()
+    syncContractsFromWorkspace()
   } catch {
     // 未連上後端時保留頁面展示資料；租客管理本身也會顯示連線錯誤。
   } finally {
     syncing.value = false
   }
 }
-function handleContractsUpdated() { void loadSharedContracts() }
+function syncContractsFromWorkspace() {
+  if (!tenantDataReady.value) return
+  const synced = sharedTenants.value.map(contractFromTenant).filter((item): item is ContractRow => item !== null)
+  contracts.value = synced
+  usingSharedData.value = true
+  if (!synced.some((item) => item.id === selectedId.value)) selectedId.value = synced[0]?.id ?? ''
+}
+function handleContractsUpdated() { syncContractsFromWorkspace() }
 function notify(message: string) { toast.value = message; window.setTimeout(() => (toast.value = ''), 2600) }
-function resetForm() { Object.assign(form, { id: '', tenant: '', phone: '', nationalId: '', contactAddress: '', property: '101', propertyAddress: '', room: '', start: '2026-09-01', end: '2027-09-01', rent: 0, deposit: 0, paymentDay: 5, paymentFrequency: 'monthly', attachmentName: '' }); uploadedAttachmentName.value = ''; showCreateOcr.value = false }
+function resetForm() { const property = sharedProperties.value[0]; Object.assign(form, { id: '', tenant: '', phone: '', nationalId: '', contactAddress: '', property: property?.name ?? '', propertyAddress: property?.address ?? '', room: '', start: new Date().toISOString().slice(0, 10), end: addOneYear(new Date().toISOString().slice(0, 10)), rent: 0, deposit: 0, paymentDay: 5, paymentFrequency: 'monthly', attachmentName: '' }); uploadedAttachmentName.value = ''; showCreateOcr.value = false }
 function openCreate() { resetForm(); formMode.value = 'create'; formOpen.value = true }
 function addOneYear(value: string) { const date = new Date(`${value}T00:00:00`); date.setFullYear(date.getFullYear() + 1); return date.toISOString().slice(0, 10) }
+function selectFormProperty() { form.room = ''; form.propertyAddress = selectedFormProperty.value?.address ?? '' }
 function openEdit(mode: 'edit' | 'renew' = 'edit') {
   const item = selected.value
-  Object.assign(form, { id: item.id, tenant: item.tenant, phone: item.phone, nationalId: item.nationalId, contactAddress: item.contactAddress, property: item.property, propertyAddress: item.propertyAddress, room: item.room, start: mode === 'renew' ? item.end : item.start, end: mode === 'renew' ? addOneYear(item.end) : item.end, rent: item.rent, deposit: item.deposit, paymentDay: item.paymentDay, paymentFrequency: item.paymentFrequency, attachmentName: '' })
+  const propertyAddress = sharedProperties.value.find((property) => property.name === item.property)?.address ?? item.propertyAddress
+  Object.assign(form, { id: item.id, tenant: item.tenant, phone: item.phone, nationalId: item.nationalId, contactAddress: item.contactAddress, property: item.property, propertyAddress, room: item.room, start: mode === 'renew' ? item.end : item.start, end: mode === 'renew' ? addOneYear(item.end) : item.end, rent: item.rent, deposit: item.deposit, paymentDay: item.paymentDay, paymentFrequency: item.paymentFrequency, attachmentName: '' })
   uploadedAttachmentName.value = ''; showCreateOcr.value = false; formMode.value = mode; formOpen.value = true
 }
 function applyOcr(data: ContractAutofillData, fromUploadDialog = false) {
@@ -133,16 +145,65 @@ function applyOcr(data: ContractAutofillData, fromUploadDialog = false) {
   notify(`AI 已帶入 ${data.fields.length} 個欄位，請確認後儲存`)
 }
 function onAttachment(event: Event) { const input = event.target as HTMLInputElement; uploadedAttachmentName.value = input.files?.[0]?.name ?? ''; form.attachmentName = uploadedAttachmentName.value }
-function saveContract() {
+async function saveContract() {
   if (!form.tenant.trim() || !form.room.trim() || !form.start || !form.end) return
   if (formMode.value === 'edit') {
-    Object.assign(selected.value, { tenant: form.tenant.trim(), phone: form.phone, nationalId: form.nationalId, contactAddress: form.contactAddress, property: form.property, propertyAddress: form.propertyAddress, room: form.room, start: form.start, end: form.end, rent: form.rent, deposit: form.deposit, paymentDay: form.paymentDay, paymentFrequency: form.paymentFrequency })
+    if (selected.value.tenantId) {
+      syncing.value = true
+      try {
+        await updateTenantLease(selected.value.tenantId, {
+          lease_start: form.start,
+          lease_end: form.end,
+          monthly_rent: form.rent,
+          deposit_amount: form.deposit,
+          payment_day: form.paymentDay,
+          payment_frequency: form.paymentFrequency,
+          contract_id: form.id || selected.value.id,
+        })
+        if (form.attachmentName) saveContractImportMetadata({ tenantId: selected.value.tenantId, leaseId: selected.value.leaseId, contractId: form.id || selected.value.id, sourceFileName: form.attachmentName, importedByOcr: showCreateOcr.value, importedAt: new Date().toISOString() })
+        notifyLandlordWorkspaceUpdated('contract')
+        await loadSharedContracts()
+      } catch (cause) {
+        notify(cause instanceof Error ? cause.message : '合約更新失敗')
+        syncing.value = false
+        return
+      }
+      syncing.value = false
+    } else {
+      Object.assign(selected.value, { tenant: form.tenant.trim(), phone: form.phone, nationalId: form.nationalId, contactAddress: form.contactAddress, property: form.property, propertyAddress: form.propertyAddress, room: form.room, start: form.start, end: form.end, rent: form.rent, deposit: form.deposit, paymentDay: form.paymentDay, paymentFrequency: form.paymentFrequency })
+    }
     if (form.attachmentName && !selected.value.attachmentNames.includes(form.attachmentName)) selected.value.attachmentNames.push(form.attachmentName)
     notify('現行合約資料已更新')
   } else {
     const id = `CT-${new Date().getFullYear()}-${String(contracts.value.length + 1).padStart(3, '0')}`
-    contracts.value.unshift({ tenantId: null, leaseId: null, id, tenant: form.tenant.trim(), phone: form.phone, nationalId: form.nationalId, contactAddress: form.contactAddress, initials: form.tenant.trim().slice(0, 1), property: form.property, propertyAddress: form.propertyAddress, room: form.room, start: form.start, end: form.end, rent: form.rent, deposit: form.deposit, paymentDay: form.paymentDay, paymentFrequency: form.paymentFrequency, state: 'active', attachmentNames: form.attachmentName ? [form.attachmentName] : [], createdAt: new Date().toISOString().slice(0, 10) })
-    selectedId.value = id; notify(formMode.value === 'renew' ? '新一期續約已建立，原合約仍保留' : '合約與租客資訊已一併建立')
+    if (formMode.value === 'create') {
+      if (!form.phone.trim()) { notify('請填寫租客聯絡電話'); return }
+      syncing.value = true
+      try {
+        const saved = await createTenant({
+          name: form.tenant.trim(), phone: form.phone.trim(), national_id: form.nationalId || undefined,
+          contact_address: form.contactAddress || undefined, property_name: form.property,
+          room_number: form.room, lease_start: form.start, lease_end: form.end,
+          monthly_rent: form.rent, deposit_amount: form.deposit, payment_day: form.paymentDay,
+          payment_frequency: form.paymentFrequency, contract_id: id,
+          lease_status: form.start > new Date().toISOString().slice(0, 10) ? 'pending' : 'active',
+        })
+        if (form.attachmentName) saveContractImportMetadata({ tenantId: saved.id, leaseId: saved.lease_id, contractId: saved.contract_id, sourceFileName: form.attachmentName, importedByOcr: showCreateOcr.value, importedAt: new Date().toISOString() })
+        notifyLandlordWorkspaceUpdated('contract')
+        await loadSharedContracts()
+        selectedId.value = saved.contract_id || `LEASE-${saved.lease_id ?? saved.id}`
+        notify('合約與租客資訊已一併建立')
+      } catch (cause) {
+        notify(cause instanceof Error ? cause.message : '合約建立失敗')
+        syncing.value = false
+        return
+      }
+      syncing.value = false
+    } else {
+      contracts.value.unshift({ tenantId: null, leaseId: null, id, tenant: form.tenant.trim(), phone: form.phone, nationalId: form.nationalId, contactAddress: form.contactAddress, initials: form.tenant.trim().slice(0, 1), property: form.property, propertyAddress: form.propertyAddress, room: form.room, start: form.start, end: form.end, rent: form.rent, deposit: form.deposit, paymentDay: form.paymentDay, paymentFrequency: form.paymentFrequency, state: 'active', attachmentNames: form.attachmentName ? [form.attachmentName] : [], createdAt: new Date().toISOString().slice(0, 10) })
+      selectedId.value = id
+      notify('新一期續約已建立，原合約仍保留')
+    }
   }
   formOpen.value = false
 }
@@ -154,6 +215,7 @@ onMounted(() => {
   window.addEventListener(CONTRACTS_UPDATED_EVENT, handleContractsUpdated)
   window.addEventListener('storage', handleContractsUpdated)
 })
+watch(sharedTenants, syncContractsFromWorkspace)
 onBeforeUnmount(() => {
   window.removeEventListener(CONTRACTS_UPDATED_EVENT, handleContractsUpdated)
   window.removeEventListener('storage', handleContractsUpdated)
@@ -176,8 +238,8 @@ onBeforeUnmount(() => {
       <div v-if="uploadOpen" class="backdrop" @click.self="uploadOpen = false"><section class="dialog upload-dialog"><header><div><p>AI 將先辨識，套用前由你確認</p><h2>上傳合約並自動建檔</h2></div><button class="close" @click="uploadOpen = false"><X /></button></header><div class="p-5"><ContractOcrImport title="AI 分析合約並一鍵填寫" @apply="applyOcr($event, true)" /><button class="mt-4 w-full rounded-full py-2.5 text-sm font-bold text-[#667169] hover:bg-[#f4f1ea]" @click="uploadOpen = false">稍後再處理</button></div></section></div>
       <div v-if="formOpen" class="backdrop" @click.self="formOpen = false"><form class="dialog contract-dialog" @submit.prevent="saveContract"><header><div><p>{{ formMode === 'renew' ? '預填下一期日期並保留現行合約' : formMode === 'edit' ? '更新日期、租金條件或附件' : '一次建立租客與完整租約資料' }}</p><h2>{{ formMode === 'renew' ? '建立或編輯續約' : formMode === 'edit' ? '更新現行合約' : '新增合約' }}</h2></div><button type="button" class="close" @click="formOpen = false"><X /></button></header><div class="dialog-scroll">
         <button v-if="!showCreateOcr" type="button" class="ai-trigger" @click="showCreateOcr = true"><span><FileSearch /><b>有紙本或 PDF？使用 AI 自動填寫</b></span><ChevronRight /></button><ContractOcrImport v-else compact @apply="applyOcr($event)" />
-        <section><h3>租客資料</h3><div class="form-grid"><label>租客姓名 *<input v-model="form.tenant" required placeholder="輸入租客姓名" /></label><label>聯絡電話<input v-model="form.phone" placeholder="09xx-xxx-xxx" /></label><label>身分證字號<input v-model="form.nationalId" autocomplete="off" placeholder="請確認 AI 辨識結果" /></label><label>聯絡地址<input v-model="form.contactAddress" placeholder="戶籍或通訊地址" /></label></div></section>
-        <section><h3>房屋與租期</h3><div class="form-grid"><label>棟別／房屋 *<select v-model="form.property"><option>101</option><option>我的出租物件</option><option>第二棟</option></select></label><label>房號 *<input v-model="form.room" required placeholder="例如 1A-01" /></label><label class="wide">租屋地址<input v-model="form.propertyAddress" placeholder="AI 可從契約自動擷取" /></label><label>合約開始日 *<input v-model="form.start" required type="date" /></label><label>合約結束日 *<input v-model="form.end" required type="date" /></label></div></section>
+        <section><h3>租客資料</h3><div class="form-grid"><label>租客姓名 *<input v-model="form.tenant" required placeholder="輸入租客姓名" /></label><label>聯絡電話 *<input v-model="form.phone" required placeholder="09xx-xxx-xxx" /></label><label>身分證字號<input v-model="form.nationalId" autocomplete="off" placeholder="請確認 AI 辨識結果" /></label><label>聯絡地址<input v-model="form.contactAddress" placeholder="戶籍或通訊地址" /></label></div></section>
+        <section><h3>房屋與租期</h3><div class="form-grid"><label>棟別／房屋 *<select v-model="form.property" required @change="selectFormProperty"><option disabled value="">請選擇房務資料</option><option v-for="property in sharedProperties" :key="property.id" :value="property.name">{{ property.name }}</option></select></label><label>房號 *<select v-model="form.room" required><option disabled value="">請選擇可出租房間</option><option v-for="room in availableContractRooms" :key="room.id" :value="room.number">{{ room.number }}</option></select></label><label class="wide">租屋地址<input v-model="form.propertyAddress" readonly placeholder="選擇棟別後自動帶入" /></label><label>合約開始日 *<input v-model="form.start" required type="date" /></label><label>合約結束日 *<input v-model="form.end" required type="date" /></label></div></section>
         <section><h3>租金與繳納</h3><div class="form-grid"><label>每期月租 *<input v-model.number="form.rent" required min="0" type="number" /></label><label>押金 *<input v-model.number="form.deposit" required min="0" type="number" /></label><label>繳租日<input v-model.number="form.paymentDay" min="1" max="31" type="number" /></label><label>繳費週期<select v-model="form.paymentFrequency"><option value="monthly">月繳</option><option value="bimonthly">每 2 個月</option><option value="quarterly">每季</option></select></label></div></section>
         <section class="upload-box"><label><Upload />上傳合約附件<input type="file" accept=".pdf,image/*" @change="onAttachment" /></label><p>{{ uploadedAttachmentName || '可選填附件，之後也能回到列表補上或更新。' }}</p></section><div v-if="uploadedAttachmentName" class="ai-note"><Check /><p><b>AI 欄位已帶入</b><span>請逐一確認姓名、身分資料、日期、金額與房號後再儲存。</span></p></div>
       </div><footer><button class="save">{{ formMode === 'renew' ? '建立續約' : '儲存合約' }}</button><button type="button" @click="formOpen = false">關閉</button></footer></form></div>

@@ -1,4 +1,5 @@
 import { computed, reactive } from 'vue'
+import { notifyLandlordWorkspaceUpdated } from '@/src/composables/useLandlordWorkspace'
 
 export type RepairUrgency = 'emergency' | 'soon' | 'normal'
 export type RepairStatus = 'pending' | 'processing' | 'inspection' | 'completed' | 'canceled'
@@ -63,6 +64,7 @@ export interface NewRepairTicket {
 }
 
 const STORAGE_KEY = 'rentmate-repair-tickets-v1'
+export const REPAIR_TICKETS_UPDATED_EVENT = 'rentmate:repair-tickets-updated'
 
 const seedTickets: RepairTicket[] = [
   {
@@ -247,9 +249,27 @@ function readInitialTickets(): RepairTicket[] {
 
 const state = reactive({ tickets: readInitialTickets() })
 
+function replaceTickets(items: RepairTicket[]): void {
+  state.tickets.splice(0, state.tickets.length, ...items)
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY || !event.newValue) return
+    try {
+      const items = JSON.parse(event.newValue) as RepairTicket[]
+      if (Array.isArray(items)) replaceTickets(items)
+    } catch {
+      // Ignore invalid data and keep the last valid repair workspace state.
+    }
+  })
+}
+
 function persist(): void {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tickets))
+    window.dispatchEvent(new CustomEvent(REPAIR_TICKETS_UPDATED_EVENT))
+    notifyLandlordWorkspaceUpdated('repair')
   }
 }
 
@@ -330,7 +350,7 @@ export function useRepairTickets() {
   }
 
   function resetDemo(): void {
-    state.tickets.splice(0, state.tickets.length, ...JSON.parse(JSON.stringify(seedTickets)))
+    replaceTickets(JSON.parse(JSON.stringify(seedTickets)) as RepairTicket[])
     persist()
   }
 

@@ -22,6 +22,7 @@ import {
   type PropertyRoom,
   type PropertyRoomStatus,
 } from '@/src/services/landlordPropertyApi'
+import { notifyLandlordWorkspaceUpdated } from '@/src/composables/useLandlordWorkspace'
 
 const buildings = ref<LandlordProperty[]>([])
 const selectedId = ref<number | null>(null)
@@ -148,6 +149,7 @@ async function saveBuilding() {
     buildingDialog.value = false
     success.value = editingBuildingId.value ? '棟別資料已更新。' : '棟別已建立。'
     await loadProperties(saved.id)
+    notifyLandlordWorkspaceUpdated('property')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '棟別儲存失敗。'
   } finally {
@@ -184,6 +186,7 @@ async function addRooms() {
     roomDialog.value = false
     success.value = `已新增 ${numbers.length} 間房間。`
     await loadProperties(saved.id)
+    notifyLandlordWorkspaceUpdated('property')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '房間建立失敗。'
   } finally {
