@@ -30,7 +30,7 @@ const hidesDesktopSidebar = computed(
 const isSidebarExpanded = computed(() => isSidebarPinned.value || isSidebarHovered.value)
 const desktopNavItems = computed(() => [...navItems, accountItem])
 const isWideContentRoute = computed(
-  () => isTenantGuideRoute.value || route.path.startsWith('/app/notes'),
+  () => isTenantGuideRoute.value || route.path.startsWith('/app/notes') || route.path === '/app/repairs',
 )
 
 function isActive(path: string): boolean {
