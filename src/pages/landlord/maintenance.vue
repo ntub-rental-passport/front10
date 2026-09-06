@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   AlertTriangle,
   Building2,
@@ -8,12 +8,14 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
   Clock3,
   FileImage,
   FileUp,
   History,
   Phone,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldCheck,
   Store,
@@ -30,12 +32,15 @@ import {
   type RepairUrgency,
 } from '@/src/composables/useRepairTickets'
 
-type ActionStep = 'decision' | 'responsibility' | 'schedule' | 'completion' | 'inspection' | 'done'
+type ActionStep = 'decision' | 'responsibility' | 'schedule' | 'completion' | 'inspection' | 'done' | 'canceled'
 
 const { tickets, updateTicket, markRead, resetDemo } = useRepairTickets()
 const statusFilter = ref<'all' | RepairStatus>('all')
 const emergencyOnly = ref(false)
 const keyword = ref('')
+const buildingFilter = ref('all')
+const typeFilter = ref('all')
+const urgencyFilter = ref<'all' | RepairUrgency>('all')
 const selectedId = ref(tickets.value[0]?.id ?? '')
 const toast = ref('')
 const actionOpen = ref<'request' | 'reject' | null>(null)
@@ -44,9 +49,7 @@ const vendorPickerOpen = ref(false)
 const completeConfirmOpen = ref(false)
 const receiptFile = ref<File | null>(null)
 
-const selected = computed(() =>
-  tickets.value.find((item) => item.id === selectedId.value) ?? tickets.value[0],
-)
+const selected = computed(() => tickets.value.find((item) => item.id === selectedId.value))
 const responsibilityDraft = ref<{ responsibility: RepairResponsibility; note: string }>({
   responsibility: selected.value?.responsibility ?? 'pending',
   note: selected.value?.responsibilityNote ?? '',
@@ -79,11 +82,16 @@ const filtered = computed(() => {
   const query = keyword.value.trim().toLowerCase()
   return tickets.value.filter((item) => {
     const matchesStatus = statusFilter.value === 'all' || item.status === statusFilter.value
-    const matchesUrgency = !emergencyOnly.value || item.urgency === 'emergency'
+    const matchesBuilding = buildingFilter.value === 'all' || item.property === buildingFilter.value
+    const matchesType = typeFilter.value === 'all' || item.equipment === typeFilter.value
+    const selectedUrgency = emergencyOnly.value ? 'emergency' : urgencyFilter.value
+    const matchesUrgency = selectedUrgency === 'all' || item.urgency === selectedUrgency
     const haystack = `${item.property} ${item.room} ${item.tenant} ${item.location} ${item.equipment} ${item.description} ${item.id}`.toLowerCase()
-    return matchesStatus && matchesUrgency && (!query || haystack.includes(query))
+    return matchesStatus && matchesBuilding && matchesType && matchesUrgency && (!query || haystack.includes(query))
   })
 })
+const buildingOptions = computed(() => [...new Set(tickets.value.map((item) => item.property))])
+const typeOptions = computed(() => [...new Set(tickets.value.map((item) => item.equipment))])
 
 const tabs = computed(() => [
   { value: 'all' as const, label: '全部', count: tickets.value.length },
@@ -91,12 +99,13 @@ const tabs = computed(() => [
   { value: 'processing' as const, label: '處理中', count: count('processing') },
   { value: 'inspection' as const, label: '待驗收', count: count('inspection') },
   { value: 'completed' as const, label: '已完成', count: count('completed') },
+  { value: 'canceled' as const, label: '已取消', count: count('canceled') },
 ])
 const unreadCount = computed(() => tickets.value.filter((item) => !item.landlordRead).length)
 const emergencyCount = computed(
   () =>
     tickets.value.filter(
-      (item) => item.urgency === 'emergency' && item.status !== 'completed',
+      (item) => item.urgency === 'emergency' && item.status !== 'completed' && item.status !== 'canceled',
     ).length,
 )
 
@@ -105,6 +114,7 @@ const statusMeta: Record<RepairStatus, { label: string; cls: string }> = {
   processing: { label: '處理中', cls: 'blue' },
   inspection: { label: '待驗收', cls: 'purple' },
   completed: { label: '已完成', cls: 'green' },
+  canceled: { label: '已取消', cls: 'neutral' },
 }
 const urgencyMeta: Record<RepairUrgency, { label: string; cls: string }> = {
   emergency: { label: '緊急', cls: 'red' },
@@ -128,6 +138,7 @@ const actionStep = computed<ActionStep>(() => {
   if (!ticket) return 'done'
   if (ticket.status === 'pending') return 'decision'
   if (ticket.status === 'inspection') return 'inspection'
+  if (ticket.status === 'canceled') return 'canceled'
   if (ticket.status === 'completed') return 'done'
   if (ticket.responsibility === 'pending') return 'responsibility'
   if (!ticket.scheduledAt) return 'schedule'
@@ -140,6 +151,7 @@ const phaseIndex = computed(() => ({
   completion: 3,
   inspection: 4,
   done: 5,
+  canceled: 0,
 })[actionStep.value])
 const workflowSteps = ['確認處理', '責任說明', '安排維修', '完修送驗收', '租客驗收']
 const currentTaskLabel = computed(() => workflowSteps[phaseIndex.value] ?? '案件已完成')
@@ -206,7 +218,7 @@ function submitAction(): void {
     updateTicket(selected.value.id, { status: 'pending', landlordRead: true }, { title: '房東要求補充資料', detail: actionReason.value.trim() })
     notify('已通知租客補充資料')
   } else {
-    updateTicket(selected.value.id, { status: 'completed', landlordRead: true, responsibilityNote: actionReason.value.trim() }, { title: '房東判定不屬於報修範圍', detail: actionReason.value.trim() })
+    updateTicket(selected.value.id, { status: 'canceled', landlordRead: true, responsibilityNote: actionReason.value.trim() }, { title: '房東判定不屬於報修範圍', detail: actionReason.value.trim() })
     notify('已保存原因並通知租客')
   }
   actionOpen.value = null
@@ -295,8 +307,26 @@ function reset(): void {
   statusFilter.value = 'all'
   emergencyOnly.value = false
   keyword.value = ''
+  buildingFilter.value = 'all'
+  typeFilter.value = 'all'
+  urgencyFilter.value = 'all'
   notify('已還原展示資料')
 }
+
+function resetWorkspaceFilters(): void {
+  statusFilter.value = 'all'
+  emergencyOnly.value = false
+  keyword.value = ''
+  buildingFilter.value = 'all'
+  typeFilter.value = 'all'
+  urgencyFilter.value = 'all'
+}
+
+watch(filtered, (items) => {
+  if (items.some((item) => item.id === selectedId.value)) return
+  selectedId.value = items[0]?.id ?? ''
+  if (items[0]) hydrateDrafts(items[0])
+}, { flush: 'sync' })
 </script>
 
 <template>
@@ -335,17 +365,27 @@ function reset(): void {
       </button>
     </section>
 
-    <section class="panel filter-panel">
-      <div class="flex flex-wrap gap-2">
-        <button v-for="item in tabs" :key="item.value" class="tab" :class="{ active: statusFilter === item.value && !emergencyOnly }" @click="statusFilter = item.value; emergencyOnly = false">{{ item.label }} <b>{{ item.count }}</b></button>
+    <section class="workspace panel overflow-hidden">
+      <div class="workspace-toolbar">
+        <div class="toolbar-tabs">
+          <button v-for="item in tabs" :key="item.value" class="tab" :class="{ active: statusFilter === item.value && !emergencyOnly }" @click="statusFilter = item.value; emergencyOnly = false">{{ item.label }} <b>{{ item.count }}</b></button>
+        </div>
+        <i class="toolbar-divider" />
+        <label class="search"><Search /><span class="sr-only">搜尋報修案件</span><input v-model="keyword" placeholder="搜尋案件、房號或租客" /></label>
+        <label class="toolbar-select"><span class="sr-only">依棟別篩選</span><select v-model="buildingFilter"><option value="all">全部棟別</option><option v-for="building in buildingOptions" :key="building" :value="building">{{ building }}</option></select></label>
+        <label class="toolbar-select"><span class="sr-only">依類型篩選</span><select v-model="typeFilter"><option value="all">全部類型</option><option v-for="type in typeOptions" :key="type" :value="type">{{ type }}</option></select></label>
+        <label class="toolbar-select"><span class="sr-only">依優先度篩選</span><select v-model="urgencyFilter" @change="emergencyOnly = false"><option value="all">全部優先度</option><option value="emergency">緊急</option><option value="soon">儘快處理</option><option value="normal">一般</option></select></label>
+        <button class="reset-filters" @click="resetWorkspaceFilters"><RotateCcw />重設</button>
       </div>
-      <label class="search"><Search /><span class="sr-only">搜尋報修案件</span><input v-model="keyword" placeholder="搜尋房屋、租客、設備或案件編號" /></label>
-    </section>
 
-    <section class="grid items-start gap-5 xl:grid-cols-[minmax(620px,1.15fr)_minmax(430px,.85fr)]">
-      <article class="panel self-start overflow-hidden">
-        <header class="panel-head"><div><h2>報修案件列表</h2><p>點選案件查看內容並留下處理紀錄。</p></div><span>{{ filtered.length }} 筆</span></header>
-        <div class="overflow-x-auto">
+      <div class="workspace-head">
+        <div><h2>案件工作台</h2><span>{{ filtered.length }} 筆</span></div>
+        <div><h2>案件檔案</h2></div>
+      </div>
+
+      <div class="workspace-body">
+        <article class="case-workbench">
+          <div v-if="filtered.length" class="overflow-x-auto">
           <table class="ticket-table w-full min-w-[760px] text-left">
             <thead><tr><th>優先度</th><th>案件</th><th>租屋處</th><th>租客</th><th>狀態</th><th>時間</th></tr></thead>
             <tbody>
@@ -367,19 +407,22 @@ function reset(): void {
                 <td><span class="status-cell"><span class="badge" :class="statusMeta[item.status].cls">{{ statusMeta[item.status].label }}</span><i v-if="!item.landlordRead" class="unread">未讀</i></span></td>
                 <td class="numeric"><b>{{ item.scheduledAt ? `預計 ${formatDateTime(item.scheduledAt, true)}` : `建立 ${formatDateTime(item.createdAt, true)}` }}</b></td>
               </tr>
-              <tr v-if="!filtered.length" class="empty-row"><td colspan="6">沒有符合條件的報修案件。</td></tr>
             </tbody>
           </table>
-        </div>
-      </article>
+          </div>
+          <div v-else class="empty-state">
+            <span><ClipboardList /></span><h3>目前沒有報修案件</h3><p>租客提交報修後，這裡會顯示案件狀態、附件與處理歷程。</p>
+            <div><RouterLink to="/app/repairs" class="btn primary">查看租客報修入口</RouterLink><RouterLink to="/landlord" class="btn secondary">返回總覽</RouterLink></div>
+          </div>
+        </article>
 
-      <aside v-if="selected" class="panel self-start overflow-hidden">
+      <aside v-if="selected" class="case-file">
         <header class="detail-head">
           <div><p class="numeric">{{ selected.id }}</p><h2>{{ selected.location }}／{{ selected.equipment }}</h2></div>
           <div class="flex flex-wrap justify-end gap-2"><span class="badge" :class="urgencyMeta[selected.urgency].cls">{{ urgencyMeta[selected.urgency].label }}</span><span class="badge" :class="statusMeta[selected.status].cls">{{ statusMeta[selected.status].label }}</span></div>
         </header>
         <div class="detail-body">
-          <section v-if="selected.urgency === 'emergency' && selected.status !== 'completed'" class="danger"><AlertTriangle /><div><b>先確認現場安全</b><p>若有火災、瓦斯外洩、嚴重漏電或人身危險，應請租客先離開現場並聯絡 119、相關公用事業或管理單位。報修送出不代表緊急服務已受理。</p></div></section>
+          <section v-if="selected.urgency === 'emergency' && selected.status !== 'completed' && selected.status !== 'canceled'" class="danger"><AlertTriangle /><div><b>先確認現場安全</b><p>若有火災、瓦斯外洩、嚴重漏電或人身危險，應請租客先離開現場並聯絡 119、相關公用事業或管理單位。報修送出不代表緊急服務已受理。</p></div></section>
 
           <dl class="info-list">
             <div><dt><Building2 />租屋處</dt><dd>{{ selected.address }}／{{ selected.room }}</dd></div>
@@ -394,7 +437,7 @@ function reset(): void {
             <dl><div><dt>品牌／型號</dt><dd>{{ selected.inventory.brand }}／{{ selected.inventory.model }}</dd></div><div><dt>入住狀況</dt><dd>{{ selected.inventory.moveInStatus }}</dd></div><div><dt>入住照片</dt><dd>{{ selected.inventory.moveInPhoto }}</dd></div><div><dt>過去報修</dt><dd>{{ selected.inventory.repairCount }} 次</dd></div></dl>
           </section>
 
-          <section class="workflow-summary" aria-label="案件處理進度">
+          <section v-if="selected.status !== 'canceled'" class="workflow-summary" aria-label="案件處理進度">
             <header><div><span>目前待辦</span><h3>{{ currentTaskLabel }}</h3></div><strong>{{ Math.min(phaseIndex + 1, workflowSteps.length) }}/{{ workflowSteps.length }}</strong></header>
             <ol><li v-for="(step, index) in workflowSteps" :key="step" :class="{ done: index < phaseIndex, current: index === phaseIndex, future: index > phaseIndex }"><i><Check v-if="index < phaseIndex" /><span v-else>{{ index + 1 }}</span></i><span>{{ step }}</span></li></ol>
           </section>
@@ -434,6 +477,7 @@ function reset(): void {
           </section>
 
           <section v-else-if="actionStep === 'inspection'" class="inspection-waiting"><Clock3 /><div><span>目前待辦</span><h3>等待租客驗收</h3><p>已通知 {{ selected.tenant }} 確認問題是否解決；若租客要求再次處理，案件會回到處理中。</p></div></section>
+          <section v-else-if="actionStep === 'canceled'" class="canceled-state"><X /><div><b>案件已取消</b><p>{{ selected.responsibilityNote || '此問題不屬於報修範圍，原因已同步給租客並保留紀錄。' }}</p></div></section>
           <section v-else class="success"><CheckCircle2 /><div><b>案件已完成並保留原始紀錄</b><p>驗收結果：{{ selected.inspectionResult === 'resolved' ? '問題已解決' : '依處理紀錄結案' }}。後續修改會新增操作紀錄，不覆蓋原內容。</p></div></section>
 
           <details v-if="selected.status === 'processing' && phaseIndex > 1" class="secondary-details">
@@ -447,6 +491,10 @@ function reset(): void {
           </details>
         </div>
       </aside>
+      <aside v-else class="case-file empty-file">
+        <div class="empty-state"><span><ClipboardList /></span><h3>目前沒有報修案件</h3><p>租客提交報修後，這裡會顯示案件狀態、附件與處理歷程。</p><div><RouterLink to="/app/repairs" class="btn primary">查看租客報修入口</RouterLink><RouterLink to="/landlord" class="btn secondary">返回總覽</RouterLink></div></div>
+      </aside>
+      </div>
     </section>
 
     <Transition name="toast"><div v-if="toast" class="toast"><Check />{{ toast }}</div></Transition>
@@ -469,10 +517,10 @@ function reset(): void {
 .btn { @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold shadow-sm transition hover:-translate-y-px focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#cfe3d2]; }.btn :deep(svg) { @apply h-4 w-4; }.btn.primary { @apply bg-[#4f7657] text-white; }.btn.secondary { @apply border border-[#d5d0c5] bg-white text-[#26372d]; }.btn.danger-btn,.danger-btn { @apply border border-[#e3b7b0] bg-[#fff1ef] text-[#8f3f36]; }
 .metric { @apply relative min-h-28 rounded-[1.25rem] border border-[#ddd7cb] border-t-[3px] bg-white/90 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#cfe3d2]; }.metric.active { @apply ring-2 ring-[#547b5c] ring-offset-2; }.metric > span,.metric > small { @apply block text-[13px] font-semibold text-[#56635b]; }.metric > strong { @apply my-1 block text-2xl font-extrabold; font-variant-numeric:tabular-nums; }.metric i { @apply absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full not-italic; }.metric i :deep(svg) { @apply h-4 w-4; }.metric.green { @apply border-t-[#5b8263]; }.metric.green i { @apply bg-[#e7f3e9] text-[#3f6747]; }.metric.amber { @apply border-t-[#c88a2c]; }.metric.amber i { @apply bg-[#fff1dc] text-[#865717]; }.metric.blue { @apply border-t-[#4b8293]; }.metric.blue i { @apply bg-[#e7f2f6] text-[#285f70]; }.metric.purple { @apply border-t-[#8261a3]; }.metric.purple i { @apply bg-[#efe8f7] text-[#654487]; }
 .emergency-button { @apply inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#e3b7b0] bg-[#fff1ef] px-4 text-sm font-bold text-[#8f3f36] shadow-sm transition hover:-translate-y-px hover:bg-[#fde9e6] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#f0d0cb]; }.emergency-button.active { @apply border-[#b34c42] bg-[#fbe5e1] ring-2 ring-[#b34c42]/20; }.emergency-button > svg { @apply h-4 w-4 shrink-0; }.emergency-button > b { @apply grid h-6 min-w-6 place-items-center rounded-full bg-[#8f3f36] px-1.5 text-xs font-bold text-white; font-variant-numeric:tabular-nums; }
-.filter-panel { @apply flex flex-col gap-3 p-3 lg:flex-row lg:items-center lg:justify-between; }.tab { @apply rounded-full px-3.5 py-2 text-[13px] font-bold text-[#56635b] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#cfe3d2]; }.tab.active { @apply bg-[#254e3b] text-white; }.tab b { @apply ml-1; font-variant-numeric:tabular-nums; }.search { @apply relative block; }.search > svg { @apply absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#66726a]; }.search input { @apply w-full rounded-full border border-[#d9d3c7] bg-white py-2.5 pl-9 pr-4 text-sm text-[#1f2d25] outline-none placeholder:text-[#66726a] focus:ring-4 focus:ring-[#dcebdd] lg:min-w-80; }
+.workspace-toolbar { @apply flex flex-wrap items-center gap-2 border-b border-[#e5dfd4] p-3; }.toolbar-tabs { @apply flex flex-wrap items-center gap-1; }.toolbar-divider { @apply hidden h-8 w-px bg-[#ddd7cc] 2xl:block; }.tab { @apply rounded-xl px-3.5 py-2 text-[13px] font-bold text-[#56635b] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#cfe3d2]; }.tab.active { @apply bg-[#5b7f61] text-white; }.tab b { @apply ml-1; font-variant-numeric:tabular-nums; }.search { @apply relative min-w-[220px] flex-1; }.search > svg { @apply absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#66726a]; }.search input { @apply h-10 w-full rounded-xl border border-[#d9d3c7] bg-white py-2.5 pl-9 pr-4 text-sm text-[#1f2d25] outline-none placeholder:text-[#66726a] focus:border-[#6f9275] focus:ring-4 focus:ring-[#dcebdd]; }.toolbar-select select { @apply h-10 min-w-32 rounded-xl border border-[#d9d3c7] bg-white px-3 text-[13px] font-semibold text-[#3f4c44] outline-none focus:border-[#6f9275] focus:ring-4 focus:ring-[#dcebdd]; }.reset-filters { @apply inline-flex h-10 items-center gap-1.5 rounded-xl px-3 text-[13px] font-bold text-[#56635b] hover:bg-[#f4f2ec] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#dcebdd]; }.reset-filters :deep(svg) { @apply h-4 w-4; }.workspace-head { @apply grid border-b border-[#e5dfd4] xl:grid-cols-[minmax(0,1.75fr)_minmax(420px,1fr)]; }.workspace-head > div { @apply flex min-h-16 items-center justify-between gap-3 px-5; }.workspace-head > div:last-child { @apply hidden border-l border-[#e5dfd4] xl:flex; }.workspace-head h2 { @apply text-lg font-bold; }.workspace-head span { @apply rounded-full bg-[#edf5ed] px-3 py-1 text-xs font-bold text-[#3f6747]; }.workspace-body { @apply grid items-start xl:grid-cols-[minmax(0,1.75fr)_minmax(420px,1fr)]; }.case-workbench { @apply min-w-0 self-start; }.case-file { @apply min-w-0 border-t border-[#e5dfd4] xl:border-l xl:border-t-0; }.empty-file { @apply self-stretch; }.empty-state { @apply mx-5 my-6 flex min-h-72 flex-col items-center justify-center rounded-[1.4rem] border border-dashed border-[#e2dacd] bg-[#fffdf9] p-8 text-center; }.empty-state > span { @apply grid h-14 w-14 place-items-center rounded-full bg-[#e7f3e9] text-[#4f7657]; }.empty-state > span :deep(svg) { @apply h-6 w-6; }.empty-state h3 { @apply mt-5 text-xl font-bold; }.empty-state p { @apply mt-2 max-w-md text-sm leading-6 text-[#66726a]; }.empty-state > div { @apply mt-5 flex flex-wrap justify-center gap-2; }
 .ticket-table { @apply text-sm; }.ticket-table thead { @apply bg-[#fbf9f3] text-[13px] text-[#56635b]; }.ticket-table th,.ticket-table td { @apply border-b border-[#e9e3d8] px-3 py-3.5; }.ticket-table tbody tr:not(.empty-row) { @apply cursor-pointer transition hover:bg-[#f5f9f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4f7657]; }.ticket-table tbody tr.selected { @apply bg-[#eaf5eb]; }.ticket-table tbody tr.selected > td:first-child { box-shadow:inset 3px 0 #315c43; }.ticket-table td b { @apply font-semibold text-[#26372d]; }.ticket-table td small { @apply mt-0.5 block max-w-56 truncate text-[13px] text-[#66726a]; }.case-cell { @apply flex items-center justify-between gap-2; }.case-cell > svg { @apply h-4 w-4 shrink-0 text-[#55755d]; }.status-cell { @apply flex flex-wrap items-center gap-1.5; }.empty-row td { @apply py-12 text-center text-sm text-[#66726a]; }
 .badge { @apply inline-flex rounded-full border px-2.5 py-1 text-xs font-bold; }.badge.green { @apply border-[#bdd8c1] bg-[#e7f3e9] text-[#3f6747]; }.badge.red { @apply border-[#e5bcb5] bg-[#fbe9e6] text-[#8f3f36]; }.badge.blue { @apply border-[#bfd7df] bg-[#e7f2f6] text-[#285f70]; }.badge.amber { @apply border-[#e6cca3] bg-[#fff1dd] text-[#865717]; }.badge.purple { @apply border-[#d5c4e5] bg-[#f0e9f7] text-[#654487]; }.badge.neutral { @apply border-[#d5d1c7] bg-[#f2f0ea] text-[#56635b]; }.unread { @apply rounded-full bg-[#f8dfdb] px-2 py-1 text-xs font-bold not-italic text-[#8f3f36]; }
-.danger,.success,.inspection-waiting { @apply flex gap-3 rounded-2xl border p-4; }.danger { @apply border-[#e5b6ae] bg-[#fff0ed] text-[#8f3f36]; }.success { @apply border-[#bfd8c3] bg-[#edf7ee] text-[#3f6747]; }.inspection-waiting { @apply border-[#c9dce3] bg-[#edf6f8] text-[#285f70]; }.danger > svg,.success > svg,.inspection-waiting > svg { @apply mt-0.5 h-5 w-5 shrink-0; }.danger b,.success b { @apply text-[15px] font-bold; }.danger p,.success p,.inspection-waiting p { @apply mt-1 text-sm leading-6; }.inspection-waiting span { @apply text-xs font-bold uppercase tracking-wide; }.inspection-waiting h3 { @apply mt-0.5 text-[17px] font-bold; }
+.danger,.success,.inspection-waiting,.canceled-state { @apply flex gap-3 rounded-2xl border p-4; }.danger,.canceled-state { @apply border-[#e5b6ae] bg-[#fff0ed] text-[#8f3f36]; }.success { @apply border-[#bfd8c3] bg-[#edf7ee] text-[#3f6747]; }.inspection-waiting { @apply border-[#c9dce3] bg-[#edf6f8] text-[#285f70]; }.danger > svg,.success > svg,.inspection-waiting > svg,.canceled-state > svg { @apply mt-0.5 h-5 w-5 shrink-0; }.danger b,.success b,.canceled-state b { @apply text-[15px] font-bold; }.danger p,.success p,.inspection-waiting p,.canceled-state p { @apply mt-1 text-sm leading-6; }.inspection-waiting span { @apply text-xs font-bold uppercase tracking-wide; }.inspection-waiting h3 { @apply mt-0.5 text-[17px] font-bold; }
 .info-list { @apply grid gap-x-6 sm:grid-cols-2; }.info-list > div { @apply border-b border-[#ece6dc] py-3; }.info-list dt { @apply flex items-center gap-1.5 text-[13px] font-semibold text-[#66726a]; }.info-list dt :deep(svg) { @apply h-4 w-4; }.info-list dd { @apply mt-1 text-sm font-semibold leading-6 text-[#26372d]; }.info-list a { @apply underline decoration-[#a9b9ad] underline-offset-2; }
 .content-section { @apply border-t border-[#e9e3d8] pt-5; }.content-section h3,.action-block h3 { @apply flex items-center gap-2 text-[17px] font-bold; }.content-section > p,.action-block > p,.action-title p { @apply mt-1.5 text-sm leading-6 text-[#56635b]; }.file { @apply inline-flex items-center gap-1.5 rounded-lg bg-[#f3f5f1] px-3 py-2 text-[13px] font-semibold text-[#46564c]; }.file :deep(svg) { @apply h-4 w-4; }.inventory > div > span { @apply rounded-full bg-[#e7f3e9] px-2.5 py-1 text-xs font-bold text-[#3f6747]; }.inventory dl { @apply mt-3 grid gap-x-5 sm:grid-cols-2; }.inventory dl div { @apply grid grid-cols-[88px_1fr] gap-2 border-b border-[#ece6dc] py-2.5 text-sm; }.inventory dt { @apply text-[#66726a]; }.inventory dd { @apply font-semibold text-[#26372d]; }
 .workflow-summary { @apply rounded-2xl bg-[#f1f6f1] p-4; }.workflow-summary header { @apply flex items-center justify-between; }.workflow-summary header span { @apply text-xs font-bold uppercase tracking-wide text-[#4f7657]; }.workflow-summary header h3 { @apply mt-0.5 text-[17px] font-bold; }.workflow-summary header strong { @apply text-sm text-[#4f7657]; font-variant-numeric:tabular-nums; }.workflow-summary ol { @apply mt-4 grid grid-cols-5 gap-1; }.workflow-summary li { @apply flex min-w-0 flex-col items-center gap-1 text-center text-[11px] font-semibold text-[#7a857d]; }.workflow-summary li i { @apply grid h-6 w-6 place-items-center rounded-full border border-[#d4d9d3] bg-white text-[11px] not-italic; }.workflow-summary li i :deep(svg) { @apply h-3.5 w-3.5; }.workflow-summary li.done { @apply text-[#3f6747]; }.workflow-summary li.done i { @apply border-[#5b8263] bg-[#5b8263] text-white; }.workflow-summary li.current { @apply text-[#254e3b]; }.workflow-summary li.current i { @apply border-[#315c43] bg-[#315c43] font-bold text-white ring-4 ring-[#dbe9dd]; }.workflow-summary li.future { @apply opacity-65; }

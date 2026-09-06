@@ -1,7 +1,7 @@
 import { computed, reactive } from 'vue'
 
 export type RepairUrgency = 'emergency' | 'soon' | 'normal'
-export type RepairStatus = 'pending' | 'processing' | 'inspection' | 'completed'
+export type RepairStatus = 'pending' | 'processing' | 'inspection' | 'completed' | 'canceled'
 export type RepairResponsibility = 'pending' | 'landlord' | 'tenant' | 'shared'
 
 export interface RepairTimelineItem {
