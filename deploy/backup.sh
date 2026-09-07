@@ -92,13 +92,36 @@ ls -1t "$BACKUP_ROOT"/rentmate-backup-*.tar.gz 2>/dev/null | tail -n +8 | while 
 done
 echo "    目前保留 $(ls -1 "$BACKUP_ROOT"/rentmate-backup-*.tar.gz 2>/dev/null | wc -l) 份"
 
-# ---------- 7. 寄送異地備份 ----------
-# 備份與正式站在同一台機器，VM 全毀就兩份一起沒。
-# 寄到 Gmail 當異地副本（檔案僅約 16KB，沿用專案既有的 SMTP 設定）。
+# ---------- 7. 加密後寄送異地備份 ----------
+# 備份與正式站在同一台機器，VM 全毀就兩份一起沒，故寄信箱當異地副本。
+#
+# ⚠️ 但備份含 JWT 金鑰、MySQL 密碼、Google 憑證 —— 直接寄等於把系統鑰匙
+#    放進信箱。信箱被盜、或信箱管理者（如學校 IT）都可能取得。
+#    因此先以 GPG 對稱加密（AES256），讓備份的安全性「不依賴信箱的安全性」。
+#
 # 加上 --mail 參數才會寄送，手動執行時預設不寄。
 if [ "${1:-}" = "--mail" ]; then
-    echo "[7/7] 寄送異地備份..."
-    python3 - "$ARCHIVE" <<'PYEOF'
+    echo "[7/7] 加密並寄送異地備份..."
+
+    # 密碼從 .env 讀取（BACKUP_ENCRYPT_PASSPHRASE）
+    # 結尾的 || true 不可省略：set -e 之下 grep 找不到會直接中止腳本，
+    # 導致下方「缺少密碼」的提示永遠不會印出來（失敗了卻不知道為什麼）。
+    PASSPHRASE=$(grep -E "^BACKUP_ENCRYPT_PASSPHRASE=" "$PROJECT_DIR/.env" 2>/dev/null \
+                 | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+
+    if [ -z "$PASSPHRASE" ]; then
+        echo "    ❌ .env 缺少 BACKUP_ENCRYPT_PASSPHRASE，為避免明文外寄機密，中止寄送。"
+        echo "       請在 .env 加入一行：BACKUP_ENCRYPT_PASSPHRASE=\"<你的密碼>\""
+        exit 1
+    fi
+
+    gpg --batch --yes --quiet \
+        --passphrase "$PASSPHRASE" \
+        --symmetric --cipher-algo AES256 \
+        -o "$ARCHIVE.gpg" "$ARCHIVE"
+    echo "    已加密：$(basename "$ARCHIVE.gpg") ($(du -h "$ARCHIVE.gpg" | cut -f1))"
+
+    python3 - "$ARCHIVE.gpg" <<'PYEOF'
 import os, smtplib, ssl, sys
 from email.message import EmailMessage
 from pathlib import Path
@@ -128,15 +151,19 @@ msg["Subject"] = f"[RentMate] 系統備份 {archive.stem.replace('rentmate-backu
 msg["From"] = sender
 msg["To"] = ", ".join(recipients)
 msg.set_content(
-    f"RentMate 自動備份\n\n"
+    f"RentMate 自動備份（已加密）\n\n"
     f"檔名：{archive.name}\n"
-    f"大小：{archive.stat().st_size / 1024:.1f} KB\n\n"
-    f"內容：MySQL 資料庫、.env 正式金鑰、Google 憑證、TLS 憑證\n"
-    f"還原方式：見 deploy/RESTORE.md\n\n"
-    f"⚠️ 此附件含機密，請勿轉寄。"
+    f"大小：{archive.stat().st_size / 1024:.1f} KB\n"
+    f"加密：GPG 對稱加密 AES256\n\n"
+    f"內容：MySQL 資料庫、.env 正式金鑰、Google 憑證、TLS 憑證\n\n"
+    f"── 解密方式 ──\n"
+    f"gpg -o backup.tar.gz -d {archive.name}\n"
+    f"（會提示輸入密碼，即 BACKUP_ENCRYPT_PASSPHRASE）\n\n"
+    f"解開後的還原步驟見 deploy/RESTORE.md\n\n"
+    f"⚠️ 沒有密碼就無法還原，請確認密碼另有保存（勿只存在 VM 上）。"
 )
 msg.add_attachment(archive.read_bytes(), maintype="application",
-                   subtype="gzip", filename=archive.name)
+                   subtype="pgp-encrypted", filename=archive.name)
 
 with smtplib.SMTP(host, port, timeout=30) as s:
     s.starttls(context=ssl.create_default_context())
@@ -144,6 +171,8 @@ with smtplib.SMTP(host, port, timeout=30) as s:
     s.send_message(msg)
 print(f"    ✅ 已寄至 {', '.join(recipients)}")
 PYEOF
+    # 加密檔只是寄送用的暫存，本機保留未加密版即可（本機有 VM 的存取控制保護）
+    rm -f "$ARCHIVE.gpg"
 else
     echo "[7/7] 未加 --mail 參數，略過寄送"
 fi
