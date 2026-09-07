@@ -12,6 +12,7 @@ from routers.landlord_properties import (
     _owned_property,
     create_property,
     create_rooms,
+    delete_property,
     list_properties,
 )
 from routers.landlord_tenants import tenant_options
@@ -74,6 +75,38 @@ class LandlordPropertyRulesTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             _owned_property(self.db, self.landlord_b.id, property_item.id)
         self.assertEqual(caught.exception.status_code, 404)
+
+    def test_empty_property_can_be_deleted(self):
+        property_item = create_property(
+            PropertyPayload(name="待刪除棟別"), self.db, self.landlord_a
+        )
+
+        result = delete_property(property_item["id"], self.db, self.landlord_a)
+
+        self.assertEqual(result["deleted_id"], property_item["id"])
+        self.assertIsNone(
+            self.db.query(LandlordProperty)
+            .filter(LandlordProperty.id == property_item["id"])
+            .first()
+        )
+
+    def test_property_with_rooms_cannot_be_deleted(self):
+        property_item = create_property(
+            PropertyPayload(name="已有房間棟別"), self.db, self.landlord_a
+        )
+        create_rooms(
+            property_item["id"], RoomBatchPayload(numbers=["101"]), self.db, self.landlord_a
+        )
+
+        with self.assertRaises(HTTPException) as caught:
+            delete_property(property_item["id"], self.db, self.landlord_a)
+
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertIsNotNone(
+            self.db.query(LandlordProperty)
+            .filter(LandlordProperty.id == property_item["id"])
+            .first()
+        )
 
 
 if __name__ == "__main__":

@@ -68,6 +68,10 @@ export function updateProperty(id: number, payload: PropertyPayload) {
   return api<LandlordProperty>(`/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 }
 
+export function deleteProperty(id: number) {
+  return api<{ deleted_id: number; name: string }>(`/${id}`, { method: 'DELETE' })
+}
+
 export function createRooms(propertyId: number, payload: RoomBatchPayload) {
   return api<LandlordProperty>(`/${propertyId}/rooms`, {
     method: 'POST',

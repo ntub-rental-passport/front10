@@ -10,12 +10,14 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Trash2,
   Users,
   X,
 } from 'lucide-vue-next'
 import {
   createProperty,
   createRooms,
+  deleteProperty,
   fetchProperties,
   updateProperty,
   type LandlordProperty,
@@ -31,9 +33,11 @@ const keyword = ref('')
 const statusFilter = ref<'all' | PropertyRoomStatus>('all')
 const loading = ref(true)
 const saving = ref(false)
+const deleting = ref(false)
 const error = ref('')
 const success = ref('')
 const buildingDialog = ref(false)
+const deleteDialog = ref(false)
 const roomDialog = ref(false)
 const roomDetail = ref<PropertyRoom | null>(null)
 const editingBuildingId = ref<number | null>(null)
@@ -131,6 +135,31 @@ function openEditBuilding() {
   }
   error.value = ''
   buildingDialog.value = true
+}
+
+function openDeleteBuilding() {
+  if (!current.value) return
+  error.value = ''
+  deleteDialog.value = true
+}
+
+async function removeBuilding() {
+  const building = current.value
+  if (!building || building.rooms.length) return
+  deleting.value = true
+  error.value = ''
+  try {
+    await deleteProperty(building.id)
+    deleteDialog.value = false
+    success.value = `已刪除「${building.name}」。`
+    await loadProperties()
+    notifyLandlordWorkspaceUpdated('property')
+  } catch (cause) {
+    deleteDialog.value = false
+    error.value = cause instanceof Error ? cause.message : '棟別刪除失敗。'
+  } finally {
+    deleting.value = false
+  }
 }
 
 async function saveBuilding() {
@@ -349,11 +378,14 @@ onMounted(() => loadProperties())
                 {{ current.city || '未設定城市' }} · {{ current.address || '尚未設定地址' }}
               </p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
               <button class="btn-primary !px-3.5 !py-2" @click="openRoomDialog">
                 <Plus class="h-4 w-4" />新增房間</button
               ><button class="btn-secondary !px-3.5 !py-2" @click="openEditBuilding">
                 <Pencil class="h-4 w-4" />編輯資訊
+              </button>
+              <button class="btn-danger !px-3.5 !py-2" @click="openDeleteBuilding">
+                <Trash2 class="h-4 w-4" />刪除棟別
               </button>
             </div>
           </div>
@@ -612,6 +644,63 @@ onMounted(() => loadProperties())
         </section>
       </div>
 
+      <div v-if="deleteDialog && current" class="backdrop" @click.self="deleteDialog = false">
+        <section
+          class="dialog max-w-md"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="delete-building-title"
+          aria-describedby="delete-building-description"
+        >
+          <header class="dialog-head">
+            <h2 id="delete-building-title">刪除棟別</h2>
+            <button class="icon-btn" aria-label="關閉" @click="deleteDialog = false">
+              <X />
+            </button>
+          </header>
+          <div class="space-y-5 p-5">
+            <div
+              :class="[
+                'delete-summary',
+                current.rooms.length ? 'delete-summary-blocked' : 'delete-summary-ready',
+              ]"
+            >
+              <AlertCircle class="h-5 w-5 shrink-0" />
+              <div>
+                <p id="delete-building-description" class="font-bold">
+                  {{
+                    current.rooms.length
+                      ? `「${current.name}」目前有 ${current.rooms.length} 間房間，無法直接刪除。`
+                      : `確定要刪除「${current.name}」嗎？`
+                  }}
+                </p>
+                <p class="mt-1 text-sm leading-6">
+                  {{
+                    current.rooms.length
+                      ? '為保留租客、合約與財務紀錄，含有房間資料的棟別不提供直接刪除。'
+                      : '這個棟別尚未建立房間。刪除後無法復原。'
+                  }}
+                </p>
+              </div>
+            </div>
+            <div class="flex justify-end gap-2">
+              <button class="btn-secondary" type="button" @click="deleteDialog = false">
+                {{ current.rooms.length ? '我知道了' : '取消' }}
+              </button>
+              <button
+                v-if="!current.rooms.length"
+                class="btn-danger-solid"
+                type="button"
+                :disabled="deleting"
+                @click="removeBuilding"
+              >
+                <Trash2 class="h-4 w-4" />{{ deleting ? '刪除中…' : '確認刪除' }}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
       <div v-if="roomDetail" class="backdrop" @click.self="roomDetail = null">
         <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="room-detail-title">
           <header class="dialog-head">
@@ -644,7 +733,9 @@ onMounted(() => loadProperties())
 <style scoped>
 @reference "../../index.css";
 .btn-primary,
-.btn-secondary {
+.btn-secondary,
+.btn-danger,
+.btn-danger-solid {
   @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
 }
 .btn-primary {
@@ -652,6 +743,21 @@ onMounted(() => loadProperties())
 }
 .btn-secondary {
   @apply border border-[#dfd9cc] bg-white text-[#29372f] shadow-sm hover:bg-[#f8f6ef];
+}
+.btn-danger {
+  @apply border border-[#e3b7b0] bg-[#fff8f6] text-[#8f3f36] shadow-sm hover:bg-[#fff1ef];
+}
+.btn-danger-solid {
+  @apply bg-[#8f3f36] text-white shadow-sm hover:bg-[#7f352e];
+}
+.delete-summary {
+  @apply flex gap-3 rounded-2xl border p-4;
+}
+.delete-summary-ready {
+  @apply border-[#e3b7b0] bg-[#fff1ef] text-[#8f3f36];
+}
+.delete-summary-blocked {
+  @apply border-[#e5d5b9] bg-[#fff8ea] text-[#765119];
 }
 .icon-btn {
   @apply inline-grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[#e2dcd0] bg-white text-[#667068] hover:bg-[#f4f2eb];

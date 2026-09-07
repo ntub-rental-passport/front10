@@ -175,6 +175,25 @@ def update_property(
     return _property_dict(_owned_property(db, landlord.id, property_id))
 
 
+@router.delete("/{property_id}")
+def delete_property(
+    property_id: int,
+    db: Session = Depends(get_db),
+    landlord: User = Depends(get_current_landlord),
+):
+    property_item = _owned_property(db, landlord.id, property_id)
+    if property_item.rooms:
+        raise HTTPException(
+            status_code=409,
+            detail="棟別內已有房間，為保留租客、合約與財務紀錄，無法直接刪除。",
+        )
+
+    deleted = {"deleted_id": property_item.id, "name": property_item.name}
+    db.delete(property_item)
+    db.commit()
+    return deleted
+
+
 @router.post("/{property_id}/rooms", status_code=status.HTTP_201_CREATED)
 def create_rooms(
     property_id: int,
