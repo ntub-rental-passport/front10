@@ -116,11 +116,17 @@ user = env.get("SMTP_USERNAME", "")
 pw   = env.get("SMTP_APP_PASSWORD", "").replace(" ", "")
 sender = env.get("SMTP_FROM_EMAIL", user)
 
+# 收件者：可在 .env 以 BACKUP_MAIL_TO 設定（多個以逗號分隔），
+# 未設定時預設寄給寄件者本人與學校信箱。
+# 分散到兩個信箱：單一信箱被鎖或誤刪時仍有另一份。
+default_to = f"{sender},11246017@ntub.edu.tw"
+recipients = [a.strip() for a in env.get("BACKUP_MAIL_TO", default_to).split(",") if a.strip()]
+
 archive = Path(sys.argv[1])
 msg = EmailMessage()
 msg["Subject"] = f"[RentMate] 系統備份 {archive.stem.replace('rentmate-backup-', '')}"
 msg["From"] = sender
-msg["To"] = sender          # 寄給自己
+msg["To"] = ", ".join(recipients)
 msg.set_content(
     f"RentMate 自動備份\n\n"
     f"檔名：{archive.name}\n"
@@ -136,7 +142,7 @@ with smtplib.SMTP(host, port, timeout=30) as s:
     s.starttls(context=ssl.create_default_context())
     s.login(user, pw)
     s.send_message(msg)
-print(f"    ✅ 已寄至 {sender}")
+print(f"    ✅ 已寄至 {', '.join(recipients)}")
 PYEOF
 else
     echo "[7/7] 未加 --mail 參數，略過寄送"
