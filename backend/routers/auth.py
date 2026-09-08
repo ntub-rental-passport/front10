@@ -16,7 +16,7 @@ import requests as http_requests
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from dotenv import dotenv_values, load_dotenv
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleRequest
@@ -26,8 +26,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
-from email_service import EmailConfigurationError, send_verification_email
+from email_service import (
+    EmailConfigurationError,
+    send_admin_login_code,
+    send_verification_email,
+)
 from models import (
+    PendingAdminLogin,
     PendingRegistration,
     User,
     UserIdentity,
@@ -871,3 +876,176 @@ def logout(response: Response) -> dict[str, bool]:
     """登出：清除 HttpOnly 認證 cookie。"""
     clear_auth_cookie(response)
     return {"ok": True}
+
+
+# ==========================================
+# 6. 管理員登入（兩階段：帳密 → 信箱驗證碼）
+# ==========================================
+#
+# 為何管理員需要第二階段驗證，而一般使用者不需要：
+# 管理員可存取全站使用者資料、調整系統設定、關閉功能，
+# 帳密外洩的損害遠大於單一使用者帳號。要求「必須能收到該信箱的信」，
+# 可擋下純粹的帳密外洩（攻擊者有密碼但沒有信箱存取權）。
+#
+# 附帶效果：驗證信本身即是入侵偵測 —— 帳密若遭盜用，
+# 真正的管理員會先收到一封自己沒有發起的登入通知。
+
+ADMIN_LOGIN_CODE_EXPIRES_SECONDS = 5 * 60
+ADMIN_LOGIN_MAX_ATTEMPTS = 3
+
+
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AdminLoginChallengeResponse(BaseModel):
+    """第一階段回應：不含任何身分資訊，僅給後續驗證用的識別碼。"""
+
+    challengeId: str
+    email: str
+    expiresIn: int
+    attemptsRemaining: int
+
+
+class AdminLoginVerifyRequest(BaseModel):
+    challengeId: str = Field(min_length=36, max_length=36)
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+def _client_ip(request: Request) -> str | None:
+    """取得真實來源 IP。
+
+    正式環境經 Cloudflare 與 Nginx 代理，直接取連線位址只會得到代理的 IP。
+    Nginx 已設定 real_ip 還原並轉發 X-Forwarded-For，取其第一段即原始來源。
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:45]
+    return request.client.host[:45] if request.client else None
+
+
+@router.post("/admin/login", response_model=AdminLoginChallengeResponse)
+def admin_login_start(
+    payload: AdminLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminLoginChallengeResponse:
+    """第一階段：驗證帳密與管理員身分，寄出驗證碼。
+
+    ⚠️ 所有失敗情形一律回相同的 401 與相同訊息 —— 不可透露
+    「帳號不存在」「不是管理員」「密碼錯誤」之別，否則等同提供
+    攻擊者一個列舉管理員帳號的工具。
+    """
+    email = _normalize_email(payload.email)
+    generic_error = HTTPException(status_code=401, detail="帳號或密碼不正確。")
+
+    user = db.query(User).filter(User.email == email).first()
+    if user is None or user.password_credential is None:
+        raise generic_error
+    if not any(r.role == "admin" for r in user.roles):
+        raise generic_error
+    try:
+        password_hasher.verify(user.password_credential.password_hash, payload.password)
+    except (InvalidHashError, VerificationError, VerifyMismatchError):
+        raise generic_error
+
+    now = datetime.utcnow()
+
+    # 同一帳號同時只保留一組有效挑戰，避免併發登入產生多組可用驗證碼
+    db.query(PendingAdminLogin).filter(PendingAdminLogin.user_id == user.id).delete()
+
+    code = generate_verification_code()
+    challenge_id = str(uuid.uuid4())
+    client_ip = _client_ip(request)
+
+    challenge = PendingAdminLogin(
+        id=challenge_id,
+        user_id=user.id,
+        email=user.email,
+        verification_code_hash=hash_verification_code(challenge_id, code),
+        expires_at=now + timedelta(seconds=ADMIN_LOGIN_CODE_EXPIRES_SECONDS),
+        attempt_count=0,
+        request_ip=client_ip,
+        created_at=now,
+    )
+    db.add(challenge)
+
+    try:
+        db.flush()
+        send_admin_login_code(
+            user.email,
+            code,
+            max(1, ADMIN_LOGIN_CODE_EXPIRES_SECONDS // 60),
+            client_ip,
+        )
+        db.commit()
+    except EmailConfigurationError as error:
+        db.rollback()
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (OSError, smtplib.SMTPException) as error:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="驗證信寄送失敗，請稍後再試。") from error
+
+    return AdminLoginChallengeResponse(
+        challengeId=challenge_id,
+        email=user.email,
+        expiresIn=ADMIN_LOGIN_CODE_EXPIRES_SECONDS,
+        attemptsRemaining=ADMIN_LOGIN_MAX_ATTEMPTS,
+    )
+
+
+@router.post("/admin/verify", response_model=EmailLoginResponse)
+def admin_login_verify(
+    payload: AdminLoginVerifyRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> EmailLoginResponse:
+    """第二階段：驗證碼正確才簽發憑證，完成登入。"""
+    now = datetime.utcnow()
+    challenge = (
+        db.query(PendingAdminLogin)
+        .filter(PendingAdminLogin.id == payload.challengeId)
+        .with_for_update()
+        .first()
+    )
+
+    if challenge is None:
+        raise HTTPException(status_code=404, detail="登入請求不存在，請重新登入。")
+    if challenge.expires_at <= now:
+        db.delete(challenge)
+        db.commit()
+        raise HTTPException(status_code=410, detail="驗證碼已過期，請重新登入。")
+
+    if not verification_code_matches(challenge.id, payload.code, challenge.verification_code_hash):
+        challenge.attempt_count += 1
+        remaining = max(0, ADMIN_LOGIN_MAX_ATTEMPTS - challenge.attempt_count)
+        if remaining == 0:
+            # 次數用盡即作廢整組挑戰，必須重新輸入帳密 —— 使暴力猜測
+            # 六位數驗證碼的成本回到「需先通過帳密驗證」
+            db.delete(challenge)
+            db.commit()
+            raise HTTPException(status_code=429, detail="驗證錯誤次數過多，請重新登入。")
+        db.commit()
+        raise HTTPException(status_code=400, detail=f"驗證碼不正確，還可嘗試 {remaining} 次。")
+
+    user = db.query(User).filter(User.id == challenge.user_id).first()
+    if user is None or not any(r.role == "admin" for r in user.roles):
+        # 帳號在挑戰有效期間被刪除或撤銷管理員權限
+        db.delete(challenge)
+        db.commit()
+        raise HTTPException(status_code=403, detail="此帳號已無管理員權限。")
+
+    db.delete(challenge)
+    db.commit()
+
+    # 與其他登入路徑一致：同時發出 cookie 與 Bearer 兩套憑證
+    set_auth_cookie(response, create_cookie_token(user.id, user.email, "admin"))
+    return EmailLoginResponse(
+        userId=user.id,
+        email=user.email,
+        role="admin",
+        displayName=user.display_name,
+        avatarUrl=user.avatar_url,
+        accessToken=create_access_token(user.id, "admin"),
+    )

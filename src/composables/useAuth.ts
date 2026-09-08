@@ -1,5 +1,7 @@
 import {
   loginWithEmail,
+  startAdminLogin,
+  verifyAdminLogin,
   logoutFromServer,
   resendRegistration,
   startRegistration,
@@ -195,6 +197,49 @@ export async function signInWithEmail(
     const knownError = knownErrors.find((candidate) => message.includes(candidate))
     return { ok: false, error: knownError ?? 'service-unavailable' }
   }
+}
+
+/** 管理員登入第一階段的狀態，供輸入驗證碼的畫面使用。 */
+export interface AdminLoginChallenge {
+  challengeId: string
+  email: string
+  /** 驗證碼失效時間（epoch 毫秒），用於倒數。 */
+  expiresAt: number
+  attemptsRemaining: number
+}
+
+/**
+ * 管理員登入第一階段：送出帳密，成功則後端寄出驗證碼。
+ *
+ * 此時尚未建立任何 session —— 只有第二階段通過才會寫入登入狀態。
+ * 挑戰只放在頁面記憶體、不寫 localStorage，重整即失效；
+ * challengeId 若被存進瀏覽器，等於把「已通過帳密」的憑據留在磁碟上。
+ */
+export async function startAdminSignIn(
+  email: string,
+  password: string,
+): Promise<AdminLoginChallenge> {
+  const result = await startAdminLogin(email.trim().toLowerCase(), password)
+  return {
+    challengeId: result.challengeId,
+    email: result.email,
+    expiresAt: Date.now() + result.expiresIn * 1000,
+    attemptsRemaining: result.attemptsRemaining,
+  }
+}
+
+/** 管理員登入第二階段：驗證碼正確才真的建立 session。 */
+export async function completeAdminSignIn(
+  challengeId: string,
+  code: string,
+): Promise<AuthSession> {
+  const result = await verifyAdminLogin(challengeId, code)
+  const profile = upsertUserProfile(result.email, {
+    emailVerified: true,
+    nickname: result.displayName,
+    role: result.role,
+  })
+  return createSession(result.role, profile, result.accessToken, result.userId)
 }
 
 export function registerWithGoogle(
