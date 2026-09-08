@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from database import engine, Base
-from routers import auth, contract, landlord_properties, landlord_tenants, tenant_leases # 👈 引入剛才建立的 AI 路由功能
+from metrics import count_requests
+from routers import admin, auth, contract, landlord_properties, landlord_tenants, tenant_leases # 👈 引入剛才建立的 AI 路由功能
 
 # 有設定 MySQL 時才建立資料表；Google 登入驗證本身不依賴資料庫。
 if engine is not None:
@@ -16,6 +17,11 @@ cors_origins = os.getenv(
     "CORS_ORIGINS",
     "http://localhost:3000,http://localhost:5173",
 ).split(",")
+# 請求計數 middleware，供後台監控頁計算錯誤率。
+# 放在 CORS 之前註冊 —— FastAPI 的 middleware 是後註冊者先執行，
+# 這樣計數器包在最外層，連 CORS 擋掉的請求也算得到。
+app.middleware("http")(count_requests)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in cors_origins if origin.strip()],
@@ -30,6 +36,7 @@ app.include_router(auth.router)
 app.include_router(landlord_properties.router)
 app.include_router(landlord_tenants.router)
 app.include_router(tenant_leases.router)
+app.include_router(admin.router)
 
 @app.get("/")
 def root():

@@ -1,9 +1,13 @@
 import { onScopeDispose, ref } from 'vue'
 import {
   backendMonitor,
-  pendingMonitor,
+  dbPoolMonitor,
+  errorRateMonitor,
+  type DbPoolSnapshot,
   type MonitorReading,
+  type RequestSnapshot,
 } from '@/src/utils/admin-monitoring'
+import { fetchAdminMetrics } from '@/src/services/adminMetricsApi'
 import { adminSettings } from './useAdminSettings'
 
 /**
@@ -39,14 +43,21 @@ const TIMEOUT_MS = 5_000
 /**
  * 後端健康度量測。
  *
- * 只量前端自己就能量的東西 —— 後端是否回應、往返時間。
- * 資料庫連線池與錯誤率需要後端提供 metrics 端點，端點還沒有之前，
- * 這裡回傳 `pendingMonitor` 讓畫面顯示空狀態，而不是編一個數字出來。
+ * 兩個來源：
+ *   1. `/api/health` —— 不需登入，量後端是否回應與往返時間
+ *   2. `/api/admin/metrics` —— 僅限管理員，取連線池與錯誤率
+ *
+ * 為何分成兩支而不是合併：健康檢查必須在登入之前就能用
+ * （後端掛掉時反而會因為登入不了而看不到監控結果），
+ * 而營運數據會洩漏「現在正是攻擊的好時機」，必須鎖起來。
  */
 export function useSystemHealth() {
   const responseMs = ref<number | null>(null)
   const checkedAt = ref<string | null>(null)
   const checking = ref(false)
+  // null 代表這一輪讀取失敗（後端掛了、權限不足），與「還沒讀過」不同
+  const dbPool = ref<DbPoolSnapshot | null>(null)
+  const requests = ref<RequestSnapshot | null>(null)
 
   async function check(): Promise<void> {
     checking.value = true
@@ -69,6 +80,18 @@ export function useSystemHealth() {
       checkedAt.value = new Date().toLocaleTimeString('zh-TW', { hour12: false })
       checking.value = false
     }
+
+    // 自己的逾時控制器：健康檢查的 timer 在上面的 finally 已經清掉，
+    // 沿用它的 signal 等於這支請求完全沒有逾時保護，後端卡住就會一直懸著。
+    const metricsController = new AbortController()
+    const metricsTimer = setTimeout(() => metricsController.abort(), TIMEOUT_MS)
+    try {
+      const metrics = await fetchAdminMetrics(metricsController.signal)
+      dbPool.value = metrics?.dbPool ?? null
+      requests.value = metrics?.requests ?? null
+    } finally {
+      clearTimeout(metricsTimer)
+    }
   }
 
   void check()
@@ -84,31 +107,30 @@ export function useSystemHealth() {
         adminSettings.value.responseOkMs,
         adminSettings.value.responseDegradedMs,
       ),
+      dbPoolMonitor(dbPool.value),
+      errorRateMonitor(requests.value),
     ]
   }
 
   /**
    * 尚未接上的監控項。
    *
-   * 後端補上 metrics 端點後，把這裡換成真正的讀取即可 —— 畫面不用動，
-   * 因為它讀的是同一個 MonitorReading 形狀。
+   * 目前是空的 —— 連線池與錯誤率已於 2026-09-08 接上 `/api/admin/metrics`。
+   * 保留這個函式而不刪除，是因為畫面會呼叫它；日後要加新的監控項時，
+   * 可以先在這裡放 `pendingMonitor` 佔位，形狀一致，接上時畫面不用動。
    */
   function pendingMonitors(): MonitorReading[] {
-    return [
-      pendingMonitor(
-        'db-pool',
-        '資料庫連線池',
-        '使用中連線數、等待數與逾時次數',
-        '待後端提供 metrics 端點後自動顯示',
-      ),
-      pendingMonitor(
-        'error-rate',
-        'API 錯誤率',
-        '近一小時 5xx 與 4xx 佔比',
-        '待後端提供 metrics 端點後自動顯示',
-      ),
-    ]
+    return []
   }
 
-  return { responseMs, checkedAt, checking, check, liveMonitors, pendingMonitors }
+  return {
+    responseMs,
+    checkedAt,
+    checking,
+    dbPool,
+    requests,
+    check,
+    liveMonitors,
+    pendingMonitors,
+  }
 }

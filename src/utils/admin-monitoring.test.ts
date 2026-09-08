@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   backendMonitor,
   classifyResponseTime,
+  dbPoolMonitor,
+  errorRateMonitor,
   formatResponseTime,
   pendingMonitor,
+  type DbPoolSnapshot,
+  type RequestSnapshot,
 } from './admin-monitoring'
 
 // 測試固定沿用種子預設值，不直接依賴 mocks/admin/settings —— 純邏輯檔的測試不該跟 collection 耦合
@@ -72,5 +76,74 @@ describe('pendingMonitor', () => {
     expect(reading.state).toBe('unavailable')
     expect(reading.value).toBeNull()
     expect(reading.connected).toBe(false)
+  })
+})
+
+describe('dbPoolMonitor', () => {
+  const pool = (over: Partial<DbPoolSnapshot> = {}): DbPoolSnapshot => ({
+    configured: true,
+    size: 10,
+    maxOverflow: 20,
+    capacity: 30,
+    inUse: 3,
+    idle: 2,
+    overflowInUse: 0,
+    utilization: 0.1,
+    ...over,
+  })
+
+  it('讀取失敗算 down，不是「尚未接上」', () => {
+    const reading = dbPoolMonitor(null)
+    expect(reading.state).toBe('down')
+    expect(reading.connected).toBe(true)
+  })
+
+  it('後端沒設定資料庫時是 unavailable，那不是故障', () => {
+    expect(dbPoolMonitor({ configured: false }).state).toBe('unavailable')
+  })
+
+  it('使用率低時正常，並顯示「使用中 / 總量」', () => {
+    const reading = dbPoolMonitor(pool())
+    expect(reading.state).toBe('ok')
+    expect(reading.value).toBe('3 / 30')
+  })
+
+  it('使用率跨過門檻會升級為 degraded 與 down', () => {
+    expect(dbPoolMonitor(pool({ utilization: 0.8 })).state).toBe('degraded')
+    expect(dbPoolMonitor(pool({ utilization: 0.95 })).state).toBe('down')
+  })
+})
+
+describe('errorRateMonitor', () => {
+  const req = (over: Partial<RequestSnapshot> = {}): RequestSnapshot => ({
+    windowMinutes: 60,
+    total: 1000,
+    clientErrors: 0,
+    serverErrors: 0,
+    errorRate: 0,
+    serverErrorRate: 0,
+    ...over,
+  })
+
+  it('讀取失敗算 down', () => {
+    expect(errorRateMonitor(null).state).toBe('down')
+  })
+
+  it('沒有流量時顯示「無流量」而不是 0%', () => {
+    const reading = errorRateMonitor(req({ total: 0 }))
+    expect(reading.state).toBe('ok')
+    expect(reading.value).toBe('—')
+    expect(reading.detail).toContain('無流量')
+  })
+
+  it('大量 4xx 不會被判定成故障——那是防護生效，不是系統有病', () => {
+    const scanned = req({ clientErrors: 900, errorRate: 0.9, serverErrorRate: 0 })
+    expect(errorRateMonitor(scanned).state).toBe('ok')
+    expect(errorRateMonitor(scanned).detail).toContain('4xx 900 筆')
+  })
+
+  it('5xx 跨過門檻才升級狀態', () => {
+    expect(errorRateMonitor(req({ serverErrors: 50, serverErrorRate: 0.05 })).state).toBe('degraded')
+    expect(errorRateMonitor(req({ serverErrors: 200, serverErrorRate: 0.2 })).state).toBe('down')
   })
 })
