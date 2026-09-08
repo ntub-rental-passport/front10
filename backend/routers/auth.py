@@ -303,6 +303,40 @@ def _normalize_email(value: str | None) -> str:
 # ==========================================
 # 1. 一般密碼登入
 # ==========================================
+# ==========================================
+# 帳號狀態
+# ==========================================
+
+SUSPENDED_DETAIL = "此帳號已被停用，請聯絡管理員。"
+
+
+def _reject_if_suspended(user: User) -> None:
+    """帳號被停用時中止登入。
+
+    ⚠️ 每一條登入路徑都必須呼叫這個函式。後台若有「停用」按鈕卻擋不住登入，
+    那顆按鈕就是假的 —— 比沒有更糟，因為管理員會以為問題已經處理了。
+
+    這裡的訊息刻意講明「已被停用」而非含糊的「帳號或密碼不正確」：
+    停用是管理員主動做的處置，當事人有權知道自己被停權、該找誰處理；
+    而且能走到這一步的人本來就已經通過帳密驗證，不存在洩漏帳號存在與否的問題。
+    """
+    if getattr(user, "status", "active") == "suspended":
+        raise HTTPException(status_code=403, detail=SUSPENDED_DETAIL)
+
+
+def _record_login(db: Session, user: User) -> None:
+    """蓋上最後登入時間。
+
+    失敗不影響登入 —— 這只是後台的參考資訊，
+    不該因為寫不進去就把已經驗證成功的人擋在門外。
+    """
+    try:
+        user.last_login_at = datetime.utcnow()
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
 @router.post("/login", response_model=EmailLoginResponse)
 def login_with_email(
     payload: EmailLoginRequest,
@@ -330,6 +364,9 @@ def login_with_email(
         user.password_credential.password_hash = password_hasher.hash(payload.password)
         user.password_credential.password_changed_at = datetime.utcnow()
         db.commit()
+
+    _reject_if_suspended(user)
+    _record_login(db, user)
 
     # 登入成功：簽發 JWT 並放進 HttpOnly cookie，後續請求以此驗證身分。
     # 角色取自本次驗證通過的 payload.role —— 合併後 User 已無 role 欄位
@@ -572,6 +609,9 @@ def exchange_google_ticket(
         if registration_required
         else None
     )
+
+    _reject_if_suspended(user)
+    _record_login(db, user)
 
     # Google 登入成功：與一般登入相同，簽發 JWT cookie（角色取本次登入所選身分）
     set_auth_cookie(response, create_cookie_token(user.id, user.email, requested_role))
@@ -861,6 +901,11 @@ def get_me(
     user = db.query(User).filter(User.id == current.id).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="帳號不存在，請重新登入。")
+
+    # 已登入者被停用時，這裡是最快被觸發的檢查點：
+    # 前端每次重新整理都會打 /me，不必等 cookie 過期
+    _reject_if_suspended(user)
+
     return EmailLoginResponse(
         userId=user.id,
         email=user.email,
@@ -950,6 +995,10 @@ def admin_login_start(
     except (InvalidHashError, VerificationError, VerifyMismatchError):
         raise generic_error
 
+    # 停用的帳號連驗證碼都不該寄出：寄了等於讓被停權的人以為還能登入，
+    # 也讓攻擊者能拿被停用的管理員帳號當寄信管道
+    _reject_if_suspended(user)
+
     now = datetime.utcnow()
 
     # 同一帳號同時只保留一組有效挑戰，避免併發登入產生多組可用驗證碼
@@ -1038,6 +1087,10 @@ def admin_login_verify(
 
     db.delete(challenge)
     db.commit()
+
+    # 挑戰有效期間才被停用的情況：驗證碼是正確的，但帳號已經不能用了
+    _reject_if_suspended(user)
+    _record_login(db, user)
 
     # 與其他登入路徑一致：同時發出 cookie 與 Bearer 兩套憑證
     set_auth_cookie(response, create_cookie_token(user.id, user.email, "admin"))

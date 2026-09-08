@@ -192,6 +192,21 @@ def read_access_token(token: str) -> dict[str, object]:
         ) from error
 
 
+SUSPENDED_DETAIL = "此帳號已被停用，請聯絡管理員。"
+
+
+def _reject_if_suspended(user: User) -> None:
+    """帳號被停用時拒絕存取。
+
+    每個角色守門員都會呼叫。為什麼要在這裡再檢查一次（登入時已經擋過）：
+    token 簽發後在有效期內內容不會變，若只在登入時檢查，
+    停用一個「已經登入」的帳號要等到 token 過期（最長 24 小時）才生效。
+    處置一個正在搗亂的帳號時，等 24 小時是不能接受的。
+    """
+    if getattr(user, "status", "active") == "suspended":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SUSPENDED_DETAIL)
+
+
 def get_current_landlord(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
@@ -206,6 +221,7 @@ def get_current_landlord(
     role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "landlord").first()
     if not user or not role:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="房東權限不存在。")
+    _reject_if_suspended(user)
     return user
 
 
@@ -244,6 +260,7 @@ def get_current_admin(
     role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "admin").first()
     if not user or not role:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="管理員權限不存在。")
+    _reject_if_suspended(user)
     return user
 
 
@@ -261,4 +278,5 @@ def get_current_tenant(
     role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "tenant").first()
     if not user or not role:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租客權限不存在。")
+    _reject_if_suspended(user)
     return user
