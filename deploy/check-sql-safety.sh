@@ -49,10 +49,11 @@ check ".format() 拼接 SQL" \
 check "% 運算子拼接 SQL" \
       "(SELECT|INSERT|UPDATE|DELETE|WHERE)[^\"']*\"\s*%\s*\("
 
-# 2. SQLAlchemy 的 text() —— 它會把字串當原生 SQL 執行，
-#    若內容含使用者輸入即為注入點（配合 :param 綁定才安全）
-check "SQLAlchemy text() 原生 SQL" \
-      "^\s*(from sqlalchemy import.*\btext\b|.*\btext\(\s*f)"
+# 2. SQLAlchemy 的 text() 搭配字串拼接 —— 這才是注入點。
+#    單純 import text 或 text("SELECT 1") 這種寫死的常數並無風險
+#    （健康檢查即為一例），故僅比對 f-string 或變數拼接的用法，避免誤報。
+check "text() 內有字串拼接" \
+      "\btext\(\s*(f[\"']|[\"'][^\"']*[\"']\s*[+%]|.*\.format\()"
 
 # 3. 直接呼叫 execute()（繞過 ORM）
 check "直接 execute() 原生 SQL" \

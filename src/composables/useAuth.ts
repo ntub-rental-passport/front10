@@ -10,6 +10,8 @@ import {
 export type AuthRole = 'tenant' | 'landlord' | 'admin'
 
 export interface AuthSession {
+  /** 後端帳號主鍵；所有租客資料授權皆以此欄位比對。 */
+  userId?: string
   email: string
   isAuthenticated: boolean
   role: AuthRole
@@ -17,6 +19,7 @@ export interface AuthSession {
   nickname: string | null
   /** 登入時間（epoch 毫秒）。舊 session 沒有這個欄位，視為不過期。 */
   issuedAt?: number
+  accessToken?: string
 }
 
 export interface PendingRegistration {
@@ -113,14 +116,21 @@ function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserPr
   return nextProfile
 }
 
-function createSession(role: AuthRole, profile: UserProfile): AuthSession {
+function createSession(
+  role: AuthRole,
+  profile: UserProfile,
+  accessToken?: string | null,
+  userId?: string | number | null,
+): AuthSession {
   const session: AuthSession = {
     email: profile.email,
+    userId: userId === null || userId === undefined ? `email:${profile.email}` : String(userId),
     isAuthenticated: true,
     role,
     emailVerified: profile.emailVerified,
     nickname: profile.nickname,
     issuedAt: Date.now(),
+    accessToken: accessToken || undefined,
   }
 
   writeJson(AUTH_STORAGE_KEY, session)
@@ -170,7 +180,10 @@ export async function signInWithEmail(
       nickname: result.displayName,
       role: result.role,
     })
-    return { ok: true, session: createSession(result.role, profile) }
+    return {
+      ok: true,
+      session: createSession(result.role, profile, result.accessToken, result.userId),
+    }
   } catch (error) {
     const knownErrors: EmailSignInError[] = [
       'account-not-found',
@@ -184,13 +197,18 @@ export async function signInWithEmail(
   }
 }
 
-export function registerWithGoogle(email: string, role: AuthRole = 'tenant'): AuthSession {
+export function registerWithGoogle(
+  email: string,
+  role: AuthRole = 'tenant',
+  accessToken?: string | null,
+  userId?: string | number | null,
+): AuthSession {
   const profile = upsertUserProfile(email, {
     emailVerified: true,
     nickname: null,
   })
 
-  return createSession(role, profile)
+  return createSession(role, profile, accessToken, userId)
 }
 
 export function signOut(): void {
@@ -329,7 +347,7 @@ export async function completeEmailVerification(code: string): Promise<AuthSessi
 
   clearPendingRegistration()
   clearGoogleRegistrationContext()
-  return createSession(verified.role, profile)
+  return createSession(verified.role, profile, verified.accessToken, verified.userId)
 }
 
 export function finishNicknameSetup(nickname: string): AuthSession | null {
@@ -342,5 +360,10 @@ export function finishNicknameSetup(nickname: string): AuthSession | null {
     emailVerified: session.emailVerified,
   })
 
-  return createSession(session.role, profile)
+  return createSession(session.role, profile, session.accessToken, session.userId)
+}
+
+export function getAuthenticatedUserId(session: AuthSession | null = getAuthSession()): string {
+  if (!session) return ''
+  return session.userId || `email:${session.email.trim().toLowerCase()}`
 }

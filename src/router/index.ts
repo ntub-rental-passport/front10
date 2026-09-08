@@ -21,8 +21,16 @@ const router = createRouter({
   routes: [
     { path: '/', component: () => import('@/src/pages/home.vue') },
     { path: '/maintenance', component: () => import('@/src/pages/maintenance.vue') },
-    { path: '/login', component: () => import('@/src/pages/auth/login.vue') },
-    { path: '/register', component: () => import('@/src/pages/auth/register.vue') },
+    {
+      path: '/login',
+      alias: '/auth/login',
+      component: () => import('@/src/pages/auth/login.vue'),
+    },
+    {
+      path: '/register',
+      alias: '/auth/register',
+      component: () => import('@/src/pages/auth/register.vue'),
+    },
     { path: '/staff-login', component: () => import('@/src/pages/auth/staff-login.vue') },
     { path: '/verify-email', component: () => import('@/src/pages/auth/verify-code.vue') },
     {
@@ -36,11 +44,11 @@ const router = createRouter({
       meta: { requiresAuth: true, roles: ['landlord'] as AuthRole[] },
       children: [
         { path: '', component: () => import('@/src/pages/landlord/dashboard.vue') },
-        { path: 'properties', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '房務管理', description: '管理棟別、房間、出租狀態與房屋設備。' } },
-        { path: 'tenants', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '租客管理', description: '管理租客資料、租約狀態、房號與聯絡資訊。' } },
-        { path: 'finance', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '帳務管理', description: '管理租金收款、待收款、逾期款項與日常支出。' } },
-        { path: 'maintenance', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '報修管理', description: '追蹤租客報修、處理狀態、費用與完成紀錄。' } },
-        { path: 'contracts', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '合約管理', description: '管理租約、附件、到期提醒與續約進度。' } },
+        { path: 'properties', component: () => import('@/src/pages/landlord/properties.vue') },
+        { path: 'tenants', component: () => import('@/src/pages/landlord/tenants.vue') },
+        { path: 'finance', component: () => import('@/src/pages/landlord/finance.vue') },
+        { path: 'maintenance', component: () => import('@/src/pages/landlord/maintenance.vue') },
+        { path: 'contracts', component: () => import('@/src/pages/landlord/contracts.vue') },
         { path: 'settings', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '房東設定', description: '設定收款提醒、通知方式與房東帳號偏好。' } },
       ],
     },
@@ -79,7 +87,25 @@ const router = createRouter({
       meta: { requiresAuth: true, roles: ['tenant'] as AuthRole[] },
       children: [
         { path: '', component: () => import('@/src/pages/dashboard.vue') },
-        { path: 'contract', component: () => import('@/src/pages/contract/index.vue') },
+        {
+          path: 'tenant-guide',
+          component: () => import('@/src/pages/dashboard/tenant-defense-guide/directory.vue'),
+        },
+        {
+          path: 'contract',
+          component: () => import('@/src/pages/dashboard/tenant-defense-guide/article.vue'),
+        },
+        {
+          path: 'contract/air-conditioner-repair',
+          component: () =>
+            import('@/src/pages/dashboard/tenant-defense-guide/air-conditioner-repair/article.vue'),
+        },
+        {
+          path: 'contract/electricity-fee',
+          component: () =>
+            import('@/src/pages/dashboard/tenant-defense-guide/electricity-fee/article.vue'),
+        },
+        { path: 'contract/scanner', component: () => import('@/src/pages/contract/index.vue') },
         { path: 'contract-analysis', component: () => import('@/src/pages/contract/analysis.vue') },
         { path: 'contract/editor', component: () => import('@/src/pages/contract/editor.vue') },
         { path: 'contract/combined', component: () => import('@/src/pages/contract/combined.vue') },
@@ -104,6 +130,7 @@ const router = createRouter({
         { path: 'handover', component: () => import('@/src/pages/handover/index.vue') },
         { path: 'handover/baseline', component: () => import('@/src/pages/handover/baseline.vue') },
         { path: 'handover/checkout', component: () => import('@/src/pages/handover/checkout.vue') },
+        { path: 'repairs', component: () => import('@/src/pages/repairs.vue') },
         {
           path: 'outage',
           component: () => import('@/src/pages/outage/OutageShell.vue'),
@@ -173,6 +200,13 @@ router.beforeEach((to) => {
 
   if (to.path === '/verify-email' && !pendingRegistration) {
     return '/register'
+  }
+
+  if (
+    session?.isAuthenticated &&
+    ['/login', '/auth/login', '/register', '/auth/register'].includes(to.path)
+  ) {
+    return resolveRoleHome(session.role)
   }
 
   if (!requiresAuth) return true

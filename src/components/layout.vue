@@ -17,9 +17,21 @@ const SIDEBAR_PIN_KEY = 'rentmate-sidebar-pinned'
 const isSidebarPinned = ref(false)
 const isSidebarHovered = ref(false)
 
+const isTenantGuideRoute = computed(
+  () =>
+    route.path === '/app/contract' ||
+    route.path === '/app/contract/air-conditioner-repair' ||
+    route.path === '/app/contract/electricity-fee' ||
+    route.path === '/app/tenant-guide',
+)
+const hidesDesktopSidebar = computed(
+  () => isTenantGuideRoute.value || route.path === '/app/contract-analysis',
+)
 const isSidebarExpanded = computed(() => isSidebarPinned.value || isSidebarHovered.value)
 const desktopNavItems = computed(() => [...navItems, accountItem])
-const isWideContentRoute = computed(() => route.path.startsWith('/app/notes'))
+const isWideContentRoute = computed(
+  () => isTenantGuideRoute.value || route.path.startsWith('/app/notes') || route.path === '/app/repairs',
+)
 
 function isActive(path: string): boolean {
   if (path === '/app') return route.path === '/app'
@@ -43,6 +55,7 @@ watch(isSidebarPinned, (value) => {
   <div class="flex h-screen w-full bg-muted/20">
     <!-- Desktop Sidebar -->
     <aside
+      v-if="!hidesDesktopSidebar"
       class="relative hidden flex-col border-r bg-sidebar-background transition-[width] duration-300 ease-out sm:flex"
       :class="isSidebarExpanded ? 'w-64' : 'w-20'"
       @mouseenter="isSidebarHovered = true"

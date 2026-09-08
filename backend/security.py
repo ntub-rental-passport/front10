@@ -1,25 +1,49 @@
-"""JWT 簽發與驗證核心模組。
+"""身分驗證核心模組。
 
-登入成功後由後端簽發 JWT，以 HttpOnly cookie 交給瀏覽器保存：
-- HttpOnly：JavaScript 讀不到，XSS 偷不走 token
-- Secure：正式環境（HTTPS）才透過 COOKIE_SECURE=true 開啟
-- SameSite=Lax：基本 CSRF 防護
+⚠️ 目前並存兩套驗證機制（合併 teddy-dev 與 main 的結果）：
 
-FastAPI 與 OCR Express server 共用同一組 JWT_SECRET（都從 .env 讀），
-因此這裡簽出的 token，Express 端也驗得過。
+    A. Cookie 版（JWT，本檔案上半部）
+       登入時簽發 JWT 放入 HttpOnly cookie，用於租客端的合約分析、OCR 等端點。
+       HttpOnly 使 JavaScript 讀不到 token，XSS 無法竊取身分。
+
+    B. Bearer 版（自訂 token，本檔案下半部）
+       登入時另外回傳 accessToken，由前端放入 Authorization 標頭，
+       用於房東／租客的物件管理、報修等端點。
+
+登入端點會**同時**發出兩者，故兩套機制可並行運作。
+
+本檔案原為兩人各自建立的同名檔案（teddy：JWT cookie／max：Bearer header），
+合併時保留雙方實作。因兩邊都有 `create_access_token` 但簽名不同，
+Cookie 版已更名為 `create_cookie_token`，Bearer 版維持原名以免動到既有呼叫端。
+
+> 後續建議：長期應收斂為單一機制，避免兩套金鑰與兩套邏輯造成維護負擔。
 """
 
+import base64
+import hashlib
+import hmac
+import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import jwt  # PyJWT
 from dotenv import load_dotenv
-from fastapi import HTTPException, Request, Response, status
+from fastapi import Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import User, UserRole
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(ROOT_ENV_FILE)
+
+
+# ==========================================================================
+# A. Cookie 版（JWT）—— 租客端合約分析、OCR 等端點使用
+# ==========================================================================
 
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
@@ -48,8 +72,12 @@ class CurrentUser(BaseModel):
     role: str
 
 
-def create_access_token(user_id: int, email: str, role: str) -> str:
-    """以使用者資訊簽發 JWT。sub 依 RFC 7519 慣例放使用者唯一識別。"""
+def create_cookie_token(user_id: int, email: str, role: str) -> str:
+    """簽發放入 HttpOnly cookie 的 JWT。
+
+    原名為 create_access_token，因與 Bearer 版同名而更名。
+    sub 依 RFC 7519 慣例放使用者唯一識別。
+    """
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
@@ -108,3 +136,91 @@ def get_current_user(request: Request) -> CurrentUser:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="無效的登入憑證，請重新登入。",
         )
+
+
+# ==========================================================================
+# B. Bearer 版（自訂 token）—— 房東／租客的物件管理、報修等端點使用
+# ==========================================================================
+
+
+def _secret() -> bytes:
+    """Bearer 版的簽章金鑰。
+
+    ⚠️ 原實作在未設定環境變數時會退回寫死的預設值
+    （"rentmate-development-secret-change-me"）。若正式環境忘記設定，
+    將**靜默使用公開於原始碼中的字串**，任何人皆可自行簽發任意身分的 token。
+    已改為未設定即拒絕啟動 —— 寧可在部署當下大聲失敗，也不要上線後無聲失效。
+    """
+    value = os.getenv("AUTH_TOKEN_SECRET", "")
+    if not value:
+        raise RuntimeError(
+            "缺少 AUTH_TOKEN_SECRET 環境變數。請在專案根目錄 .env 加入一行：\n"
+            '  AUTH_TOKEN_SECRET="<用 openssl rand -hex 32 產生的隨機字串>"'
+        )
+    return value.encode("utf-8")
+
+
+def _encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def _decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def create_access_token(user_id: int, role: str, expires_seconds: int = 86400) -> str:
+    """簽發放入 Authorization 標頭的 Bearer token。"""
+    payload = {"sub": user_id, "role": role, "exp": int(time.time()) + expires_seconds}
+    body = _encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    signature = _encode(hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).digest())
+    return f"{body}.{signature}"
+
+
+def read_access_token(token: str) -> dict[str, object]:
+    try:
+        body, supplied = token.rsplit(".", 1)
+        expected = _encode(hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).digest())
+        if not hmac.compare_digest(supplied, expected):
+            raise ValueError("signature")
+        payload = json.loads(_decode(body))
+        if int(payload["exp"]) < int(time.time()):
+            raise ValueError("expired")
+        return payload
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="登入憑證無效或已過期。"
+        ) from error
+
+
+def get_current_landlord(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="請先登入房東帳號。")
+    payload = read_access_token(authorization[7:])
+    user_id = int(payload["sub"])
+    if payload.get("role") != "landlord":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限房東使用。")
+    user = db.query(User).filter(User.id == user_id).first()
+    role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "landlord").first()
+    if not user or not role:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="房東權限不存在。")
+    return user
+
+
+def get_current_tenant(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="請先登入租客帳號。")
+    payload = read_access_token(authorization[7:])
+    user_id = int(payload["sub"])
+    if payload.get("role") != "tenant":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限租客使用。")
+    user = db.query(User).filter(User.id == user_id).first()
+    role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "tenant").first()
+    if not user or not role:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租客權限不存在。")
+    return user

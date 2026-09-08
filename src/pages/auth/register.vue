@@ -21,10 +21,12 @@ import {
 } from 'lucide-vue-next'
 import {
   getGoogleRegistrationContext,
+  resolveRoleHome,
   startGoogleEmailRegistration,
   startEmailRegistration,
 } from '@/src/composables/useAuth'
 import { getGoogleLoginUrl } from '@/src/services/authApi'
+import { normalizeAuthRedirect } from '@/src/utils/auth-redirect'
 import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 import {
   authIdentityOptions,
@@ -79,8 +81,11 @@ const loginLink = computed(() => ({
   path: '/login',
   query: {
     role: selectedIdentity.value,
+    ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
   },
 }))
+
+const redirectTarget = computed(() => normalizeAuthRedirect(route.query.redirect))
 
 // 密碼最短長度由系統設定決定，改設定後註冊頁的規則與提示都會跟著變
 const passwordMinLength = computed(() => adminSettings.value.passwordMinLength)
@@ -222,7 +227,11 @@ async function handleRegister(): Promise<void> {
     )
     await router.push({
       path: '/verify-email',
-      query: { email: pendingRegistration.email, role: selectedIdentity.value },
+      query: {
+        email: pendingRegistration.email,
+        role: selectedIdentity.value,
+        ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
+      },
     })
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '無法開始註冊，請稍後再試。'
@@ -235,7 +244,12 @@ async function handleGoogleRegister(): Promise<void> {
   if (!validateGoogleRegistration()) return
   if (!googleRegistration.value) {
     submitting.value = true
-    window.location.assign(getGoogleLoginUrl(selectedOption.value.authRole, '/register'))
+    window.location.assign(
+      getGoogleLoginUrl(
+        selectedOption.value.authRole,
+        redirectTarget.value || resolveRoleHome(selectedOption.value.authRole),
+      ),
+    )
     return
   }
 
@@ -247,7 +261,11 @@ async function handleGoogleRegister(): Promise<void> {
     )
     await router.push({
       path: '/verify-email',
-      query: { email: pendingRegistration.email, role: selectedIdentity.value },
+      query: {
+        email: pendingRegistration.email,
+        role: selectedIdentity.value,
+        ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
+      },
     })
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '無法開始 Google 註冊，請稍後再試。'
