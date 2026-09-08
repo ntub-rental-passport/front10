@@ -28,6 +28,15 @@ class User(Base):
     created_at = Column(
         DateTime, nullable=False, default=datetime.datetime.utcnow
     )
+    # 帳號狀態。suspended 時所有登入路徑一律拒絕 ——
+    # 後台若有「停用」按鈕卻擋不住登入，那顆按鈕就是假的，
+    # 比沒有更糟：管理員會以為問題已經處理了。
+    status = Column(
+        Enum("active", "suspended"), nullable=False, default="active", server_default="active"
+    )
+    # 最後一次登入成功的時間；從未登入過為 NULL。
+    # 供後台判斷帳號是否仍在使用（例如清理長期未登入的管理員）。
+    last_login_at = Column(DateTime, nullable=True)
 
     # 補齊所有對外關聯 (back_populates 對接)
     rentals = relationship(

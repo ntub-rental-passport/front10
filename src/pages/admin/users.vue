@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/table/index'
 import { BadgeCheck, Search, ShieldAlert, X } from 'lucide-vue-next'
 import AdminRoleCountCard from '@/src/components/admin/AdminRoleCountCard.vue'
+import RealAccountsCard from '@/src/components/admin/RealAccountsCard.vue'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vue'
 import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
@@ -119,6 +120,22 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
         以使用者為中心檢視訂閱容量、押金對帳與報修工單，點選任一列進入詳情。
       </p>
       <p v-if="sentMessage" class="mt-2 text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
+    </div>
+
+    <!--
+      真實帳號放最上面，與下方的展示資料明確分開。
+      下方那份是為了展示各模組（訂閱、押金、工單）而生成的假資料，
+      彼此以固定 id 互相指涉；真實帳號沒有那些關聯資料，
+      硬併成一張表會讓人分不清哪一列的「停用」是真的會生效的。
+    -->
+    <RealAccountsCard />
+
+    <div>
+      <h2 class="text-lg font-bold">展示資料</h2>
+      <p class="mt-1 text-sm text-muted-foreground">
+        以下為展示用資料集，用於呈現訂閱容量、押金對帳與報修工單的關聯檢視，
+        與資料庫中的真實帳號無關。
+      </p>
     </div>
 
     <!--
