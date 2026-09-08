@@ -61,7 +61,8 @@ class UserRole(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    role = Column(Enum("tenant", "landlord"), nullable=False)
+    # admin 為內部人員角色，僅能由既有管理員於後台指派，不開放自行註冊
+    role = Column(Enum("tenant", "landlord", "admin"), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="roles")
@@ -440,3 +441,33 @@ class UtilityOutage(Base):
     )
 
     rental = relationship("Rental", back_populates="utility_outages")
+
+
+class PendingAdminLogin(Base):
+    """管理員登入的第二階段驗證（2FA）暫存紀錄。
+
+    管理員登入分兩步：
+      1. 帳密驗證通過後，產生驗證碼寄至該管理員信箱，建立本筆紀錄（尚未登入）
+      2. 輸入正確驗證碼後才簽發憑證，並刪除本筆紀錄
+
+    為何管理員需要 2FA 而一般使用者不需要：管理員可存取全站使用者資料、
+    調整系統設定、關閉功能，帳密一旦外洩的損害遠大於單一使用者帳號。
+    多一道「必須能收到該信箱的信」的驗證，可擋下純粹的帳密外洩。
+
+    驗證碼本身不儲存，只存雜湊（作法與 pending_registrations 一致）。
+    """
+
+    __tablename__ = "pending_admin_logins"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(254), nullable=False, index=True)
+    verification_code_hash = Column(String(64), nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    # 錯誤次數達上限即作廢，防止對六位數驗證碼暴力猜測
+    attempt_count = Column(Integer, nullable=False, default=0)
+    # 記錄發起登入的來源，供稽核與異常登入通知使用
+    request_ip = Column(String(45), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+    user = relationship("User")

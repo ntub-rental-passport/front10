@@ -37,7 +37,8 @@ export interface VerifiedRegistrationResponse {
 export interface EmailLoginResponse {
   userId: number
   email: string
-  role: 'tenant' | 'landlord'
+  // admin 由 /auth/admin/verify 回傳；一般登入端點不會給這個值
+  role: 'tenant' | 'landlord' | 'admin'
   displayName: string | null
   avatarUrl: string | null
   accessToken: string
@@ -154,6 +155,35 @@ export function verifyRegistration(
   code: string,
 ): Promise<VerifiedRegistrationResponse> {
   return postAuth('/registration/verify', { registrationId, code })
+}
+
+/** 管理員登入第一階段的回應：只有挑戰識別碼，還不是登入憑證。 */
+export interface AdminLoginChallengeResponse {
+  challengeId: string
+  email: string
+  expiresIn: number
+  attemptsRemaining: number
+}
+
+/**
+ * 管理員登入第一階段：驗證帳密，成功則寄出驗證碼。
+ *
+ * 這裡刻意「不」回傳任何登入憑證 —— 只有通過第二階段的信箱驗證碼
+ * 才算真的登入，帳密外洩本身不足以進入後台。
+ */
+export function startAdminLogin(
+  email: string,
+  password: string,
+): Promise<AdminLoginChallengeResponse> {
+  return postAuth('/admin/login', { email, password })
+}
+
+/** 管理員登入第二階段：驗證碼正確才拿到憑證。 */
+export function verifyAdminLogin(
+  challengeId: string,
+  code: string,
+): Promise<EmailLoginResponse> {
+  return postAuth('/admin/verify', { challengeId, code })
 }
 
 export function loginWithEmail(
