@@ -75,5 +75,8 @@
     "vite-plugin-vue-devtools": "^8.1.2",
     "vitest": "^3.2.7",
     "vue-tsc": "^2.2.0"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }
