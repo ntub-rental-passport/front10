@@ -7,26 +7,26 @@ import {
 import { adminSettings } from './useAdminSettings'
 
 /**
- * 健康檢查打的是**後端自己的根路徑**，不是前端的。
+ * 健康檢查打後端的 `/api/health` 端點。
  *
- * 不能走 Vite 的 `/api` proxy：那個 proxy 會把 `/api/x` 原樣轉給 `:8000/api/x`，
- * 而後端的根路徑在 `:8000/`，經由 proxy 到不了；`/api/` 本身在後端是 404。
- * 早期版本因此量到的是 Vite 開發伺服器，等於在說謊。
+ * 為何不打後端根路徑（先前的做法）：根路徑不在 `/api` 之下，
+ * 開發時 Vite proxy 轉不過去、正式環境 Nginx 也只代理 `/api/`，
+ * 因此舊版只能自行推導後端 origin —— 但正式環境的 `VITE_API_BASE_URL`
+ * 是相對路徑 `/api`，去掉 `/api` 後為空字串，於是退回預設值
+ * `http://127.0.0.1:8000/`，那是**使用者自己電腦的 localhost**，
+ * 永遠連不到伺服器，導致正式環境的監控恆顯示「無回應」。
+ * 開發環境因為值是完整網址而正常，故此問題極難察覺。
  *
- * 後端的 CORS 已允許前端來源，所以瀏覽器可以直接打它的 origin。
- * 部署時用 VITE_API_HEALTH_URL 覆蓋。
+ * 改打 `/api/health` 後，開發走 Vite proxy、正式走 Nginx，
+ * 兩邊都是同源相對路徑，毋須知道後端實際位址，也不涉及 CORS。
+ * 仍保留 VITE_API_HEALTH_URL 供特殊部署情境覆寫。
  */
 function resolveHealthUrl(): string {
   const override = import.meta.env.VITE_API_HEALTH_URL
   if (override) return override
 
-  // VITE_API_BASE_URL 是後端的 API 前綴（例如 http://localhost:8000/api）。
-  // 去掉尾端的 /api 就是後端根路徑；若它是相對路徑（proxy 模式）則退回本機預設。
-  const base = String(import.meta.env.VITE_API_BASE_URL ?? '')
-    .replace(/\/+$/, '')
-    .replace(/\/api$/, '')
-
-  return `${base || 'http://127.0.0.1:8000'}/`
+  const base = String(import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
+  return `${base}/health`
 }
 
 const HEALTH_URL = resolveHealthUrl()

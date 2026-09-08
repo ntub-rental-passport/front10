@@ -2,6 +2,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from database import engine, Base
 from routers import auth, contract # 👈 引入剛才建立的 AI 路由功能
 
@@ -30,6 +31,31 @@ app.include_router(auth.router)
 @app.get("/")
 def root():
     return {"message": "RentMate FastAPI 後端核心已成功點火！"}
+
+
+@app.get("/api/health")
+def health_check():
+    """健康檢查端點，供後台監控頁量測後端存活與回應時間。
+
+    刻意不需登入：監控要能在使用者登入之前就回報後端狀態，
+    若要求認證，後端掛掉時反而會因為登入不了而看不到監控結果。
+
+    同時檢查資料庫連線 —— 只回報「能不能連上」，不回傳任何結構或資料內容，
+    避免這個公開端點洩漏內部資訊。
+    """
+    database = "unknown"
+    if engine is None:
+        database = "not_configured"
+    else:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            database = "ok"
+        except Exception:
+            # 不外洩實際錯誤訊息（可能含主機名、帳號等），只回報狀態
+            database = "down"
+
+    return {"status": "ok", "database": database}
 
 
 if __name__ == "__main__":
