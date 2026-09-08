@@ -1,0 +1,285 @@
+// Headless Chrome smoke test, no additional npm dependencies. Uses an isolated
+// profile and intercepts garbage APIs; no real reminders or emails are created.
+import { spawn } from 'node:child_process'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import assert from 'node:assert/strict'
+
+const origin = process.env.GARBAGE_TEST_ORIGIN || 'http://localhost:5173'
+const profile = mkdtempSync(join(tmpdir(), 'rentmate-garbage-browser-'))
+const browser = spawn(
+  process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  [
+    '--headless=new',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--remote-debugging-port=9337',
+    '--user-data-dir=' + profile,
+    '--window-size=1440,1000',
+    'about:blank',
+  ],
+  { windowsHide: true, stdio: 'ignore' },
+)
+let socket
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+try {
+  let target
+  for (let i = 0; i < 60; i++) {
+    try {
+      target = (await (await fetch('http://127.0.0.1:9337/json/list')).json()).find(
+        (t) => t.type === 'page',
+      )
+      if (target) break
+    } catch {
+      /* Chrome is starting. */
+    }
+    await delay(500)
+  }
+  assert(target, 'Chrome debugging endpoint unavailable')
+  socket = new WebSocket(target.webSocketDebuggerUrl)
+  await new Promise((resolve, reject) => {
+    socket.onopen = resolve
+    socket.onerror = reject
+  })
+  let id = 0
+  const pending = new Map(),
+    exceptions = []
+  const networkRequests = new Map(),
+    mapFailures = []
+  const send = (method, params = {}) =>
+    new Promise((resolve, reject) => {
+      const requestId = ++id
+      const timeout = setTimeout(() => {
+        pending.delete(requestId)
+        reject(new Error('CDP timeout: ' + method))
+      }, 20000)
+      pending.set(requestId, {
+        resolve: (v) => {
+          clearTimeout(timeout)
+          resolve(v)
+        },
+        reject,
+      })
+      socket.send(JSON.stringify({ id: requestId, method, params }))
+    })
+  socket.onmessage = async ({ data }) => {
+    const message = JSON.parse(data)
+    if (message.id && pending.has(message.id)) {
+      const request = pending.get(message.id)
+      pending.delete(message.id)
+      if (message.error) request.reject(new Error(JSON.stringify(message.error)))
+      else request.resolve(message.result)
+    }
+    if (message.method === 'Runtime.exceptionThrown')
+      exceptions.push(message.params.exceptionDetails.text)
+    if (message.method === 'Network.requestWillBeSent')
+      networkRequests.set(message.params.requestId, message.params.request.url)
+    if (message.method === 'Network.loadingFailed') {
+      const url = networkRequests.get(message.params.requestId) || ''
+      if (url.includes('openfreemap')) mapFailures.push(message.params.errorText)
+    }
+    if (message.method === 'Fetch.requestPaused') {
+      const { requestId, request } = message.params
+      const payload = request.url.endsWith('/vehicles')
+        ? {
+            status: 'unconfigured',
+            message: '車輛 GPS 尚未接通；目前顯示官方表定時間。',
+            vehicles: [],
+          }
+        : request.url.endsWith('/capabilities')
+          ? { email: false, push: false, publicKey: '' }
+          : []
+      await send('Fetch.fulfillRequest', {
+        requestId,
+        responseCode: 200,
+        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+        body: Buffer.from(JSON.stringify(payload)).toString('base64'),
+      })
+    }
+  }
+  await send('Runtime.enable')
+  await send('Page.enable')
+  await send('Network.enable')
+  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/garbage/*' }] })
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 1440,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
+  })
+  await send('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Taipei' })
+  await send('Browser.grantPermissions', { origin, permissions: ['geolocation'] })
+  await send('Emulation.setGeolocationOverride', {
+    latitude: 25.11836,
+    longitude: 121.525,
+    accuracy: 10,
+  })
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `localStorage.setItem('rentmate-auth-session-v2', JSON.stringify({userId:'garbage-browser-test',email:'garbage-test@example.com',isAuthenticated:true,role:'tenant',emailVerified:true,nickname:'Browser test',issuedAt:Date.now(),accessToken:'test-only-intercepted'}))`,
+  })
+  const evaluate = async (expression) => {
+    const response = await send('Runtime.evaluate', {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    })
+    if (response.exceptionDetails)
+      throw new Error(response.exceptionDetails.text + ': ' + expression)
+    return response.result.value
+  }
+  const until = async (expression) => {
+    for (let i = 0; i < 80; i++) {
+      if (await evaluate(expression)) return
+      await delay(500)
+    }
+    console.log(
+      'Page diagnostics:',
+      await evaluate(`({url:location.href,text:document.body.innerText.slice(0,2500)})`),
+      exceptions,
+    )
+    throw new Error('Timed out waiting for: ' + expression)
+  }
+  const clickTab = async (text) => {
+    await evaluate(
+      `[...document.querySelectorAll('.garbage-tabs button')].find(b=>b.textContent.includes(${JSON.stringify(text)})).click()`,
+    )
+    await delay(300)
+  }
+  await send('Page.navigate', { url: origin + '/app/garbage' })
+  await until(`document.querySelector('.garbage-footer')?.textContent.includes('4,010')`)
+  assert.equal(await evaluate(`document.querySelectorAll('.garbage-tabs button').length`), 7)
+  assert.equal(await evaluate(`document.querySelectorAll('.filter-panel').length`), 0)
+  assert(
+    await evaluate(
+      `document.querySelector('.wide-map').getBoundingClientRect().width >= document.querySelector('.query-layout').getBoundingClientRect().width - 2`,
+    ),
+  )
+  await evaluate(`document.querySelector('.map-query-button').click()`)
+  await until(`document.querySelector('[role=dialog] .filter-panel')`)
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Escape',
+    code: 'Escape',
+    windowsVirtualKeyCode: 27,
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Escape',
+    code: 'Escape',
+    windowsVirtualKeyCode: 27,
+  })
+  await until(`!document.querySelector('[role=dialog]')`)
+  await evaluate(`document.querySelector('.map-query-button').click()`)
+  await until(`document.querySelector('[role=dialog] .filter-panel')`)
+  await evaluate(`document.querySelector('[role=dialog] form').requestSubmit()`)
+  await until(`!document.querySelector('[role=dialog]')`)
+  await evaluate(`document.querySelector('.station-detail .detail-close')?.click()`)
+  console.log('Full-width map and filter dialog: passed')
+  await clickTab('列表查詢')
+  // A known collection day makes this check independent of today's weekday.
+  await evaluate(
+    `(()=>{const e=document.querySelector('.filter-panel input[type=date]');e.value='2026-09-08';e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+  )
+  await until(`document.querySelectorAll('.station-table tbody tr').length === 20`)
+  assert.equal(
+    await evaluate(`document.querySelectorAll('.station-table .collection-countdown').length`),
+    20,
+  )
+  await evaluate(
+    `(()=>{const e=document.querySelectorAll('.filter-panel select')[1];e.value='士林區';e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+  )
+  await until(`document.querySelector('.result-count')?.textContent === '654'`)
+  await evaluate(`document.querySelector('.station-table .favorite-button').click()`)
+  await clickTab('我的收藏')
+  await until(`document.querySelectorAll('.station-table tbody tr').length === 1`)
+  await send('Page.reload')
+  await until(`performance.getEntriesByType('navigation')[0]?.type === 'reload' && document.readyState === 'complete'`)
+  await until(`document.querySelector('.garbage-footer')?.textContent.includes('4,010')`)
+  await clickTab('我的收藏')
+  await until(`document.querySelectorAll('.station-table tbody tr').length === 1`)
+  await clickTab('附近查詢')
+  await until(`document.querySelectorAll('.tracker-card').length > 0`)
+  assert(
+    await evaluate(
+      `[...document.querySelectorAll('.station-table tbody tr td:first-child small')].every(e=>{const m=e.textContent.match(/([0-9]+) m/);return m && +m[1]<=500})`,
+    ),
+  )
+  await clickTab('手動定位')
+  await until(`document.querySelector('.garbage-map-shell')?.dataset.ready === 'true'`)
+  await evaluate(
+    `document.querySelector('.maplibregl-canvas').scrollIntoView({block:'center',behavior:'instant'})`,
+  )
+  await delay(600)
+  const rect = await evaluate(
+    `(()=>{const r=document.querySelector('.maplibregl-canvas').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+  )
+  console.log(
+    'Map click target:',
+    await evaluate(
+      `(()=>{const r=document.querySelector('.maplibregl-canvas').getBoundingClientRect();return {top:r.top,height:r.height,hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.className}})()`,
+    ),
+  )
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...rect })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    ...rect,
+    button: 'left',
+    clickCount: 1,
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    ...rect,
+    button: 'left',
+    clickCount: 1,
+  })
+  await until(`document.querySelector('.results-column .notice').textContent.includes('已選')`)
+  console.log('manual map click: passed')
+  await clickTab('提醒設定')
+  assert.equal(await evaluate(`document.querySelectorAll('.channel input:disabled').length`), 2)
+  await clickTab('操作指引')
+  assert.equal(await evaluate(`document.querySelectorAll('.guide-card').length`), 6)
+  await clickTab('地圖查詢')
+  await until(`document.querySelector('.garbage-map-shell')?.dataset.ready === 'true'`)
+  await evaluate(
+    `window.scrollTo(0,0); document.querySelector('.garbage-header').scrollIntoView({block:'start'})`,
+  )
+  await delay(10000)
+  const desktop = await send('Page.captureScreenshot', { format: 'png' })
+  writeFileSync(join(profile, 'desktop.png'), Buffer.from(desktop.data, 'base64'))
+  await evaluate(`document.querySelector('.map-query-button').click()`)
+  await until(`document.querySelector('[role=dialog] .filter-panel')`)
+  await delay(400)
+  const popup = await send('Page.captureScreenshot', { format: 'png' })
+  writeFileSync(join(profile, 'filters.png'), Buffer.from(popup.data, 'base64'))
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Escape',
+    code: 'Escape',
+    windowsVirtualKeyCode: 27,
+  })
+  await until(`!document.querySelector('[role=dialog]')`)
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  })
+  await delay(700)
+  assert(
+    await evaluate(`document.documentElement.scrollWidth <= window.innerWidth + 1`),
+    'Mobile viewport has horizontal overflow',
+  )
+  await evaluate(
+    `document.querySelector('.map-query-stage').scrollIntoView({block:'start',behavior:'instant'})`,
+  )
+  await delay(500)
+  const mobile = await send('Page.captureScreenshot', { format: 'png' })
+  writeFileSync(join(profile, 'mobile.png'), Buffer.from(mobile.data, 'base64'))
+  assert.deepEqual(exceptions, [], 'Unexpected browser runtime exceptions')
+  console.log('Browser smoke checks passed. Screenshots:', profile)
+  console.log('Map network failures:', [...new Set(mapFailures)])
+} finally {
+  socket?.close()
+  browser.kill()
+}

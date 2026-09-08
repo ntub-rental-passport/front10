@@ -1,17 +1,38 @@
 import os
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from database import engine, Base
 from metrics import count_requests
-from routers import admin, auth, contract, landlord_properties, landlord_tenants, tenant_leases # 👈 引入剛才建立的 AI 路由功能
+from routers import admin, auth, contract, garbage, landlord_properties, landlord_tenants, tenant_leases # 👈 引入剛才建立的 AI 路由功能
+from garbage_service import dispatch_due
 
 # 有設定 MySQL 時才建立資料表；Google 登入驗證本身不依賴資料庫。
 if engine is not None:
     Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="RentMate 租隊友後端核心系統")
+@asynccontextmanager
+async def lifespan(app):
+    async def reminders_loop():
+        while True:
+            try:
+                await asyncio.to_thread(dispatch_due)
+            except Exception:
+                logging.getLogger(__name__).exception('Garbage reminder scheduler failed')
+            await asyncio.sleep(20)
+    task = asyncio.create_task(reminders_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+app = FastAPI(title="RentMate 租隊友後端核心系統", lifespan=lifespan)
 
 cors_origins = os.getenv(
     "CORS_ORIGINS",
@@ -37,6 +58,7 @@ app.include_router(landlord_properties.router)
 app.include_router(landlord_tenants.router)
 app.include_router(tenant_leases.router)
 app.include_router(admin.router)
+app.include_router(garbage.router)
 
 @app.get("/")
 def root():
