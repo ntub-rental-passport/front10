@@ -209,6 +209,44 @@ def get_current_landlord(
     return user
 
 
+def get_current_admin(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    """後台 API 的權限守門員。所有只給管理員的端點都必須掛這個相依。
+
+    用法：
+
+        @router.get("/api/admin/users")
+        def list_users(admin: User = Depends(get_current_admin), db=Depends(get_db)):
+            ...
+
+    ⚠️ 不可以用「前端沒有給連結」當作防護 —— 攻擊者是直接對 API 發請求，
+    根本不會經過你的畫面。權限一定要在每一支端點上檢查。
+
+    兩件與其他角色相同、但對管理員更重要的事：
+
+    1. **只收 Bearer 標頭，不收 cookie。** 後台功能破壞力大，而 cookie 會被
+       瀏覽器自動附帶在跨站請求上（CSRF）；Bearer token 存在 localStorage，
+       其他網站的 JavaScript 讀不到，攻擊者無法誘導管理員的瀏覽器代打。
+
+    2. **token 說是 admin 還不算數，一定要回資料庫再確認一次。** token 簽發後
+       在有效期內內容不會變，若只信 token，撤銷管理員權限要等到 token 過期
+       才會生效。查一次 DB，撤銷就能立即生效。
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="請先登入管理員帳號。")
+    payload = read_access_token(authorization[7:])
+    user_id = int(payload["sub"])
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限管理員使用。")
+    user = db.query(User).filter(User.id == user_id).first()
+    role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "admin").first()
+    if not user or not role:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="管理員權限不存在。")
+    return user
+
+
 def get_current_tenant(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
