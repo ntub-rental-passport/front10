@@ -54,6 +54,8 @@ import os
 
 import httpx
 
+from http_retry import with_retry
+
 logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT = float(os.getenv("LLM_CONNECT_TIMEOUT", "5"))
@@ -123,14 +125,19 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, pu
         payload["format"] = "json"
 
     timeout = httpx.Timeout(read_timeout, connect=CONNECT_TIMEOUT)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(f"{base}/api/generate", json=payload, headers=headers)
-        if response.status_code in (401, 403):
-            # 這是設定問題不是服務問題，值得單獨標示 —— 否則會被誤判成「桌機關機」
-            logger.error("Ollama 端點拒絕存取（%s）：檢查 Access service token 與 API key",
-                         response.status_code)
-        response.raise_for_status()
-        return (response.json().get("response") or "").strip()
+
+    async def send() -> str:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(f"{base}/api/generate", json=payload, headers=headers)
+            if response.status_code in (401, 403):
+                # 這是設定問題不是服務問題，值得單獨標示 ——
+                # 否則會被誤判成「桌機關機」。也因此不該重試。
+                logger.error("Ollama 端點拒絕存取（%s）：檢查 Access service token 與 API key",
+                             response.status_code)
+            response.raise_for_status()
+            return (response.json().get("response") or "").strip()
+
+    return await with_retry(send, label="Ollama")
 
 
 async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool, purpose: str) -> str:
@@ -169,22 +176,27 @@ async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool, pu
         payload["chat_template_kwargs"] = {"thinking": False}
 
     timeout = httpx.Timeout(read_timeout, connect=CONNECT_TIMEOUT)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            f"{base}/chat/completions",
-            json=payload,
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-        if response.status_code in (401, 402, 429):
-            logger.error(
-                "NVIDIA API 回 %s —— 可能是額度用盡、超過每分鐘上限或金鑰失效",
-                response.status_code,
+
+    async def send() -> str:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{base}/chat/completions",
+                json=payload,
+                headers={"Authorization": f"Bearer {api_key}"},
             )
-        response.raise_for_status()
-        choices = response.json().get("choices") or []
-        if not choices:
-            return ""
-        return (choices[0].get("message", {}).get("content") or "").strip()
+            if response.status_code in (401, 402, 429):
+                logger.error(
+                    "NVIDIA API 回 %s —— 可能是額度用盡、超過每分鐘上限或金鑰失效",
+                    response.status_code,
+                )
+            response.raise_for_status()
+            choices = response.json().get("choices") or []
+            if not choices:
+                return ""
+            return (choices[0].get("message", {}).get("content") or "").strip()
+
+    # 免費方案會間歇性回 503（實測三次中一次），重試多半就過了
+    return await with_retry(send, label="NVIDIA")
 
 
 _PROVIDERS = {

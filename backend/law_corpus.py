@@ -43,6 +43,7 @@
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -102,9 +103,22 @@ CHUNKS: list[LawChunk] = _load()
 _BY_ID: dict[str, LawChunk] = {c.id: c for c in CHUNKS}
 HAS_VECTORS = bool(CHUNKS) and all(c.embedding for c in CHUNKS)
 
-# 預設取幾塊。實測 5 個查詢的正解都排在第 1 名，取 8 塊是給
-# 「一份合約同時踩到多個地雷」留餘裕 —— 範例合約就有 4 個違法點。
-DEFAULT_TOP_K = 8
+# 取幾塊。可用 LAW_TOP_K 環境變數調整，不必改程式碼重建映像。
+#
+# 取捨：太少會漏（實測 top_k=8 時「九、修繕」沒進榜，是靠涵蓋範圍較廣的
+# 「專法第二章」剛好帶到才沒漏判）；太多則回到「全部給」的老問題 ——
+# 雜訊稀釋注意力，命中率反而下降。
+#
+# 一份合約可能同時踩多個地雷（範例合約就有 4 個），
+# 所以要比「每個問題取 1-2 塊」寬鬆得多。
+def _top_k_default() -> int:
+    raw = (os.getenv("LAW_TOP_K") or "").strip()
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    return 8
+
+
+DEFAULT_TOP_K = _top_k_default()
 
 
 async def retrieve(query: str = "", limit: int | None = None) -> list[LawChunk]:
