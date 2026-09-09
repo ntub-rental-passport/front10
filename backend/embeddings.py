@@ -36,6 +36,8 @@ import os
 
 import httpx
 
+from http_retry import with_retry
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "nvidia/nemotron-3-embed-1b"
@@ -64,7 +66,8 @@ async def embed_texts(
         return []
 
     api_key, base, model = _config()
-    try:
+
+    async def send() -> list[list[float]]:
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10)) as client:
             response = await client.post(
                 f"{base}/embeddings",
@@ -80,6 +83,9 @@ async def embed_texts(
             )
             response.raise_for_status()
             return [item["embedding"] for item in response.json()["data"]]
+
+    try:
+        return await with_retry(send, label="Embedding")
     except EmbeddingUnavailable:
         raise
     except Exception as error:
