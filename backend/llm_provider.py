@@ -230,7 +230,11 @@ async def generate(
             logger.debug("LLM provider %s 未設定，略過", name)
             continue
         except Exception as error:
-            logger.warning("LLM provider %s 失敗：%s", name, error)
+            # 一定要印例外類別名稱：httpx 的逾時類例外 str() 是空字串，
+            # 只印訊息會得到「失敗：」什麼線索都沒有（2026-09-09 實際踩到）。
+            logger.warning(
+                "LLM provider %s 失敗：%s: %s", name, type(error).__name__, error or "（無訊息）"
+            )
             last_error = error
             continue
 
