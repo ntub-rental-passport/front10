@@ -309,7 +309,9 @@ async def contract_chat(req: ChatRequest):
 語氣要求：禮貌、溫和但堅定，並適度引用法律依據。回答控制在 150 字以內。
 """
 
-        reply = await generate(prompt, read_timeout=OLLAMA_CHAT_TIMEOUT, force_json=False)
+        reply = await generate(
+            prompt, read_timeout=OLLAMA_CHAT_TIMEOUT, force_json=False, purpose="chat"
+        )
         reply = reply[:4000]   # 上限：避免模型灌爆對話框
 
         return {

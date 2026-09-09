@@ -8,6 +8,7 @@
 
     python check_llm.py              # 檢查設定 + 跑一份範例合約
     python check_llm.py --config     # 只檢查設定，不呼叫 LLM（不燒額度）
+    python check_llm.py --chat       # 試打 Law Chat（用 chat 專用模型）
     python check_llm.py --models     # 列出 NVIDIA 上可用的模型代號
     python check_llm.py --models qwen  # 只列出名稱含 qwen 的
 
@@ -80,7 +81,8 @@ def show_config() -> None:
     url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
     print("  ① Ollama")
     print(f"     位址       : {url}")
-    print(f"     模型       : {os.getenv('OLLAMA_MODEL', 'gemma3:4b')}")
+    print(f"     分析模型   : {llm_provider._model_for('ollama', 'analyze')}")
+    print(f"     對話模型   : {llm_provider._model_for('ollama', 'chat')}")
     print(f"     隧道 API key: {'已設定' if os.getenv('LLM_TUNNEL_API_KEY') else '未設定'}")
     has_cf = bool(os.getenv("CF_ACCESS_CLIENT_ID") and os.getenv("CF_ACCESS_CLIENT_SECRET"))
     print(f"     CF Access  : {'已設定' if has_cf else '未設定'}")
@@ -91,7 +93,10 @@ def show_config() -> None:
     print("  ② NVIDIA")
     if os.getenv("NVIDIA_API_KEY"):
         print("     金鑰       : 已設定")
-        print(f"     模型       : {os.getenv('NVIDIA_MODEL', 'meta/llama-3.1-70b-instruct')}")
+        print(f"     分析模型   : {llm_provider._model_for('nvidia', 'analyze')}"
+              f"（關思考 {llm_provider._disable_thinking('analyze')}）")
+        print(f"     對話模型   : {llm_provider._model_for('nvidia', 'chat')}"
+              f"（關思考 {llm_provider._disable_thinking('chat')}）")
     else:
         print("     金鑰       : 未設定（這個 provider 會被跳過）")
     print()
@@ -168,6 +173,42 @@ async def try_analyze() -> int:
     return 0
 
 
+CHAT_PROMPT = """你是租客的法律顧問。請幫租客寫一段發給房東的訊息。
+
+<租客訴求>
+房東要收四個月押金，我想請他調整成兩個月。
+</租客訴求>
+
+語氣要求：禮貌、溫和但堅定，並適度引用法律依據。回答控制在 150 字以內。
+"""
+
+
+async def try_chat() -> int:
+    """試打 Law Chat。這條線用的是對話模型，通常與分析模型不同 ——
+    對話要即時，分析可以慢但要準。"""
+    print("=" * 60)
+    print(" Law Chat 試打")
+    print("=" * 60)
+
+    started = time.perf_counter()
+    try:
+        reply = await llm_provider.generate(
+            CHAT_PROMPT, read_timeout=60, force_json=False, purpose="chat"
+        )
+    except llm_provider.LlmUnavailable:
+        print("  ❌ 所有 provider 都失敗。詳細原因見上方 log。")
+        return 1
+    elapsed = time.perf_counter() - started
+
+    print(f"  耗時          : {elapsed:.1f} 秒")
+    if elapsed > 30:
+        print("  ⚠️  對話超過 30 秒，使用者體驗會很差 —— 考慮換更快的對話模型")
+    print()
+    print("  回應：")
+    print("     " + reply[:600].replace("\n", "\n     "))
+    return 0
+
+
 def list_models() -> int:
     """向 NVIDIA 查詢可用的模型代號。
 
@@ -218,6 +259,8 @@ def main() -> None:
         return
     if not llm_provider.configured_providers():
         sys.exit(1)
+    if "--chat" in sys.argv:
+        sys.exit(asyncio.run(try_chat()))
     sys.exit(asyncio.run(try_analyze()))
 
 
