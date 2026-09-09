@@ -2240,3 +2240,38 @@ textarea:focus-visible {
     min-height: 28rem;
   }
 }
+
+/* AI 分析失敗提示：必須明顯，因為它要糾正「沒有風險」這個錯誤印象 */
+.ai-analysis-alert {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #f5c26b;
+  border-left-width: 4px;
+  border-radius: 0.6rem;
+  background: #fff8ec;
+  color: #7a4b06;
+}
+
+.ai-analysis-alert svg {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: #d97706;
+}
+
+.ai-analysis-alert strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.ai-analysis-alert span {
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+/* 分析未完成的空狀態：不可沿用綠色勾勾的「安全」語意 */
+.risk-empty-state.is-unknown svg {
+  color: #d97706;
+}

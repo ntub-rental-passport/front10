@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-import requests
+import httpx
 import os
 import json
+import logging
 import traceback
 
 from database import get_db
@@ -18,8 +19,64 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
+logger = logging.getLogger(__name__)
+
 # Ollama 位址：本機開發預設 127.0.0.1，容器內由 compose 覆寫為 host.docker.internal
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+
+# 逾時設定。
+#
+# 原本兩支端點都寫 timeout=None（永不逾時），那是最嚴重的問題：
+# 只要 Ollama 沒回應，請求就會一直懸著，把連線與工作者一路吃光，
+# 任何一個登入使用者按一下按鈕就能讓全站停止服務。
+#
+# connect 短、read 長：連不上要立刻知道（服務沒開），
+# 但推論本身確實慢，要給它時間跑完。
+OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "5"))
+OLLAMA_ANALYZE_TIMEOUT = float(os.getenv("OLLAMA_ANALYZE_TIMEOUT", "180"))
+OLLAMA_CHAT_TIMEOUT = float(os.getenv("OLLAMA_CHAT_TIMEOUT", "60"))
+
+# 對外統一的錯誤訊息。
+#
+# ⚠️ 絕對不可以在 LLM 失敗時回傳「預設的分析結果」——
+# 那會讓使用者看到一份引用真實法條、格式完整、看起來像針對他的合約
+# 所做的分析，但內容其實與他的合約無關。使用者要拿這份分析去跟房東談判。
+# 做不到就說做不到，這是唯一誠實的處理方式。
+AI_UNAVAILABLE_DETAIL = "AI 分析服務暫時無法使用，請稍後再試。"
+
+
+class LlmUnavailable(RuntimeError):
+    """LLM 無法產生可用結果。呼叫端一律轉成 503，不得以預設內容填補。"""
+
+
+async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool) -> str:
+    """呼叫 Ollama 並回傳原始文字。
+
+    用 httpx.AsyncClient 而非 requests：這兩支端點是 async def，
+    在裡面呼叫阻塞式的 requests 會卡住整個事件迴圈 ——
+    一個人送出合約分析，其他所有人的所有 API 請求（包含登入、監控）
+    都會一起卡住，直到推論結束。這不是「AI 比較慢」，是全站停擺。
+    """
+    payload: dict = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
+    if force_json:
+        payload["format"] = "json"
+
+    timeout = httpx.Timeout(read_timeout, connect=OLLAMA_CONNECT_TIMEOUT)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(f"{OLLAMA_URL}/api/generate", json=payload)
+            response.raise_for_status()
+            text = (response.json().get("response") or "").strip()
+    except Exception as error:
+        # 內部錯誤只寫進 log，不回給前端：錯誤訊息會洩漏內部位址與服務結構
+        logger.warning("Ollama 呼叫失敗：%s", error)
+        raise LlmUnavailable from error
+
+    if not text:
+        logger.warning("Ollama 回傳空字串")
+        raise LlmUnavailable
+    return text
 
 # ========================================================
 # 📦 Pydantic 資料模型 (對齊前端分析頁面 request/response)
@@ -140,104 +197,47 @@ async def analyze_contract(req: AnalyzeRequest):
 }}
 """
 
-        rag_risks = []
-        ai_risks = []
+        raw_response = await _call_ollama(
+            prompt, read_timeout=OLLAMA_ANALYZE_TIMEOUT, force_json=True
+        )
+
+        # 模型即使被要求 format=json 也常在前後夾雜說明文字，
+        # 取第一個 { 到最後一個 } 是必要的容錯。
+        import re
+        json_match = re.search(r"\{[\s\S]*\}", raw_response)
+        if not json_match:
+            logger.warning("Ollama 回應中找不到 JSON 結構（前 200 字）：%s", raw_response[:200])
+            raise LlmUnavailable
 
         try:
-            print("🧠 [AI 核心] 正發送 Prompt 至地端 Ollama (gemma3:4b)，將無限制等待至推論完成...")
-            
-            ollama_res = requests.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={
-                    "model": "gemma3:4b",
-                    "prompt": prompt,
-                    "format": "json",  # 強制輸出 JSON 格式
-                    "stream": False
-                },
-                timeout=None
-            )
+            parsed = json.loads(json_match.group(0))
+        except json.JSONDecodeError as error:
+            logger.warning("Ollama 回應 JSON 解析失敗：%s", error)
+            raise LlmUnavailable from error
 
-            res_data = ollama_res.json()
-            raw_response = res_data.get("response", "").strip()
-            print(f"📩 [AI 核心] 成功接收到 Ollama 原始回應！(字數: {len(raw_response)})")
+        # 相容 snake_case 與 camelCase：小模型的鍵名不穩定
+        rag_risks = parsed.get("rag_risks") or parsed.get("ragRisks") or []
+        ai_risks = parsed.get("ai_risks") or parsed.get("aiRisks") or []
 
-            if not raw_response:
-                raise ValueError("Ollama 回傳了空字串")
-
-            # 💡 1. 抓出第一個 '{' 到最後一個 '}'
-            import re
-            json_match = re.search(r'\{[\s\S]*\}', raw_response)
-            if not json_match:
-                raise ValueError("回應中找不到有效的 JSON 結構")
-
-            cleaned_json = json_match.group(0)
-            parsed = json.loads(cleaned_json)
-            
-            # 💡 2. 容錯處理：相容 snake_case (rag_risks) 與 camelCase (ragRisks)
-            rag_risks = parsed.get("rag_risks") or parsed.get("ragRisks") or []
-            ai_risks = parsed.get("ai_risks") or parsed.get("aiRisks") or []
-
-            # 💡 3. 若模型直接把陣列放在根目錄或不同 Key
-            if not rag_risks and not ai_risks and isinstance(parsed, dict):
-                # 嘗試尋找任何包含 risk 關鍵字的 key
-                for k, v in parsed.items():
-                    if "rag" in k.lower() and isinstance(v, list):
-                        rag_risks = v
-                    elif "ai" in k.lower() and isinstance(v, list):
-                        ai_risks = v
-
-            print(f"✅ [AI 核心] LLM JSON 解析成功！產出 {len(rag_risks)} 項 RAG 風險與 {len(ai_risks)} 項 AI 建議。")
-
-        except Exception as err:
-            print(f"❌ [解析失敗除錯] 原因: {err}")
-            if 'raw_response' in locals():
-                print("---------------- 🔍 Ollama 原始回傳 300 字預覽 ----------------")
-                print(raw_response[:300])
-                print("---------------------------------------------------------------")
-            print("⚠️ 退回後端預設 RAG 比對結果。")
-            if "承租人負責" in ocr_text or "修繕" in ocr_text:
-                rag_risks.append({
-                    "id": "rag-fallback-1",
-                    "title": "設備修繕責任概括轉嫁承租人",
-                    "severity": "high",
-                    "source": "rag",
-                    "sourceLabel": "RAG 法規比對",
-                    "groupId": None,
-                    "groupLabel": "修繕與保養",
-                    "fieldIds": [],
-                    "pageIndex": 0,
-                    "focusText": "修繕",
-                    "clause": "房屋及其附屬設備之修繕概由承租人負責。",
-                    "description": "依據民法及住宅租賃專法，租賃物自然耗損之修繕責任原則上在出租人。",
-                    "advice": "建議請房東修改條文，註明「非可歸責於承租人之故意過失，由出租人負責修繕」。",
-                    "legalBasis": ["民法第 429 條", "住宅租賃定型化契約應記載事項第 9 點"]
-                })
-
-            ai_risks.append({
-                "id": "ai-fallback-1",
-                "title": "提前終止租約與通知流程可再明確",
-                "severity": "low",
-                "source": "ai",
-                "sourceLabel": "AI 語意分析",
-                "groupId": None,
-                "groupLabel": "提前終止",
-                "fieldIds": [],
-                "pageIndex": 0,
-                "focusText": "終止",
-                "clause": "雙方如欲提前終止租約，應告知對方。",
-                "description": "約定內容缺少具體通知期限（如至少提前一個月）及違約金約定。",
-                "advice": "建議補充提前通知天數及違約金上限（不超過一個月租金）。",
-                "legalBasis": ["住宅租賃定型化契約應記載事項第 14 點"]
-            })
+        if not isinstance(rag_risks, list) or not isinstance(ai_risks, list):
+            logger.warning("Ollama 回應的 risks 欄位不是陣列")
+            raise LlmUnavailable
 
         return {
             "rag_risks": rag_risks,
-            "ai_risks": ai_risks
+            "ai_risks": ai_risks,
         }
 
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except LlmUnavailable:
+        # 做不到就明說。不回傳任何「預設的」風險卡片 ——
+        # 那會被使用者當成針對自己合約的真實分析。
+        raise HTTPException(status_code=503, detail=AI_UNAVAILABLE_DETAIL)
+    except HTTPException:
+        raise
+    except Exception:
+        # 例外訊息只寫 log，不回給前端（會洩漏內部位址、套件版本等資訊）
+        logger.exception("合約分析發生未預期錯誤")
+        raise HTTPException(status_code=500, detail="合約分析發生錯誤，請稍後再試。")
 
 
 # ========================================================
@@ -275,23 +275,21 @@ async def contract_chat(req: ChatRequest):
 語氣要求：禮貌、溫和但堅定，並適度引用法律依據。回答控制在 150 字以內。
 """
 
-        try:
-            print("💬 [Law Chat] 發送對話 Prompt 至 Ollama...")
-            ollama_res = requests.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={"model": "gemma3:4b", "prompt": prompt, "stream": False},
-                timeout=None  # 💡 設為 None，讓聊天對話也跑到底
-            )
-            reply = ollama_res.json().get("response", "").strip()
-            print("✅ [Law Chat] 回覆生成完成！")
-        except Exception as err:
-            print(f"⚠️ Law Chat 呼叫失敗，原因: {err}")
-            reply = f"房東您好：關於「{user_msg}」，建議參考住宅租賃定型化契約規範，雙方能在簽約前補齊相關細節，以確保雙方權益。謝謝您！"
+        reply = await _call_ollama(
+            prompt, read_timeout=OLLAMA_CHAT_TIMEOUT, force_json=False
+        )
 
         return {
             "reply": reply,
-            "sources": ["住宅租賃定型化契約應記載事項", "契約原文對比"]
+            "sources": ["住宅租賃定型化契約應記載事項", "契約原文對比"],
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except LlmUnavailable:
+        # 原本這裡會回一句寫死的罐頭訊息，讀起來像模型真的回答了。
+        # 使用者可能直接把那段話傳給房東 —— 那是我們沒有生成過的內容。
+        raise HTTPException(status_code=503, detail=AI_UNAVAILABLE_DETAIL)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Law Chat 發生未預期錯誤")
+        raise HTTPException(status_code=500, detail="對話服務發生錯誤，請稍後再試。")

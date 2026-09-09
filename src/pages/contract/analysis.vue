@@ -435,9 +435,23 @@ const riskTabs = computed(() => [
   { id: 'rag' as const, label: 'RAG 風險分析', count: risks.value.filter((risk) => risk.source === 'rag').length },
   { id: 'ai' as const, label: 'AI 綜合建議', count: risks.value.filter((risk) => risk.source === 'ai').length },
 ])
-async function loadBackendRagAndAiAnalysis() {
-  if (!ocrResult?.text) return
+/*
+ * AI 分析的狀態必須讓使用者看得到。
+ *
+ * 原本失敗時是靜靜 return，畫面會顯示「RAG 風險 0 項、AI 建議 0 項」，
+ * 使用者會理解成「我的合約沒有這些問題」—— 但真相是分析根本沒有跑。
+ * 對一個要拿去跟房東談判的人來說，這跟給錯資訊沒有兩樣。
+ */
+type AiAnalysisState = 'loading' | 'ok' | 'failed'
+const aiAnalysisState = ref<AiAnalysisState>('loading')
 
+async function loadBackendRagAndAiAnalysis() {
+  if (!ocrResult?.text) {
+    aiAnalysisState.value = 'failed'
+    return
+  }
+
+  aiAnalysisState.value = 'loading'
   try {
     const response = await fetch(`${API_BASE_URL}/contract/analyze`, {
       method: 'POST',
@@ -455,14 +469,19 @@ async function loadBackendRagAndAiAnalysis() {
       window.location.assign('/login?redirect=' + encodeURIComponent(window.location.pathname))
       return
     }
-    if (!response.ok) return
+    if (!response.ok) {
+      aiAnalysisState.value = 'failed'
+      return
+    }
     const data = await response.json()
 
     // 取得後端真正的 RAG 與 AI 風險，並與本機 field 風險疊加
     const localFieldRisks = buildRisks()
     risks.value = [...localFieldRisks, ...(data.rag_risks || []), ...(data.ai_risks || [])]
+    aiAnalysisState.value = 'ok'
   } catch (error) {
     console.error('後端 API 呼叫失敗，維持本機檢核結果:', error)
+    aiAnalysisState.value = 'failed'
   }
 }
 
@@ -939,6 +958,18 @@ async function exportAnalysisReport(): Promise<void> {
             </div>
           </div>
 
+          <div v-if="aiAnalysisState === 'failed'" class="ai-analysis-alert" role="alert">
+            <AlertTriangle :size="18" />
+            <div>
+              <strong>AI 風險分析未能完成</strong>
+              <span>
+                以下只有「關鍵欄位檢查」的本機檢核結果。
+                <b>RAG 與 AI 分類為空，並不代表您的合約沒有問題</b>，
+                請稍後重新分析，或先自行對照法規。
+              </span>
+            </div>
+          </div>
+
           <div class="risk-tabs" role="tablist" aria-label="風險來源分類">
             <button
               v-for="tab in riskTabs"
@@ -1030,7 +1061,20 @@ async function exportAnalysisReport(): Promise<void> {
               </div>
             </article>
 
-            <div v-if="!filteredRisks.length" class="risk-empty-state">
+            <!--
+              分析失敗時不可顯示「沒有風險」加綠色勾勾 ——
+              那是在對使用者宣稱一個我們沒有驗證過的結論。
+            -->
+            <div
+              v-if="!filteredRisks.length && aiAnalysisState === 'failed' && activeRiskTab !== 'field'"
+              class="risk-empty-state is-unknown"
+            >
+              <AlertTriangle :size="22" />
+              <strong>這個分類尚未分析</strong>
+              <span>AI 分析未能完成，因此無法判斷是否有風險。</span>
+            </div>
+
+            <div v-else-if="!filteredRisks.length" class="risk-empty-state">
               <CheckCircle2 :size="22" />
               <strong>這個分類目前沒有風險</strong>
               <span>可切換其他分類繼續查看。</span>
