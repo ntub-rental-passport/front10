@@ -20,16 +20,31 @@ LlmUnavailable，讓呼叫端回 503。曾經的作法是失敗時回一段寫�
 
     LLM_PROVIDER_ORDER   嘗試順序，預設 "ollama,nvidia"
     OLLAMA_URL           Ollama 位址（或 Cloudflare Tunnel 的網址）
-    OLLAMA_MODEL         預設 gemma3:4b
+    OLLAMA_MODEL         合約分析用的模型，預設 gemma3:4b
+    OLLAMA_CHAT_MODEL    Law Chat 用的模型（未設定就沿用 OLLAMA_MODEL）
     LLM_TUNNEL_API_KEY   桌機端代理的 API key（走隧道時才需要）
     CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET
                          Cloudflare Access service token
     NVIDIA_API_KEY       沒設定就自動跳過這個 provider
-    NVIDIA_MODEL         例如 meta/llama-3.1-70b-instruct
+    NVIDIA_MODEL         合約分析用的模型
+    NVIDIA_CHAT_MODEL    Law Chat 用的模型（未設定就沿用 NVIDIA_MODEL）
     NVIDIA_BASE_URL      預設 https://integrate.api.nvidia.com/v1
     NVIDIA_DISABLE_THINKING
                          模型預設會輸出思考過程時設 true（例如 DeepSeek V4 Pro）。
                          不認得這個參數的模型會回 400，所以預設不送。
+    NVIDIA_CHAT_DISABLE_THINKING
+                         同上，但用於 Law Chat。**不會**沿用上面那個設定 ——
+                         兩條線常用不同模型，盲目沿用會讓不支援的模型回 400。
+
+## 為什麼兩條線可以用不同模型
+
+實測（2026-09-09）：DeepSeek V4 Pro 的法條引用會給實際條號，
+品質明顯好，但要 90 秒；Nemotron 3 Super 只有 13-25 秒，
+但引用只是把 prompt 裡的規則抄回來。
+
+合約分析是「上傳後等結果」，90 秒可以接受；
+Law Chat 是對話，等 90 秒沒有人受得了。
+所以分開設定 —— 各取所長，而不是被迫二選一。
 
 沒有設定的 provider 會被自動跳過，不會變成一次失敗的嘗試。
 """
@@ -52,12 +67,34 @@ def _env(name: str, default: str = "") -> str:
     return (os.getenv(name) or default).strip()
 
 
+def _model_for(provider: str, purpose: str) -> str:
+    """依用途挑模型。未設定專用模型時沿用主設定。"""
+    if provider == "nvidia":
+        if purpose == "chat" and (model := _env("NVIDIA_CHAT_MODEL")):
+            return model
+        return _env("NVIDIA_MODEL", "meta/llama-3.1-70b-instruct")
+    if purpose == "chat" and (model := _env("OLLAMA_CHAT_MODEL")):
+        return model
+    return _env("OLLAMA_MODEL", "gemma3:4b")
+
+
+def _disable_thinking(purpose: str) -> bool:
+    """是否送出關閉思考模式的參數。
+
+    ⚠️ chat 不沿用 analyze 的設定：兩條線常用不同模型，
+    而這個參數不是每個模型都認得，盲目沿用會讓對方直接回 400 ——
+    那會被誤判成「模型壞掉」，實際上只是多送了一個它不懂的欄位。
+    """
+    key = "NVIDIA_CHAT_DISABLE_THINKING" if purpose == "chat" else "NVIDIA_DISABLE_THINKING"
+    return _env(key).lower() in ("1", "true", "yes")
+
+
 # ---------------------------------------------------------------
 # Provider 實作
 # ---------------------------------------------------------------
 
 
-async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool) -> str:
+async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, purpose: str) -> str:
     """呼叫 Ollama（本機，或經 Cloudflare Tunnel 連到桌機）。
 
     憑證以標頭夾帶：
@@ -78,7 +115,7 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool) ->
         headers["CF-Access-Client-Secret"] = cf_secret
 
     payload: dict = {
-        "model": _env("OLLAMA_MODEL", "gemma3:4b"),
+        "model": _model_for("ollama", purpose),
         "prompt": prompt,
         "stream": False,
     }
@@ -96,7 +133,7 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool) ->
         return (response.json().get("response") or "").strip()
 
 
-async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool) -> str:
+async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool, purpose: str) -> str:
     """呼叫 NVIDIA 的 OpenAI 相容端點。
 
     免費方案是給開發與評估用的，額度有限（約 1,000 credits、40 req/分）。
@@ -109,7 +146,7 @@ async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool) ->
 
     base = _env("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
     payload: dict = {
-        "model": _env("NVIDIA_MODEL", "meta/llama-3.1-70b-instruct"),
+        "model": _model_for("nvidia", purpose),
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
         "stream": False,
@@ -128,7 +165,7 @@ async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool) ->
     # 預設不送這個參數 —— 不認得它的模型會直接回 400，
     # 反而讓「模型其實可用」被誤判成「模型壞掉」。
     # 需要時才由 .env 開啟（NVIDIA_DISABLE_THINKING=true）。
-    if _env("NVIDIA_DISABLE_THINKING").lower() in ("1", "true", "yes"):
+    if _disable_thinking(purpose):
         payload["chat_template_kwargs"] = {"thinking": False}
 
     timeout = httpx.Timeout(read_timeout, connect=CONNECT_TIMEOUT)
@@ -174,7 +211,9 @@ def configured_providers() -> list[str]:
     return available
 
 
-async def generate(prompt: str, *, read_timeout: float, force_json: bool = False) -> str:
+async def generate(
+    prompt: str, *, read_timeout: float, force_json: bool = False, purpose: str = "analyze"
+) -> str:
     """依序嘗試各 provider，第一個成功就回傳。
 
     全部失敗才丟 LlmUnavailable。錯誤只寫進 log ——
@@ -185,7 +224,7 @@ async def generate(prompt: str, *, read_timeout: float, force_json: bool = False
     for name in provider_order():
         call = _PROVIDERS[name]
         try:
-            text = await call(prompt, read_timeout=read_timeout, force_json=force_json)
+            text = await call(prompt, read_timeout=read_timeout, force_json=force_json, purpose=purpose)
         except LlmUnavailable:
             # provider 未設定，跳過不算失敗
             logger.debug("LLM provider %s 未設定，略過", name)
@@ -196,7 +235,8 @@ async def generate(prompt: str, *, read_timeout: float, force_json: bool = False
             continue
 
         if text:
-            logger.info("LLM provider %s 產生回應（%d 字）", name, len(text))
+            logger.info("LLM provider %s / %s 產生回應（%d 字）",
+                        name, _model_for(name, purpose), len(text))
             return text
         logger.warning("LLM provider %s 回傳空字串", name)
 
