@@ -27,6 +27,9 @@ LlmUnavailable，讓呼叫端回 503。曾經的作法是失敗時回一段寫�
     NVIDIA_API_KEY       沒設定就自動跳過這個 provider
     NVIDIA_MODEL         例如 meta/llama-3.1-70b-instruct
     NVIDIA_BASE_URL      預設 https://integrate.api.nvidia.com/v1
+    NVIDIA_DISABLE_THINKING
+                         模型預設會輸出思考過程時設 true（例如 DeepSeek V4 Pro）。
+                         不認得這個參數的模型會回 400，所以預設不送。
 
 沒有設定的 provider 會被自動跳過，不會變成一次失敗的嘗試。
 """
@@ -115,6 +118,18 @@ async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool) ->
         # 部分模型不支援這個參數；不支援時仍會照 prompt 的指示輸出 JSON，
         # 呼叫端本來就有寬鬆解析，所以加上去是淨收益。
         payload["response_format"] = {"type": "json_object"}
+
+    # 關閉思考模式。
+    #
+    # 有些模型（例如 DeepSeek V4 Pro）預設會先輸出一長串推理過程再給答案。
+    # 對我們有三個壞處：思考文字混進正文會讓 JSON 解析失敗、
+    # 回應時間拉長、輸出 token 暴增而免費額度燒得更快。
+    #
+    # 預設不送這個參數 —— 不認得它的模型會直接回 400，
+    # 反而讓「模型其實可用」被誤判成「模型壞掉」。
+    # 需要時才由 .env 開啟（NVIDIA_DISABLE_THINKING=true）。
+    if _env("NVIDIA_DISABLE_THINKING").lower() in ("1", "true", "yes"):
+        payload["chat_template_kwargs"] = {"thinking": False}
 
     timeout = httpx.Timeout(read_timeout, connect=CONNECT_TIMEOUT)
     async with httpx.AsyncClient(timeout=timeout) as client:
