@@ -9,3 +9,4 @@ requests
 sqlalchemy
 uvicorn[standard]
 PyJWT
+httpx
