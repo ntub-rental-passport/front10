@@ -8,6 +8,8 @@
 
     python check_llm.py              # 檢查設定 + 跑一份範例合約
     python check_llm.py --config     # 只檢查設定，不呼叫 LLM（不燒額度）
+    python check_llm.py --models     # 列出 NVIDIA 上可用的模型代號
+    python check_llm.py --models qwen  # 只列出名稱含 qwen 的
 
 正式機（容器內）：
 
@@ -166,7 +168,51 @@ async def try_analyze() -> int:
     return 0
 
 
+def list_models() -> int:
+    """向 NVIDIA 查詢可用的模型代號。
+
+    網頁上的程式碼範例常寫 model=""，看不出實際字串；
+    直接問 API 是最可靠的作法。金鑰從環境變數讀，
+    不必貼在指令列（那會留在 shell 歷史與 ps）。
+    """
+    api_key = (os.getenv("NVIDIA_API_KEY") or "").strip()
+    if not api_key:
+        print("❌ 未設定 NVIDIA_API_KEY，無法查詢。")
+        return 1
+
+    base = (os.getenv("NVIDIA_BASE_URL") or "https://integrate.api.nvidia.com/v1").rstrip("/")
+    keyword = next((a for a in sys.argv[2:] if not a.startswith("-")), "").lower()
+
+    import httpx
+    try:
+        response = httpx.get(
+            f"{base}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=30,
+        )
+        response.raise_for_status()
+    except Exception as error:
+        print(f"❌ 查詢失敗：{error}")
+        return 1
+
+    ids = sorted(m.get("id", "") for m in response.json().get("data", []))
+    if keyword:
+        ids = [i for i in ids if keyword in i.lower()]
+
+    print("=" * 60)
+    print(f" NVIDIA 可用模型（{len(ids)} 個{'，關鍵字：' + keyword if keyword else ''}）")
+    print("=" * 60)
+    for model_id in ids:
+        print(f"  {model_id}")
+    if not ids:
+        print("  （沒有符合的模型）")
+    return 0
+
+
 def main() -> None:
+    if "--models" in sys.argv:
+        sys.exit(list_models())
+
     show_config()
     if "--config" in sys.argv:
         return
