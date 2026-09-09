@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-import httpx
 import os
 import json
 import logging
-import traceback
 
 from database import get_db
 import models
+from deidentify import deidentify
+from llm_provider import LlmUnavailable, generate
 from security import get_current_user
 
 router = APIRouter(
@@ -46,37 +46,62 @@ OLLAMA_CHAT_TIMEOUT = float(os.getenv("OLLAMA_CHAT_TIMEOUT", "60"))
 AI_UNAVAILABLE_DETAIL = "AI 分析服務暫時無法使用，請稍後再試。"
 
 
-class LlmUnavailable(RuntimeError):
-    """LLM 無法產生可用結果。呼叫端一律轉成 503，不得以預設內容填補。"""
+# 輸出驗證上限。
+#
+# 模型（或藏在合約裡的注入指令）可能回傳幾百張卡片或超長字串，
+# 前端會照單全收地渲染。這裡是最後一道閘門：結構不對就丟掉，
+# 過長就截斷，不讓不受控的內容直接進到使用者畫面。
+MAX_RISK_ITEMS = 30
+MAX_RISK_FIELD_LEN = 2_000
+MAX_LEGAL_BASIS_ITEMS = 10
+VALID_SEVERITIES = {"high", "medium", "low"}
 
 
-async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool) -> str:
-    """呼叫 Ollama 並回傳原始文字。
+def _clean_text(value, limit: int = MAX_RISK_FIELD_LEN) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:limit]
 
-    用 httpx.AsyncClient 而非 requests：這兩支端點是 async def，
-    在裡面呼叫阻塞式的 requests 會卡住整個事件迴圈 ——
-    一個人送出合約分析，其他所有人的所有 API 請求（包含登入、監控）
-    都會一起卡住，直到推論結束。這不是「AI 比較慢」，是全站停擺。
+
+def _validate_risks(items, source: str) -> list[dict]:
+    """把模型輸出整理成前端能安全渲染的形狀。
+
+    source 由後端指定而非採用模型給的值：模型可能把 rag 標成 ai，
+    或填一個前端沒有的分類，導致卡片被歸錯 tab 甚至消失。
     """
-    payload: dict = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
-    if force_json:
-        payload["format"] = "json"
+    if not isinstance(items, list):
+        return []
 
-    timeout = httpx.Timeout(read_timeout, connect=OLLAMA_CONNECT_TIMEOUT)
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(f"{OLLAMA_URL}/api/generate", json=payload)
-            response.raise_for_status()
-            text = (response.json().get("response") or "").strip()
-    except Exception as error:
-        # 內部錯誤只寫進 log，不回給前端：錯誤訊息會洩漏內部位址與服務結構
-        logger.warning("Ollama 呼叫失敗：%s", error)
-        raise LlmUnavailable from error
+    cleaned: list[dict] = []
+    for raw in items[:MAX_RISK_ITEMS]:
+        if not isinstance(raw, dict):
+            continue
+        title = _clean_text(raw.get("title"), 200)
+        if not title:
+            continue  # 沒有標題的卡片對使用者沒有意義
 
-    if not text:
-        logger.warning("Ollama 回傳空字串")
-        raise LlmUnavailable
-    return text
+        severity = raw.get("severity")
+        legal_basis = raw.get("legalBasis")
+
+        cleaned.append({
+            "id": _clean_text(raw.get("id"), 64) or f"{source}-{len(cleaned) + 1}",
+            "title": title,
+            "severity": severity if severity in VALID_SEVERITIES else "medium",
+            "source": source,
+            "sourceLabel": "RAG 法規比對" if source == "rag" else "AI 語意分析",
+            "groupId": _clean_text(raw.get("groupId"), 64) or None,
+            "groupLabel": _clean_text(raw.get("groupLabel"), 100) or None,
+            "fieldIds": [_clean_text(f, 64) for f in raw.get("fieldIds", [])[:20]]
+                        if isinstance(raw.get("fieldIds"), list) else [],
+            "pageIndex": raw.get("pageIndex") if isinstance(raw.get("pageIndex"), int) else 0,
+            "focusText": _clean_text(raw.get("focusText"), 200),
+            "clause": _clean_text(raw.get("clause")),
+            "description": _clean_text(raw.get("description")),
+            "advice": _clean_text(raw.get("advice")),
+            "legalBasis": [_clean_text(b, 200) for b in legal_basis[:MAX_LEGAL_BASIS_ITEMS]]
+                          if isinstance(legal_basis, list) else [],
+        })
+    return cleaned
 
 # ========================================================
 # 📦 Pydantic 資料模型 (對齊前端分析頁面 request/response)
@@ -124,9 +149,15 @@ async def analyze_contract(req: AnalyzeRequest):
     接收前端 Express OCR 產出的合約文字，進行 RAG 法規/判決比對與 LLM 風險分析
     """
     try:
-        ocr_text = req.ocr_text.strip()
-        if not ocr_text:
+        raw_text = req.ocr_text.strip()
+        if not raw_text:
             return {"rag_risks": [], "ai_risks": []}
+
+        # 去識別化在建 prompt 之前，且不分 provider ——
+        # 只有一條路徑，就沒有「這次走哪條路」的分支可以被改壞。
+        masked = deidentify(raw_text)
+        ocr_text = masked.text
+        logger.info("合約去識別化：%s", masked.summary())
 
         # ----------------------------------------------------
         # 🔹 步驟 A：RAG 法規與裁判書比對 ( Context )
@@ -197,7 +228,7 @@ async def analyze_contract(req: AnalyzeRequest):
 }}
 """
 
-        raw_response = await _call_ollama(
+        raw_response = await generate(
             prompt, read_timeout=OLLAMA_ANALYZE_TIMEOUT, force_json=True
         )
 
@@ -216,11 +247,13 @@ async def analyze_contract(req: AnalyzeRequest):
             raise LlmUnavailable from error
 
         # 相容 snake_case 與 camelCase：小模型的鍵名不穩定
-        rag_risks = parsed.get("rag_risks") or parsed.get("ragRisks") or []
-        ai_risks = parsed.get("ai_risks") or parsed.get("aiRisks") or []
+        rag_risks = _validate_risks(parsed.get("rag_risks") or parsed.get("ragRisks"), "rag")
+        ai_risks = _validate_risks(parsed.get("ai_risks") or parsed.get("aiRisks"), "ai")
 
-        if not isinstance(rag_risks, list) or not isinstance(ai_risks, list):
-            logger.warning("Ollama 回應的 risks 欄位不是陣列")
+        if not rag_risks and not ai_risks:
+            # 模型有回應但沒有任何合格的卡片：可能是格式跑掉，
+            # 也可能是注入指令讓它拒答。都不該當成「這份合約沒問題」。
+            logger.warning("模型回應中沒有任何通過驗證的風險項目")
             raise LlmUnavailable
 
         return {
@@ -249,14 +282,15 @@ async def contract_chat(req: ChatRequest):
     提供前端 Law Chat 對話框即時回應，依據合約脈絡生成溫和、法律導向的溝通訊息
     """
     try:
-        user_msg = req.message
+        # 使用者訊息與風險脈絡同樣可能含個資（例如直接貼上合約段落）
+        user_msg = deidentify(req.message).text
         active_risk = req.active_risk
 
         risk_context = ""
         if active_risk and isinstance(active_risk, dict):
-            title = active_risk.get('title', '')
-            clause = active_risk.get('clause', '')
-            advice = active_risk.get('advice', '')
+            title = deidentify(str(active_risk.get('title', ''))).text
+            clause = deidentify(str(active_risk.get('clause', ''))).text
+            advice = deidentify(str(active_risk.get('advice', ''))).text
             risk_context = f"目前討論的風險標的：{title}。合約條文：{clause}。法規建議：{advice}"
 
         prompt = f"""你是租客的法律顧問。請幫租客寫一段發給房東的 LINE 或 Email 訊息。
@@ -275,9 +309,8 @@ async def contract_chat(req: ChatRequest):
 語氣要求：禮貌、溫和但堅定，並適度引用法律依據。回答控制在 150 字以內。
 """
 
-        reply = await _call_ollama(
-            prompt, read_timeout=OLLAMA_CHAT_TIMEOUT, force_json=False
-        )
+        reply = await generate(prompt, read_timeout=OLLAMA_CHAT_TIMEOUT, force_json=False)
+        reply = reply[:4000]   # 上限：避免模型灌爆對話框
 
         return {
             "reply": reply,
