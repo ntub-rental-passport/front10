@@ -22,7 +22,14 @@ set -uo pipefail
 
 JAIL="nginx-limit-req"
 TEST_IP="198.51.100.42"
-CONF="/etc/fail2ban/jail.local"
+# 設定可能散落在多處：jail.local、jail.d/ 底下任一檔案、或 action.d 的預設值。
+# 2026-09-09 實測：實際設定在 /etc/fail2ban/jail.d/cloudflare.local，
+# 只搜 jail.local 會找不到。
+CONF_PATHS=(
+    /etc/fail2ban/jail.local
+    /etc/fail2ban/jail.d/
+    /etc/fail2ban/action.d/cloudflare-token.conf
+)
 
 echo "=========================================="
 echo " fail2ban 封鎖／解封驗證"
@@ -37,18 +44,29 @@ fi
 # ---------- 步驟 1：取出 Cloudflare 認證 ----------
 # 從 fail2ban 設定裡讀，不要求使用者手動貼 token（貼在指令列會留在 shell 歷史）
 echo "[1/6] 讀取 Cloudflare 設定..."
-CF_TOKEN=$(grep -ohE 'cftoken *= *"?[A-Za-z0-9_-]+' "$CONF" /etc/fail2ban/action.d/cloudflare-token.conf 2>/dev/null \
+CF_TOKEN=$(grep -rhoE 'cftoken *= *"?[A-Za-z0-9_.-]+' "${CONF_PATHS[@]}" 2>/dev/null \
            | head -1 | sed -E 's/.*= *"?//')
-CF_ZONE=$(grep -ohE 'cfzone *= *"?[A-Za-z0-9]+' "$CONF" /etc/fail2ban/action.d/cloudflare-token.conf 2>/dev/null \
+CF_ZONE=$(grep -rhoE 'cfzone *= *"?[A-Za-z0-9]+' "${CONF_PATHS[@]}" 2>/dev/null \
           | head -1 | sed -E 's/.*= *"?//')
+SRC=$(grep -rlE 'cftoken *=' "${CONF_PATHS[@]}" 2>/dev/null | head -1)
 
 if [ -z "$CF_TOKEN" ] || [ -z "$CF_ZONE" ]; then
-    echo "❌ 在設定檔裡找不到 cftoken / cfzone。"
-    echo "   請確認 $CONF 的 jail 有類似這樣的設定："
-    echo '     action = cloudflare-token[cftoken="...", cfzone="..."]'
+    echo "❌ 在下列位置都找不到 cftoken / cfzone："
+    printf '     %s\n' "${CONF_PATHS[@]}"
+    echo "   jail 應該要有類似這樣的設定："
+    echo '     action = cloudflare-token[cfzone=..., cftoken=..., notes=fail2ban-nginx]'
     exit 1
 fi
-echo "    ✅ 已取得（zone ${CF_ZONE:0:6}…，token 不顯示）"
+echo "    ✅ 已取得（來源 $SRC，zone ${CF_ZONE:0:6}…，token 不顯示）"
+
+# notes 不可含空白：它會被組進 actionunban 的 URL 查詢字串，
+# 含空白會讓查詢被截斷 → 找不到規則 → 解封默默失敗。這正是本次要驗的問題。
+NOTES=$(grep -rhoE 'notes *= *[^],]+' "${CONF_PATHS[@]}" 2>/dev/null | head -1 | sed -E 's/.*= *//')
+if printf '%s' "$NOTES" | grep -q ' '; then
+    echo "    ⚠️  notes 含有空白（\"$NOTES\"）—— 解封很可能會失敗，請改成不含空白的字串。"
+else
+    echo "    ✅ notes = \"$NOTES\"（不含空白）"
+fi
 echo
 
 cf_rules_for_ip() {

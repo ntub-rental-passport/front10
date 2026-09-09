@@ -13,6 +13,11 @@ ignoreip = 127.0.0.1/8 ::1 60.250.79.0/24
 
 # 短時間內大量觸發 Nginx 限流（429）的 IP —— 自動 iptables 封鎖
 # filter「nginx-limit-req」為 fail2ban 內建，比對 error.log 的 limiting requests 紀錄
+# ⚠️ 這個 jail 的封鎖動作（action）不在這個檔案裡，而在
+#    /etc/fail2ban/jail.d/cloudflare.local —— 因為它含 Cloudflare API token。
+#    範本見 deploy/fail2ban/jail.d/cloudflare.local.example，
+#    由 deploy/install-fail2ban.sh 安裝。
+#    沒有那個檔案的話，封鎖會退回本機防火牆，而那在 CDN 後方是無效的。
 [nginx-limit-req]
 enabled  = true
 port     = http,https

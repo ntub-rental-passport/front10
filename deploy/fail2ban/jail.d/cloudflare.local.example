@@ -1,0 +1,31 @@
+# Nginx 相關的封鎖改呼叫 Cloudflare API，而非本機防火牆
+#
+# 安裝位置：/etc/fail2ban/jail.d/cloudflare.local（權限必須是 0600 root）
+# 這個檔案含 API token，所以 repo 裡只放範本；實際檔案由 install-fail2ban.sh 產生。
+#
+# ── 為什麼 nginx 的封鎖不能用本機防火牆 ──
+# 流量經 Cloudflare 進來，封包的來源 IP 永遠是 Cloudflare 的節點，
+# 不是攻擊者。在主機上封那個 IP，擋掉的是 Cloudflare（進而擋掉所有人），
+# 完全打不到真正的攻擊者。要在 Cloudflare 那一層封才有意義。
+#
+# ── 為什麼只掛在 [nginx-limit-req]，不是 [DEFAULT] ──
+# 放 [DEFAULT] 會讓 sshd 也套用，但 Cloudflare 不代理 SSH ——
+# 22 埠是直接打 VM 的公網 IP。那樣 SSH 暴力破解防護會完全失效，
+# 而且會蓋掉 defaults-debian.conf 正確的 banaction = nftables。
+#
+#   nginx-limit-req → cloudflare-token（流量經 CDN，只有 CDN 擋得到）
+#   sshd            → nftables（流量直連主機，只有主機擋得到）
+#
+# ── notes 不可含空白 ──
+# 解封時 fail2ban 會把 notes 組進 Cloudflare API 的 URL 查詢字串
+# （actionunban 那行的 &notes=<notes>&）。含空白會讓查詢被截斷、
+# 找不到對應規則，於是「封鎖成功、解封默默失敗」，規則永久累積，
+# 被誤判的使用者永遠進不來。預設值 "Fail2Ban <name>" 剛好含空白，必須覆寫。
+#
+# 驗證方式：sudo bash deploy/test-fail2ban-unban.sh
+
+[nginx-limit-req]
+# cfzone  ：Cloudflare 後台網域頁面右下角的 Zone ID（不是機密，但也不必外流）
+# cftoken ：API Token，需要「Zone → Firewall Services → Edit」權限
+#           建 token 時只授權這一個 zone，不要用 Global API Key
+action = cloudflare-token[cfzone=REPLACE_WITH_ZONE_ID, cftoken=REPLACE_WITH_API_TOKEN, notes=fail2ban-nginx]

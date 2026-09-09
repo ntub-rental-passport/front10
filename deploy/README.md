@@ -143,19 +143,43 @@ curl -sI https://rentmate.software | grep -iE "x-frame|x-content|referrer|strict
 
 ## 九、fail2ban（P3，VM 主機上安裝）
 
-Nginx log 已由 compose 掛載到 `./logs/nginx/`，主機上的 fail2ban 直接讀取：
+Nginx log 已由 compose 掛載到 `./logs/nginx/`，主機上的 fail2ban 直接讀取。
+
+**設定一律用安裝腳本，不要手動改 `/etc/`**：`deploy.sh` 只 rsync 專案檔案、
+不會碰 `/etc/`，手改的設定不會被同步，VM 重灌就沒了。
 
 ```bash
-sudo apt install -y fail2ban
-sudo cp deploy/fail2ban/jail.local /etc/fail2ban/jail.local
-# 修改 jail.local 裡 logpath 的家目錄為實際路徑，然後：
-sudo systemctl enable --now fail2ban
+sudo bash ~/rentmate/deploy/install-fail2ban.sh
+```
 
+腳本會裝好 `jail.local`、互動詢問 Cloudflare Zone ID 與 API Token
+（不收命令列參數，避免留在 shell 歷史）產生 `/etc/fail2ban/jail.d/cloudflare.local`
+（權限 0600），先驗語法再重啟服務。
+
+**兩個 jail 用不同的封鎖方式，這是刻意的**：
+
+| jail | action | 理由 |
+|------|--------|------|
+| `nginx-limit-req` | `cloudflare-token` | 流量經 Cloudflare 進來，封包來源永遠是 CF 節點，主機層封鎖打不到真正的攻擊者 |
+| `sshd` | `nftables`（主機防火牆） | SSH 不經 Cloudflare，直連 VM 公網 IP，只有主機擋得住 |
+
+把 Cloudflare action 放進 `[DEFAULT]` 會讓 sshd 也套用，SSH 防護會完全失效。
+
+```bash
 # 驗證與蒐證
 sudo fail2ban-client status nginx-limit-req   # 看目前封鎖清單
 sudo fail2ban-client status sshd
+
+# 驗證封鎖／解封是否真的對 Cloudflare 生效（重點是解封）
+sudo bash ~/rentmate/deploy/test-fail2ban-unban.sh
+
 # Demo：從另一台機器狂打觸發 429 x10 → IP 被封 1 小時 → 截圖封鎖清單
 ```
+
+⚠️ **`fail2ban-client unban` 回報成功不代表 Cloudflare 的規則被刪掉**，
+它只代表「從 fail2ban 自己的清單移除」。`notes` 若含空白，解封時組出的
+API 查詢字串會被截斷、刪不到規則，變成封鎖有效但解封默默失敗、規則永久累積。
+唯一可信的驗證是直接去問 Cloudflare —— 上面那支測試腳本做的就是這件事。
 
 log 輪替（避免 log 無限長大）：
 
