@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { CalendarDays, Clock3, Search } from 'lucide-vue-next'
-import { TAIPEI_DISTRICTS } from '@/src/utils/garbage'
+import { TAIPEI_DISTRICTS, NEW_TAIPEI_DISTRICTS, type GarbageCity } from '@/src/utils/garbage'
 defineProps<{ villages: string[]; roads: string[]; count: number; showCity?: boolean }>()
+const city = defineModel<GarbageCity>('city', { default: '臺北市' })
 defineEmits<{ submit: []; reset: [] }>()
 const district = defineModel<string>('district', { required: true })
 const village = defineModel<string>('village', { required: true })
@@ -17,14 +18,17 @@ const end = defineModel<string>('end', { required: true })
       <button type="button" class="text-button" @click="$emit('reset')">重設</button>
     </div>
     <label v-if="showCity"
-      >縣市<select disabled>
+      >縣市<select v-model="city">
         <option>臺北市</option>
+        <option>新北市</option>
       </select></label
     >
     <label
       >行政區<select v-model="district">
         <option value="">全部行政區</option>
-        <option v-for="d in TAIPEI_DISTRICTS" :key="d">{{ d }}</option>
+        <option v-for="d in city === '臺北市' ? TAIPEI_DISTRICTS : NEW_TAIPEI_DISTRICTS" :key="d">
+          {{ d }}
+        </option>
       </select></label
     >
     <label
@@ -56,7 +60,11 @@ const end = defineModel<string>('end', { required: true })
     </button>
     <div class="schedule-note">
       <Clock3 :size="17" />
-      <p>一般清運週三、週日停收。<br />特殊假期、颱風及臨時調整，以環保局公告為準。</p>
+      <p>
+        {{
+          city === '臺北市' ? '一般清運週三、週日停收。' : '依各站垃圾、回收及廚餘的每週班表查詢。'
+        }}<br />特殊假期、颱風及臨時調整，以環保局公告為準。
+      </p>
     </div>
   </form>
 </template>

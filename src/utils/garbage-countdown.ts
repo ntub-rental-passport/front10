@@ -50,7 +50,7 @@ export function nextCollection(schedules: CollectionSchedule[], now: Date): Next
       if (
         !Number.isFinite(arrivalAt) ||
         !Number.isFinite(departureAt) ||
-        departureAt <= now.getTime()
+        departureAt + 60000 <= now.getTime()
       )
         continue
       candidates.push({
@@ -62,6 +62,12 @@ export function nextCollection(schedules: CollectionSchedule[], now: Date): Next
     }
   }
   return candidates.sort((a, b) => a.arrivalAt - b.arrivalAt)[0] || null
+}
+export function operatesOn(stop: GarbageStop, date: string): boolean {
+  if (!stop.collections)
+    return [1, 2, 4, 5, 6].includes(new Date(`${date}T12:00:00+08:00`).getUTCDay())
+  const weekday = new Date(`${date}T12:00:00+08:00`).getUTCDay()
+  return Object.values(stop.collections).some((schedule) => schedule?.days.includes(weekday))
 }
 
 export function countdownLabel(next: NextCollection | null, now: Date): string {

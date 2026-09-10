@@ -9,7 +9,14 @@ export function groupRoutes(stops: GarbageStop[]): GarbageRoute[] {
   const groups = new Map<string, GarbageRoute>()
   for (const stop of stops) {
     // Never connect separate trips, teams or vehicles just because the route name matches.
-    const id = JSON.stringify([stop.district, stop.team, stop.route, stop.plate, stop.trip])
+    const id = JSON.stringify([
+      stop.city,
+      stop.district,
+      stop.routeId || stop.route,
+      stop.team,
+      stop.plate,
+      stop.trip,
+    ])
     const group = groups.get(id) || {
       id,
       label: `${stop.district} · ${stop.route} · ${stop.trip} · ${stop.plate}`,
@@ -21,8 +28,10 @@ export function groupRoutes(stops: GarbageStop[]): GarbageRoute[] {
   return [...groups.values()]
     .map((group) => ({
       ...group,
-      stops: group.stops.sort(
-        (a, b) => a.arrival.localeCompare(b.arrival) || a.id.localeCompare(b.id),
+      stops: group.stops.sort((a, b) =>
+        a.rank !== undefined && b.rank !== undefined
+          ? a.rank - b.rank
+          : a.arrival.localeCompare(b.arrival) || a.id.localeCompare(b.id),
       ),
     }))
     .sort((a, b) => a.label.localeCompare(b.label, 'zh-TW'))

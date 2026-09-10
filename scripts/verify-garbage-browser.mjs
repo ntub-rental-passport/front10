@@ -200,6 +200,12 @@ try {
   await until(`!document.querySelector('[role=dialog]')`)
   await evaluate(`document.querySelector('.station-detail .detail-close')?.click()`)
   console.log('Full-width map and filter dialog: passed')
+  assert.equal(await evaluate(`document.querySelectorAll('.status-filters button').length`), 5)
+  await evaluate(`document.querySelectorAll('.status-filters button')[2].click()`)
+  await until(
+    `document.querySelectorAll('.status-filters button')[2].getAttribute('aria-pressed') === 'true'`,
+  )
+  await evaluate(`document.querySelector('.status-filters button').click()`)
   await clickTab('列表查詢')
   // A known collection day makes this check independent of today's weekday.
   await evaluate(
@@ -259,8 +265,28 @@ try {
     button: 'left',
     clickCount: 1,
   })
-  await until(`document.querySelector('.results-column .notice').textContent.includes('已選')`)
+  await until(`document.querySelector('.manual-location')`)
+  assert.equal(
+    await evaluate(`document.querySelectorAll('.nearby-empty, .results-column .notice').length`),
+    0,
+  )
+  const disclosure = await evaluate(`document.querySelector('.tracker-card details') !== null`)
+  if (disclosure) {
+    assert.equal(await evaluate(`document.querySelector('.tracker-card details').open`), false)
+    await evaluate(`document.querySelector('.tracker-card summary').click()`)
+    assert.equal(await evaluate(`document.querySelector('.tracker-card details').open`), true)
+    await evaluate(`document.querySelector('.tracker-card summary').click()`)
+  }
   console.log('manual map click: passed')
+  await evaluate(`document.querySelector('.tracker-card footer button').click()`)
+  await until(`document.querySelector('.weekly-schedule')`)
+  assert.equal(await evaluate(`document.querySelectorAll('.weekly-schedule tbody tr').length`), 7)
+  assert(
+    await evaluate(
+      `document.querySelector('.garbage-tabs button[aria-current=page]').textContent.includes('列表查詢')`,
+    ),
+  )
+  await evaluate(`document.querySelector('.weekly-schedule button').click()`)
   await clickTab('提醒設定')
   assert.equal(await evaluate(`document.querySelectorAll('.channel input:disabled').length`), 2)
   await clickTab('操作指引')
@@ -314,6 +340,66 @@ try {
   })
   await until(`!document.querySelector('[role=dialog]')`)
   console.log('Route list, aerial switch and report draft: passed (no issue submitted)')
+  const chooseCity = async (city) => {
+    await evaluate(
+      `(()=>{const s=document.querySelector('select[aria-label="清運縣市"]');s.value=${JSON.stringify(city)};s.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+    )
+    await until(
+      `document.querySelector('h1')?.textContent.includes(${JSON.stringify(city)}) && !document.querySelector('.notice[role=status]')`,
+    )
+  }
+  await chooseCity('新北市')
+  await until(`document.querySelector('.garbage-footer')?.textContent.includes('26,655')`)
+  assert(await evaluate(`document.querySelector('.gps-status').textContent.includes('尚未串接')`))
+  await clickTab('列表查詢')
+  assert.equal(
+    await evaluate(`document.querySelectorAll('.filter-panel select')[1].options.length`),
+    30,
+  )
+  await evaluate(
+    `(()=>{const s=document.querySelectorAll('.filter-panel select')[1];s.value='板橋區';s.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+  )
+  await until(`document.querySelectorAll('.station-table tbody tr').length === 20`)
+  assert(
+    await evaluate(
+      `[...document.querySelectorAll('.station-table .station-title')].every(e=>e.textContent.includes('新北市板橋區'))`,
+    ),
+  )
+  await evaluate(`document.querySelector('.station-table .favorite-button').click()`)
+  await clickTab('我的收藏')
+  await until(`document.querySelectorAll('.station-table tbody tr').length === 1`)
+  assert(
+    await evaluate(
+      `document.querySelector('.station-table .station-title').textContent.includes('新北市')`,
+    ),
+  )
+  await chooseCity('臺北市')
+  await until(`document.querySelector('.garbage-footer')?.textContent.includes('4,010')`)
+  await until(`document.querySelectorAll('.station-table tbody tr').length === 1`)
+  assert(
+    await evaluate(
+      `!document.querySelector('.station-table .station-title').textContent.includes('新北市')`,
+    ),
+  )
+  await chooseCity('新北市')
+  await until(`document.querySelector('.garbage-footer')?.textContent.includes('26,655')`)
+  await send('Emulation.setGeolocationOverride', {
+    latitude: 25.012,
+    longitude: 121.462,
+    accuracy: 10,
+  })
+  await clickTab('附近查詢')
+  await until(`document.querySelectorAll('.tracker-card').length > 0`)
+  assert(
+    await evaluate(
+      `[...document.querySelectorAll('.station-table tbody tr td:first-child small')].every(e=>{const m=e.textContent.match(/([0-9]+) m/);return m && +m[1]<=500})`,
+    ),
+  )
+  await clickTab('地圖查詢')
+  await until(`document.querySelector('.garbage-map-shell')?.dataset.ready === 'true'`)
+  console.log(
+    'New Taipei city switch, 29 districts, filtered stations and city-separated favorites: passed',
+  )
   await evaluate(
     `window.scrollTo(0,0); document.querySelector('.garbage-header').scrollIntoView({block:'start'})`,
   )

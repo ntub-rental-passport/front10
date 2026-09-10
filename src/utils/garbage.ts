@@ -14,11 +14,46 @@ export const TAIPEI_DISTRICTS = [
   '南港區',
   '文山區',
 ]
+export const NEW_TAIPEI_DISTRICTS = [
+  '板橋區',
+  '三重區',
+  '中和區',
+  '永和區',
+  '新莊區',
+  '新店區',
+  '樹林區',
+  '鶯歌區',
+  '三峽區',
+  '淡水區',
+  '汐止區',
+  '瑞芳區',
+  '土城區',
+  '蘆洲區',
+  '五股區',
+  '泰山區',
+  '林口區',
+  '深坑區',
+  '石碇區',
+  '坪林區',
+  '三芝區',
+  '石門區',
+  '八里區',
+  '平溪區',
+  '雙溪區',
+  '貢寮區',
+  '金山區',
+  '萬里區',
+  '烏來區',
+]
+export type GarbageCity = '臺北市' | '新北市'
 export interface Point {
   lat: number
   lng: number
 }
 export interface GarbageStop extends Point {
+  city: GarbageCity
+  routeId?: string
+  rank?: number
   collections?: Partial<Record<CollectionKind, CollectionSchedule>>
   id: string
   district: string
@@ -31,6 +66,83 @@ export interface GarbageStop extends Point {
   road: string
   arrival: string
   departure: string
+  departureEstimated?: boolean
+}
+interface NewTaipeiRow {
+  city: string
+  lineid: string
+  linename: string
+  rank: string
+  name: string
+  village: string
+  longitude: string
+  latitude: string
+  time: string
+  memo?: string
+  [key: string]: string | undefined
+}
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+export function parseNewTaipeiStops(rows: unknown): GarbageStop[] {
+  if (!Array.isArray(rows)) throw new Error('新北市站點資料格式錯誤')
+  return rows.map((raw) => {
+    if (!raw || typeof raw !== 'object') throw new Error('新北市站點資料包含無效欄位')
+    const row = raw as NewTaipeiRow
+    const required = [
+      'city',
+      'lineid',
+      'linename',
+      'rank',
+      'name',
+      'village',
+      'latitude',
+      'longitude',
+      'time',
+    ]
+    if (required.some((key) => typeof row[key] !== 'string') || !/^\d+$/.test(row.rank))
+      throw new Error('新北市站點資料缺少必要欄位')
+    for (const prefix of ['garbage', 'recycling', 'foodscraps']) {
+      if (
+        DAY_NAMES.some(
+          (day) =>
+            typeof row[prefix + day] !== 'string' ||
+            !['', 'Y', 'N'].includes(row[prefix + day]!.toUpperCase()),
+        )
+      )
+        throw new Error('新北市每週清運欄位不完整')
+    }
+    const arrival = normalizeTime(row.time || '')
+    const endMinutes = +arrival.slice(0, 2) * 60 + +arrival.slice(3) + 10
+    const departure = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
+    const days = (prefix: string) =>
+      DAY_NAMES.flatMap((day, index) => (row[prefix + day]?.toUpperCase() === 'Y' ? [index] : []))
+    if (!NEW_TAIPEI_DISTRICTS.includes(row.city) || !arrival || !row.name || !row.lineid)
+      throw new Error('新北市站點資料包含無效欄位')
+    const address = `新北市${row.city}${row.name.trim()}`
+    return {
+      city: '新北市',
+      id: `ntpc|${row.lineid}|${row.rank}|${row.latitude}|${row.longitude}`,
+      district: row.city,
+      village: row.village || '',
+      team: '新北市環保局',
+      plate: '',
+      route: row.linename || row.lineid,
+      routeId: row.lineid,
+      rank: Number(row.rank),
+      trip: '',
+      address,
+      road: row.name.match(/^.*?(?:路|街|大道)/)?.[0] || row.name,
+      arrival,
+      departure,
+      departureEstimated: true,
+      lat: +row.latitude,
+      lng: +row.longitude,
+      collections: {
+        garbage: { arrival, departure, days: days('garbage') },
+        recycling: { arrival, departure, days: days('recycling') },
+        food: { arrival, departure, days: days('foodscraps') },
+      },
+    } satisfies GarbageStop
+  })
 }
 export interface TruckPosition extends Point {
   plate: string
@@ -90,6 +202,7 @@ export function parseStops(csv: string): GarbageStop[] {
       const address = get('地點')
       const street = address.replace(/^臺北市|^台北市/, '').replace(district, '')
       const stop: GarbageStop = {
+        city: '臺北市',
         id: [district, get('里別'), get('路線'), get('車次'), address, get('抵達時間')].join('|'),
         district,
         address,
@@ -109,7 +222,16 @@ export function parseStops(csv: string): GarbageStop[] {
     .filter((s) => TAIPEI_DISTRICTS.includes(s.district) && s.arrival && s.departure)
   return [...new Map(stops.map((s) => [s.id, s])).values()]
 }
-export function validPoint(p: Point): boolean {
+export function validPoint(p: Point & { city?: GarbageCity }): boolean {
+  if (p.city === '新北市')
+    return (
+      Number.isFinite(p.lat) &&
+      Number.isFinite(p.lng) &&
+      p.lat >= 24.6 &&
+      p.lat <= 25.4 &&
+      p.lng >= 121.2 &&
+      p.lng <= 122.1
+    )
   return (
     Number.isFinite(p.lat) &&
     Number.isFinite(p.lng) &&
@@ -139,6 +261,13 @@ export function isCollectionDay(date: string): boolean {
   return Number.isFinite(day) && day !== 0 && day !== 3
 }
 export function scheduleStatus(stop: GarbageStop, now: Date): string {
+  if (stop.collections) {
+    const day = new Date(`${taipeiDate(now)}T12:00:00+08:00`).getUTCDay()
+    if (!Object.values(stop.collections).some((s) => s?.days.includes(day))) return '今日無表定收運'
+    return now.getTime() < scheduleTime(taipeiDate(now), stop.arrival)
+      ? `表定 ${stop.arrival} 抵達`
+      : '今日表定時間已過'
+  }
   const date = taipeiDate(now)
   const previousDate = taipeiDate(new Date(now.getTime() - 86400000))
   const previousArrival = scheduleTime(previousDate, stop.arrival)

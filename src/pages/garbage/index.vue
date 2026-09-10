@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   Bell,
   BookOpen,
@@ -19,6 +19,14 @@ import GarbageGuide from '@/src/components/garbage/GarbageGuide.vue'
 import GarbageReport from '@/src/components/garbage/GarbageReport.vue'
 import GarbageFilters from '@/src/components/garbage/GarbageFilters.vue'
 import CollectionCountdown from '@/src/components/garbage/CollectionCountdown.vue'
+import WeeklySchedule from '@/src/components/garbage/WeeklySchedule.vue'
+import { matchesStatus, type StatusFilter } from '@/src/utils/garbage-status'
+import {
+  operatesOn,
+  collectionSchedules,
+  nextCollection,
+  nextTimeLabel,
+} from '@/src/utils/garbage-countdown'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog/index'
 import { getAuthSession } from '@/src/composables/useAuth'
 import {
@@ -36,12 +44,19 @@ import {
   taipeiDate,
   validPoint,
   type GarbageStop,
+  type GarbageCity,
   type Point,
   type TruckPosition,
 } from '@/src/utils/garbage'
 import './garbage.css'
 
 const filtersOpen = ref(false)
+const city = ref<GarbageCity>('臺北市')
+const sourceUrl = computed(() =>
+  city.value === '臺北市'
+    ? 'https://data.gov.tw/dataset/136515'
+    : 'https://data.ntpc.gov.tw/datasets/edc3ad26-8ae7-4916-a00b-bc6048d19bf8',
+)
 const reportOpen = ref(false)
 const dataCheckedAt = ref('尚無更新紀錄')
 const tabs = [
@@ -90,6 +105,9 @@ const email = getAuthSession()?.email || ''
 const favoritesKey =
   'rentmate-taipei-garbage-favorites:' + (getAuthSession()?.userId || email || 'guest')
 const favorites = ref<string[]>([])
+const cityFavoriteCount = computed(
+  () => stops.value.filter((s) => favorites.value.includes(s.id)).length,
+)
 try {
   const value = JSON.parse(localStorage.getItem(favoritesKey) || '[]')
   if (Array.isArray(value)) favorites.value = value.filter((v) => typeof v === 'string')
@@ -108,10 +126,18 @@ watch(
   { deep: true },
 )
 // Group timetables at the same physical address once, not on each clock tick.
+function physicalKey(stop: GarbageStop) {
+  return [
+    stop.city,
+    stop.district,
+    stop.address.trim(),
+    ...(stop.city === '新北市' ? [stop.lat, stop.lng] : []),
+  ].join('|')
+}
 const stopGroups = computed(() => {
   const groups = new globalThis.Map<string, GarbageStop[]>()
   for (const stop of stops.value) {
-    const key = stop.district + '|' + stop.address.trim()
+    const key = physicalKey(stop)
     const group = groups.get(key) || []
     group.push(stop)
     groups.set(key, group)
@@ -119,9 +145,10 @@ const stopGroups = computed(() => {
   return groups
 })
 function schedulesAt(stop: GarbageStop) {
-  return stopGroups.value.get(stop.district + '|' + stop.address.trim()) || [stop]
+  return stopGroups.value.get(physicalKey(stop)) || [stop]
 }
 function submitFilters() {
+  statusFilter.value = 'all'
   filtersOpen.value = false
   selected.value = results.value[0] || null
 }
@@ -148,6 +175,21 @@ const roads = computed(() =>
   ].sort(),
 )
 const normalized = (s: string) => s.trim().replaceAll('台', '臺')
+const statusFilter = ref<StatusFilter>('all')
+function setStatusFilter(value: StatusFilter) {
+  statusFilter.value = value
+  queryDate.value = taipeiDate(now.value)
+  timeStart.value = ''
+  timeEnd.value = ''
+}
+const statusClock = computed(() => Math.floor(now.value.getTime() / 10000) * 10000)
+const statusOptions = [
+  { id: 'all', label: '全部站點' },
+  { id: 'now', label: '現在' },
+  { id: '10', label: '10分內抵達' },
+  { id: '30', label: '30分內抵達' },
+  { id: '60', label: '1小時內抵達' },
+] as const
 const filtered = computed(() =>
   stops.value.filter(
     (s) =>
@@ -155,7 +197,7 @@ const filtered = computed(() =>
       (!village.value || s.village === village.value) &&
       (!road.value || normalized(s.address).includes(normalized(road.value))) &&
       overlaps(s, timeStart.value, timeEnd.value) &&
-      isCollectionDay(queryDate.value),
+      (statusFilter.value !== 'all' || operatesOn(s, queryDate.value)),
   ),
 )
 const center = computed(() => (tab.value === 'manual' ? manualPoint.value : location.value))
@@ -169,13 +211,92 @@ const nearby = (point: Point | null) =>
     : []
 const nearbyStops = computed(() => nearby(center.value))
 const results = computed(() => {
-  if (tab.value === 'nearby' || tab.value === 'manual') return nearbyStops.value
-  if (tab.value === 'favorites') return stops.value.filter((s) => favorites.value.includes(s.id))
-  return filtered.value
+  const base =
+    tab.value === 'nearby' || tab.value === 'manual'
+      ? nearbyStops.value
+      : tab.value === 'favorites'
+        ? stops.value.filter((s) => favorites.value.includes(s.id))
+        : filtered.value
+  return statusFilter.value === 'all'
+    ? base
+    : base.filter((s) => matchesStatus(s, statusFilter.value, statusClock.value))
 })
 const pages = computed(() => Math.max(1, Math.ceil(results.value.length / 20)))
 const visible = computed(() => results.value.slice((page.value - 1) * 20, page.value * 20))
-const dashboardStops = computed(() => nearby(location.value).slice(0, 3))
+const dashboardCandidates = computed(() => {
+  const seen = new Set<string>()
+  return nearby(location.value)
+    .filter((s) => {
+      const key = physicalKey(s)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, 3)
+})
+const dashboardStops = computed(() =>
+  dashboardCandidates.value.map((s) => {
+    const schedules = schedulesAt(s)
+    const next = nextCollection(
+      ['garbage', 'recycling', 'food'].flatMap((kind) =>
+        collectionSchedules(schedules, kind as 'garbage' | 'recycling' | 'food'),
+      ),
+      now.value,
+    )
+    const minutes = next
+      ? Math.max(0, Math.ceil((next.arrivalAt - now.value.getTime()) / 60000))
+      : null
+    const today = taipeiDate(now.value)
+    const weekday = new Date(`${today}T12:00:00+08:00`).getUTCDay()
+    const todayTimes = [
+      ...new Set(
+        ['garbage', 'recycling', 'food']
+          .flatMap((kind) =>
+            collectionSchedules(schedules, kind as 'garbage' | 'recycling' | 'food'),
+          )
+          .filter((s) => s.days.includes(weekday))
+          .map((s) => s.arrival),
+      ),
+    ].sort()
+    return {
+      ...s,
+      todayLabel: todayTimes.length ? `今日表定 ${todayTimes.join('、')}` : '今日未安排表定收運',
+      scheduleNote:
+        next && next.serviceDate > today && todayTimes.length
+          ? '今日表定時間已過；實際是否離站待確認'
+          : '依每週班表計算，非即時車輛預測',
+      estimate: !next
+        ? '待提供班表'
+        : next.active
+          ? '表定收運中'
+          : minutes! < 60
+            ? `${minutes} 分`
+            : minutes! < 1440
+              ? `${Math.floor(minutes! / 60)} 小時 ${minutes! % 60} 分`
+              : `${Math.floor(minutes! / 1440)} 天 ${Math.floor((minutes! % 1440) / 60)} 小時`,
+      nextLabel: next ? nextTimeLabel(next) : '尚無可用班次',
+      arrivalClock: next
+        ? new Intl.DateTimeFormat('zh-TW', {
+            timeZone: 'Asia/Taipei',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+          }).format(next.arrivalAt)
+        : '—',
+      arrivalDate: next ? taipeiDate(new Date(next.arrivalAt)) : '',
+    }
+  }),
+)
+const weeklyStop = ref<GarbageStop | null>(null)
+async function showWeekly(s: GarbageStop) {
+  tab.value = 'list'
+  resetFilters()
+  weeklyStop.value = s
+  await nextTick()
+  const panel = document.querySelector<HTMLElement>('.weekly-schedule')
+  panel?.focus({ preventScroll: true })
+  panel?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
 const freshVehicles = computed<TruckPosition[]>((previous) => {
   const next = freshTrucks(vehicles.value, now.value)
   return previous && next.length === previous.length && next.every((v, i) => v === previous[i])
@@ -194,6 +315,17 @@ watch(district, () => {
   village.value = ''
   road.value = ''
 })
+watch(city, () => {
+  weeklyStop.value = null
+  resetFilters()
+  selected.value = null
+  manualPoint.value = null
+  reminderStop.value = ''
+  stationSearch.value = ''
+  vehicles.value = []
+  void loadData()
+  void refreshGPS()
+})
 watch(village, () => {
   road.value = ''
 })
@@ -206,6 +338,7 @@ watch(tab, (value) => {
   if (value === 'nearby' && !tracking.value) locate()
 })
 function resetFilters() {
+  statusFilter.value = 'all'
   district.value = ''
   village.value = ''
   road.value = ''
@@ -270,21 +403,40 @@ function stopTracking() {
   locationMessage.value = '已停止追蹤，顯示最後定位位置'
 }
 async function loadData() {
+  const requestedCity = city.value
   loading.value = true
   dataError.value = ''
+  stops.value = []
+  dataCheckedAt.value = '尚無更新紀錄'
   try {
-    stops.value = await loadGarbageStops()
+    const loaded = await loadGarbageStops(requestedCity)
+    if (requestedCity !== city.value) return
+    stops.value = loaded
+    const file =
+      requestedCity === '臺北市' ? 'taipei-garbage-source.json' : 'new-taipei-garbage-source.json'
+    const response = await fetch(`${import.meta.env.BASE_URL}data/${file}`, {
+      signal: AbortSignal.timeout(10000),
+    })
+    const meta = response.ok ? await response.json() : null
+    if (requestedCity === city.value && meta)
+      dataCheckedAt.value = String(meta.lastCheckedAt || meta.importedAt || '尚無更新紀錄')
   } catch (e) {
-    dataError.value = (e as Error).message
+    if (requestedCity === city.value) dataError.value = (e as Error).message
   } finally {
-    loading.value = false
+    if (requestedCity === city.value) loading.value = false
   }
 }
 async function refreshGPS() {
+  if (city.value === '新北市') {
+    vehicles.value = []
+    gpsMessage.value = '新北市目前顯示官方表定班表；車輛即時資訊尚未串接。'
+    return
+  }
   if (refreshing.value) return
   refreshing.value = true
   try {
     const data = await loadTrucks()
+    if (city.value !== '臺北市') return
     vehicles.value = data.vehicles
     gpsMessage.value = data.message
   } catch {
@@ -332,8 +484,9 @@ async function saveReminder() {
     toast.value = '請至少選擇一種通知方式。'
     return
   }
-  if (!isCollectionDay(reminderDate.value)) {
-    toast.value = '週三、週日例行停收，請改選其他日期。'
+  const station = stops.value.find((s) => s.id === reminderStop.value)
+  if (!station || !operatesOn(station, reminderDate.value)) {
+    toast.value = '此站點在所選日期沒有表定收運，請改選其他日期。'
     return
   }
   saving.value = true
@@ -379,15 +532,6 @@ const statusLabels: Record<string, string> = {
 }
 let ticker: ReturnType<typeof setInterval>, poller: ReturnType<typeof setInterval>
 onMounted(() => {
-  void fetch(`${import.meta.env.BASE_URL}data/taipei-garbage-source.json`, {
-    signal: AbortSignal.timeout(10000),
-  })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((meta) => {
-      if (meta?.lastCheckedAt || meta?.importedAt)
-        dataCheckedAt.value = String(meta.lastCheckedAt || meta.importedAt)
-    })
-    .catch(() => {})
   void loadData()
   void refreshGPS()
   void loadReminders()
@@ -414,14 +558,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="garbage-page" :class="{ 'garbage-page--map': tab === 'map' }">
+  <div class="garbage-page garbage-page--wide" :class="{ 'garbage-page--map': tab === 'map' }">
     <header class="garbage-header">
       <div>
-        <p class="eyebrow">TAIPEI CITY · RENTMATE</p>
-        <h1>台北市垃圾車時間查詢</h1>
+        <p class="eyebrow">TAIPEI & NEW TAIPEI · RENTMATE</p>
+        <h1>{{ city }}垃圾車時間查詢</h1>
         <p class="subtitle">即時定位・到達提醒 <span>讓倒垃圾，剛好順路。</span></p>
       </div>
-      <div class="coverage"><span class="green-dot" /> 臺北市限定 <strong>12</strong> 行政區</div>
+      <div class="coverage">
+        <span class="green-dot" /><select v-model="city" aria-label="清運縣市">
+          <option>臺北市</option>
+          <option>新北市</option></select
+        ><strong>{{ city === '臺北市' ? 12 : 29 }}</strong> 行政區
+      </div>
     </header>
     <nav class="garbage-tabs" aria-label="垃圾清運功能">
       <button
@@ -432,11 +581,29 @@ onUnmounted(() => {
         @click="tab = item.id"
       >
         <component :is="item.icon" :size="17" />{{ item.label
-        }}<span v-if="item.id === 'favorites' && favorites.length" class="count">{{
-          favorites.length
+        }}<span v-if="item.id === 'favorites' && cityFavoriteCount" class="count">{{
+          cityFavoriteCount
         }}</span>
       </button>
     </nav>
+    <div
+      v-if="!['reminder', 'guide'].includes(tab)"
+      class="status-filters"
+      aria-label="表定收運狀態"
+    >
+      <button
+        v-for="option in statusOptions"
+        :key="option.id"
+        :aria-pressed="statusFilter === option.id"
+        @click="setStatusFilter(option.id)"
+      >
+        {{ option.label }}
+      </button>
+      <small
+        >依表定班表，每 10
+        秒更新。灰黑：時段結束；黃：待抵達；綠：收運時段（非即時車況）。新北離站時間暫以抵達後 10 分鐘估算，「約」為估計區間，非官方離站時間。</small
+      >
+    </div>
     <div v-if="toast" role="status" class="garbage-toast">
       <span>{{ toast }}</span
       ><button aria-label="關閉訊息" @click="toast = ''"><X :size="18" /></button>
@@ -444,7 +611,7 @@ onUnmounted(() => {
     <div v-if="dataError" class="notice error" role="alert">
       {{ dataError }} <button @click="loadData">重新載入</button>
     </div>
-    <div v-if="loading" class="notice" role="status">正在載入臺北市清運站點…</div>
+    <div v-if="loading" class="notice" role="status">正在載入{{ city }}清運站點…</div>
     <template v-if="!['reminder', 'guide'].includes(tab)">
       <section class="live-section" aria-labelledby="live-title">
         <div class="section-heading">
@@ -477,6 +644,7 @@ onUnmounted(() => {
         </p>
         <div v-if="dashboardStops.length" class="tracker-grid">
           <article v-for="(s, i) in dashboardStops" :key="s.id" class="tracker-card">
+            <p class="tracker-status">{{ s.todayLabel }}</p>
             <div class="tracker-top">
               <span class="number">{{ i + 1 }}</span
               ><button class="station-title" @click="selected = s">{{ s.address }}</button
@@ -491,19 +659,22 @@ onUnmounted(() => {
               </button>
             </div>
             <div class="tracker-time">
-              <div class="truck-icon"><Truck :size="28" /></div>
+              <div class="truck-icon"><Truck :size="23" /></div>
               <div>
-                <small>官方表定抵達</small
-                ><strong
-                  >{{ s.arrival }}<span>– {{ s.departure }}</span></strong
-                >
-                <p>同站點下一班會自動更新</p>
+                <small>距下一班 · 表定估算</small>
+                <strong>{{ s.estimate }}</strong>
+                <p>{{ s.scheduleNote }}</p>
+              </div>
+              <div class="tracker-arrival">
+                <small>下一班時刻 · 表定</small>
+                <strong>{{ s.arrivalClock }}</strong>
+                <p>{{ s.arrivalDate }}</p>
               </div>
             </div>
             <CollectionCountdown :stops="schedulesAt(s)" :now="now" compact />
             <footer>
               <span><MapPin :size="13" />{{ Math.round(s.distance) }} m 直線距離</span
-              ><span>{{ s.route }} · {{ s.plate }}</span>
+              ><button class="text-button" @click="showWeekly(s)">查看更多班次 →</button>
             </footer>
             <p
               v-if="
@@ -517,16 +688,16 @@ onUnmounted(() => {
             </p>
           </article>
         </div>
-        <div v-else-if="tab !== 'map'" class="nearby-empty">
+        <div v-else-if="!['map', 'manual'].includes(tab)" class="nearby-empty">
           <Crosshair :size="26" />
           <div>
             <strong>{{
-              location ? '目前位置 500 公尺內沒有臺北市清運站點' : '從你的位置，找到最近的清運站點'
+              location ? `目前位置 500 公尺內沒有${city}清運站點` : '從你的位置，找到最近的清運站點'
             }}</strong>
             <p>
               {{
                 location
-                  ? '可使用地圖瀏覽臺北市，或切換手動定位選擇其他位置。'
+                  ? `可使用地圖瀏覽${city}，或切換手動定位選擇其他位置。`
                   : '啟用定位後顯示附近站點、實際直線距離與表定倒數。'
               }}
             </p>
@@ -540,6 +711,7 @@ onUnmounted(() => {
       >
         <GarbageFilters
           v-if="tab === 'list'"
+          v-model:city="city"
           v-model:district="district"
           v-model:village="village"
           v-model:road="road"
@@ -554,28 +726,28 @@ onUnmounted(() => {
           show-city
         />
         <div class="results-column">
-          <div v-if="tab === 'manual'" class="notice">
-            <MapPin :size="18" /><span
-              >點擊地圖空白位置，以該點為中心查詢 500 公尺內站點。{{
-                manualPoint
-                  ? '已選：' + manualPoint.lat.toFixed(5) + ', ' + manualPoint.lng.toFixed(5)
-                  : ''
-              }}</span
-            >
-          </div>
+          <WeeklySchedule
+            v-if="tab === 'list' && weeklyStop"
+            :stops="schedulesAt(weeklyStop)"
+            @close="weeklyStop = null"
+          />
           <div v-if="tab === 'nearby'" class="notice">
             <Navigation :size="18" /><span
               >以你的 GPS 位置查詢 500
               公尺內所有班表站點。距離為直線距離，實際步行路線可能較長。</span
             >
           </div>
-          <div v-if="mapVisible" class="map-query-stage" :class="{ 'wide-map': tab === 'map' }">
+          <div v-if="mapVisible" class="map-query-stage wide-map">
             <button v-if="tab === 'map'" class="map-query-button" @click="filtersOpen = true">
               <Search :size="20" />查詢條件
             </button>
             <GarbageMap
               v-if="mapVisible"
+              :key="city"
+              :city="city"
               :stops="results"
+              :timestamp="statusClock"
+              :schedule-date="statusFilter === 'all' ? queryDate : taipeiDate(now)"
               :center="center"
               :manual="tab === 'manual'"
               :vehicles="freshVehicles"
@@ -598,7 +770,7 @@ onUnmounted(() => {
             <h3>{{ tab === 'favorites' ? '尚未收藏清運站點' : '目前沒有符合的站點' }}</h3>
             <p>
               {{
-                ['map', 'list'].includes(tab) && !isCollectionDay(queryDate)
+                city === '臺北市' && ['map', 'list'].includes(tab) && !isCollectionDay(queryDate)
                   ? '選擇日期為週三或週日例行停收日，請選擇其他日期。'
                   : tab === 'manual' && !manualPoint
                     ? '請先點擊地圖選擇位置。'
@@ -625,7 +797,7 @@ onUnmounted(() => {
                     ><small>{{ s.district }} · {{ s.village }} · {{ distanceLabel(s) }}</small>
                   </td>
                   <td class="time-cell">
-                    {{ s.arrival }}–{{ s.departure
+                    {{ s.arrival }}{{ s.city === '臺北市' ? '–' + s.departure : ''
                     }}<small>{{
                       ['nearby', 'manual', 'favorites'].includes(tab)
                         ? scheduleStatus(s, now)
@@ -773,7 +945,11 @@ onUnmounted(() => {
       <p class="eyebrow">STOP DETAILS</p>
       <h2>{{ selected.address }}</h2>
       <p>{{ selected.district }} · {{ selected.village }} · {{ selected.team }}</p>
-      <strong class="detail-time">{{ selected.arrival }}–{{ selected.departure }}</strong>
+      <strong class="detail-time"
+        >{{ selected.arrival
+        }}{{ selected.city === '臺北市' ? '–' + selected.departure : '' }}</strong
+      >
+      <p v-if="selected.departureEstimated">表定抵達 {{ selected.arrival }}；估計離站 {{ selected.departure }}（暫估停留 10 分鐘，非官方離站時間）。</p>
       <p>表定時間 · {{ selected.route }} · {{ selected.trip }} · {{ selected.plate }}</p>
       <CollectionCountdown :stops="schedulesAt(selected)" :now="now" />
       <p>準誤點：尚無軌跡預測資料。表定倒數不代表車輛實際位置。</p>
@@ -793,6 +969,8 @@ onUnmounted(() => {
           >依行政區、里別、道路及時間篩選清運站點。按查詢後返回滿版地圖。</DialogDescription
         >
         <GarbageFilters
+          v-model:city="city"
+          show-city
           v-model:district="district"
           v-model:village="village"
           v-model:road="road"
@@ -812,12 +990,9 @@ onUnmounted(() => {
       <button class="text-button" @click="reportOpen = true">回報問題</button>
       <p>本站資料檢查／匯入時間：{{ dataCheckedAt }}（不代表車輛 GPS 更新時間）</p>
       <p>
-        資料來源：<a
-          href="https://data.gov.tw/dataset/136515"
-          target="_blank"
-          rel="noopener noreferrer"
-          >臺北市政府環境保護局 · 垃圾車點位路線資訊</a
-        >｜本站資料：匯入 CSV 快照，共 {{ stops.length.toLocaleString() }} 筆有效停靠班次。
+        資料來源：<a :href="sourceUrl" target="_blank" rel="noopener noreferrer"
+          >{{ city }}政府環境保護局 · 清運路線資訊</a
+        >｜本站資料：官方班表快照，共 {{ stops.length.toLocaleString() }} 筆有效停靠班次。
       </p>
       <p>
         橘色為清運站點、藍點為目前位置；綠色為兩分鐘內更新的車輛

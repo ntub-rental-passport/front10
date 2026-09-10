@@ -1,5 +1,10 @@
 import { getAuthSession } from '@/src/composables/useAuth'
-import { parseStops, type TruckPosition } from '@/src/utils/garbage'
+import {
+  parseNewTaipeiStops,
+  parseStops,
+  type GarbageCity,
+  type TruckPosition,
+} from '@/src/utils/garbage'
 
 const BASE = import.meta.env.DEV
   ? '/api'
@@ -43,13 +48,17 @@ export async function garbageRequest<T>(path: string, init: RequestInit = {}): P
     )
   return body as T
 }
-export async function loadGarbageStops() {
-  const response = await fetch(`${import.meta.env.BASE_URL}data/taipei-garbage.csv`, {
+export async function loadGarbageStops(city: GarbageCity = '臺北市') {
+  const file = city === '臺北市' ? 'data/taipei-garbage.csv' : 'data/new-taipei-garbage.json'
+  const response = await fetch(`${import.meta.env.BASE_URL}${file}`, {
     signal: AbortSignal.timeout(15000),
   })
   if (!response.ok) throw new Error('清運站點資料載入失敗，請重試。')
-  const stops = parseStops(await response.text())
-  if (!stops.length) throw new Error('未讀取到有效的臺北市清運站點。')
+  const stops =
+    city === '臺北市'
+      ? parseStops(await response.text())
+      : parseNewTaipeiStops(await response.json())
+  if (!stops.length) throw new Error(`未讀取到有效的${city}清運站點。`)
   return stops
 }
 export const loadTrucks = () =>

@@ -573,8 +573,13 @@ def exchange_google_ticket(
         else None
     )
 
-    # Google 登入成功：與一般登入相同，簽發 JWT cookie（角色取本次登入所選身分）
-    set_auth_cookie(response, create_cookie_token(user.id, user.email, requested_role))
+    # Only a registered identity with the requested role may receive a login cookie.
+    # New Google accounts must finish registration before becoming authenticated.
+    if identity:
+        user = db.query(User).filter(User.id == identity.user_id).first()
+        if user is None:
+            raise HTTPException(status_code=401, detail="Google 帳號對應的會員資料不存在，請聯絡管理者。")
+        set_auth_cookie(response, create_cookie_token(user.id, user.email, requested_role))
 
     return GoogleOAuthSessionResponse(
         **account.model_dump(),

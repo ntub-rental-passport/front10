@@ -23,7 +23,19 @@ def stops():
             key = '|'.join(row[name].strip() for name in ['行政區', '里別', '路線', '車次', '地點', '抵達時間'])
             raw = row['抵達時間'].strip().replace(':', '').zfill(4)
             result[key] = {'address': row['地點'], 'arrival': f'{raw[:2]}:{raw[2:]}'}
-        return result
+    new_taipei = ROOT / 'public/data/new-taipei-garbage.json'
+    if new_taipei.exists():
+        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        for row in json.loads(new_taipei.read_text(encoding='utf-8')):
+            key = '|'.join(['ntpc', row['lineid'], row['rank'], row['latitude'], row['longitude']])
+            result[key] = {
+                'address': '新北市' + row['city'] + row['name'].strip(),
+                'arrival': row['time'],
+                'days': [i for i, day in enumerate(days) if any(
+                    row.get(prefix + day, '').upper() == 'Y'
+                    for prefix in ('garbage', 'recycling', 'foodscraps'))],
+            }
+    return result
 
 
 @contextmanager
@@ -71,7 +83,9 @@ def create_reminder(user_id, recipient, values):
     service_day = datetime.fromisoformat(f"{values['date']}T00:00:00+08:00")
     hour, minute = map(int, station['arrival'].split(':'))
     arrival = service_day + timedelta(hours=hour, minutes=minute)
-    if service_day.weekday() in (2, 6):
+    if 'days' in station and service_day.weekday() not in station['days']:
+        raise ValueError('此站點在所選日期沒有表定收運，請選擇其他日期。')
+    if 'days' not in station and service_day.weekday() in (2, 6):
         raise ValueError('週三、週日為例行停收日，請選擇其他日期。')
     due = arrival - timedelta(minutes=values['minutesBefore'])
     if due <= datetime.now(TZ) or due > datetime.now(TZ) + timedelta(days=366):

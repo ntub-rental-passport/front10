@@ -15,7 +15,8 @@ describe('Taipei next collection countdown', () => {
     expect(countdownLabel(nextCollection([schedule], now), now)).toBe('04 分 59 秒')
   })
   it('skips Wednesday after the last Tuesday collection', () => {
-    const next = nextCollection([schedule], at('2026-09-08T16:40:00'))!
+    expect(nextCollection([schedule], at('2026-09-08T16:40:59'))?.active).toBe(true)
+    const next = nextCollection([schedule], at('2026-09-08T16:41:00'))!
     expect(next.serviceDate).toBe('2026-09-10')
   })
   it('skips Sunday after the last Saturday collection', () => {

@@ -15,19 +15,28 @@ const schedules = computed(() =>
   kinds.map((kind) => ({ kind, values: collectionSchedules(props.stops, kind) })),
 )
 const rows = computed(() =>
-  schedules.value.map(({ kind, values }) => ({ kind, next: nextCollection(values, props.now) })),
+  schedules.value.map(({ kind, values }) => ({
+    kind,
+    known: values.length > 0,
+    next: nextCollection(values, props.now),
+  })),
 )
 </script>
 <template>
-  <div class="collection-countdown" :class="{ compact }" aria-label="各類清運下一班倒數">
+  <details class="collection-countdown" :class="{ compact }" aria-label="各類清運下一班倒數">
+    <summary>垃圾／資源回收／廚餘時間 <span class="expand-hint">展開／收合</span></summary>
     <div v-for="row in rows" :key="row.kind" class="collection-countdown-row" :class="row.kind">
       <span class="collection-kind">{{ COLLECTION_LABELS[row.kind] }}</span>
       <div>
-        <strong>{{ countdownLabel(row.next, now) }}</strong
+        <strong>{{
+          !row.next && row.known ? '無此類收運班次' : countdownLabel(row.next, now)
+        }}</strong
         ><small>{{
           row.next
             ? `${row.next.active ? '表定' : '下一班'} ${nextTimeLabel(row.next)}`
-            : '尚無獨立班表'
+            : row.known
+              ? '每週班表未安排收運'
+              : '尚無獨立班表'
         }}</small>
       </div>
     </div>
@@ -35,13 +44,29 @@ const rows = computed(() =>
       依臺北時間計算同站點的下一次表定收運；一般清運依現有班表，回收／廚餘需獨立資料。非 GPS
       抵達預測。
     </p>
-  </div>
+  </details>
 </template>
 <style scoped>
 .collection-countdown {
-  display: grid;
-  gap: 7px;
   margin: 12px 0;
+}
+.collection-countdown summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #5146a5;
+  padding: 6px 0;
+}
+.collection-countdown summary:focus-visible {
+  outline: 2px solid #5146a5;
+  outline-offset: 3px;
+}
+.expand-hint {
+  font-size: 10px;
+  color: #788096;
+  margin-left: 6px;
+}
+.collection-countdown-row {
+  margin-top: 7px;
 }
 .collection-countdown-row {
   display: flex;

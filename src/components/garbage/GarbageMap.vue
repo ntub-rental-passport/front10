@@ -3,9 +3,19 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Route, Layers, LocateFixed } from 'lucide-vue-next'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { validPoint, type GarbageStop, type Point, type TruckPosition } from '@/src/utils/garbage'
+import {
+  validPoint,
+  type GarbageCity,
+  type GarbageStop,
+  type Point,
+  type TruckPosition,
+} from '@/src/utils/garbage'
 import { groupRoutes, routeSegments } from '@/src/utils/garbage-routes'
+import { stopStatus } from '@/src/utils/garbage-status'
 const props = defineProps<{
+  timestamp?: number
+  scheduleDate?: string
+  city?: GarbageCity
   stops: GarbageStop[]
   center: Point | null
   manual: boolean
@@ -32,7 +42,7 @@ function sync() {
     features: props.stops.filter(validPoint).map((s) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
-      properties: { id: s.id },
+      properties: { id: s.id, ...stopStatus(s, props.timestamp ?? Date.now(), props.scheduleDate) },
     })),
   })
   source('vehicles').setData({
@@ -80,7 +90,11 @@ function syncRoute() {
     features: stops.filter(validPoint).map((s, i) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
-      properties: { id: s.id, label: `${i + 1}. ${s.arrival}–${s.departure}` },
+      properties: {
+        id: s.id,
+        ...stopStatus(s, props.timestamp ?? Date.now(), props.scheduleDate),
+        label: `${i + 1}. ${s.departureEstimated ? '約 ' : ''}${s.arrival}${s.departure !== s.arrival ? '–' + s.departure : ''}`,
+      },
     })),
   })
 }
@@ -109,7 +123,7 @@ function start() {
     map = new maplibregl.Map({
       container: container.value,
       style: 'https://tiles.openfreemap.org/styles/positron',
-      center: [121.535, 25.055],
+      center: props.city === '新北市' ? [121.462, 25.012] : [121.535, 25.055],
       zoom: 12,
     })
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
@@ -150,18 +164,49 @@ function start() {
         data: empty(),
         cluster: false,
       })
+      for (const [state, color] of Object.entries({ active: '#16a568', ended: '#50545b', upcoming: '#cf9500', unknown: '#9499a3' })) {
+        const canvas = document.createElement('canvas')
+        canvas.width = 48
+        canvas.height = 32
+        const context = canvas.getContext('2d')!
+        context.shadowColor = '#00000040'
+        context.shadowBlur = 3
+        context.shadowOffsetY = 2
+        context.fillStyle = color
+        context.beginPath()
+        context.roundRect(3, 3, 42, 24, 5)
+        context.fill()
+        map.addImage(`schedule-${state}`, context.getImageData(0, 0, 48, 32), { content: [9, 7, 39, 23], stretchX: [[10, 38]], stretchY: [[10, 20]] })
+      }
       map.addLayer({
         id: 'points',
         type: 'circle',
         source: 'stops',
         paint: {
-          'circle-color': '#efaa15',
+          'circle-color': ['get', 'color'],
           'circle-radius': 6,
           'circle-stroke-width': 2,
           'circle-stroke-color': '#fff',
         },
       })
       map.addSource('route-order', { type: 'geojson', data: empty() })
+      map.addLayer({
+        id: 'stop-time-labels',
+        type: 'symbol',
+        source: 'stops',
+        minzoom: 15,
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 12,
+          'text-offset': [0, 1.5],
+          'text-padding': 3,
+          'icon-image': ['concat', 'schedule-', ['get', 'state']],
+          'icon-text-fit': 'both',
+          'icon-text-fit-padding': [4, 7, 4, 7],
+        },
+        paint: { 'text-color': '#fff' },
+      })
       map.addLayer({
         id: 'route-order',
         type: 'line',
@@ -174,7 +219,7 @@ function start() {
         type: 'circle',
         source: 'route-times',
         paint: {
-          'circle-color': '#e39a09',
+          'circle-color': ['get', 'color'],
           'circle-radius': 7,
           'circle-stroke-width': 2,
           'circle-stroke-color': '#fff',
@@ -189,8 +234,11 @@ function start() {
           'text-size': 12,
           'text-font': ['Noto Sans Regular'],
           'text-offset': [0, -1.5],
+          'icon-image': ['concat', 'schedule-', ['get', 'state']],
+          'icon-text-fit': 'both',
+          'icon-text-fit-padding': [4, 7, 4, 7],
         },
-        paint: { 'text-color': '#8f5000', 'text-halo-color': '#fff', 'text-halo-width': 3 },
+        paint: { 'text-color': '#fff' },
       })
       map.addSource('vehicles', { type: 'geojson', data: empty() })
       map.addLayer({
@@ -228,7 +276,7 @@ function start() {
         return
       }
       const f = map.queryRenderedFeatures(e.point, {
-        layers: ['route-times-points', 'points'],
+        layers: ['route-times-points', 'points', 'stop-time-labels'],
       })[0]
       if (f?.properties?.id) {
         const stop = props.stops.find((s) => s.id === f.properties.id)
@@ -239,7 +287,7 @@ function start() {
     error.value = '此裝置無法啟動地圖，請使用列表查詢。'
   }
 }
-watch(() => [props.stops, props.center, props.vehicles], sync)
+watch(() => [props.stops, props.center, props.vehicles, props.timestamp, props.scheduleDate], sync)
 watch(activeRoute, syncRoute)
 watch(
   () => props.center,
@@ -341,7 +389,8 @@ onUnmounted(() => {
     </div>
     <div v-else-if="!ready" class="map-message" role="status">正在載入地圖，站點列表仍可使用。</div>
     <div class="map-legend">
-      <span class="stop-dot" />清運站點 <span class="user-dot" />{{
+      <span style="background: #50545b" class="stop-dot" />表定結束 <span class="stop-dot" />待抵達
+      <span style="background: #16a568" class="stop-dot" />表定收運中 <span class="user-dot" />{{
         manual ? '手動中心' : '目前位置'
       }}
       <span class="truck-dot" />車輛 GPS<span v-if="aerial">航照非即時影像</span>

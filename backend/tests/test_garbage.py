@@ -42,6 +42,22 @@ class GarbageReminderTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             toggle_reminder(reminder['id'], ActiveInput(active=False), self.other)
 
+    def test_new_taipei_uses_station_weekdays_instead_of_taipei_closure(self):
+        key = next(key for key in service.stops() if key.startswith('ntpc|'))
+        self.assertIn('days', service.stops()[key])
+        day = datetime.now(service.TZ).date() + timedelta(days=1)
+        while day.weekday() != 2:
+            day += timedelta(days=1)
+        self.values.update(stationId=key, date=day.isoformat())
+        with patch.object(service, 'stops', return_value={key: {
+            'address': '新北市測試站', 'arrival': '18:30', 'days': [2],
+        }}):
+            reminder = self.create()
+            self.assertEqual(reminder['stationName'], '新北市測試站')
+            self.values['date'] = (day + timedelta(days=1)).isoformat()
+            with self.assertRaisesRegex(ValueError, '沒有表定收運'):
+                self.create()
+
     def test_rejects_closed_day_and_past_due_and_unavailable_channel(self):
         self.values['date'] = '2026-09-09'
         with self.assertRaisesRegex(ValueError, '週三'):

@@ -21,7 +21,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx tsx scripts/update-taipei-garbage.ts --write
+      - run: npx tsx scripts/update-new-taipei-garbage.ts --write
       - run: npm test -- src/utils/garbage.test.ts src/utils/garbage-countdown.test.ts src/utils/garbage-routes.test.ts src/utils/garbage-update.test.ts
+      - run: npm test -- src/utils/new-taipei-garbage.test.ts
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:
@@ -36,6 +38,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c automation/taipei-garbage-${{ github.run_id }}
           git add public/data/taipei-garbage.csv public/data/taipei-garbage-source.json
+          git add public/data/new-taipei-garbage.json public/data/new-taipei-garbage-source.json
           git diff --cached --quiet && exit 0
           git commit -m 'chore(garbage): refresh verified Taipei schedules'
           git push origin HEAD
