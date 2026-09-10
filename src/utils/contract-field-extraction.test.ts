@@ -76,3 +76,51 @@ describe('其他常見寫法仍要相容', () => {
     expect(fields.landlord.value).toBe('陳大華')
   })
 })
+
+/**
+ * 費用約定的抽取。
+ *
+ * 2026-09-10 實測發現「其他費用及其支付方式」抽到的是
+ * 「(二)本契約租賃雙方□同意 ■不同意辦理公證」—— 那是下一條的內容，
+ * 跟這個欄位毫無關係。原因是抽取器會先在後 5 行裡找任何帶 ■ 的行，
+ * 蓋過標籤自己那行已經寫完整的敘述式約定。
+ *
+ * 抽錯內容比抽不到更糟：畫面顯示「已確認」，使用者不會發現它是錯的。
+ */
+const EXPENSES = `第五條　租賃期間相關費用之約定
+（一）管理費：■由承租人負擔。租賃住宅每月 1,500 元整。
+（二）水費：■由承租人負擔。
+（三）電費：■由承租人負擔。■以用電度數計費：■每期每度 7 元。
+（四）瓦斯費：■由承租人負擔。
+（五）網路費：■由承租人負擔。
+（六）其他費用及其支付方式：清潔費每月 200 元，由承租人負擔。
+
+第六條　稅費負擔之約定
+（一）租賃住宅之房屋稅、地價稅由承租人負擔。
+（二）本契約租賃雙方□同意 ■不同意辦理公證。
+`
+
+describe('費用約定', () => {
+  const fields = extractContractFieldCandidates(EXPENSES)
+
+  it('敘述式的其他費用不會被下一條的勾選行蓋過', () => {
+    expect(fields.other_fee.value).toContain('清潔費')
+    expect(fields.other_fee.value).not.toContain('公證')
+  })
+
+  it('抽取不會跨條', () => {
+    for (const key of ['management_fee', 'water_fee', 'gas_fee', 'internet_fee']) {
+      expect(fields[key].value).not.toContain('公證')
+    }
+  })
+
+  it('每度電費支援官方範本的「每期每度」寫法', () => {
+    expect(fields.electricity_rate.value).toContain('每度')
+  })
+
+  it('各費用項目各自對應到自己的行', () => {
+    expect(fields.water_fee.value).toContain('水費')
+    expect(fields.gas_fee.value).toContain('瓦斯費')
+    expect(fields.internet_fee.value).toContain('網路費')
+  })
+})

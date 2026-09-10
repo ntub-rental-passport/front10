@@ -195,14 +195,49 @@ function extractNearbyLine(text, labels) {
   return line ? candidate(line, line, 'low') : { ...EMPTY_CANDIDATE }
 }
 
-function extractExpenseAgreement(text, label) {
+// 條號開頭的行代表換了一條，費用約定不可能跨條 ——
+// 越過這條界線去抓「下一條的勾選框」會抓到完全無關的內容。
+const CLAUSE_HEADING = /^第[一二三四五六七八九十百零〇\d]+條/
+
+function extractExpenseAgreement(text, labels) {
   const lines = String(text ?? '')
     .split(/\r?\n/)
     .map((line) => cleanSource(line))
-  const labelIndex = lines.findIndex((line) => line.includes(label))
+  const labelList = Array.isArray(labels) ? labels : [labels]
+
+  let labelIndex = -1
+  let label = ''
+  for (const candidateLabel of labelList) {
+    const index = lines.findIndex((line) => line.includes(candidateLabel))
+    if (index >= 0 && (labelIndex < 0 || index < labelIndex)) {
+      labelIndex = index
+      label = candidateLabel
+    }
+  }
   if (labelIndex < 0) return { ...EMPTY_CANDIDATE }
 
-  const nearbyLines = lines.slice(labelIndex, labelIndex + 5)
+  // ⚠️ 先看標籤自己這一行有沒有把答案寫完整。
+  //
+  // 原本的順序是「先在後 5 行裡找任何有 ■ 的行」，於是
+  // 「（六）其他費用及其支付方式：清潔費每月 200 元，由承租人負擔。」
+  // 這種已經寫完的敘述式約定，會被 4 行之後、屬於下一條的
+  // 「（二）本契約租賃雙方□同意 ■不同意辦理公證。」蓋過去 ——
+  // 抽到的內容跟這個欄位毫無關係。2026-09-10 實測踩到。
+  const ownLine = lines[labelIndex]
+  const afterLabel = ownLine
+    .slice(ownLine.indexOf(label) + label.length)
+    .replace(/^[：:\s]+/, '')
+  if (afterLabel.length > 1 && !/^[□]/.test(afterLabel)) {
+    return candidate(ownLine, ownLine, /[■☑✓]/.test(ownLine) ? 'medium' : 'low')
+  }
+
+  // 往後找勾選行，但不跨條
+  const nearbyLines = []
+  for (const line of lines.slice(labelIndex, labelIndex + 5)) {
+    if (nearbyLines.length && CLAUSE_HEADING.test(line)) break
+    nearbyLines.push(line)
+  }
+
   const checkedLine = nearbyLines.find((line) => /[■☑✓]/.test(line))
   if (checkedLine) return candidate(checkedLine, checkedLine, 'medium')
 
@@ -706,7 +741,8 @@ export function extractContractFieldCandidates(text) {
     management_fee: extractExpenseAgreement(text, '管理費'),
     water_fee: extractExpenseAgreement(text, '水費'),
     electricity_billing: extractExpenseAgreement(text, '電費'),
-    electricity_rate: extractExpenseAgreement(text, '每度電費'),
+    // 官方範本的寫法是「每期每度___元」，不是「每度電費」
+    electricity_rate: extractExpenseAgreement(text, ['每度電費', '每度單價', '平均電價', '每期每度']),
     gas_fee: extractExpenseAgreement(text, '瓦斯費'),
     internet_fee: extractExpenseAgreement(text, '網路費'),
     other_fee: extractExpenseAgreement(text, '其他費用'),
