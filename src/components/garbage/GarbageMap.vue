@@ -17,6 +17,7 @@ const props = defineProps<{
   scheduleDate?: string
   city?: GarbageCity
   stops: GarbageStop[]
+  routeStops?: GarbageStop[]
   radius: number
   center: Point | null
   manual: boolean
@@ -30,10 +31,94 @@ const error = ref(''),
   aerial = ref(false),
   routesOpen = ref(false),
   routeId = ref('')
-const routes = computed(() => groupRoutes(props.stops))
+const routes = computed(() => groupRoutes(props.routeStops ?? props.stops))
+const routeSearch = ref('')
+const matchingRoutes = computed(() => {
+  const query = routeSearch.value.trim().replaceAll('台', '臺').toLocaleLowerCase()
+  return routes.value.filter((route) =>
+    (route.label + ' ' + route.stops.map((stop) => stop.address).join(' '))
+      .replaceAll('台', '臺')
+      .toLocaleLowerCase()
+      .includes(query),
+  )
+})
+const drawer = ref<HTMLElement>()
+const drawerPosition = ref<{ x: number; y: number } | null>(null)
+let drag: { id: number; x: number; y: number; left: number; top: number } | null = null
+function moveDrawer(x: number, y: number) {
+  const element = drawer.value
+  const parent = element?.parentElement
+  if (!element || !parent) return
+  drawerPosition.value = {
+    x: Math.max(0, Math.min(x, parent.clientWidth - element.offsetWidth)),
+    y: Math.max(0, Math.min(y, parent.clientHeight - element.offsetHeight)),
+  }
+}
+function startDrag(event: PointerEvent) {
+  if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+  const element = drawer.value!
+  drag = {
+    id: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    left: element.offsetLeft,
+    top: element.offsetTop,
+  }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  event.preventDefault()
+}
+function dragDrawer(event: PointerEvent) {
+  if (!drag || drag.id !== event.pointerId) return
+  moveDrawer(drag.left + event.clientX - drag.x, drag.top + event.clientY - drag.y)
+}
+function keyboardMove(event: KeyboardEvent) {
+  const steps: Record<string, [number, number]> = {
+    ArrowLeft: [-20, 0],
+    ArrowRight: [20, 0],
+    ArrowUp: [0, -20],
+    ArrowDown: [0, 20],
+  }
+  const step = steps[event.key]
+  if (!step || event.target !== event.currentTarget || !drawer.value) return
+  event.preventDefault()
+  moveDrawer(drawer.value.offsetLeft + step[0], drawer.value.offsetTop + step[1])
+}
+function openRoute(stop: GarbageStop) {
+  routeSearch.value = ''
+  routeId.value = groupRoutes([stop])[0]!.id
+  routesOpen.value = true
+  chooseRoute()
+}
+defineExpose({ openRoute })
 const activeRoute = computed(() => routes.value.find((r) => r.id === routeId.value))
 let map: maplibregl.Map | undefined, marker: maplibregl.Marker | undefined
 let resizeObserver: ResizeObserver | undefined
+let resizeFrame = 0
+let lastMapSize = { width: 0, height: 0, ratio: 0 }
+let resolutionQuery: MediaQueryList | undefined
+function refreshMapSize() {
+  resizeFrame = 0
+  const element = container.value
+  if (!map || !element || !element.clientWidth || !element.clientHeight) return
+  const width = element.clientWidth
+  const height = element.clientHeight
+  const ratio = window.devicePixelRatio || 1
+  if (width !== lastMapSize.width || height !== lastMapSize.height || ratio !== lastMapSize.ratio) {
+    map.resize()
+    lastMapSize = { width, height, ratio }
+  }
+  map.triggerRepaint()
+  if (drawerPosition.value) moveDrawer(drawerPosition.value.x, drawerPosition.value.y)
+}
+function scheduleMapResize() {
+  if (!resizeFrame) resizeFrame = requestAnimationFrame(refreshMapSize)
+}
+function watchResolution() {
+  resolutionQuery?.removeEventListener('change', watchResolution)
+  resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+  resolutionQuery.addEventListener('change', watchResolution)
+  scheduleMapResize()
+}
 const empty = () => ({ type: 'FeatureCollection' as const, features: [] })
 function sync() {
   if (!map?.getSource('stops')) return
@@ -88,15 +173,18 @@ function syncRoute() {
   })
   ;(map.getSource('route-times') as maplibregl.GeoJSONSource).setData({
     type: 'FeatureCollection',
-    features: stops.filter(validPoint).map((s, i) => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
-      properties: {
-        id: s.id,
-        ...stopStatus(s, props.timestamp ?? Date.now(), props.scheduleDate),
-        label: `${i + 1}. ${s.departureEstimated ? '約 ' : ''}${s.arrival}${s.departure !== s.arrival ? '–' + s.departure : ''}`,
-      },
-    })),
+    features: stops
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => validPoint(s))
+      .map(({ s, i }) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
+        properties: {
+          id: s.id,
+          ...stopStatus(s, props.timestamp ?? Date.now(), props.scheduleDate),
+          label: `${i + 1}. ${s.departureEstimated ? '約 ' : ''}${s.arrival}${s.departure !== s.arrival ? '–' + s.departure : ''}`,
+        },
+      })),
   })
 }
 function chooseRoute() {
@@ -127,6 +215,8 @@ function start() {
       center: props.city === '新北市' ? [121.462, 25.012] : [121.535, 25.055],
       zoom: 12,
     })
+    lastMapSize = { width: 0, height: 0, ratio: 0 }
+    scheduleMapResize()
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
     map.on('error', () => {
       error.value = '部分圖資暫時無法載入，可切回平面圖或使用下方列表。'
@@ -169,6 +259,7 @@ function start() {
         active: '#16a568',
         ended: '#50545b',
         upcoming: '#cf9500',
+        pending: '#9499a3',
         unknown: '#9499a3',
       })) {
         const canvas = document.createElement('canvas')
@@ -277,6 +368,7 @@ function start() {
       map.getCanvas().style.cursor = props.manual ? 'crosshair' : ''
       ready.value = true
       sync()
+      if (routeId.value) chooseRoute()
       if (props.center) map.jumpTo({ center: [props.center.lng, props.center.lat], zoom: 15 })
     })
     map.on('click', async (e) => {
@@ -286,10 +378,10 @@ function start() {
         return
       }
       const f = map.queryRenderedFeatures(e.point, {
-        layers: ['route-times-points', 'points', 'stop-time-labels'],
+        layers: ['route-times-labels', 'route-times-points', 'points', 'stop-time-labels'],
       })[0]
       if (f?.properties?.id) {
-        const stop = props.stops.find((s) => s.id === f.properties.id)
+        const stop = (props.routeStops ?? props.stops).find((s) => s.id === f.properties.id)
         if (stop) emit('select', stop)
       }
     })
@@ -329,10 +421,19 @@ watch(
 )
 onMounted(() => {
   start()
-  resizeObserver = new ResizeObserver(() => map?.resize())
+  resizeObserver = new ResizeObserver(scheduleMapResize)
   if (container.value) resizeObserver.observe(container.value)
+  document.addEventListener('scroll', scheduleMapResize, { capture: true, passive: true })
+  window.addEventListener('resize', scheduleMapResize)
+  window.visualViewport?.addEventListener('resize', scheduleMapResize)
+  watchResolution()
 })
 onUnmounted(() => {
+  cancelAnimationFrame(resizeFrame)
+  document.removeEventListener('scroll', scheduleMapResize, true)
+  window.removeEventListener('resize', scheduleMapResize)
+  window.visualViewport?.removeEventListener('resize', scheduleMapResize)
+  resolutionQuery?.removeEventListener('change', watchResolution)
   resizeObserver?.disconnect()
   marker?.remove()
   map?.remove()
@@ -376,26 +477,56 @@ onUnmounted(() => {
         <LocateFixed :size="21" aria-hidden="true" />
       </button>
     </div>
-    <section v-if="routesOpen" class="route-drawer" aria-label="清運路線列表">
-      <header>
+    <section
+      v-if="routesOpen"
+      ref="drawer"
+      class="route-drawer"
+      aria-label="清運路線列表"
+      :style="
+        drawerPosition ? { left: drawerPosition.x + 'px', top: drawerPosition.y + 'px' } : undefined
+      "
+    >
+      <header
+        tabindex="0"
+        aria-label="拖曳移動路線卡，或使用方向鍵移動"
+        @pointerdown.stop="startDrag"
+        @pointermove.stop="dragDrawer"
+        @pointerup="drag = null"
+        @pointercancel="drag = null"
+        @lostpointercapture="drag = null"
+        @keydown="keyboardMove"
+      >
         <strong>清運班次路線</strong
         ><button type="button" aria-label="關閉路線列表" @click="routesOpen = false">×</button>
       </header>
       <label
-        >篩選結果中的路線（{{ routes.length }}）<select v-model="routeId" @change="chooseRoute">
+        >搜尋路線、車號或站點<input
+          v-model="routeSearch"
+          type="search"
+          placeholder="輸入路線、行政區、車號或地址"
+      /></label>
+      <label
+        >符合的路線（{{ matchingRoutes.length }}）<select v-model="routeId" @change="chooseRoute">
           <option value="">請選擇班次</option>
-          <option v-for="route in routes" :key="route.id" :value="route.id">
+          <option
+            v-if="activeRoute && !matchingRoutes.some((route) => route.id === routeId)"
+            :value="routeId"
+          >
+            {{ activeRoute.label }}（目前選取）
+          </option>
+          <option v-for="route in matchingRoutes" :key="route.id" :value="route.id">
             {{ route.label }}
           </option>
         </select></label
       >
+      <p v-if="!matchingRoutes.length" role="status">沒有符合的路線，請換個關鍵字。</p>
       <p>
-        虛線僅為依表定時間排列的站點連線示意，不是實際道路或 GPS
-        軌跡。同時刻站點的先後順序未經確認。
+        有官方站序時依站序排列，其餘依表定時間排序；編號對應地圖上的站點。虛線為站點連線示意，非實際行車路徑。
       </p>
       <button v-if="routeId" type="button" @click="routeId = ''">清除路線</button>
       <ol v-if="activeRoute">
-        <li v-for="stop in activeRoute.stops" :key="stop.id">
+        <li v-for="(stop, index) in activeRoute.stops" :key="stop.id">
+          <span class="route-sequence">{{ index + 1 }}</span>
           <button type="button" @click="emit('select', stop)">
             <strong>{{ stop.arrival }}–{{ stop.departure }}</strong
             ><span>{{ stop.address }}</span
@@ -409,7 +540,9 @@ onUnmounted(() => {
     </div>
     <div v-else-if="!ready" class="map-message" role="status">正在載入地圖，站點列表仍可使用。</div>
     <div class="map-legend">
-      <span style="background: #50545b" class="stop-dot" />表定結束 <span class="stop-dot" />待抵達
+      <span style="background: #50545b" class="stop-dot" />表定結束
+      <span style="background: #9499a3" class="stop-dot" />尚未抵達
+      <span class="stop-dot" />即將抵達（15 分內）
       <span style="background: #16a568" class="stop-dot" />表定收運中 <span class="user-dot" />{{
         manual ? '手動中心' : '目前位置'
       }}
@@ -460,14 +593,17 @@ onUnmounted(() => {
 .route-drawer {
   position: absolute;
   top: 104px;
-  left: 150px;
-  width: min(340px, calc(100% - 170px));
+  left: 76px;
+  width: min(340px, calc(100% - 92px));
   max-height: calc(100% - 175px);
   overflow: auto;
   padding: 16px;
   z-index: 4;
 }
 .route-drawer header {
+  cursor: move;
+  touch-action: none;
+  user-select: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -481,7 +617,8 @@ onUnmounted(() => {
   font-size: 12px;
   margin-top: 12px;
 }
-.route-drawer select {
+.route-drawer select,
+.route-drawer input {
   width: 100%;
   padding: 10px;
   border: 1px solid #ddd;
@@ -493,11 +630,27 @@ onUnmounted(() => {
   margin: 10px 0 !important;
 }
 .route-drawer ol {
-  padding-left: 20px;
+  padding: 0;
+  list-style: none;
 }
 .route-drawer li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   padding: 10px 0;
   border-top: 1px solid #eee;
+}
+.route-drawer .route-sequence {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #eeedf7;
+  color: #5146a5;
+  font-size: 12px;
+  font-weight: 700;
 }
 .route-drawer li button {
   text-align: left;

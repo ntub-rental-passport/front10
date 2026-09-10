@@ -20,7 +20,7 @@ import GarbageReport from '@/src/components/garbage/GarbageReport.vue'
 import GarbageFilters from '@/src/components/garbage/GarbageFilters.vue'
 import CollectionCountdown from '@/src/components/garbage/CollectionCountdown.vue'
 import WeeklySchedule from '@/src/components/garbage/WeeklySchedule.vue'
-import { matchesStatus, type StatusFilter } from '@/src/utils/garbage-status'
+import { matchesStatus, stopStatus, type StatusFilter } from '@/src/utils/garbage-status'
 import {
   operatesOn,
   collectionSchedules,
@@ -88,6 +88,16 @@ const locationMessage = ref('尚未定位'),
 let watchId: number | undefined
 const selected = ref<GarbageStop | null>(null),
   toast = ref('')
+const garbageMap = ref<InstanceType<typeof GarbageMap> | null>(null)
+async function showRoute(stop: GarbageStop) {
+  if (!mapVisible.value) tab.value = 'map'
+  selected.value = null
+  await nextTick()
+  garbageMap.value?.openRoute(stop)
+  document
+    .querySelector('.map-query-stage')
+    ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+}
 const vehicles = ref<TruckPosition[]>([]),
   refreshing = ref(false)
 const caps = ref({ email: false, push: false, publicKey: '' }),
@@ -182,6 +192,22 @@ function setStatusFilter(value: StatusFilter) {
   timeEnd.value = ''
 }
 const statusClock = computed(() => Math.floor(now.value.getTime() / 10000) * 10000)
+const selectedStatus = computed(() =>
+  selected.value
+    ? stopStatus(
+        selected.value,
+        statusClock.value,
+        statusFilter.value === 'all' ? queryDate.value : taipeiDate(now.value),
+      )
+    : null,
+)
+const stopStateLabels = {
+  upcoming: '即將抵達',
+  pending: '尚未抵達',
+  active: '營運中',
+  ended: '已結束',
+  unknown: '當日無班表',
+}
 const statusOptions = [
   { id: 'all', label: '全部站點' },
   { id: 'now', label: '現在' },
@@ -571,21 +597,6 @@ onUnmounted(() => {
         <div>
           <p class="eyebrow">TAIPEI & NEW TAIPEI · RENTMATE</p>
           <h1>{{ city }}垃圾車時間查詢</h1>
-          <p class="subtitle">即時定位・到達提醒 <span>讓倒垃圾，剛好順路。</span></p>
-        </div>
-        <div class="header-controls">
-          <div class="schedule-clock">
-            班表時鐘
-            <time>{{
-              now.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })
-            }}</time>
-          </div>
-          <div class="coverage">
-            <span class="green-dot" /><select v-model="city" aria-label="清運縣市">
-              <option>臺北市</option>
-              <option>新北市</option></select
-            ><strong>{{ city === '臺北市' ? 12 : 29 }}</strong> 行政區
-          </div>
         </div>
       </header>
       <nav class="garbage-tabs" aria-label="垃圾清運功能">
@@ -602,6 +613,12 @@ onUnmounted(() => {
           }}</span>
         </button>
       </nav>
+      <div class="coverage">
+        <select v-model="city" aria-label="清運縣市">
+          <option>臺北市</option>
+          <option>新北市</option>
+        </select>
+      </div>
     </div>
     <div v-if="toast" role="status" class="garbage-toast">
       <span>{{ toast }}</span
@@ -771,9 +788,11 @@ onUnmounted(() => {
             </button>
             <GarbageMap
               v-if="mapVisible"
+              ref="garbageMap"
               :key="city"
               :city="city"
               :stops="results"
+              :route-stops="stops"
               :timestamp="statusClock"
               :schedule-date="statusFilter === 'all' ? queryDate : taipeiDate(now)"
               :center="center"
@@ -971,7 +990,16 @@ onUnmounted(() => {
       <button class="detail-close icon-button" aria-label="關閉站點詳情" @click="selected = null">
         <X :size="20" />
       </button>
-      <p class="eyebrow">STOP DETAILS</p>
+      <div class="detail-heading">
+        <p class="eyebrow">STOP DETAILS</p>
+        <span
+          v-if="selectedStatus"
+          class="stop-state-badge"
+          :class="'stop-state-badge--' + selectedStatus.state"
+          role="status"
+          >{{ stopStateLabels[selectedStatus.state] }}</span
+        >
+      </div>
       <h2>{{ selected.address }}</h2>
       <p>{{ selected.district }} · {{ selected.village }} · {{ selected.team }}</p>
       <strong class="detail-time"
@@ -982,7 +1010,13 @@ onUnmounted(() => {
         表定抵達 {{ selected.arrival }}；估計離站 {{ selected.departure }}（暫估停留 10
         分鐘，非官方離站時間）。
       </p>
-      <p>表定時間 · {{ selected.route }} · {{ selected.trip }} · {{ selected.plate }}</p>
+      <p>
+        表定時間 ·
+        <button class="text-button detail-route-link" @click="showRoute(selected)">
+          {{ selected.route }}
+        </button>
+        · {{ selected.trip }} · {{ selected.plate }}
+      </p>
       <CollectionCountdown :stops="schedulesAt(selected)" :now="now" />
       <p>準誤點：尚無軌跡預測資料。表定倒數不代表車輛實際位置。</p>
       <button class="text-button" @click="reportOpen = true">回報此站點資料問題</button>

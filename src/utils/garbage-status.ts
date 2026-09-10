@@ -33,13 +33,20 @@ export function stopStatus(stop: GarbageStop, timestamp: number, date?: string) 
   }
   const active =
     !!next && next.start <= timestamp && (dayStart === midnight || dayStart === next.serviceDay)
+  const arrivingSoon =
+    !!next &&
+    next.start > timestamp &&
+    next.start - timestamp <= 15 * 60000 &&
+    (dayStart === midnight || dayStart === next.serviceDay)
   const state = active
     ? 'active'
-    : !intervals.length
-      ? 'unknown'
-      : intervals.every((s) => s.end <= timestamp)
-        ? 'ended'
-        : 'upcoming'
+    : arrivingSoon
+      ? 'upcoming'
+      : !intervals.length
+        ? 'unknown'
+        : intervals.every((s) => s.end <= timestamp)
+          ? 'ended'
+          : 'pending'
   return {
     state,
     active,

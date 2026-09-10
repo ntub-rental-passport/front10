@@ -200,6 +200,16 @@ try {
   await until(`!document.querySelector('[role=dialog]')`)
   await evaluate(`document.querySelector('.station-detail .detail-close')?.click()`)
   console.log('Full-width map and filter dialog: passed')
+  assert.equal(await evaluate(`document.querySelectorAll('.schedule-clock, .subtitle').length`), 0)
+  assert(
+    await evaluate(`(() => {
+    const title = document.querySelector('.garbage-header').getBoundingClientRect();
+    const tabs = document.querySelector('.garbage-tabs').getBoundingClientRect();
+    const city = document.querySelector('.garbage-sticky-header .coverage').getBoundingClientRect();
+    return title.right <= tabs.left && tabs.right <= city.left && Math.abs(title.top + title.height / 2 - tabs.top - tabs.height / 2) < 2;
+  })()`),
+    'Title, tabs and city selector should share one desktop row',
+  )
   assert.equal(await evaluate(`document.querySelectorAll('.status-filters button').length`), 5)
   assert(
     await evaluate(`(() => {
@@ -380,6 +390,63 @@ try {
     `(()=>{const s=document.querySelector('.route-drawer select');s.value=s.options[1].value;s.dispatchEvent(new Event('change',{bubbles:true}));})()`,
   )
   await until(`document.querySelectorAll('.route-drawer li').length > 0`)
+  assert(
+    await evaluate(
+      `[...document.querySelectorAll('.route-sequence')].every((e, i) => +e.textContent === i + 1)`,
+    ),
+    'Route rows should have visible sequential numbers',
+  )
+  await evaluate(
+    `(() => {const input = document.querySelector('.route-drawer input'); input.value = 'nonexistent-route-xyz'; input.dispatchEvent(new Event('input', {bubbles:true}));})()`,
+  )
+  await until(`document.querySelector('.route-drawer p[role=status]')`)
+  await evaluate(
+    `(() => {const input = document.querySelector('.route-drawer input'); input.value = ''; input.dispatchEvent(new Event('input', {bubbles:true}));})()`,
+  )
+  await until(`!document.querySelector('.route-drawer p[role=status]')`)
+  await evaluate(`document.querySelector('.route-drawer li button').click()`)
+  await until(`document.querySelector('.detail-route-link')`)
+  const routeBeforeLink = await evaluate(`document.querySelector('.route-drawer select').value`)
+  await evaluate(
+    `document.querySelector('.route-drawer header button').click(); document.querySelector('.detail-route-link').click()`,
+  )
+  await until(
+    `document.querySelector('.route-drawer li') && !document.querySelector('.station-detail')`,
+  )
+  assert.equal(
+    await evaluate(`document.querySelector('.route-drawer select').value`),
+    routeBeforeLink,
+    'Details link should open the same route',
+  )
+  await delay(800)
+  const dragStart = await evaluate(
+    `(() => {const r = document.querySelector('.route-drawer header').getBoundingClientRect(); return {x:r.left + 30, y:r.top + r.height / 2};})()`,
+  )
+  const drawerLeft = await evaluate(`document.querySelector('.route-drawer').offsetLeft`)
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    ...dragStart,
+    button: 'left',
+    clickCount: 1,
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: dragStart.x + 100,
+    y: dragStart.y + 30,
+    button: 'left',
+    buttons: 1,
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: dragStart.x + 100,
+    y: dragStart.y + 30,
+    button: 'left',
+    clickCount: 1,
+  })
+  assert(
+    await evaluate(`document.querySelector('.route-drawer').offsetLeft > ${drawerLeft} + 50`),
+    'Route card should move when dragged',
+  )
   await evaluate(`document.querySelectorAll('.map-tools button')[1].click()`)
   await until(`document.querySelector('.garbage-map-shell').dataset.layer === 'aerial'`)
   await delay(1500)

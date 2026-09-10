@@ -28,6 +28,9 @@
   color: white;
 }
 .garbage-sticky-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -36,7 +39,42 @@
   margin-bottom: 16px;
 }
 .garbage-page .garbage-sticky-header .garbage-tabs {
+  flex: 1;
+  min-width: 0;
   margin-bottom: 0;
+}
+.garbage-page .garbage-sticky-header .garbage-header {
+  flex-shrink: 0;
+  margin: 0;
+}
+.garbage-page .garbage-sticky-header h1 {
+  font-size: clamp(18px, 1.5vw, 26px);
+  white-space: nowrap;
+}
+.garbage-page .garbage-sticky-header .eyebrow {
+  display: none;
+}
+.garbage-page .garbage-sticky-header .coverage {
+  flex-shrink: 0;
+  padding: 6px;
+  border-radius: 12px;
+}
+.garbage-page .detail-route-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 700px) {
+  .garbage-sticky-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .garbage-page .garbage-sticky-header .garbage-header {
+    flex: 1;
+  }
+  .garbage-page .garbage-sticky-header .garbage-tabs {
+    order: 3;
+    flex-basis: 100%;
+  }
 }
 .garbage-page .header-controls,
 .garbage-page .nearby-controls {
@@ -601,6 +639,9 @@ main > div:has(> .garbage-page--wide) {
   padding: 12px 15px;
   white-space: nowrap;
 }
+.garbage-page .station-table .station-title {
+  font-size: 16px;
+}
 .garbage-page .station-table td {
   padding: 15px;
   border-top: 1px solid #efeff5;
@@ -703,6 +744,34 @@ main > div:has(> .garbage-page--wide) {
 .garbage-page .station-detail h2 {
   padding-right: 14px;
   font-size: 18px;
+}
+.garbage-page .detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 22px;
+}
+.garbage-page .stop-state-badge {
+  flex-shrink: 0;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.garbage-page .stop-state-badge--upcoming {
+  color: #946800;
+  background: #fff5d6;
+}
+.garbage-page .stop-state-badge--active {
+  color: #087a48;
+  background: #dcf8e9;
+}
+.garbage-page .stop-state-badge--ended,
+.garbage-page .stop-state-badge--pending,
+.garbage-page .stop-state-badge--unknown {
+  color: #50545b;
+  background: #eef0f2;
 }
 .garbage-page .station-detail p {
   font-size: 12px;

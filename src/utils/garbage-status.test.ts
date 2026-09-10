@@ -8,6 +8,21 @@ const stop = {
   collections: { garbage: { arrival: '18:00', departure: '18:10', days: [4] } },
 } as GarbageStop
 const at = (time: string) => Date.parse(`2026-09-10T${time}:00+08:00`)
+it('only marks arrivals within 15 minutes as upcoming, including the exact boundary', () => {
+  expect(stopStatus(stop, at('09:00')).state).toBe('pending')
+  expect(stopStatus(stop, at('17:44') + 59999).state).toBe('pending')
+  expect(stopStatus(stop, at('17:45')).state).toBe('upcoming')
+  expect(stopStatus(stop, at('17:59')).state).toBe('upcoming')
+  expect(stopStatus(stop, at('18:00')).state).toBe('active')
+  expect(stopStatus(stop, at('18:11')).state).toBe('ended')
+  expect(stopStatus(stop, at('17:50'), '2026-09-17').state).toBe('pending')
+})
+it('keeps 30 and 60 minute quick filters independent of the 15 minute status badge', () => {
+  expect(stopStatus(stop, at('17:30')).state).toBe('pending')
+  expect(matchesStatus(stop, '30', at('17:30'))).toBe(true)
+  expect(matchesStatus(stop, '60', at('17:00'))).toBe(true)
+  expect(matchesStatus(stop, '10', at('17:45'))).toBe(false)
+})
 it('colors upcoming, active and ended schedules without claiming live data', () => {
   expect(stopStatus(stop, at('17:50')).state).toBe('upcoming')
   expect(stopStatus(stop, at('18:00')).state).toBe('active')
