@@ -14,6 +14,7 @@ import {
 import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 import { canAdminAccessPath } from '@/src/utils/admin-rbac'
 import { getCurrentAdminRole } from '@/src/composables/admin/useAdminRbac'
+import { syncSessionWithServer } from '@/src/composables/useAuth'
 import { isMaintenanceActive, isMaintenanceBypassPath } from '@/src/utils/maintenance'
 
 const router = createRouter({
@@ -178,7 +179,23 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+/*
+ * 每次載入頁面只跟後端對一次帳。
+ *
+ * 不是每次導覽都對：那會讓站內切換頁面都多一次網路往返。
+ * 一次就夠了 —— cookie 在同一次瀏覽期間失效的機率很低，
+ * 真的失效時後續請求仍會回 401，各頁面自己有處理。
+ */
+let sessionSynced = false
+
+router.beforeEach(async (to) => {
+  // 只在「本機認為已登入」時才對帳；沒登入的話沒有東西可以驗，
+  // 每個訪客都打一次 /me 只是浪費請求。
+  if (!sessionSynced && getAuthSession()?.isAuthenticated) {
+    sessionSynced = true
+    await syncSessionWithServer()
+  }
+
   let session = getAuthSession()
 
   // Session 逾時：清掉再往下走，後續的 requiresAuth 檢查會自然導向登入頁

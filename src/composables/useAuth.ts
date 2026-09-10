@@ -1,4 +1,5 @@
 import {
+  fetchCurrentUser,
   loginWithEmail,
   startAdminLogin,
   verifyAdminLogin,
@@ -254,6 +255,47 @@ export function registerWithGoogle(
   })
 
   return createSession(role, profile, accessToken, userId)
+}
+
+/**
+ * 用後端的 cookie 驗證本機 session 是否還有效。
+ *
+ * ## 為什麼需要
+ *
+ * 這個網站有兩套並存的登入憑證：
+ *   - localStorage 的 Bearer token —— 畫面的登入狀態、路由守衛、後台 API
+ *   - HttpOnly cookie —— 合約分析、Law Chat
+ *
+ * 兩者可能不同步：cookie 過期或從未成功設定時，localStorage 仍在，
+ * 畫面照樣顯示「已登入」，使用者一路上傳合約、等 OCR 跑完，
+ * 按下分析才被踢回登入頁 —— 白做一整輪。
+ *
+ * 2026-09-10 正式站實測就是這個情況：/api/admin/metrics（Bearer）回 200，
+ * /api/contract/analyze（cookie）回 401。
+ *
+ * 這裡以 cookie 為準：後端說沒登入，就清掉本機 session，
+ * 讓畫面誠實反映真實狀態，把「請重新登入」提前到使用者做事之前。
+ *
+ * 順帶更新 Bearer token —— /me 每次都會重新簽發，讓兩套憑證同步延長。
+ */
+export async function syncSessionWithServer(): Promise<AuthSession | null> {
+  const local = getAuthSession()
+  if (!local?.isAuthenticated) return null
+
+  const remote = await fetchCurrentUser()
+  if (!remote) {
+    // 後端不認這個 cookie。本機狀態已經失真，清掉比留著更好 ——
+    // 留著只會讓使用者在下一個需要 cookie 的操作上白忙一場。
+    signOut()
+    return null
+  }
+
+  const profile = upsertUserProfile(remote.email, {
+    emailVerified: true,
+    nickname: remote.displayName,
+    role: remote.role,
+  })
+  return createSession(remote.role, profile, remote.accessToken, remote.userId)
 }
 
 export function signOut(): void {
