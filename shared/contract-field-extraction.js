@@ -39,6 +39,14 @@ function normalizeFullWidthDigits(value) {
   return value.replace(/[０-９]/g, (digit) => String(digit.charCodeAt(0) - 0xfee0))
 }
 
+// 內政部官方範本的欄位標籤常在冒號前夾一組括號註記：
+//   「姓名(名稱)：」「統一編號(身分證明文件編號)：」「戶籍地址(營業登記地址)：」
+// 原本的比對要求標籤後「立刻」接冒號，於是照官方範本填寫的合約
+// 一律抽不到姓名與統一編號 —— 而那是必填欄位。
+// 2026-09-10 實測：四種常見寫法沒有一種能同時抽到姓名與統編。
+const LABEL_SUFFIX = '(?:\\s*[（(][^）)]{0,20}[）)])?\\s*[：:]\\s*'
+
+
 function cleanSource(value) {
   return (
     value
@@ -65,6 +73,9 @@ function normalizePersonName(rawValue) {
     .replace(/[（(].*$/, '')
     .replace(/以下簡稱.*$/, '')
     .replace(/[[［【].*?[\]］】]/g, '')
+    // 官方範本的姓名欄同一行右側就是「簽章」欄位，OCR 會一起讀進來：
+    //   「姓名(名稱)：陳大華　　簽章」→ 值變成「陳大華 簽章」而驗不過
+    .replace(/[\s　]*(?:簽章|簽名|蓋章|用印)[\s　]*$/, '')
     .trim()
   if (/遮蔽|模糊|不清|姓名|身分證/.test(value)) return ''
   return /^[\p{Script=Han}·‧]{2,20}$/u.test(value) ? value : ''
@@ -75,12 +86,14 @@ function extractPersonNearHeading(text, role) {
     .split(/\r?\n/)
     .map((line) => cleanSource(line))
   const escapedRole = role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // 官方範本的當事人標題就是「出租人：」，原本的比對不允許尾隨冒號，
+  // 導致緊接其後的「姓名(名稱)：」永遠找不到。
   const headingPattern = new RegExp(
-    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?${escapedRole}(?:\\s*[（(][^）)]*[）)])?\\s*$`,
+    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?${escapedRole}(?:\\s*[（(][^）)]*[）)])?\\s*[：:]?\\s*$`,
   )
   const anyPartyHeadingPattern =
-    /^(?:[0-9０-９]+\s*[.．、]?\s*)?(?:出租人|承租人|連帶保證人)(?:\s*[（(][^）)]*[）)])?\s*$/
-  const namePattern = /^(?:[oO○●•·▪]\s*)?姓名\s*[：:]\s*(.+)$/
+    /^(?:[0-9０-９]+\s*[.．、]?\s*)?(?:出租人|承租人|連帶保證人|保證人)(?:\s*[（(][^）)]*[）)])?\s*[：:]?\s*$/
+  const namePattern = new RegExp(`^(?:[oO○●•·▪]\\s*)?姓名${LABEL_SUFFIX}(.+)$`)
 
   for (let headingIndex = 0; headingIndex < lines.length; headingIndex += 1) {
     if (!headingPattern.test(lines[headingIndex] ?? '')) continue
@@ -100,7 +113,7 @@ function extractPerson(text, role) {
     extractPersonNearHeading(text, role) ||
     captureFirst(text, [
       new RegExp(`${escapedRole}\\s*[（(][^\\r\\n）)]*[）)]\\s*[：:]\\s*([^\\r\\n]+)`),
-      new RegExp(`${escapedRole}姓名\\s*[：:]\\s*([^\\r\\n]+)`),
+      new RegExp(`${escapedRole}姓名${LABEL_SUFFIX}([^\\r\\n]+)`),
       new RegExp(`${escapedRole}\\s*[：:]\\s*([^\\r\\n，,。]{1,30})`),
     ])
   if (/遮蔽/.test(rawValue)) return candidate('影像遮蔽，請人工輸入', rawValue, 'low')
@@ -134,7 +147,7 @@ function partySection(text, role) {
 function extractPartyLabeledValue(text, role, labels) {
   const section = partySection(text, role)
   const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
-  const match = section.match(new RegExp(`(?:${labelPattern})\\s*[：:]\\s*([^\\r\\n]+)`))
+  const match = section.match(new RegExp(`(?:${labelPattern})${LABEL_SUFFIX}([^\\r\\n]+)`))
   const rawValue = cleanSource(match?.[1])
   return rawValue ? candidate(rawValue, rawValue, 'medium') : { ...EMPTY_CANDIDATE }
 }
