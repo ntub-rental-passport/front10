@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Layout from '@/src/components/layout.vue'
-import AdminLayout from '@/src/components/admin-layout.vue'
-import LandlordLayout from '@/src/components/landlord-layout.vue'
+import Layout from '@/src/components/layouts/AppLayout.vue'
+import AdminLayout from '@/src/components/layouts/AdminLayout.vue'
+import LandlordLayout from '@/src/components/layouts/LandlordLayout.vue'
 import {
   getAuthSession,
   getPendingRegistration,
@@ -49,7 +49,8 @@ const router = createRouter({
         { path: 'finance', component: () => import('@/src/pages/landlord/finance.vue') },
         { path: 'maintenance', component: () => import('@/src/pages/landlord/maintenance.vue') },
         { path: 'contracts', component: () => import('@/src/pages/landlord/contracts.vue') },
-        { path: 'settings', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '房東設定', description: '設定收款提醒、通知方式與房東帳號偏好。' } },
+        { path: 'settings', component: () => import('@/src/pages/landlord/settings.vue') },
+        { path: 'settings/:section', component: () => import('@/src/pages/landlord/settings-detail.vue') },
       ],
     },
     {
@@ -146,7 +147,7 @@ const router = createRouter({
         },
         {
           path: 'notes',
-          component: () => import('@/src/components/NotesLayout.vue'),
+          component: () => import('@/src/components/layouts/NotesLayout.vue'),
           children: [
             { path: '', component: () => import('@/src/pages/notes/index.vue') },
             { path: 'personal', redirect: '/app/notes' },

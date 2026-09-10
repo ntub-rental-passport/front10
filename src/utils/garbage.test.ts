@@ -17,6 +17,9 @@ import {
 
 const csv = readFileSync(new URL('../../public/data/taipei-garbage.csv', import.meta.url), 'utf8')
 const stops = parseStops(csv)
+const metadata = JSON.parse(
+  readFileSync(new URL('../../public/data/taipei-garbage-source.json', import.meta.url), 'utf8'),
+)
 describe('Taipei official garbage data', () => {
   it('parses quoted commas, newlines and escaped quotes without shifting coordinates', () => {
     expect(parseCsv('\uFEFF地點,經度\r\n"路口,旁\n\"\"入口\"\"",121.5\r\n')).toEqual([
@@ -25,16 +28,10 @@ describe('Taipei official garbage data', () => {
     ])
   })
   it('loads real data for all twelve districts with stable unique IDs', () => {
-    expect(stops.length).toBe(4010)
+    expect(stops.length).toBe(metadata.rows)
     expect([...new Set(stops.map((s) => s.district))].sort()).toEqual([...TAIPEI_DISTRICTS].sort())
     expect(new Set(stops.map((s) => s.id)).size).toBe(stops.length)
-    expect(stops[0]).toMatchObject({
-      district: '士林區',
-      village: '天壽里',
-      arrival: '16:30',
-      lat: 25.11836,
-      lng: 121.525,
-    })
+    expect(stops.every((s) => Boolean(s.address && s.arrival && s.departure))).toBe(true)
   })
   it('rejects malformed source columns and invalid times', () => {
     expect(() => parseStops('name,time\na,12')).toThrow()
@@ -44,10 +41,11 @@ describe('Taipei official garbage data', () => {
     expect(normalizeTime('2411')).toBe('24:11')
   })
   it('retains nine suspect coordinates for list lookup but excludes them from spatial queries', () => {
-    expect(stops.filter((s) => !validPoint(s))).toHaveLength(9)
+    expect(stops.filter((s) => !validPoint(s))).toHaveLength(metadata.invalidCoordinates ?? 9)
   })
 })
 describe('nearby distance and schedule semantics', () => {
+  const sample = { ...stops[0], arrival: '16:30', departure: '16:40' }
   it('uses unrounded Haversine distances for the 500 metre boundary', () => {
     const center = { lat: 25, lng: 121.5 }
     const atDistance = (metres: number) => ({
@@ -59,8 +57,8 @@ describe('nearby distance and schedule semantics', () => {
     expect(distanceMeters(center, center)).toBe(0)
   })
   it('handles inclusive and overnight windows', () => {
-    expect(overlaps(stops[0], '16:40', '17:00')).toBe(true)
-    expect(overlaps(stops[0], '17:00', '18:00')).toBe(false)
+    expect(overlaps(sample, '16:40', '17:00')).toBe(true)
+    expect(overlaps(sample, '17:00', '18:00')).toBe(false)
     expect(overlaps({ ...stops[0], arrival: '23:55', departure: '00:10' }, '00:00', '00:05')).toBe(
       true,
     )
@@ -70,8 +68,8 @@ describe('nearby distance and schedule semantics', () => {
     expect(isCollectionDay('2026-09-09')).toBe(false)
     expect(isCollectionDay('2026-09-13')).toBe(false)
     expect(isCollectionDay('2026-09-08')).toBe(true)
-    expect(scheduleStatus(stops[0], new Date('2026-09-08T16:25:00+08:00'))).toBe('表定 5 分後')
-    expect(scheduleStatus(stops[0], new Date('2026-09-09T16:35:00+08:00'))).toBe('今日例行停收')
+    expect(scheduleStatus(sample, new Date('2026-09-08T16:25:00+08:00'))).toBe('表定 5 分後')
+    expect(scheduleStatus(sample, new Date('2026-09-09T16:35:00+08:00'))).toBe('今日例行停收')
     const overnight = { ...stops[0], arrival: '24:11', departure: '24:13' }
     expect(new Date(scheduleTime('2026-09-08', overnight.arrival)).toISOString()).toBe(
       '2026-09-08T16:11:00.000Z',

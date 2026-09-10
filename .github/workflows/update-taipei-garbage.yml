@@ -1,0 +1,42 @@
+name: Validate monthly Taipei garbage data
+on:
+  schedule:
+    - cron: '17 2 1 * *' # Every month, day 1, 10:17 Asia/Taipei
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: taipei-garbage-data
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx tsx scripts/update-taipei-garbage.ts --write
+      - run: npm test -- src/utils/garbage.test.ts src/utils/garbage-countdown.test.ts src/utils/garbage-routes.test.ts src/utils/garbage-update.test.ts
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validated-rentmate-build
+          path: dist
+          retention-days: 7
+      - name: Propose validated data update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c automation/taipei-garbage-${{ github.run_id }}
+          git add public/data/taipei-garbage.csv public/data/taipei-garbage-source.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'chore(garbage): refresh verified Taipei schedules'
+          git push origin HEAD
+          gh pr create --base '${{ github.event.repository.default_branch }}' --title '更新臺北清運班表（已驗證）' --body '官方 API 完整分頁、資料品質檢查、測試及建置已通過。合併後請依部署流程同步前端資料與後端 CSV；既有提醒仍保留舊班表快照。'

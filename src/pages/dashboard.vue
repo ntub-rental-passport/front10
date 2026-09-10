@@ -31,8 +31,8 @@ import {
   formatDate,
   formatOptionalAmount,
 } from '@/src/utils/rent-format'
-import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
-import BannerCarousel from '@/src/components/BannerCarousel.vue'
+import AnnouncementBanner from '@/src/components/content/AnnouncementBanner.vue'
+import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { useAnnouncementDismissal } from '@/src/composables/useAnnouncementDismissal'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'

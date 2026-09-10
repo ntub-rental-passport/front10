@@ -477,7 +477,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import SectionTabs from '@/src/components/section-tabs.vue'
+import SectionTabs from '@/src/components/navigation/SectionTabs.vue'
 
 const router = useRouter()
 

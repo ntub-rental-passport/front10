@@ -9,12 +9,21 @@
   line-height: 1.6;
 }
 
+/* Release the shared layout width cap only while this page is in map mode. */
+main > div:has(> .garbage-page--map) {
+  max-width: none;
+  padding: 12px 16px;
+}
+.garbage-page--map {
+  max-width: none;
+  width: 100%;
+}
 .garbage-page .map-query-stage {
   position: relative;
   min-width: 0;
 }
 .garbage-page .wide-map .garbage-map {
-  height: clamp(480px, 70dvh, 820px);
+  height: max(600px, 85dvh);
 }
 .garbage-page .map-query-button {
   position: absolute;
@@ -71,7 +80,7 @@
 }
 @media (max-width: 700px) {
   .garbage-page .wide-map .garbage-map {
-    height: 65dvh;
+    height: 80dvh;
     min-height: 440px;
   }
   .garbage-page .map-filter-summary {

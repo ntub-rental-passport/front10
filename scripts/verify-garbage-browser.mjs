@@ -149,6 +149,30 @@ try {
   await send('Page.navigate', { url: origin + '/app/garbage' })
   await until(`document.querySelector('.garbage-footer')?.textContent.includes('4,010')`)
   assert.equal(await evaluate(`document.querySelectorAll('.garbage-tabs button').length`), 7)
+  assert.equal(
+    await evaluate(`document.querySelectorAll('.map-filter-summary, .nearby-empty').length`),
+    0,
+    'Map mode should omit redundant location panels',
+  )
+  assert(
+    await evaluate(
+      `[...document.querySelectorAll('.map-tools button')].every(b => !b.textContent.trim() && b.getAttribute('aria-label') && b.querySelector('svg'))`,
+    ),
+    'Map tools should be labeled icon-only buttons',
+  )
+  assert(
+    await evaluate(
+      `document.querySelector('.garbage-page--map').getBoundingClientRect().width >= document.querySelector('main').clientWidth - 40`,
+    ),
+    'Map should use nearly all of the layout width',
+  )
+  assert.equal(
+    await evaluate(
+      `document.querySelectorAll('.station-table, .results-heading, .pagination').length`,
+    ),
+    0,
+    'Map mode should not render the station list',
+  )
   assert.equal(await evaluate(`document.querySelectorAll('.filter-panel').length`), 0)
   assert(
     await evaluate(
@@ -194,7 +218,9 @@ try {
   await clickTab('我的收藏')
   await until(`document.querySelectorAll('.station-table tbody tr').length === 1`)
   await send('Page.reload')
-  await until(`performance.getEntriesByType('navigation')[0]?.type === 'reload' && document.readyState === 'complete'`)
+  await until(
+    `performance.getEntriesByType('navigation')[0]?.type === 'reload' && document.readyState === 'complete'`,
+  )
   await until(`document.querySelector('.garbage-footer')?.textContent.includes('4,010')`)
   await clickTab('我的收藏')
   await until(`document.querySelectorAll('.station-table tbody tr').length === 1`)
@@ -241,6 +267,53 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('.guide-card').length`), 6)
   await clickTab('地圖查詢')
   await until(`document.querySelector('.garbage-map-shell')?.dataset.ready === 'true'`)
+  await evaluate(`document.querySelector('.map-tools button').click()`)
+  await until(`document.querySelector('.route-drawer select')?.options.length > 1`)
+  await evaluate(
+    `(()=>{const s=document.querySelector('.route-drawer select');s.value=s.options[1].value;s.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+  )
+  await until(`document.querySelectorAll('.route-drawer li').length > 0`)
+  await evaluate(`document.querySelectorAll('.map-tools button')[1].click()`)
+  await until(`document.querySelector('.garbage-map-shell').dataset.layer === 'aerial'`)
+  await delay(1500)
+  assert(
+    await evaluate(`document.querySelectorAll('.route-drawer li').length > 0`),
+    'Route should survive layer changes',
+  )
+  await evaluate(
+    `document.querySelector('.map-query-stage').scrollIntoView({block:'start',behavior:'instant'})`,
+  )
+  const aerial = await send('Page.captureScreenshot', { format: 'png' })
+  writeFileSync(join(profile, 'aerial.png'), Buffer.from(aerial.data, 'base64'))
+  await evaluate(
+    `document.querySelectorAll('.map-tools button')[1].click();document.querySelector('.route-drawer header button').click()`,
+  )
+  await until(`document.querySelector('.garbage-map-shell').dataset.layer === 'street'`)
+  await evaluate(`document.querySelector('.garbage-footer button').click()`)
+  await until(`document.querySelector('[role=dialog] textarea')`)
+  await evaluate(
+    `(()=>{const e=document.querySelector('[role=dialog] textarea');e.value='測試回報：站點地址與實際位置不符';e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+  )
+  await until(`document.querySelector('[role=dialog] a.primary-button')`)
+  assert(
+    await evaluate(
+      `document.querySelector('[role=dialog] a.primary-button').href.startsWith('https://github.com/ntub-rental-passport/front10/issues/new?')`,
+    ),
+  )
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Escape',
+    code: 'Escape',
+    windowsVirtualKeyCode: 27,
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Escape',
+    code: 'Escape',
+    windowsVirtualKeyCode: 27,
+  })
+  await until(`!document.querySelector('[role=dialog]')`)
+  console.log('Route list, aerial switch and report draft: passed (no issue submitted)')
   await evaluate(
     `window.scrollTo(0,0); document.querySelector('.garbage-header').scrollIntoView({block:'start'})`,
   )

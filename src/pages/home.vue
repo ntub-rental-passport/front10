@@ -4,7 +4,7 @@ import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent } from '@/components/ui/card/index'
-import BannerCarousel from '@/src/components/BannerCarousel.vue'
+import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 import {
   ArrowRight,
   Globe,

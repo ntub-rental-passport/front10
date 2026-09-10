@@ -16,6 +16,7 @@ import {
 } from 'lucide-vue-next'
 import GarbageMap from '@/src/components/garbage/GarbageMap.vue'
 import GarbageGuide from '@/src/components/garbage/GarbageGuide.vue'
+import GarbageReport from '@/src/components/garbage/GarbageReport.vue'
 import GarbageFilters from '@/src/components/garbage/GarbageFilters.vue'
 import CollectionCountdown from '@/src/components/garbage/CollectionCountdown.vue'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog/index'
@@ -41,6 +42,8 @@ import {
 import './garbage.css'
 
 const filtersOpen = ref(false)
+const reportOpen = ref(false)
+const dataCheckedAt = ref('尚無更新紀錄')
 const tabs = [
   { id: 'map', label: '地圖查詢', icon: Map },
   { id: 'list', label: '列表查詢', icon: List },
@@ -376,6 +379,15 @@ const statusLabels: Record<string, string> = {
 }
 let ticker: ReturnType<typeof setInterval>, poller: ReturnType<typeof setInterval>
 onMounted(() => {
+  void fetch(`${import.meta.env.BASE_URL}data/taipei-garbage-source.json`, {
+    signal: AbortSignal.timeout(10000),
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((meta) => {
+      if (meta?.lastCheckedAt || meta?.importedAt)
+        dataCheckedAt.value = String(meta.lastCheckedAt || meta.importedAt)
+    })
+    .catch(() => {})
   void loadData()
   void refreshGPS()
   void loadReminders()
@@ -402,7 +414,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="garbage-page">
+  <div class="garbage-page" :class="{ 'garbage-page--map': tab === 'map' }">
     <header class="garbage-header">
       <div>
         <p class="eyebrow">TAIPEI CITY · RENTMATE</p>
@@ -505,7 +517,7 @@ onUnmounted(() => {
             </p>
           </article>
         </div>
-        <div v-else class="nearby-empty">
+        <div v-else-if="tab !== 'map'" class="nearby-empty">
           <Crosshair :size="26" />
           <div>
             <strong>{{
@@ -561,10 +573,6 @@ onUnmounted(() => {
             <button v-if="tab === 'map'" class="map-query-button" @click="filtersOpen = true">
               <Search :size="20" />查詢條件
             </button>
-            <div v-if="tab === 'map'" class="map-filter-summary">
-              {{ district || '臺北市全部行政區' }} · {{ village || '全部里別' }} · {{ queryDate
-              }}<span v-if="road"> · {{ road }}</span>
-            </div>
             <GarbageMap
               v-if="mapVisible"
               :stops="results"
@@ -576,7 +584,7 @@ onUnmounted(() => {
               @select="selected = $event"
             />
           </div>
-          <div class="section-heading results-heading">
+          <div v-if="tab !== 'map'" class="section-heading results-heading">
             <h2>
               {{ tab === 'favorites' ? '我的收藏' : '清運站點' }}
               <span class="result-count">{{ results.length }}</span>
@@ -600,7 +608,7 @@ onUnmounted(() => {
               }}
             </p>
           </div>
-          <div v-else class="panel table-scroll">
+          <div v-else-if="tab !== 'map'" class="panel table-scroll">
             <table class="station-table">
               <thead>
                 <tr>
@@ -658,7 +666,7 @@ onUnmounted(() => {
               </tbody>
             </table>
           </div>
-          <div v-if="results.length > 20" class="pagination">
+          <div v-if="tab !== 'map' && results.length > 20" class="pagination">
             <button :disabled="page <= 1" @click="page--">上一頁</button
             ><span>{{ page }} / {{ pages }} 頁</span
             ><button :disabled="page >= pages" @click="page++">下一頁</button>
@@ -769,6 +777,7 @@ onUnmounted(() => {
       <p>表定時間 · {{ selected.route }} · {{ selected.trip }} · {{ selected.plate }}</p>
       <CollectionCountdown :stops="schedulesAt(selected)" :now="now" />
       <p>準誤點：尚無軌跡預測資料。表定倒數不代表車輛實際位置。</p>
+      <button class="text-button" @click="reportOpen = true">回報此站點資料問題</button>
       <div class="toolbar">
         <button class="soft-button" @click="toggleFavorite(selected)">
           <Star :size="17" />{{ favorites.includes(selected.id) ? '取消收藏' : '加入收藏' }}</button
@@ -798,7 +807,10 @@ onUnmounted(() => {
         />
       </DialogContent>
     </Dialog>
+    <GarbageReport v-model:open="reportOpen" :stop="selected" />
     <footer class="garbage-footer">
+      <button class="text-button" @click="reportOpen = true">回報問題</button>
+      <p>本站資料檢查／匯入時間：{{ dataCheckedAt }}（不代表車輛 GPS 更新時間）</p>
       <p>
         資料來源：<a
           href="https://data.gov.tw/dataset/136515"
@@ -808,7 +820,8 @@ onUnmounted(() => {
         >｜本站資料：匯入 CSV 快照，共 {{ stops.length.toLocaleString() }} 筆有效停靠班次。
       </p>
       <p>
-        紫色為清運站點；綠色為兩分鐘內更新的車輛 GPS。倒數依表定時間計算。24:xx 為隔日凌晨；{{
+        橘色為清運站點、藍點為目前位置；綠色為兩分鐘內更新的車輛
+        GPS。路線虛線為站序示意，時間為表定時間。24:xx 為隔日凌晨；{{
           stops.filter((s) => !validPoint(s)).length
         }}
         筆原始座標待確認，僅列入列表，不納入地圖與附近查詢。

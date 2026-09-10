@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils'
 import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { useNavigation } from '@/src/composables/useNavigation'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'
-import FeatureMaintenanceNotice from '@/src/components/FeatureMaintenanceNotice.vue'
-import MaintenanceToaster from '@/src/components/MaintenanceToaster.vue'
+import FeatureMaintenanceNotice from '@/src/components/maintenance/FeatureMaintenanceNotice.vue'
+import MaintenanceToaster from '@/src/components/maintenance/MaintenanceToaster.vue'
 
 const route = useRoute()
 const { navItems, accountItem, mobileNavItems } = useNavigation()
