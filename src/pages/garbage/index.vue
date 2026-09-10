@@ -208,6 +208,20 @@ const stopStateLabels = {
   ended: '已結束',
   unknown: '當日無班表',
 }
+const selectedArrivalCountdown = computed(() => {
+  const stop = selected.value
+  if (!stop) return ''
+  const schedules = (['garbage', 'recycling', 'food'] as const)
+    .flatMap((kind) => collectionSchedules([stop], kind))
+    .filter((schedule) => schedule.arrival === stop.arrival)
+  const next = nextCollection(schedules, now.value)
+  if (!next) return '尚無可用班次'
+  if (next.active) return '表定收運中'
+  const minutes = Math.ceil((next.arrivalAt - now.value.getTime()) / 60000)
+  const hours = Math.floor(minutes / 60)
+  const duration = `${hours ? `${hours} 小時 ` : ''}${minutes % 60} 分鐘後`
+  return next.serviceDate === taipeiDate(now.value) ? duration : `下一班：${duration}`
+})
 const statusOptions = [
   { id: 'all', label: '全部站點' },
   { id: 'now', label: '現在' },
@@ -1006,19 +1020,28 @@ onUnmounted(() => {
         >{{ selected.arrival
         }}{{ selected.city === '臺北市' ? '–' + selected.departure : '' }}</strong
       >
-      <p v-if="selected.departureEstimated">
-        表定抵達 {{ selected.arrival }}；估計離站 {{ selected.departure }}（暫估停留 10
-        分鐘，非官方離站時間）。
-      </p>
-      <p>
-        表定時間 ·
-        <button class="text-button detail-route-link" @click="showRoute(selected)">
-          {{ selected.route }}
-        </button>
-        · {{ selected.trip }} · {{ selected.plate }}
-      </p>
+      <dl class="detail-schedule">
+        <div>
+          <dt>表定抵達</dt>
+          <dd>
+            <span>{{ selected.arrival }}</span
+            ><span class="detail-countdown">（{{ selectedArrivalCountdown }}）</span>
+          </dd>
+        </div>
+        <div>
+          <dt>{{ selected.departureEstimated ? '估計離站' : '表定離站' }}</dt>
+          <dd>{{ selected.departure }}</dd>
+        </div>
+        <div>
+          <dt>路線名稱</dt>
+          <dd>
+            <button class="text-button detail-route-link" @click="showRoute(selected)">
+              {{ selected.route }}
+            </button>
+          </dd>
+        </div>
+      </dl>
       <CollectionCountdown :stops="schedulesAt(selected)" :now="now" />
-      <p>準誤點：尚無軌跡預測資料。表定倒數不代表車輛實際位置。</p>
       <button class="text-button" @click="reportOpen = true">回報此站點資料問題</button>
       <div class="toolbar">
         <button class="soft-button" @click="toggleFavorite(selected)">

@@ -784,6 +784,37 @@ main > div:has(> .garbage-page--wide) {
   color: #5146a5;
   margin-top: 16px;
 }
+.garbage-page .detail-schedule {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 24px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.garbage-page .detail-schedule > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+}
+.garbage-page .detail-schedule dt {
+  font-weight: 600;
+}
+.garbage-page .detail-schedule dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.garbage-page .detail-countdown {
+  color: #85899a;
+  font-size: 14px;
+}
+.garbage-page .detail-schedule .detail-route-link {
+  font-size: inherit;
+  text-align: left;
+}
 .garbage-page .station-detail .toolbar {
   margin-top: 18px;
 }
