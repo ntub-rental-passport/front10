@@ -389,6 +389,16 @@ try {
   await evaluate(
     `(()=>{const s=document.querySelector('.route-drawer select');s.value=s.options[1].value;s.dispatchEvent(new Event('change',{bubbles:true}));})()`,
   )
+  await evaluate(`(async () => {
+    const source = await (await fetch('/src/components/garbage/GarbageMap.vue')).text();
+    const moduleUrl = source.match(/from "([^"]*maplibre-gl\\.js[^"]*)"/)[1];
+    const Map = (await import(moduleUrl)).default.Map;
+    const getSource = Map.prototype.getSource;
+    Map.prototype.getSource = function(...args) {
+      window.__garbageTestMap = this;
+      return getSource.apply(this, args);
+    };
+  })()`)
   await until(`document.querySelectorAll('.route-drawer li').length > 0`)
   assert(
     await evaluate(
@@ -419,6 +429,22 @@ try {
     'Details link should open the same route',
   )
   await delay(800)
+  await evaluate(
+    `document.querySelector('.route-drawer select').dispatchEvent(new Event('change', {bubbles:true}))`,
+  )
+  const routeGeometry = `window.__garbageTestMap.getSource('route-order')._data.geojson.geometry.coordinates.length`
+  const routeLabels = `window.__garbageTestMap.getSource('route-times')._data.geojson.features.length`
+  assert(await evaluate(routeGeometry + ' > 0'), 'Selected route should be drawn')
+  await evaluate(`document.querySelector('.route-actions button').click()`)
+  await until(`document.querySelector('.route-actions button').textContent.includes('顯示路線')`)
+  assert.equal(await evaluate(routeGeometry), 0, 'Hide should remove route geometry')
+  assert.equal(await evaluate(routeLabels), 0, 'Hide should remove route numbers')
+  assert(
+    await evaluate(`document.querySelectorAll('.route-drawer li').length > 0`),
+    'Hide should preserve the route list',
+  )
+  await evaluate(`document.querySelector('.route-actions button').click()`)
+  await until(routeGeometry + ' > 0')
   const dragStart = await evaluate(
     `(() => {const r = document.querySelector('.route-drawer header').getBoundingClientRect(); return {x:r.left + 30, y:r.top + r.height / 2};})()`,
   )
@@ -463,6 +489,8 @@ try {
     `document.querySelectorAll('.map-tools button')[1].click();document.querySelector('.route-drawer header button').click()`,
   )
   await until(`document.querySelector('.garbage-map-shell').dataset.layer === 'street'`)
+  assert.equal(await evaluate(routeGeometry), 0, 'Close should clear route geometry')
+  assert.equal(await evaluate(routeLabels), 0, 'Close should clear route numbers')
   await evaluate(`document.querySelector('.garbage-footer button').click()`)
   await until(`document.querySelector('[role=dialog] textarea')`)
   await evaluate(

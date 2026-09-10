@@ -31,6 +31,13 @@ const error = ref(''),
   aerial = ref(false),
   routesOpen = ref(false),
   routeId = ref('')
+const routeVisible = ref(true)
+function closeRoutes() {
+  routesOpen.value = false
+  routeId.value = ''
+  routeVisible.value = true
+  syncRoute()
+}
 const routes = computed(() => groupRoutes(props.routeStops ?? props.stops))
 const routeSearch = ref('')
 const matchingRoutes = computed(() => {
@@ -165,7 +172,7 @@ function sync() {
 }
 function syncRoute() {
   if (!map?.getSource('route-order')) return
-  const stops = activeRoute.value?.stops || []
+  const stops = routeVisible.value ? activeRoute.value?.stops || [] : []
   ;(map.getSource('route-order') as maplibregl.GeoJSONSource).setData({
     type: 'Feature',
     properties: {},
@@ -188,6 +195,7 @@ function syncRoute() {
   })
 }
 function chooseRoute() {
+  routeVisible.value = true
   syncRoute()
   const points = activeRoute.value?.stops.filter(validPoint) || []
   if (map && points.length) {
@@ -309,10 +317,25 @@ function start() {
         paint: { 'text-color': '#fff' },
       })
       map.addLayer({
+        id: 'route-glow',
+        type: 'line',
+        source: 'route-order',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#1677ff', 'line-width': 14, 'line-blur': 7, 'line-opacity': 0.5 },
+      })
+      map.addLayer({
         id: 'route-order',
         type: 'line',
         source: 'route-order',
-        paint: { 'line-color': '#3182f6', 'line-width': 3, 'line-dasharray': [2, 2] },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#1677ff', 'line-width': 5 },
+      })
+      map.addLayer({
+        id: 'route-core',
+        type: 'line',
+        source: 'route-order',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#9eeaff', 'line-width': 1.5, 'line-opacity': 0.9 },
       })
       map.addSource('route-times', { type: 'geojson', data: empty() })
       map.addLayer({
@@ -368,7 +391,7 @@ function start() {
       map.getCanvas().style.cursor = props.manual ? 'crosshair' : ''
       ready.value = true
       sync()
-      if (routeId.value) chooseRoute()
+      if (routeId.value && routeVisible.value) chooseRoute()
       if (props.center) map.jumpTo({ center: [props.center.lng, props.center.lat], zoom: 15 })
     })
     map.on('click', async (e) => {
@@ -401,6 +424,7 @@ watch(
   sync,
 )
 watch(activeRoute, syncRoute)
+watch(routeVisible, syncRoute)
 watch(
   () => props.center,
   (p) => {
@@ -453,7 +477,7 @@ onUnmounted(() => {
         title="路線列表"
         aria-label="路線列表"
         :aria-expanded="routesOpen"
-        @click="routesOpen = !routesOpen"
+        @click="routesOpen ? closeRoutes() : (routesOpen = true)"
       >
         <Route :size="21" aria-hidden="true" />
       </button>
@@ -497,7 +521,14 @@ onUnmounted(() => {
         @keydown="keyboardMove"
       >
         <strong>清運班次路線</strong
-        ><button type="button" aria-label="關閉路線列表" @click="routesOpen = false">×</button>
+        ><button
+          type="button"
+          aria-label="關閉路線列表"
+          title="關閉卡片並清除地圖路線"
+          @click="closeRoutes"
+        >
+          ×
+        </button>
       </header>
       <label
         >搜尋路線、車號或站點<input
@@ -521,9 +552,14 @@ onUnmounted(() => {
       >
       <p v-if="!matchingRoutes.length" role="status">沒有符合的路線，請換個關鍵字。</p>
       <p>
-        有官方站序時依站序排列，其餘依表定時間排序；編號對應地圖上的站點。虛線為站點連線示意，非實際行車路徑。
+        有官方站序時依站序排列，其餘依表定時間排序；編號對應地圖上的站點。藍色實線為站點連線示意，非實際行車路徑。
       </p>
-      <button v-if="routeId" type="button" @click="routeId = ''">清除路線</button>
+      <div v-if="routeId" class="route-actions">
+        <button type="button" :aria-pressed="routeVisible" @click="routeVisible = !routeVisible">
+          {{ routeVisible ? '隱藏路線' : '顯示路線' }}
+        </button>
+        <button type="button" @click="routeId = ''">清除路線</button>
+      </div>
       <ol v-if="activeRoute">
         <li v-for="(stop, index) in activeRoute.stops" :key="stop.id">
           <span class="route-sequence">{{ index + 1 }}</span>
@@ -632,6 +668,18 @@ onUnmounted(() => {
 .route-drawer ol {
   padding: 0;
   list-style: none;
+}
+.route-actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+.route-actions button {
+  padding: 6px 12px;
+  border: 1px solid #d8e6ff;
+  border-radius: 8px;
+  color: #1761ca;
+  background: #eff6ff;
 }
 .route-drawer li {
   display: flex;
