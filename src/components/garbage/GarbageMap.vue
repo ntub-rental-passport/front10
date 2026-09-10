@@ -17,6 +17,7 @@ const props = defineProps<{
   scheduleDate?: string
   city?: GarbageCity
   stops: GarbageStop[]
+  radius: number
   center: Point | null
   manual: boolean
   vehicles: TruckPosition[]
@@ -65,8 +66,8 @@ function sync() {
     const coordinates = Array.from({ length: 65 }, (_, i) => {
       const angle = (i * Math.PI * 2) / 64
       return [
-        lng + (500 * Math.sin(angle)) / (111320 * Math.cos((lat * Math.PI) / 180)),
-        lat + (500 * Math.cos(angle)) / 111320,
+        lng + (props.radius * Math.sin(angle)) / (111320 * Math.cos((lat * Math.PI) / 180)),
+        lat + (props.radius * Math.cos(angle)) / 111320,
       ]
     })
     source('radius').setData({
@@ -164,7 +165,12 @@ function start() {
         data: empty(),
         cluster: false,
       })
-      for (const [state, color] of Object.entries({ active: '#16a568', ended: '#50545b', upcoming: '#cf9500', unknown: '#9499a3' })) {
+      for (const [state, color] of Object.entries({
+        active: '#16a568',
+        ended: '#50545b',
+        upcoming: '#cf9500',
+        unknown: '#9499a3',
+      })) {
         const canvas = document.createElement('canvas')
         canvas.width = 48
         canvas.height = 32
@@ -176,7 +182,11 @@ function start() {
         context.beginPath()
         context.roundRect(3, 3, 42, 24, 5)
         context.fill()
-        map.addImage(`schedule-${state}`, context.getImageData(0, 0, 48, 32), { content: [9, 7, 39, 23], stretchX: [[10, 38]], stretchY: [[10, 20]] })
+        map.addImage(`schedule-${state}`, context.getImageData(0, 0, 48, 32), {
+          content: [9, 7, 39, 23],
+          stretchX: [[10, 38]],
+          stretchY: [[10, 20]],
+        })
       }
       map.addLayer({
         id: 'points',
@@ -287,7 +297,17 @@ function start() {
     error.value = '此裝置無法啟動地圖，請使用列表查詢。'
   }
 }
-watch(() => [props.stops, props.center, props.vehicles, props.timestamp, props.scheduleDate], sync)
+watch(
+  () => [
+    props.stops,
+    props.center,
+    props.radius,
+    props.vehicles,
+    props.timestamp,
+    props.scheduleDate,
+  ],
+  sync,
+)
 watch(activeRoute, syncRoute)
 watch(
   () => props.center,

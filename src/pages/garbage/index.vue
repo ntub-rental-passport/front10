@@ -89,7 +89,6 @@ let watchId: number | undefined
 const selected = ref<GarbageStop | null>(null),
   toast = ref('')
 const vehicles = ref<TruckPosition[]>([]),
-  gpsMessage = ref('車輛 GPS 連線確認中…'),
   refreshing = ref(false)
 const caps = ref({ email: false, push: false, publicKey: '' }),
   backendMessage = ref('')
@@ -201,12 +200,16 @@ const filtered = computed(() =>
   ),
 )
 const center = computed(() => (tab.value === 'manual' ? manualPoint.value : location.value))
+const nearbyRadius = ref(500)
+const searchRadius = computed(() =>
+  tab.value === 'manual' ? 200 : tab.value === 'nearby' ? nearbyRadius.value : 500,
+)
 const nearby = (point: Point | null) =>
   point
     ? stops.value
         .filter(validPoint)
         .map((s) => ({ ...s, distance: distanceMeters(point, s) }))
-        .filter((s) => s.distance <= 500)
+        .filter((s) => s.distance <= searchRadius.value)
         .sort((a, b) => a.distance - b.distance)
     : []
 const nearbyStops = computed(() => nearby(center.value))
@@ -225,7 +228,14 @@ const pages = computed(() => Math.max(1, Math.ceil(results.value.length / 20)))
 const visible = computed(() => results.value.slice((page.value - 1) * 20, page.value * 20))
 const dashboardCandidates = computed(() => {
   const seen = new Set<string>()
-  return nearby(location.value)
+  return nearby(center.value)
+    .filter(
+      (s) =>
+        statusFilter.value === 'all' ||
+        schedulesAt(s).some((schedule) =>
+          matchesStatus(schedule, statusFilter.value, statusClock.value),
+        ),
+    )
     .filter((s) => {
       const key = physicalKey(s)
       if (seen.has(key)) return false
@@ -429,7 +439,6 @@ async function loadData() {
 async function refreshGPS() {
   if (city.value === '新北市') {
     vehicles.value = []
-    gpsMessage.value = '新北市目前顯示官方表定班表；車輛即時資訊尚未串接。'
     return
   }
   if (refreshing.value) return
@@ -438,10 +447,8 @@ async function refreshGPS() {
     const data = await loadTrucks()
     if (city.value !== '臺北市') return
     vehicles.value = data.vehicles
-    gpsMessage.value = data.message
   } catch {
     vehicles.value = []
-    gpsMessage.value = '車輛 GPS 服務未連線，目前顯示表定時間。'
   } finally {
     refreshing.value = false
   }
@@ -559,50 +566,42 @@ onUnmounted(() => {
 
 <template>
   <div class="garbage-page garbage-page--wide" :class="{ 'garbage-page--map': tab === 'map' }">
-    <header class="garbage-header">
-      <div>
-        <p class="eyebrow">TAIPEI & NEW TAIPEI · RENTMATE</p>
-        <h1>{{ city }}垃圾車時間查詢</h1>
-        <p class="subtitle">即時定位・到達提醒 <span>讓倒垃圾，剛好順路。</span></p>
-      </div>
-      <div class="coverage">
-        <span class="green-dot" /><select v-model="city" aria-label="清運縣市">
-          <option>臺北市</option>
-          <option>新北市</option></select
-        ><strong>{{ city === '臺北市' ? 12 : 29 }}</strong> 行政區
-      </div>
-    </header>
-    <nav class="garbage-tabs" aria-label="垃圾清運功能">
-      <button
-        v-for="item in tabs"
-        :key="item.id"
-        :class="{ active: tab === item.id }"
-        :aria-current="tab === item.id ? 'page' : undefined"
-        @click="tab = item.id"
-      >
-        <component :is="item.icon" :size="17" />{{ item.label
-        }}<span v-if="item.id === 'favorites' && cityFavoriteCount" class="count">{{
-          cityFavoriteCount
-        }}</span>
-      </button>
-    </nav>
-    <div
-      v-if="!['reminder', 'guide'].includes(tab)"
-      class="status-filters"
-      aria-label="表定收運狀態"
-    >
-      <button
-        v-for="option in statusOptions"
-        :key="option.id"
-        :aria-pressed="statusFilter === option.id"
-        @click="setStatusFilter(option.id)"
-      >
-        {{ option.label }}
-      </button>
-      <small
-        >依表定班表，每 10
-        秒更新。灰黑：時段結束；黃：待抵達；綠：收運時段（非即時車況）。新北離站時間暫以抵達後 10 分鐘估算，「約」為估計區間，非官方離站時間。</small
-      >
+    <div class="garbage-sticky-header">
+      <header class="garbage-header">
+        <div>
+          <p class="eyebrow">TAIPEI & NEW TAIPEI · RENTMATE</p>
+          <h1>{{ city }}垃圾車時間查詢</h1>
+          <p class="subtitle">即時定位・到達提醒 <span>讓倒垃圾，剛好順路。</span></p>
+        </div>
+        <div class="header-controls">
+          <div class="schedule-clock">
+            班表時鐘
+            <time>{{
+              now.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })
+            }}</time>
+          </div>
+          <div class="coverage">
+            <span class="green-dot" /><select v-model="city" aria-label="清運縣市">
+              <option>臺北市</option>
+              <option>新北市</option></select
+            ><strong>{{ city === '臺北市' ? 12 : 29 }}</strong> 行政區
+          </div>
+        </div>
+      </header>
+      <nav class="garbage-tabs" aria-label="垃圾清運功能">
+        <button
+          v-for="item in tabs"
+          :key="item.id"
+          :class="{ active: tab === item.id }"
+          :aria-current="tab === item.id ? 'page' : undefined"
+          @click="tab = item.id"
+        >
+          <component :is="item.icon" :size="17" />{{ item.label
+          }}<span v-if="item.id === 'favorites' && cityFavoriteCount" class="count">{{
+            cityFavoriteCount
+          }}</span>
+        </button>
+      </nav>
     </div>
     <div v-if="toast" role="status" class="garbage-toast">
       <span>{{ toast }}</span
@@ -613,98 +612,6 @@ onUnmounted(() => {
     </div>
     <div v-if="loading" class="notice" role="status">正在載入{{ city }}清運站點…</div>
     <template v-if="!['reminder', 'guide'].includes(tab)">
-      <section class="live-section" aria-labelledby="live-title">
-        <div class="section-heading">
-          <div>
-            <h2 id="live-title">附近清運地點 <span>即時動態看板</span></h2>
-            <p>{{ locationMessage }}</p>
-          </div>
-          <div class="toolbar">
-            <button class="soft-button" @click="tracking ? stopTracking() : locate()">
-              <Crosshair :size="16" />{{ tracking ? '停止 GPS 追蹤' : '啟用 GPS 定位' }}</button
-            ><button
-              class="icon-button"
-              aria-label="更新車輛定位"
-              :disabled="refreshing"
-              @click="refreshGPS"
-            >
-              <RefreshCw :size="17" :class="{ spinning: refreshing }" />
-            </button>
-          </div>
-        </div>
-        <p class="gps-status">
-          <span :class="freshVehicles.length ? 'green-dot' : 'gray-dot'" />{{
-            freshVehicles.length
-              ? 'GPS 即時定位 · ' + freshVehicles.length + ' 輛車（30 秒更新）'
-              : gpsMessage
-          }}<span
-            >班表時鐘
-            {{ now.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false }) }}</span
-          >
-        </p>
-        <div v-if="dashboardStops.length" class="tracker-grid">
-          <article v-for="(s, i) in dashboardStops" :key="s.id" class="tracker-card">
-            <p class="tracker-status">{{ s.todayLabel }}</p>
-            <div class="tracker-top">
-              <span class="number">{{ i + 1 }}</span
-              ><button class="station-title" @click="selected = s">{{ s.address }}</button
-              ><button
-                class="favorite-button"
-                :class="{ saved: favorites.includes(s.id) }"
-                :aria-label="favorites.includes(s.id) ? '取消收藏' : '收藏站點'"
-                :aria-pressed="favorites.includes(s.id)"
-                @click="toggleFavorite(s)"
-              >
-                <Star :size="19" />
-              </button>
-            </div>
-            <div class="tracker-time">
-              <div class="truck-icon"><Truck :size="23" /></div>
-              <div>
-                <small>距下一班 · 表定估算</small>
-                <strong>{{ s.estimate }}</strong>
-                <p>{{ s.scheduleNote }}</p>
-              </div>
-              <div class="tracker-arrival">
-                <small>下一班時刻 · 表定</small>
-                <strong>{{ s.arrivalClock }}</strong>
-                <p>{{ s.arrivalDate }}</p>
-              </div>
-            </div>
-            <CollectionCountdown :stops="schedulesAt(s)" :now="now" compact />
-            <footer>
-              <span><MapPin :size="13" />{{ Math.round(s.distance) }} m 直線距離</span
-              ><button class="text-button" @click="showWeekly(s)">查看更多班次 →</button>
-            </footer>
-            <p
-              v-if="
-                freshVehicles.some(
-                  (v) => v.plate.replaceAll('-', '') === s.plate.replaceAll('-', ''),
-                )
-              "
-              class="vehicle-linked"
-            >
-              此車有最新 GPS，可於地圖查看位置
-            </p>
-          </article>
-        </div>
-        <div v-else-if="!['map', 'manual'].includes(tab)" class="nearby-empty">
-          <Crosshair :size="26" />
-          <div>
-            <strong>{{
-              location ? `目前位置 500 公尺內沒有${city}清運站點` : '從你的位置，找到最近的清運站點'
-            }}</strong>
-            <p>
-              {{
-                location
-                  ? `可使用地圖瀏覽${city}，或切換手動定位選擇其他位置。`
-                  : '啟用定位後顯示附近站點、實際直線距離與表定倒數。'
-              }}
-            </p>
-          </div>
-          <button class="text-button" @click="tab = 'manual'">手動選點 →</button>
-        </div>
-      </section>
       <section
         class="query-layout"
         :class="{ 'no-sidebar': tab !== 'list', 'map-query-layout': tab === 'map' }"
@@ -731,11 +638,132 @@ onUnmounted(() => {
             :stops="schedulesAt(weeklyStop)"
             @close="weeklyStop = null"
           />
-          <div v-if="tab === 'nearby'" class="notice">
-            <Navigation :size="18" /><span
-              >以你的 GPS 位置查詢 500
-              公尺內所有班表站點。距離為直線距離，實際步行路線可能較長。</span
+          <div v-if="tab === 'nearby'" class="nearby-controls">
+            <label
+              >查詢半徑
+              <select v-model.number="nearbyRadius" aria-label="附近查詢半徑">
+                <option v-for="radius in [100, 200, 300, 400, 500]" :key="radius" :value="radius">
+                  {{ radius }} 公尺
+                </option>
+              </select>
+            </label>
+            <span class="helper">{{ locationMessage }} · 以 GPS 位置為中心，依直線距離查詢</span>
+            <button class="soft-button" @click="tracking ? stopTracking() : locate()">
+              <Navigation :size="16" />{{ tracking ? '停止 GPS 追蹤' : '啟用 GPS 定位' }}
+            </button>
+          </div>
+          <section
+            v-if="['map', 'manual', 'favorites'].includes(tab)"
+            class="live-section"
+            aria-labelledby="live-title"
+          >
+            <div class="section-heading">
+              <div>
+                <h2 id="live-title">附近清運地點 <span>即時動態看板</span></h2>
+                <p>
+                  {{
+                    tab === 'manual'
+                      ? manualPoint
+                        ? '以手動選點為中心 · 半徑 200 公尺'
+                        : '請點擊地圖選擇查詢中心 · 半徑 200 公尺'
+                      : locationMessage
+                  }}
+                </p>
+              </div>
+              <div v-if="tab !== 'manual'" class="toolbar">
+                <button class="soft-button" @click="tracking ? stopTracking() : locate()">
+                  <Crosshair :size="16" />{{ tracking ? '停止 GPS 追蹤' : '啟用 GPS 定位' }}</button
+                ><button
+                  class="icon-button"
+                  aria-label="更新車輛定位"
+                  :disabled="refreshing"
+                  @click="refreshGPS"
+                >
+                  <RefreshCw :size="17" :class="{ spinning: refreshing }" />
+                </button>
+              </div>
+            </div>
+            <p v-if="freshVehicles.length" class="gps-status">
+              <span class="green-dot" />GPS 即時定位 · {{ freshVehicles.length }} 輛車（30 秒更新）
+            </p>
+            <div v-if="dashboardStops.length" class="tracker-grid">
+              <article v-for="(s, i) in dashboardStops" :key="s.id" class="tracker-card">
+                <p class="tracker-status">{{ s.todayLabel }}</p>
+                <div class="tracker-top">
+                  <span class="number">{{ i + 1 }}</span
+                  ><button class="station-title" @click="selected = s">{{ s.address }}</button
+                  ><button
+                    class="favorite-button"
+                    :class="{ saved: favorites.includes(s.id) }"
+                    :aria-label="favorites.includes(s.id) ? '取消收藏' : '收藏站點'"
+                    :aria-pressed="favorites.includes(s.id)"
+                    @click="toggleFavorite(s)"
+                  >
+                    <Star :size="19" />
+                  </button>
+                </div>
+                <div class="tracker-time">
+                  <div class="truck-icon"><Truck :size="23" /></div>
+                  <div>
+                    <small>距下一班 · 表定估算</small>
+                    <strong>{{ s.estimate }}</strong>
+                    <p>{{ s.scheduleNote }}</p>
+                  </div>
+                  <div class="tracker-arrival">
+                    <small>下一班時刻 · 表定</small>
+                    <strong>{{ s.arrivalClock }}</strong>
+                    <p>{{ s.arrivalDate }}</p>
+                  </div>
+                </div>
+                <CollectionCountdown :stops="schedulesAt(s)" :now="now" compact />
+                <footer>
+                  <span><MapPin :size="13" />{{ Math.round(s.distance) }} m 直線距離</span
+                  ><button class="text-button" @click="showWeekly(s)">查看更多班次 →</button>
+                </footer>
+                <p
+                  v-if="
+                    freshVehicles.some(
+                      (v) => v.plate.replaceAll('-', '') === s.plate.replaceAll('-', ''),
+                    )
+                  "
+                  class="vehicle-linked"
+                >
+                  此車有最新 GPS，可於地圖查看位置
+                </p>
+              </article>
+            </div>
+            <div v-else-if="!['map', 'manual'].includes(tab)" class="nearby-empty">
+              <Crosshair :size="26" />
+              <div>
+                <strong>{{
+                  location
+                    ? `目前位置 500 公尺內沒有${city}清運站點`
+                    : '從你的位置，找到最近的清運站點'
+                }}</strong>
+                <p>
+                  {{
+                    location
+                      ? `可使用地圖瀏覽${city}，或切換手動定位選擇其他位置。`
+                      : '啟用定位後顯示附近站點、實際直線距離與表定倒數。'
+                  }}
+                </p>
+              </div>
+              <button class="text-button" @click="tab = 'manual'">手動選點 →</button>
+            </div>
+          </section>
+          <div
+            v-if="!['reminder', 'guide'].includes(tab)"
+            class="status-filters"
+            aria-label="表定收運狀態"
+          >
+            <button
+              v-for="option in statusOptions"
+              :key="option.id"
+              :aria-pressed="statusFilter === option.id"
+              @click="setStatusFilter(option.id)"
             >
+              {{ option.label }}
+            </button>
           </div>
           <div v-if="mapVisible" class="map-query-stage wide-map">
             <button v-if="tab === 'map'" class="map-query-button" @click="filtersOpen = true">
@@ -749,6 +777,7 @@ onUnmounted(() => {
               :timestamp="statusClock"
               :schedule-date="statusFilter === 'all' ? queryDate : taipeiDate(now)"
               :center="center"
+              :radius="searchRadius"
               :manual="tab === 'manual'"
               :vehicles="freshVehicles"
               :focus="selected"
@@ -949,7 +978,10 @@ onUnmounted(() => {
         >{{ selected.arrival
         }}{{ selected.city === '臺北市' ? '–' + selected.departure : '' }}</strong
       >
-      <p v-if="selected.departureEstimated">表定抵達 {{ selected.arrival }}；估計離站 {{ selected.departure }}（暫估停留 10 分鐘，非官方離站時間）。</p>
+      <p v-if="selected.departureEstimated">
+        表定抵達 {{ selected.arrival }}；估計離站 {{ selected.departure }}（暫估停留 10
+        分鐘，非官方離站時間）。
+      </p>
       <p>表定時間 · {{ selected.route }} · {{ selected.trip }} · {{ selected.plate }}</p>
       <CollectionCountdown :stops="schedulesAt(selected)" :now="now" />
       <p>準誤點：尚無軌跡預測資料。表定倒數不代表車輛實際位置。</p>

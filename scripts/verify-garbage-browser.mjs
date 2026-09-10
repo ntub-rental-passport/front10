@@ -201,12 +201,31 @@ try {
   await evaluate(`document.querySelector('.station-detail .detail-close')?.click()`)
   console.log('Full-width map and filter dialog: passed')
   assert.equal(await evaluate(`document.querySelectorAll('.status-filters button').length`), 5)
+  assert(
+    await evaluate(`(() => {
+    const map = document.querySelector('.map-query-stage').getBoundingClientRect();
+    const filters = document.querySelector('.status-filters').getBoundingClientRect();
+    const live = document.querySelector('.live-section').getBoundingClientRect();
+    return live.bottom <= filters.top && filters.bottom <= map.top;
+  })()`),
+    'Quick filters should be between the map and dashboard',
+  )
+  await evaluate(`document.querySelector('main').scrollTop = 500`)
+  await delay(200)
+  assert(
+    await evaluate(
+      `Math.abs(document.querySelector('.garbage-sticky-header').getBoundingClientRect().top - document.querySelector('main').getBoundingClientRect().top) < 2`,
+    ),
+    'Title and tabs should stay at the top while scrolling',
+  )
+  await evaluate(`document.querySelector('main').scrollTop = 0`)
   await evaluate(`document.querySelectorAll('.status-filters button')[2].click()`)
   await until(
     `document.querySelectorAll('.status-filters button')[2].getAttribute('aria-pressed') === 'true'`,
   )
   await evaluate(`document.querySelector('.status-filters button').click()`)
   await clickTab('列表查詢')
+  assert.equal(await evaluate(`document.querySelectorAll('.live-section').length`), 0)
   // A known collection day makes this check independent of today's weekday.
   await evaluate(
     `(()=>{const e=document.querySelector('.filter-panel input[type=date]');e.value='2026-09-08';e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
@@ -231,7 +250,26 @@ try {
   await clickTab('我的收藏')
   await until(`document.querySelectorAll('.station-table tbody tr').length === 1`)
   await clickTab('附近查詢')
-  await until(`document.querySelectorAll('.tracker-card').length > 0`)
+  await until(`document.querySelectorAll('.station-table tbody tr').length > 0`)
+  assert.equal(await evaluate(`document.querySelectorAll('.live-section').length`), 0)
+  assert.deepEqual(
+    await evaluate(
+      `[...document.querySelector('.nearby-controls select').options].map(o => +o.value)`,
+    ),
+    [100, 200, 300, 400, 500],
+  )
+  for (const radius of [100, 200, 300, 400, 500]) {
+    await evaluate(
+      `(() => { const select = document.querySelector('.nearby-controls select'); select.value = '${radius}'; select.dispatchEvent(new Event('change', {bubbles:true})); })()`,
+    )
+    await delay(200)
+    assert(
+      await evaluate(
+        `[...document.querySelectorAll('.station-table tbody tr td:first-child small')].every(e => {const m=e.textContent.match(/([0-9]+) m/);return m && +m[1]<=${radius}})`,
+      ),
+      `Nearby results should stay within ${radius} metres`,
+    )
+  }
   assert(
     await evaluate(
       `[...document.querySelectorAll('.station-table tbody tr td:first-child small')].every(e=>{const m=e.textContent.match(/([0-9]+) m/);return m && +m[1]<=500})`,
@@ -266,6 +304,12 @@ try {
     clickCount: 1,
   })
   await until(`document.querySelector('.manual-location')`)
+  assert(
+    await evaluate(
+      `[...document.querySelectorAll('.tracker-card footer span')].every(e => {const m=e.textContent.match(/([0-9]+) m/);return m && +m[1]<=200})`,
+    ),
+    'Manual dashboard must use a 200 metre radius',
+  )
   assert.equal(
     await evaluate(`document.querySelectorAll('.nearby-empty, .results-column .notice').length`),
     0,
@@ -278,6 +322,43 @@ try {
     await evaluate(`document.querySelector('.tracker-card summary').click()`)
   }
   console.log('manual map click: passed')
+  const firstManualCards = await evaluate(
+    `[...document.querySelectorAll('.tracker-card .station-title')].map(e => e.textContent).join('|')`,
+  )
+  const movedPoint = { x: rect.x + 180, y: rect.y }
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    ...movedPoint,
+    button: 'left',
+    clickCount: 1,
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    ...movedPoint,
+    button: 'left',
+    clickCount: 1,
+  })
+  await delay(500)
+  assert.notEqual(
+    await evaluate(
+      `[...document.querySelectorAll('.tracker-card .station-title')].map(e => e.textContent).join('|')`,
+    ),
+    firstManualCards,
+    'Moving the manual center should update dashboard stations instead of using GPS',
+  )
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    ...rect,
+    button: 'left',
+    clickCount: 1,
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    ...rect,
+    button: 'left',
+    clickCount: 1,
+  })
+  await until(`document.querySelector('.tracker-card footer button')`)
   await evaluate(`document.querySelector('.tracker-card footer button').click()`)
   await until(`document.querySelector('.weekly-schedule')`)
   assert.equal(await evaluate(`document.querySelectorAll('.weekly-schedule tbody tr').length`), 7)
@@ -350,7 +431,7 @@ try {
   }
   await chooseCity('新北市')
   await until(`document.querySelector('.garbage-footer')?.textContent.includes('26,655')`)
-  assert(await evaluate(`document.querySelector('.gps-status').textContent.includes('尚未串接')`))
+  assert.equal(await evaluate(`document.querySelector('.gps-status')`), null)
   await clickTab('列表查詢')
   assert.equal(
     await evaluate(`document.querySelectorAll('.filter-panel select')[1].options.length`),
@@ -389,7 +470,8 @@ try {
     accuracy: 10,
   })
   await clickTab('附近查詢')
-  await until(`document.querySelectorAll('.tracker-card').length > 0`)
+  await until(`document.querySelectorAll('.station-table tbody tr').length > 0`)
+  assert.equal(await evaluate(`document.querySelectorAll('.live-section').length`), 0)
   assert(
     await evaluate(
       `[...document.querySelectorAll('.station-table tbody tr td:first-child small')].every(e=>{const m=e.textContent.match(/([0-9]+) m/);return m && +m[1]<=500})`,

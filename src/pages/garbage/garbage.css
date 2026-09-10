@@ -10,11 +10,14 @@
 }
 .status-filters {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: 8px;
   margin: 12px 0;
 }
 .status-filters button {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 8px 14px;
   border: 1px solid #dddcea;
   border-radius: 8px;
@@ -24,9 +27,38 @@
   background: #5146a5;
   color: white;
 }
-.status-filters small {
-  flex-basis: 100%;
-  color: #74798b;
+.garbage-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #f3f4f6;
+  padding: 12px 0;
+  margin-bottom: 16px;
+}
+.garbage-page .garbage-sticky-header .garbage-tabs {
+  margin-bottom: 0;
+}
+.garbage-page .header-controls,
+.garbage-page .nearby-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.garbage-page .header-controls {
+  justify-content: flex-end;
+}
+.garbage-page .schedule-clock {
+  color: #697287;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.garbage-page .schedule-clock time {
+  color: var(--garbage-purple);
+  font-variant-numeric: tabular-nums;
+}
+.garbage-page .nearby-controls {
+  margin-bottom: 16px;
 }
 
 /* All garbage modes share the full available content width. */
