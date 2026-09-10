@@ -610,11 +610,28 @@ def exchange_google_ticket(
         else None
     )
 
-    _reject_if_suspended(user)
-    _record_login(db, user)
+    # ⚠️ 憑證只在「已綁定過 Google 的帳號」時簽發。
+    #
+    # registration_required 為 True 代表這個 Google 帳號還沒有對應的本站帳號，
+    # 此時只回註冊票證讓前端引導完成註冊 —— 還不是登入狀態，不可給 cookie。
+    #
+    # 這裡原本直接寫 create_cookie_token(user.id, ...)，但這個函式裡從來沒有
+    # user 這個變數（合併 main 時留下的），只要真的走到就會 NameError。
+    # 之所以很久沒被發現，是因為 Google 的 redirect URI 尚未設定完成，
+    # 這支端點一直到不了 —— 設定完成後第一次執行就 500。
+    if identity is not None:
+        user = db.query(User).filter(User.id == identity.user_id).first()
+        if user is None:
+            # identity 存在但 user 不見了：資料不一致，不該當成登入成功
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="帳號資料不存在，請重新註冊。",
+            )
+        _reject_if_suspended(user)
+        _record_login(db, user)
 
-    # Google 登入成功：與一般登入相同，簽發 JWT cookie（角色取本次登入所選身分）
-    set_auth_cookie(response, create_cookie_token(user.id, user.email, requested_role))
+        # Google 登入成功：與一般登入相同，簽發 JWT cookie（角色取本次登入所選身分）
+        set_auth_cookie(response, create_cookie_token(user.id, user.email, requested_role))
 
     return GoogleOAuthSessionResponse(
         **account.model_dump(),
