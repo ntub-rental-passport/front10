@@ -27,10 +27,12 @@
 <script setup>
 
 const tabs = [
-  { path: '/app/subsidy/calculator', label: '租補試算' },
-  { path: '/app/subsidy/apply',      label: '租補申請' },
-  { path: '/app/subsidy/progress',   label: '申請進度' },
-  { path: '/app/subsidy/upload',     label: '補件上傳' },
+  { path: '/app/subsidy', label: '租補總覽' },
+  { path: '/app/subsidy/calculator', label: '資格初步檢核' },
+  { path: '/app/subsidy/housing', label: '房屋條件確認' },
+  { path: '/app/subsidy/apply', label: '申請準備' },
+  { path: '/app/subsidy/progress', label: '進度與補件' },
+  { path: '/app/subsidy/recovery', label: '追繳協助' },
 ]
 </script>
 

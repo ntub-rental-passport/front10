@@ -22,10 +22,12 @@ const route = useRoute()
 const tabs = computed(() => {
   if (props.group === 'subsidy') {
     return [
-      { label: '租補試算', path: '/app/subsidy', icon: Calculator },
-      { label: '租補申請', path: '/app/subsidy/apply', icon: FilePlus2 },
-      { label: '申請進度', path: '/app/subsidy/progress', icon: ListChecks },
-      { label: '補件上傳', path: '/app/subsidy/upload', icon: UploadCloud },
+      { label: '租補總覽', path: '/app/subsidy', icon: Calculator },
+      { label: '資格初步檢核', path: '/app/subsidy/calculator', icon: Calculator },
+      { label: '房屋條件確認', path: '/app/subsidy/housing', icon: ListChecks },
+      { label: '申請準備', path: '/app/subsidy/apply', icon: FilePlus2 },
+      { label: '進度與補件', path: '/app/subsidy/progress', icon: UploadCloud },
+      { label: '追繳協助', path: '/app/subsidy/recovery', icon: ClipboardList },
     ]
   }
 
