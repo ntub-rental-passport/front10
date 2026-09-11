@@ -1,3 +1,5 @@
+public/models/*.onnx
+
 build/
 dist/
 dist-ssr/

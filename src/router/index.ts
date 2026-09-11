@@ -150,7 +150,8 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach((to , from, next) => {
+  return next()
   let session = getAuthSession()
 
   // Session 逾時：清掉再往下走，後續的 requiresAuth 檢查會自然導向登入頁

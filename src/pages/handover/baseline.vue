@@ -12,7 +12,7 @@
  * 匯出機制：把對應的 print-only 區塊用 v-if 渲染後呼叫 window.print()，
  * 瀏覽器列印對話框可以選擇實體列印或「另存 PDF」，兩種需求一次滿足。
  */
-
+import SmartCaptureCamera, { type CapturePayload } from '@/src/components/handover/SmartCaptureCamera.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -59,7 +59,24 @@ import {
   groupItemsByRoom,
   hasEvidenceInPhase,
 } from '@/src/utils/handover'
+// ---------- AR 相機彈窗狀態 ---------- //
+const showCameraDialog = ref(false)
+const activeTargetItem = ref<HandoverItem | null>(null)
 
+function openCaptureModal(item: HandoverItem) {
+  activeTargetItem.value = item
+  showCameraDialog.value = true
+}
+
+function handlePhotoCaptured(payload: CapturePayload) {
+  if (!activeTargetItem.value) return
+  addEvidence(activeTargetItem.value.id, 'baseline', {
+    url: payload.dataUrl,
+    aiLabel: '待後端 AI 分析',
+    aiConfidence: 0,
+    note: `已透過 AR 輔助拍攝存證（清晰度：${payload.quality.sharpness}）`,
+  })
+}
 const router = useRouter()
 const {
   properties,
@@ -406,21 +423,43 @@ function fmtDate(iso: string) {
                     variant="outline"
                     size="sm"
                     class="w-full"
-                    @click="removeEvidence(it.id, firstBaseline(it)!.id)"
+                    @click="openCaptureModal(it)"
                   >
                     重拍
                   </Button>
                 </div>
 
-                <button
+                <div
                   v-else
-                  class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
-                  @click="capturePhoto(it.id)"
+                  class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center p-3 gap-2"
                 >
-                  <Camera class="h-8 w-8 mb-2" />
-                  <span class="text-sm font-medium">點擊拍攝或上傳</span>
-                  <span class="text-xs mt-1">系統會 AI 把關清晰度</span>
-                </button>
+                  <div class="text-center">
+                    <span class="text-sm font-medium text-foreground">新增點交存證照片</span>
+                    <p class="text-xs text-muted-foreground mt-0.5">系統將自動進行清晰度與瑕疵辨識</p>
+                  </div>
+
+                  <!-- 雙功能選擇按鈕 -->
+                  <div class="flex gap-2 w-full max-w-[240px] mt-1">
+                    <!-- 1. 開啟相機鏡頭 (調用 SmartCaptureCamera) -->
+                    <Button 
+                      size="sm" 
+                      class="flex-1 text-xs" 
+                      @click="openCaptureModal(it)"
+                    >
+                      <Camera class="mr-1 h-3.5 w-3.5" /> 開啟相機
+                    </Button>
+
+                    <!-- 2. 本機相簿 / 檔案上傳 (調用原生 file input) -->
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      class="flex-1 text-xs" 
+                      @click="capturePhoto(it.id)"
+                    >
+                      📁 檔案上傳
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -527,6 +566,15 @@ function fmtDate(iso: string) {
         </div>
       </div>
     </div>
+    <!-- AR 智慧相機彈窗 -->
+    <SmartCaptureCamera
+      v-if="activeTargetItem"
+      v-model:open="showCameraDialog"
+      :item-id="activeTargetItem.id"
+      :item-name="activeTargetItem.name"
+      :room-name="activeTargetItem.room"
+      @captured="handlePhotoCaptured"
+    />
   </div>
 </template>
 
