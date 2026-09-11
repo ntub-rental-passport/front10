@@ -6,6 +6,7 @@ import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 
 const message = computed(() => adminSettings.value.maintenanceMessage)
 const siteName = computed(() => adminSettings.value.siteName)
+const supportEmail = computed(() => adminSettings.value.supportEmail)
 
 function formatSchedule(value: string): string {
   if (value.trim() === '') return ''
@@ -35,6 +36,12 @@ const resumesAt = computed(() => formatSchedule(adminSettings.value.maintenanceE
         <p class="text-muted-foreground">{{ message }}</p>
         <p v-if="resumesAt" class="text-sm text-muted-foreground">
           預計 {{ resumesAt }} 恢復服務
+        </p>
+        <p v-if="supportEmail" class="text-sm text-muted-foreground">
+          需要協助請聯絡
+          <a :href="`mailto:${supportEmail}`" class="text-primary underline underline-offset-4">
+            {{ supportEmail }}
+          </a>
         </p>
       </div>
 

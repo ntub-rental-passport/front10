@@ -4,7 +4,6 @@ import type { AiProviderId, AiUsageDaily } from '@/src/mocks/admin/ai-usage'
 export type QuotaLevel = 'ok' | 'warn' | 'critical'
 
 const DEFAULT_AVERAGE_WINDOW = 7
-const CRITICAL_DAYS_LEFT = 3
 
 function monthPrefix(date: Date): string {
   return dateKey(date).slice(0, 7) // YYYY-MM
@@ -66,6 +65,8 @@ export interface QuotaStatusInput {
   today: Date
   warnPercent: number
   criticalPercent: number
+  /** 依消耗速度推算的剩餘天數低於此值時，規則二判定為 critical（見系統設定的 aiQuotaCriticalDays） */
+  criticalDaysLeft: number
 }
 
 const SEVERITY: Record<QuotaLevel, number> = { ok: 0, warn: 1, critical: 2 }
@@ -80,7 +81,7 @@ function stricter(a: QuotaLevel, b: QuotaLevel): QuotaLevel {
  * 規則二是關鍵 —— 消耗速度翻倍時，等百分比門檻亮燈已來不及。
  */
 export function quotaStatus(input: QuotaStatusInput): QuotaLevel {
-  const { usedUnits, quota, dailyAvg, today, warnPercent, criticalPercent } = input
+  const { usedUnits, quota, dailyAvg, today, warnPercent, criticalPercent, criticalDaysLeft } = input
 
   // 額度為 0 視為未設定：不計算百分比，也避免除以零
   if (quota <= 0) return 'ok'
@@ -95,7 +96,7 @@ export function quotaStatus(input: QuotaStatusInput): QuotaLevel {
   const byForecast: QuotaLevel =
     days === null
       ? 'ok'
-      : days <= CRITICAL_DAYS_LEFT
+      : days <= criticalDaysLeft
         ? 'critical'
         : days <= daysLeftInMonth(today)
           ? 'warn'

@@ -18,10 +18,14 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 *.local
+# fail2ban 設定檔不含機密，必須進版控（上面的 *.local 規則會誤傷它）
+!deploy/fail2ban/jail.local
 *.timestamp-*-*.mjs
 
 .env*
 !.env.example
+# 正式環境前端 build 變數：只有可公開的值（/api 路徑），必須進版控
+!.env.production
 
 .vscode/*
 !.vscode/extensions.json

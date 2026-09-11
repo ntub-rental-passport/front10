@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
+import { Bell, LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar/index'
 import {
   DropdownMenu,
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu/index'
 import { cn } from '@/lib/utils'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
+import { useAdminNotificationCenter } from '@/src/composables/admin/useAdminNotificationCenter'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
 import { adminRoleLabels } from '@/src/utils/admin-rbac'
 
@@ -20,6 +21,7 @@ const route = useRoute()
 const router = useRouter()
 
 const { visibleNavGroups, currentAdminRole } = useAdminRbac()
+const { unreadCount: adminUnread } = useAdminNotificationCenter()
 
 const mobileOpen = ref(false)
 
@@ -105,10 +107,24 @@ async function handleSignOut(): Promise<void> {
           </template>
         </nav>
 
-        <!-- 頭像選單收納身分、跨區導覽與登出 —— 後台原本沒有登出入口 -->
+        <div class="ml-auto flex items-center gap-2">
+          <RouterLink
+            to="/admin/notification-center"
+            class="relative rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="通知中心"
+          >
+            <Bell class="h-5 w-5" />
+            <span
+              v-if="adminUnread > 0"
+              class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
+            >
+              {{ adminUnread > 99 ? '99+' : adminUnread }}
+            </span>
+          </RouterLink>
+
         <DropdownMenu>
           <DropdownMenuTrigger
-            class="ml-auto flex shrink-0 items-center gap-2 rounded-full p-1 pr-2 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            class="flex shrink-0 items-center gap-2 rounded-full p-1 pr-2 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <Avatar size="sm" shape="circle" class="h-8 w-8 bg-primary/10 text-primary">
               <AvatarFallback class="bg-transparent text-sm font-semibold">
@@ -141,6 +157,7 @@ async function handleSignOut(): Promise<void> {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
     </header>
 

@@ -28,26 +28,6 @@ describe('validateSettings', () => {
     expect(result.supportEmail).toBe('請輸入客服信箱')
   })
 
-  it('每頁筆數低於下限', () => {
-    const result = validateSettings({ ...baseSettings(), pageSize: 0 })
-    expect(result.pageSize).toBe('每頁筆數需介於 1 到 100')
-  })
-
-  it('每頁筆數高於上限', () => {
-    const result = validateSettings({ ...baseSettings(), pageSize: 101 })
-    expect(result.pageSize).toBe('每頁筆數需介於 1 到 100')
-  })
-
-  it('每頁筆數邊界值可通過', () => {
-    expect(validateSettings({ ...baseSettings(), pageSize: 1 }).pageSize).toBeUndefined()
-    expect(validateSettings({ ...baseSettings(), pageSize: 100 }).pageSize).toBeUndefined()
-  })
-
-  it('上傳上限超出範圍', () => {
-    const result = validateSettings({ ...baseSettings(), maxUploadMb: 51 })
-    expect(result.maxUploadMb).toBe('上傳上限需介於 1 到 50 MB')
-  })
-
   it('開啟維護模式時維護文字不可空白', () => {
     const result = validateSettings({
       ...baseSettings(),
@@ -66,29 +46,13 @@ describe('validateSettings', () => {
     expect(result.maintenanceMessage).toBeUndefined()
   })
 
-  it('每頁筆數為 NaN 視為錯誤', () => {
-    const result = validateSettings({ ...baseSettings(), pageSize: Number.NaN })
-    expect(result.pageSize).toBe('每頁筆數需介於 1 到 100')
-  })
-
-  it('上傳上限為 NaN 視為錯誤', () => {
-    const result = validateSettings({ ...baseSettings(), maxUploadMb: Number.NaN })
-    expect(result.maxUploadMb).toBe('上傳上限需介於 1 到 50 MB')
-  })
-
-  it('上傳上限下限與邊界值', () => {
-    expect(validateSettings({ ...baseSettings(), maxUploadMb: 0 }).maxUploadMb).toBe('上傳上限需介於 1 到 50 MB')
-    expect(validateSettings({ ...baseSettings(), maxUploadMb: 1 }).maxUploadMb).toBeUndefined()
-    expect(validateSettings({ ...baseSettings(), maxUploadMb: 50 }).maxUploadMb).toBeUndefined()
-  })
-
   it('同時回報多個錯誤', () => {
     const result = validateSettings({
       ...baseSettings(),
       siteName: '',
-      pageSize: 999,
+      maintenanceOverdueDays: 999,
     })
-    expect(Object.keys(result).sort()).toEqual(['pageSize', 'siteName'])
+    expect(Object.keys(result).sort()).toEqual(['maintenanceOverdueDays', 'siteName'])
   })
 })
 
@@ -126,8 +90,6 @@ describe('migrateSettings', () => {
       supportEmail: 'old@rentmate.tw',
       maintenanceMode: false,
       maintenanceMessage: '維護中',
-      pageSize: 50,
-      maxUploadMb: 20,
     }
 
     const migrated = migrateSettings(legacy)
@@ -136,9 +98,14 @@ describe('migrateSettings', () => {
     expect(migrated.platformVisionPageQuota).toBe(3_000)
     expect(migrated.quotaWarnPercent).toBe(80)
     expect(migrated.quotaCriticalPercent).toBe(95)
+    expect(migrated.auditRetentionDays).toBe(90)
+    expect(migrated.maintenanceOverdueDays).toBe(7)
+    expect(migrated.subscriptionExpiringSoonDays).toBe(14)
+    expect(migrated.aiQuotaCriticalDays).toBe(3)
+    expect(migrated.responseOkMs).toBe(300)
+    expect(migrated.responseDegradedMs).toBe(1000)
     // 使用者原本的設定不可被預設值覆蓋
     expect(migrated.siteName).toBe('舊站名')
-    expect(migrated.pageSize).toBe(50)
   })
 })
 
@@ -223,5 +190,128 @@ describe('安全性設定驗證', () => {
   it('非數字一律報錯', () => {
     const result = validateSettings({ ...baseSettings(), sessionTimeoutMinutes: Number.NaN })
     expect(result.sessionTimeoutMinutes).toBe('Session 逾時需介於 5 到 10080 分鐘')
+  })
+})
+
+describe('稽核保留天數與逾期門檻驗證', () => {
+  it('保留天數為 0 或負數代表不限制，不是錯誤', () => {
+    expect(validateSettings({ ...baseSettings(), auditRetentionDays: 0 }).auditRetentionDays).toBeUndefined()
+    expect(validateSettings({ ...baseSettings(), auditRetentionDays: -1 }).auditRetentionDays).toBeUndefined()
+  })
+
+  it('保留天數超過上限報錯', () => {
+    const result = validateSettings({ ...baseSettings(), auditRetentionDays: 3651 })
+    expect(result.auditRetentionDays).toBeTruthy()
+  })
+
+  it('保留天數非數字報錯', () => {
+    const result = validateSettings({ ...baseSettings(), auditRetentionDays: Number.NaN })
+    expect(result.auditRetentionDays).toBeTruthy()
+  })
+
+  it('逾期門檻需介於 1 到 90 天', () => {
+    expect(validateSettings({ ...baseSettings(), maintenanceOverdueDays: 0 }).maintenanceOverdueDays).toBe(
+      '逾期門檻需介於 1 到 90 天',
+    )
+    expect(validateSettings({ ...baseSettings(), maintenanceOverdueDays: 91 }).maintenanceOverdueDays).toBe(
+      '逾期門檻需介於 1 到 90 天',
+    )
+    expect(
+      validateSettings({ ...baseSettings(), maintenanceOverdueDays: 7 }).maintenanceOverdueDays,
+    ).toBeUndefined()
+  })
+})
+
+describe('訂閱到期提醒天數驗證', () => {
+  it('需介於 1 到 90 天', () => {
+    expect(
+      validateSettings({ ...baseSettings(), subscriptionExpiringSoonDays: 0 }).subscriptionExpiringSoonDays,
+    ).toBe('到期提醒天數需介於 1 到 90 天')
+    expect(
+      validateSettings({ ...baseSettings(), subscriptionExpiringSoonDays: 91 }).subscriptionExpiringSoonDays,
+    ).toBe('到期提醒天數需介於 1 到 90 天')
+    expect(
+      validateSettings({ ...baseSettings(), subscriptionExpiringSoonDays: 1 }).subscriptionExpiringSoonDays,
+    ).toBeUndefined()
+    expect(
+      validateSettings({ ...baseSettings(), subscriptionExpiringSoonDays: 90 }).subscriptionExpiringSoonDays,
+    ).toBeUndefined()
+  })
+
+  it('非數字報錯', () => {
+    expect(
+      validateSettings({ ...baseSettings(), subscriptionExpiringSoonDays: Number.NaN })
+        .subscriptionExpiringSoonDays,
+    ).toBeTruthy()
+  })
+})
+
+describe('AI 額度告急天數驗證', () => {
+  it('需介於 1 到 30 天', () => {
+    expect(validateSettings({ ...baseSettings(), aiQuotaCriticalDays: 0 }).aiQuotaCriticalDays).toBe(
+      '告急天數需介於 1 到 30 天',
+    )
+    expect(validateSettings({ ...baseSettings(), aiQuotaCriticalDays: 31 }).aiQuotaCriticalDays).toBe(
+      '告急天數需介於 1 到 30 天',
+    )
+    expect(validateSettings({ ...baseSettings(), aiQuotaCriticalDays: 1 }).aiQuotaCriticalDays).toBeUndefined()
+    expect(validateSettings({ ...baseSettings(), aiQuotaCriticalDays: 30 }).aiQuotaCriticalDays).toBeUndefined()
+  })
+
+  it('非數字報錯', () => {
+    expect(
+      validateSettings({ ...baseSettings(), aiQuotaCriticalDays: Number.NaN }).aiQuotaCriticalDays,
+    ).toBeTruthy()
+  })
+})
+
+describe('後端回應時間分級門檻驗證', () => {
+  it('兩個門檻皆需介於 50 到 5000 毫秒', () => {
+    expect(validateSettings({ ...baseSettings(), responseOkMs: 49 }).responseOkMs).toBe(
+      '正常門檻需介於 50 到 5000 毫秒',
+    )
+    expect(validateSettings({ ...baseSettings(), responseOkMs: 5001 }).responseOkMs).toBeTruthy()
+    expect(validateSettings({ ...baseSettings(), responseDegradedMs: 49 }).responseDegradedMs).toBe(
+      '變慢門檻需介於 50 到 5000 毫秒',
+    )
+    expect(validateSettings({ ...baseSettings(), responseDegradedMs: 5001 }).responseDegradedMs).toBeTruthy()
+  })
+
+  it('邊界值 50 與 5000 皆合法', () => {
+    expect(
+      validateSettings({ ...baseSettings(), responseOkMs: 50, responseDegradedMs: 5000 }).responseOkMs,
+    ).toBeUndefined()
+    expect(
+      validateSettings({ ...baseSettings(), responseOkMs: 50, responseDegradedMs: 5000 })
+        .responseDegradedMs,
+    ).toBeUndefined()
+  })
+
+  it('正常門檻必須嚴格小於變慢門檻，顛倒時報錯', () => {
+    const result = validateSettings({
+      ...baseSettings(),
+      responseOkMs: 1000,
+      responseDegradedMs: 300,
+    })
+    expect(result.responseOkMs).toBe('正常門檻必須小於變慢門檻')
+  })
+
+  it('兩者相等時同樣報錯 —— 相等會讓 degraded 這一級永遠判不到', () => {
+    const result = validateSettings({
+      ...baseSettings(),
+      responseOkMs: 500,
+      responseDegradedMs: 500,
+    })
+    expect(result.responseOkMs).toBe('正常門檻必須小於變慢門檻')
+  })
+
+  it('正常門檻嚴格小於變慢門檻時通過', () => {
+    const result = validateSettings({
+      ...baseSettings(),
+      responseOkMs: 300,
+      responseDegradedMs: 1000,
+    })
+    expect(result.responseOkMs).toBeUndefined()
+    expect(result.responseDegradedMs).toBeUndefined()
   })
 })

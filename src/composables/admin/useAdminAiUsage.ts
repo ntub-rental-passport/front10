@@ -69,6 +69,7 @@ export function useAdminAiUsage() {
           today,
           warnPercent: adminSettings.value.quotaWarnPercent,
           criticalPercent: adminSettings.value.quotaCriticalPercent,
+          criticalDaysLeft: adminSettings.value.aiQuotaCriticalDays,
         }),
         unset: quota <= 0,
       }

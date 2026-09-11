@@ -75,12 +75,12 @@ describe('visibleNavGroupsFor', () => {
     return visibleNavGroupsFor(role).reduce((sum, g) => sum + g.items.length, 0)
   }
 
-  it('super 可看到全部 9 個項目', () => {
-    expect(totalItems('super')).toBe(9)
+  it('super 可看到全部 10 個項目', () => {
+    expect(totalItems('super')).toBe(10)
   })
 
-  it('一般管理員可看到 7 個項目（少了稽核紀錄與系統設定）', () => {
-    expect(totalItems('admin')).toBe(7)
+  it('一般管理員可看到 8 個項目（少了稽核紀錄與系統設定）', () => {
+    expect(totalItems('admin')).toBe(8)
   })
 
   it('一般管理員看得到使用者管理', () => {
@@ -104,10 +104,10 @@ describe('visibleNavGroupsFor', () => {
 })
 
 describe('adminNavGroups', () => {
-  it('定義了三個群組，共 9 個項目', () => {
+  it('定義了三個群組，共 10 個項目', () => {
     const total = adminNavGroups.reduce((sum, g) => sum + g.items.length, 0)
     expect(adminNavGroups.length).toBe(3)
-    expect(total).toBe(9)
+    expect(total).toBe(10)
   })
 
   it('已移除的模組不再出現在導覽中', () => {

@@ -1,0 +1,21 @@
+# 機密：絕不進 image
+.env
+key/
+backend/rentmate-vision-key.json
+backend/vision-key*.json
+
+# 依賴與產物（container 內重新安裝/建置）
+node_modules
+dist
+.venv
+backend/__pycache__
+backend/**/__pycache__
+*.pyc
+
+# 開發雜項
+.git
+.gitignore
+docs
+Doc
+*.md
+!README.md

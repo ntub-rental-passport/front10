@@ -46,6 +46,7 @@ function user(id: string, registeredAt: string, over: Partial<AdminUser> = {}): 
     role: 'user',
     adminRole: null,
     status: 'active',
+    lastLoginAt: null,
     emailVerified: true,
     registeredAt,
     ...over,

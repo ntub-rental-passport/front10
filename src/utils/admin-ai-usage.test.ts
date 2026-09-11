@@ -77,7 +77,7 @@ describe('daysLeftInMonth', () => {
 })
 
 describe('quotaStatus', () => {
-  const base = { today: TODAY, warnPercent: 80, criticalPercent: 95 }
+  const base = { today: TODAY, warnPercent: 80, criticalPercent: 95, criticalDaysLeft: 3 }
 
   it('用量高、消耗慢時由百分比門檻決定', () => {
     // 用量 85%，日均 1 -> 剩 150 份可撐 150 天，規則二為 ok
@@ -102,5 +102,20 @@ describe('quotaStatus', () => {
 
   it('用量低且消耗慢時為 ok', () => {
     expect(quotaStatus({ ...base, usedUnits: 100, quota: 1000, dailyAvg: 5 })).toBe('ok')
+  })
+
+  it('criticalDaysLeft 為邊界值時判為 critical，多一天就不算', () => {
+    // 用量僅 40%，遠低於 warnPercent，狀態完全由規則二（耗盡預估）決定
+    // remaining 600、dailyAvg 200 -> 剩 3 天，等於門檻，算 critical
+    expect(quotaStatus({ ...base, usedUnits: 400, quota: 1000, dailyAvg: 200 })).toBe('critical')
+    // remaining 600、dailyAvg 150 -> 剩 4 天，超過門檻一天，退回 warn（仍在當月剩餘天數內）
+    expect(quotaStatus({ ...base, usedUnits: 400, quota: 1000, dailyAvg: 150 })).toBe('warn')
+  })
+
+  it('criticalDaysLeft 門檻可調整：拉高門檻後，原本只是 warn 的天數改判為 critical', () => {
+    // 與上一個案例相同的用量與消耗速度（剩 4 天），門檻從 3 拉高到 5 後改判 critical
+    expect(
+      quotaStatus({ ...base, criticalDaysLeft: 5, usedUnits: 400, quota: 1000, dailyAvg: 150 }),
+    ).toBe('critical')
   })
 })

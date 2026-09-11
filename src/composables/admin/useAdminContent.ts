@@ -10,6 +10,7 @@ import { reorderByIndex } from '@/src/utils/reorder'
 import {
   seedAnnouncements,
   seedBanners,
+  migrateBannerImages,
   type Announcement,
   type Banner,
 } from '@/src/mocks/admin-seed'
@@ -19,7 +20,7 @@ const announcements = createAdminCollection<Announcement[]>(
   seedAnnouncements,
   migrateAnnouncements,
 )
-const banners = createAdminCollection<Banner[]>('content-banners', seedBanners)
+const banners = createAdminCollection<Banner[]>('content-banners', seedBanners, migrateBannerImages)
 
 function nowIso(): string {
   return new Date().toISOString()
