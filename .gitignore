@@ -56,3 +56,7 @@ __pycache__/
 
 rentmate-vision-key.json
 backend/uploads/inspection/
+
+# Python 虛擬環境（桌機代理 desktop/.venv 會有幾百 MB 的 torch）
+.venv/
+venv/

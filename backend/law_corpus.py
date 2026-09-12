@@ -32,13 +32,28 @@
 模型的注意力被稀釋，命中率從 4/4 掉到 3/4。
 語料的召回率是 100%，但**模型的注意力不是**。
 
-因此改為向量檢索：只給最相關的幾塊。向量用 NVIDIA 的 embedding API
-算（見 embeddings.py），語料的向量預先算好存在 law_corpus.json 裡，
-查詢時只需要一次 API 呼叫。不需要 torch，VM 就跑得動。
-
-**embedding 服務掛掉時退回「全部給」而不是中斷。**
+**任何一步失敗都退回「全部給」而不是中斷。**
 檢索只是為了聚焦，全部給雖然效果差一點但仍然可用 ——
 沒有理由因為檢索失敗就讓整個分析功能不能用。
+
+## 一個語料，多個向量空間
+
+桌機在線時用組員的 text2vec-base-chinese（768 維），
+不在線時退回 NVIDIA 的 nemotron-3-embed-1b（2048 維）。
+兩個模型的向量在**不同的語意空間**，所以語料各存一份：
+
+    chunks[].embeddings = { "local": [...768], "nvidia": [...2048] }
+    embeddingSpaces      = { "local": {model, dim}, "nvidia": {model, dim} }
+
+查詢用哪個 provider 就只比對那一份。混用不會報錯，只會安靜地
+算出無意義的相似度然後檢索到錯的法條 —— 所以這裡有三道檢查：
+
+    載入時  同一空間內所有向量的維度必須一致，且每一塊都要有
+    查詢前  語料記錄的模型名稱必須等於該 provider 現在要用的模型
+            （擋「換了模型但忘記重建語料」）
+    查詢後  回傳的查詢向量維度必須等於該空間的維度
+
+任何一道不過就跳過該空間，換下一個 provider。
 """
 
 import json
@@ -47,6 +62,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import embeddings
 from embeddings import EmbeddingUnavailable, cosine, embed_texts
 
 logger = logging.getLogger(__name__)
@@ -55,13 +71,21 @@ CORPUS_PATH = Path(__file__).resolve().parent / "law_corpus.json"
 
 
 @dataclass(frozen=True)
+class VectorSpace:
+    """語料裡某一組向量的身分證。"""
+    name: str
+    model: str
+    dim: int
+
+
+@dataclass(frozen=True)
 class LawChunk:
     id: str
     source: str
     headers: tuple[str, ...]
     text: str
-    # 預先算好的向量。缺席時該塊不參與相似度排序（會退回全部給）
-    embedding: tuple[float, ...] = field(default=())
+    # provider 名稱 -> 預先算好的向量。缺席的空間不能用來檢索。
+    vectors: dict[str, tuple[float, ...]] = field(default_factory=dict)
 
     @property
     def label(self) -> str:
@@ -75,33 +99,142 @@ class LawChunk:
         return " › ".join([self.source, *parts]) if parts else self.source
 
 
-def _load() -> list[LawChunk]:
+def _chunk_vectors(raw: dict, legacy_space: str) -> dict[str, tuple[float, ...]]:
+    """讀出一塊的所有向量，同時接受新舊兩種格式。
+
+    舊格式（單一 embedding 欄位）仍要能用：語料重建是手動步驟，
+    不該因為升級了程式碼就讓現有部署的檢索失效。
+    """
+    vectors: dict[str, tuple[float, ...]] = {}
+
+    for name, values in (raw.get("embeddings") or {}).items():
+        if values:
+            vectors[str(name)] = tuple(float(v) for v in values)
+
+    if legacy := raw.get("embedding"):
+        # 新格式優先：兩者都有時不覆蓋
+        vectors.setdefault(legacy_space, tuple(float(v) for v in legacy))
+
+    return vectors
+
+
+def _legacy_space_name(model: str) -> str:
+    """舊格式沒有記空間名稱，靠模型名稱反推。"""
+    if model and model == embeddings.LOCAL_MODEL_DEFAULT:
+        return embeddings.LOCAL
+    return embeddings.NVIDIA
+
+
+def _load() -> tuple[list[LawChunk], dict[str, VectorSpace]]:
     if not CORPUS_PATH.exists():
         # 語料缺席不該讓整個後端起不來 —— 分析仍可運作，只是沒有法源可綁
         logger.error("找不到法規語料 %s，法源綁定將停用", CORPUS_PATH)
-        return []
+        return [], {}
     try:
         data = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as error:
         logger.error("法規語料讀取失敗：%s", error)
-        return []
+        return [], {}
 
-    return [
+    legacy_model = str(data.get("embeddingModel") or "")
+    legacy_space = _legacy_space_name(legacy_model)
+
+    chunks = [
         LawChunk(
             id=str(c["id"]),
             source=str(c.get("source", "")),
             headers=tuple(c.get("headers") or ()),
             text=str(c.get("text", "")).strip(),
-            embedding=tuple(c.get("embedding") or ()),
+            vectors=_chunk_vectors(c, legacy_space),
         )
         for c in data.get("chunks", [])
         if str(c.get("text", "")).strip()
     ]
 
+    # 宣告的空間中繼資料（新格式）；舊格式從兩個頂層欄位組出一個
+    declared: dict[str, dict] = dict(data.get("embeddingSpaces") or {})
+    if not declared and legacy_model:
+        declared[legacy_space] = {
+            "model": legacy_model,
+            "dim": int(data.get("embeddingDim") or 0),
+        }
 
-CHUNKS: list[LawChunk] = _load()
+    return chunks, _usable_spaces(chunks, declared)
+
+
+def _usable_spaces(
+    chunks: list[LawChunk], declared: dict[str, dict]
+) -> dict[str, VectorSpace]:
+    """挑出真正可以用來檢索的空間。
+
+    「宣告了」不等於「可以用」：少算一塊、或維度前後不一致（重建中斷過），
+    都會讓排序結果變成部分比較 —— 那比完全不檢索更難察覺。
+    """
+    spaces: dict[str, VectorSpace] = {}
+    if not chunks:
+        return spaces
+
+    for name, meta in declared.items():
+        name = str(name)
+        model = str((meta or {}).get("model") or "")
+        present = [c.vectors.get(name) for c in chunks]
+
+        missing = sum(1 for v in present if not v)
+        if missing:
+            logger.error("向量空間 %s 有 %d/%d 塊缺向量，停用（請重建語料）",
+                         name, missing, len(chunks))
+            continue
+
+        dims = {len(v) for v in present}
+        if len(dims) != 1:
+            logger.error("向量空間 %s 的維度不一致（%s），停用（語料可能建到一半中斷）",
+                         name, sorted(dims))
+            continue
+
+        dim = dims.pop()
+        if (declared_dim := int((meta or {}).get("dim") or 0)) and declared_dim != dim:
+            logger.error("向量空間 %s 宣告 %d 維但實際是 %d 維，停用",
+                         name, declared_dim, dim)
+            continue
+        if not model:
+            logger.error("向量空間 %s 沒記錄模型名稱，停用 —— 無法確認查詢會用同一個模型", name)
+            continue
+
+        spaces[name] = VectorSpace(name=name, model=model, dim=dim)
+
+    return spaces
+
+
+CHUNKS, SPACES = _load()
 _BY_ID: dict[str, LawChunk] = {c.id: c for c in CHUNKS}
-HAS_VECTORS = bool(CHUNKS) and all(c.embedding for c in CHUNKS)
+HAS_VECTORS = bool(SPACES)
+
+
+def _warn_on_model_mismatch() -> None:
+    """啟動時就把「設定與語料不符」講出來。
+
+    不等到有人上傳合約才發現：那時只會在 log 裡多一行 warning，
+    而使用者拿到的是「未檢索」的結果，從畫面上看不出來。
+    """
+    for provider in embeddings.provider_order():
+        space = SPACES.get(provider)
+        if space is None:
+            if embeddings.is_configured(provider):
+                logger.warning("EMBEDDING_PROVIDER 含 %s，但語料沒有這個空間的向量"
+                               "（請執行 build_vectors.py --provider %s）", provider, provider)
+            continue
+        wanted = embeddings.model_for(provider)
+        if wanted != space.model:
+            logger.error(
+                "向量空間 %s 是用 %s 建的，但現在設定要用 %s —— 這個空間會被跳過。"
+                "混用不同模型的向量會算出無意義的相似度，所以寧可不檢索。",
+                provider, space.model, wanted,
+            )
+
+
+if CHUNKS:
+    _warn_on_model_mismatch()
+
 
 # 取幾塊。可用 LAW_TOP_K 環境變數調整，不必改程式碼重建映像。
 #
@@ -121,37 +254,71 @@ def _top_k_default() -> int:
 DEFAULT_TOP_K = _top_k_default()
 
 
+def _rank(query_vec: list[float], space: str, top_k: int) -> list[LawChunk]:
+    ranked = sorted(
+        CHUNKS,
+        key=lambda c: cosine(query_vec, list(c.vectors[space])),
+        reverse=True,
+    )[:top_k]
+    # 依原始順序輸出：法規本來就有邏輯次序，照相似度排會讓 prompt 讀起來跳來跳去
+    order = {c.id: i for i, c in enumerate(CHUNKS)}
+    return sorted(ranked, key=lambda c: order[c.id])
+
+
 async def retrieve(query: str = "", limit: int | None = None) -> list[LawChunk]:
     """取回與 query 最相關的法規區塊。
 
-    query 為空、語料沒有向量、或 embedding 服務不可用時，退回全部給。
-    退回而不是拋錯：檢索只是為了聚焦，全部給效果差一點但仍然可用，
-    沒有理由因為檢索失敗就讓整個分析功能不能用。
+    依 EMBEDDING_PROVIDER 的順序嘗試（預設 nvidia；桌機架好後設 local,nvidia）。
+    query 為空、語料沒有可用向量、或所有 provider 都不可用時，退回全部給。
+    退回而不是拋錯：檢索只是為了聚焦，全部給效果差一點但仍然可用。
     """
     if not CHUNKS:
         return []
 
     top_k = limit or DEFAULT_TOP_K
-    if not query.strip() or not HAS_VECTORS:
-        if not HAS_VECTORS:
-            logger.warning("語料沒有向量，退回全部給（請執行 build_vectors.py）")
+    if not query.strip():
+        return CHUNKS
+    if not SPACES:
+        logger.warning("語料沒有可用的向量空間，退回全部給（請執行 build_vectors.py）")
         return CHUNKS
 
-    try:
-        query_vec = (await embed_texts([query[:4000]], input_type="query"))[0]
-    except EmbeddingUnavailable:
-        logger.warning("embedding 不可用，本次退回全部給")
-        return CHUNKS
+    for provider in embeddings.provider_order():
+        space = SPACES.get(provider)
+        if space is None:
+            continue
+        if not embeddings.is_configured(provider):
+            logger.debug("embedding provider %s 未設定，略過", provider)
+            continue
 
-    ranked = sorted(
-        CHUNKS, key=lambda c: cosine(query_vec, list(c.embedding)), reverse=True
-    )[:top_k]
-    # 依原始順序輸出：法規本來就有邏輯次序，照相似度排會讓 prompt 讀起來跳來跳去
-    order = {c.id: i for i, c in enumerate(CHUNKS)}
-    selected = sorted(ranked, key=lambda c: order[c.id])
-    logger.info("法規檢索：取 %d/%d 塊（%s）",
-                len(selected), len(CHUNKS), ",".join(c.id for c in selected))
-    return selected
+        # 查詢用的模型必須就是建語料的那個模型，否則兩邊不在同一個語意空間
+        wanted = embeddings.model_for(provider)
+        if wanted != space.model:
+            logger.error("跳過向量空間 %s：語料用 %s 建、設定要用 %s",
+                         provider, space.model, wanted)
+            continue
+
+        try:
+            query_vec = (
+                await embed_texts([query[:4000]], input_type="query", provider=provider)
+            )[0]
+        except EmbeddingUnavailable as error:
+            logger.warning("embedding provider %s 不可用（%s），換下一個", provider, error)
+            continue
+
+        if len(query_vec) != space.dim:
+            # 設定看起來一致但實際不一致 —— 例如桌機上的模型被換掉了
+            logger.error("跳過向量空間 %s：查詢向量 %d 維，語料是 %d 維",
+                         provider, len(query_vec), space.dim)
+            continue
+
+        selected = _rank(query_vec, provider, top_k)
+        logger.info("法規檢索（%s/%s）：取 %d/%d 塊（%s）",
+                    provider, space.model, len(selected), len(CHUNKS),
+                    ",".join(c.id for c in selected))
+        return selected
+
+    logger.warning("所有 embedding provider 都不可用，本次退回全部給")
+    return CHUNKS
 
 
 def format_for_prompt(chunks: list[LawChunk]) -> str:
@@ -189,10 +356,19 @@ def resolve_citations(ids) -> list[str]:
 
 def stats() -> dict[str, object]:
     """供 check_llm.py 與監控顯示。"""
+    spaces = {
+        name: {"model": space.model, "dim": space.dim}
+        for name, space in sorted(SPACES.items())
+    }
     return {
         "chunks": len(CHUNKS),
         "chars": sum(len(c.text) for c in CHUNKS),
         "sources": sorted({c.source for c in CHUNKS}),
         "hasVectors": HAS_VECTORS,
-        "dim": len(CHUNKS[0].embedding) if HAS_VECTORS else 0,
+        "spaces": spaces,
+        # 舊欄位：沿用「排最前面的可用 provider」的維度
+        "dim": next(
+            (SPACES[p].dim for p in embeddings.provider_order() if p in SPACES),
+            next((s.dim for s in SPACES.values()), 0),
+        ),
     }
