@@ -1,0 +1,11 @@
+# 桌機代理的依賴。用法見 desktop/README.md
+
+fastapi>=0.115
+uvicorn>=0.30
+httpx>=0.27
+
+# embedding（組員建向量庫用的模型）。會一併帶進 torch。
+# Windows 上 PyPI 的 torch 預設是 CPU 版（約 200MB），這正是我們要的 ——
+# 顯卡留給 Ollama 跑生成，embedding 在 CPU 上幾十毫秒就好，
+# 讓它去搶顯存反而會拖慢生成。
+sentence-transformers>=3.0
