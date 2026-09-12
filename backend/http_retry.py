@@ -53,20 +53,35 @@ def is_transient(error: Exception) -> bool:
     return isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout))
 
 
-async def with_retry(operation, *, label: str):
+def is_http_transient(error: Exception) -> bool:
+    """只認 HTTP 狀態碼，不認連線失敗。
+
+    給「連不上就該立刻換備援」的呼叫端用 —— 例如家裡的桌機。
+    桌機關機時重試連線三次還是關機，只是讓使用者多等十幾秒；
+    但對方活著只是忙（429/503）時，重試仍然值得。
+    """
+    return isinstance(error, httpx.HTTPStatusError) and is_transient(error)
+
+
+async def with_retry(operation, *, label: str, attempts: int | None = None, should_retry=None):
     """執行 operation()，遇到暫時性錯誤時重試。
 
     退避時間刻意短（1 秒、3 秒）：使用者正在畫面前面等，
     指數退避那套是給背景工作用的，不是給互動請求用的。
+
+    attempts=1 等於不重試。呼叫端在「重試不可能成功」時傳 1 ——
+    例如檢索要連家裡的桌機，桌機關機的話這一秒內重試三次也還是關機，
+    只是把使用者的等待時間變三倍。
     """
-    attempts = _max_attempts()
+    attempts = _max_attempts() if attempts is None else max(1, attempts)
+    retryable = should_retry or is_transient
     delays = [1.0, 3.0, 5.0]
 
     for attempt in range(1, attempts + 1):
         try:
             return await operation()
         except Exception as error:
-            if attempt >= attempts or not is_transient(error):
+            if attempt >= attempts or not retryable(error):
                 raise
             delay = delays[min(attempt - 1, len(delays) - 1)]
             logger.warning(
