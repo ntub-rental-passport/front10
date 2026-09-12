@@ -33,7 +33,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import embeddings  # noqa: E402
+import law_corpus  # noqa: E402
 import llm_provider  # noqa: E402
+import upstream_state  # noqa: E402
 from deidentify import deidentify  # noqa: E402
 from law_corpus import format_for_prompt, resolve_citations, retrieve, stats  # noqa: E402
 
@@ -113,6 +116,69 @@ def show_config() -> None:
         print(f"  ⚠️  只有一個 provider（{configured[0]}），它掛掉時功能就沒了")
     else:
         print("  ✅ 有備援")
+    print()
+
+    if cooling := upstream_state.snapshot():
+        print("  ⏸  冷卻中（剛剛連不上，暫時跳過）：")
+        for name, seconds in cooling.items():
+            print(f"     {name} 還有 {seconds:.0f} 秒")
+        print()
+
+    show_embedding_config()
+
+
+def show_embedding_config() -> None:
+    """檢索用的 embedding。
+
+    這裡最值得看的是「語料的空間」跟「設定要用的模型」有沒有對上 ——
+    對不上時檢索會被跳過，分析仍然會有結果（退回全部給），
+    所以光看畫面看不出來，只有這裡看得出來。
+    """
+    print("=" * 60)
+    print(" 向量檢索（決定給模型看哪幾條法規）")
+    print("=" * 60)
+
+    order = embeddings.provider_order()
+    print(f"  嘗試順序      : {' → '.join(order)}")
+    spaces = law_corpus.stats()["spaces"]
+    if not spaces:
+        print("  ❌ 語料沒有任何可用的向量空間 —— 一律退回「全部給」")
+        print("     請執行：python build_vectors.py --provider all")
+        print()
+        return
+
+    print(f"  語料空間      : {len(spaces)} 組")
+    for name, meta in spaces.items():
+        print(f"     {name:7s} {meta['model']}（{meta['dim']} 維）")
+    print()
+
+    usable = 0
+    for provider in order:
+        space = spaces.get(provider)
+        wanted = embeddings.model_for(provider)
+        if space is None:
+            print(f"  ❌ {provider}：語料沒有這個空間的向量")
+            print(f"     建一份：python build_vectors.py --provider {provider}")
+        elif not embeddings.is_configured(provider):
+            hint = ("設定 NVIDIA_API_KEY" if provider == "nvidia"
+                    else "設定 OLLAMA_URL 或 LOCAL_EMBEDDING_URL")
+            print(f"  ❌ {provider}：未設定（請{hint}）")
+        elif wanted != space["model"]:
+            print(f"  ❌ {provider}：語料用 {space['model']} 建，但設定要用 {wanted}")
+            print("     這個空間會被跳過 —— 混用不同模型的向量會算出無意義的相似度。")
+            print(f"     重建：python build_vectors.py --provider {provider}")
+        else:
+            print(f"  ✅ {provider}：{wanted}（{space['dim']} 維）")
+            usable += 1
+
+    print()
+    if usable == 0:
+        print("  ⚠️  沒有可用的檢索來源 —— 會退回「29 塊全部給」。")
+        print("     功能還在，但實測命中率會從 4/4 掉到 3/4。")
+    elif usable == 1 and len(order) > 1:
+        print("  ⚠️  只有一個可用，它掛掉時就退回「全部給」")
+    else:
+        print("  ✅ 檢索可用")
     print()
 
 

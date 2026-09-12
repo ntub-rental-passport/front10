@@ -86,9 +86,6 @@ class CitationBindingTest(unittest.TestCase):
         self.assertLessEqual(len(resolve_citations(ids)), 10)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class RetrievalTest(unittest.TestCase):
     """檢索必須「聚焦」但不能「失效」。"""
@@ -125,3 +122,7 @@ class RetrievalTest(unittest.TestCase):
         picked = asyncio.run(retrieve("", limit=None))
         indexes = [order[c.id] for c in picked]
         self.assertEqual(indexes, sorted(indexes))
+
+
+if __name__ == "__main__":
+    unittest.main()

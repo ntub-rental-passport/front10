@@ -54,11 +54,15 @@ import os
 
 import httpx
 
-from http_retry import with_retry
+import upstream_state
+from http_retry import is_http_transient, with_retry
 
 logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT = float(os.getenv("LLM_CONNECT_TIMEOUT", "5"))
+
+# 冷卻機制用的名稱（見 upstream_state.py）
+_OLLAMA_ENDPOINT = "llm:ollama"
 
 
 class LlmUnavailable(RuntimeError):
@@ -106,7 +110,13 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, pu
     """
     base = _env("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
     if not base:
-        raise LlmUnavailable
+        raise LlmUnavailable("未設定 OLLAMA_URL")
+    if upstream_state.is_cooling(_OLLAMA_ENDPOINT):
+        # 剛剛才確認連不上。再試一次只是讓使用者多等一個連線逾時，
+        # 而備援（NVIDIA）本來就能用 —— 直接跳過。
+        raise LlmUnavailable(
+            f"桌機冷卻中（還有 {upstream_state.remaining(_OLLAMA_ENDPOINT):.0f} 秒）"
+        )
 
     headers: dict[str, str] = {}
     if api_key := _env("LLM_TUNNEL_API_KEY"):
@@ -137,7 +147,15 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, pu
             response.raise_for_status()
             return (response.json().get("response") or "").strip()
 
-    return await with_retry(send, label="Ollama")
+    # should_retry 排除連線失敗：桌機關機時重試三次還是關機，
+    # 只是把「退回 NVIDIA」這件事拖慢十幾秒。對方活著只是忙才值得重試。
+    try:
+        text = await with_retry(send, label="Ollama", should_retry=is_http_transient)
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        upstream_state.mark_unreachable(_OLLAMA_ENDPOINT)
+        raise
+    upstream_state.mark_reachable(_OLLAMA_ENDPOINT)
+    return text
 
 
 async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool, purpose: str) -> str:
@@ -149,7 +167,7 @@ async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool, pu
     """
     api_key = _env("NVIDIA_API_KEY")
     if not api_key:
-        raise LlmUnavailable  # 未設定，視為不可用（呼叫端會跳過並記錄）
+        raise LlmUnavailable("未設定 NVIDIA_API_KEY")  # 呼叫端會跳過並記錄
 
     base = _env("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
     payload: dict = {
@@ -237,9 +255,9 @@ async def generate(
         call = _PROVIDERS[name]
         try:
             text = await call(prompt, read_timeout=read_timeout, force_json=force_json, purpose=purpose)
-        except LlmUnavailable:
-            # provider 未設定，跳過不算失敗
-            logger.debug("LLM provider %s 未設定，略過", name)
+        except LlmUnavailable as error:
+            # 未設定或正在冷卻，跳過不算失敗
+            logger.debug("LLM provider %s 略過：%s", name, error or "未設定")
             continue
         except Exception as error:
             # 一定要印例外類別名稱：httpx 的逾時類例外 str() 是空字串，
