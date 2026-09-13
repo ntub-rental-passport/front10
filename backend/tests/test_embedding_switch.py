@@ -300,5 +300,56 @@ class TunnelUrlTest(unittest.TestCase):
         self.assertEqual(self.llm_provider.ollama_base(), "http://127.0.0.1:11434")
 
 
+class QueryWindowTest(unittest.TestCase):
+    """長查詢要切窗，而且切完之後**不能取平均**。
+
+    2026-09-13 實測：4000 字的合約在桌機模型上切 9 窗取平均，
+    平均向量退化成「法律文件的平均樣子」，檢索出來的是最通用的段落
+    （契約審閱期、總則、甚至不相干的「租賃住宅服務業」），
+    4 個地雷只抓到 2-3 個。改成每窗各自比對、取最高相似度。
+    """
+
+    def setUp(self):
+        self.saved = dict(embeddings.os.environ)
+
+    def tearDown(self):
+        embeddings.os.environ.clear()
+        embeddings.os.environ.update(self.saved)
+
+    def test_short_query_is_one_window(self):
+        self.assertEqual(law_corpus._query_windows("押金可以收幾個月", "local"), ["押金可以收幾個月"])
+
+    def test_long_query_is_split_for_local(self):
+        windows = law_corpus._query_windows("契" * 4000, "local")
+        self.assertEqual(len(windows), 9)
+        self.assertTrue(all(len(w) <= 450 for w in windows))
+
+    def test_nvidia_is_not_split(self):
+        """那個模型 context 夠長，切窗只會讓它失去上下文。"""
+        self.assertEqual(len(law_corpus._query_windows("契" * 4000, "nvidia")), 1)
+
+    def test_window_count_is_capped(self):
+        embeddings.os.environ["LOCAL_QUERY_WINDOW_CHARS"] = "10"
+        self.assertLessEqual(
+            len(law_corpus._query_windows("契" * 4000, "local")),
+            law_corpus.MAX_QUERY_WINDOWS)
+
+    def test_rank_takes_max_not_mean(self):
+        """一份合約裡只要**有一段**在講押金，押金那塊就該被選上。
+
+        取平均的話，那一段會被其他八段不相干的內容稀釋掉 ——
+        這正是實測時漏掉「違約金」的原因。
+        """
+        saved = law_corpus.CHUNKS
+        law_corpus.CHUNKS = make_chunks({"s": [[1.0, 0.0], [0.0, 1.0], [0.6, 0.6]]})
+        try:
+            # 兩個窗：第一窗完全不像任何一塊，第二窗精準命中 L02
+            picked = law_corpus._rank([[0.6, 0.6], [0.0, 1.0]], "s", 1)
+            self.assertEqual([c.id for c in picked], ["L02"],
+                             "有一窗命中就該選上，不該被另一窗拉低")
+        finally:
+            law_corpus.CHUNKS = saved
+
+
 if __name__ == "__main__":
     unittest.main()

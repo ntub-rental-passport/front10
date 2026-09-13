@@ -100,6 +100,29 @@ def model_for(provider: str) -> str:
     return _env("EMBEDDING_MODEL", NVIDIA_MODEL_DEFAULT)
 
 
+# 長查詢要不要切窗（字元數，0 = 不切）。
+#
+# 2026-09-13 實測發現的問題：text2vec 上限 512 token，一份 4000 字的合約
+# 丟進去只會讀到開頭。原本在桌機代理裡切窗後「取平均」——結果 9 段平均
+# 出來是一個「法律文件的平均樣子」，相似度排出來的是最通用的段落
+# （契約審閱期、總則、甚至「租賃住宅服務業」），而不是最相關的。
+# 4 個地雷只抓到 2-3 個。
+#
+# 改成切窗後各自算向量，每塊法規取「對任一窗的最高相似度」。
+# 合約裡只要有一段在講押金，押金那塊就會被那一窗拉上來，
+# 不會被其他八段稀釋掉。
+#
+# NVIDIA 那個模型 context 夠長（而且有 truncate=END），不需要切。
+QUERY_WINDOW_DEFAULT = {LOCAL: 450, NVIDIA: 0}
+
+
+def query_window_chars(provider: str) -> int:
+    raw = (os.getenv(f"{provider.upper()}_QUERY_WINDOW_CHARS") or "").strip()
+    if raw.isdigit():
+        return int(raw)
+    return QUERY_WINDOW_DEFAULT.get(provider, 0)
+
+
 def _local_base() -> str:
     """桌機 embedding 服務的網址。
 
