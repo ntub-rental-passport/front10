@@ -68,15 +68,6 @@ function openCaptureModal(item: HandoverItem) {
   showCameraDialog.value = true
 }
 
-function handlePhotoCaptured(payload: CapturePayload) {
-  if (!activeTargetItem.value) return
-  addEvidence(activeTargetItem.value.id, 'baseline', {
-    url: payload.dataUrl,
-    aiLabel: '待後端 AI 分析',
-    aiConfidence: 0,
-    note: `已透過 AR 輔助拍攝存證（清晰度：${payload.quality.sharpness}）`,
-  })
-}
 const router = useRouter()
 const {
   properties,
@@ -141,6 +132,70 @@ function resizeImage(file: File, maxWidth = 1024): Promise<string> {
   })
 }
 
+async function processPhotoWithAI(item: HandoverItem, dataUrl: string) {
+  // 1. 如果之前已經有照片，先清除舊的，避免堆疊多筆
+  removeEvidence(item.id, 'baseline')
+
+  // 2. 建立響應式證據物件
+  const evidenceObj = {
+    url: dataUrl,
+    aiLabel: 'AI 分析中...',
+    aiConfidence: 0,
+    note: '正在透過 NVIDIA VLM 診斷影像瑕疵特徵...',
+    isAnalyzing: true,
+    capturedAt: new Date().toISOString(),
+  }
+
+  // 寫入 Pinia / Store
+  addEvidence(item.id, 'baseline', evidenceObj as any)
+
+  try {
+    // 3. 發送 POST 請求至 FastAPI
+    const response = await fetch('http://127.0.0.1:8000/api/inspection/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_data: dataUrl,
+        item_name: item.name,
+        room_name: item.room,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`伺服器回應錯誤: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const vlm = data.vlm_result
+
+    // 4. 關鍵：直接在同一個物件上修改欄位！
+    // 取得當前畫面上正在顯示的那筆 evidence
+    const currentEv = firstEvidenceOfPhase(item, 'baseline') as any
+    const target = currentEv || evidenceObj
+
+    target.isAnalyzing = false
+    target.aiLabel = vlm.has_defect ? `${vlm.severity || '中度'}瑕疵` : '狀態完好'
+    target.aiConfidence = vlm.has_defect ? 0.95 : 0.99
+    target.note = `【${vlm.item_type || item.name}｜${vlm.cause_inference}】${vlm.defect_summary}`
+
+  } catch (error) {
+    console.error('VLM 診斷失敗:', error)
+    const currentEv = firstEvidenceOfPhase(item, 'baseline') as any
+    const target = currentEv || evidenceObj
+
+    target.isAnalyzing = false
+    target.aiLabel = 'AI 診斷失敗'
+    target.note = '分析逾時或網路異常，已保留原始存證照片。'
+  }
+}
+
+// 相機拍照回傳
+async function handlePhotoCaptured(payload: CapturePayload) {
+  if (!activeTargetItem.value) return
+  await processPhotoWithAI(activeTargetItem.value, payload.dataUrl)
+}
+
+// 本地檔案上傳
 async function capturePhoto(itemId: string) {
   const input = document.createElement('input')
   input.type = 'file'
@@ -153,15 +208,14 @@ async function capturePhoto(itemId: string) {
     document.body.removeChild(input)
     if (!file) return
 
+    const targetItem = itemsOfCurrentProperty.value.find((it) => it.id === itemId)
+    if (!targetItem) return
+
     try {
       const dataUrl = await resizeImage(file)
-      addEvidence(itemId, 'baseline', {
-        url: dataUrl,
-        aiLabel: 'clear',
-        aiConfidence: 0.9,
-      })
+      await processPhotoWithAI(targetItem, dataUrl)
     } catch (error) {
-      console.error('圖片處理失敗', error)
+      console.error('圖片壓縮或處理失敗:', error)
     }
   }
 
@@ -398,37 +452,70 @@ function fmtDate(iso: string) {
                 </div>
               </CardHeader>
               <CardContent class="space-y-2">
+                <!-- 狀態一：已拍攝（包含分析中與分析完成） -->
                 <div v-if="firstBaseline(it)" class="space-y-2">
-                  <div class="aspect-video bg-muted rounded-md overflow-hidden">
+                  <!-- 照片縮圖 + 正在分析時的磨砂遮罩 -->
+                  <div class="relative aspect-video bg-muted rounded-md overflow-hidden">
                     <img
                       :src="firstBaseline(it)!.url"
                       :alt="it.name"
                       class="object-cover w-full h-full"
                       referrerpolicy="no-referrer"
                     />
+
+                    <div
+                      v-if="(firstBaseline(it) as any)?.isAnalyzing"
+                      class="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] flex flex-col items-center justify-center text-white gap-2"
+                    >
+                      <div class="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                      <span class="text-xs tracking-wider animate-pulse font-medium">AI 診斷特徵中...</span>
+                    </div>
                   </div>
-                  <div class="flex items-center gap-2 text-xs flex-wrap">
-                    <Badge variant="outline" class="gap-1">
-                      <Sparkles class="h-3 w-3" />
-                      AI 清晰度
-                      {{ ((firstBaseline(it)!.aiConfidence ?? 0) * 100).toFixed(0) }}%
-                    </Badge>
-                    <span class="text-muted-foreground flex items-center gap-1">
-                      <Clock class="h-3 w-3" />
-                      {{ fmtDate(firstBaseline(it)!.capturedAt) }}
-                    </span>
-                  </div>
-                  <p v-if="firstBaseline(it)!.note" class="text-sm">{{ firstBaseline(it)!.note }}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    class="w-full"
-                    @click="openCaptureModal(it)"
+
+                  <!-- 正在分析時的進度提示 -->
+                  <div
+                    v-if="(firstBaseline(it) as any)?.isAnalyzing"
+                    class="p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2"
                   >
-                    重拍
-                  </Button>
+                    <Sparkles class="h-3.5 w-3.5 animate-spin shrink-0" />
+                    <span class="leading-tight">NVIDIA VLM 正在辨識損壞特徵與成因...</span>
+                  </div>
+
+                  <!-- 分析完成後的結果展示 -->
+                  <div v-else class="space-y-2">
+                    <div class="flex items-center gap-2 text-xs flex-wrap">
+                      <Badge
+                        :variant="firstBaseline(it)!.aiLabel?.includes('嚴重') ? 'destructive' : 'outline'"
+                        class="gap-1 font-semibold"
+                      >
+                        <Sparkles class="h-3 w-3" />
+                        {{ firstBaseline(it)!.aiLabel }}
+                      </Badge>
+                      <span class="text-muted-foreground flex items-center gap-1">
+                        <Clock class="h-3 w-3" />
+                        {{ fmtDate(firstBaseline(it)!.capturedAt) }}
+                      </span>
+                    </div>
+
+                    <div
+                      v-if="firstBaseline(it)!.note"
+                      class="p-2.5 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed break-words"
+                    >
+                      {{ firstBaseline(it)!.note }}
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      class="w-full"
+                      @click="openCaptureModal(it)"
+                    >
+                      重拍
+                    </Button>
+                  </div>
                 </div>
 
+                <!-- 狀態二：尚未拍攝照片 -->
                 <div
                   v-else
                   class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center p-3 gap-2"
@@ -566,6 +653,7 @@ function fmtDate(iso: string) {
         </div>
       </div>
     </div>
+
     <!-- AR 智慧相機彈窗 -->
     <SmartCaptureCamera
       v-if="activeTargetItem"
