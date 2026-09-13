@@ -1,0 +1,31 @@
+name: 垃圾清運資料回報
+description: 回報站點、地址、路線或表定時間問題（不會直接修改官方資料）
+title: '[垃圾清運] '
+body:
+  - type: markdown
+    attributes:
+      value: '請勿提供電話、住戶個資或私人精確位置。內容可能公開；回報須由維護者查核。'
+  - type: dropdown
+    id: category
+    attributes:
+      label: 問題類型
+      options:
+        - 站點位置或地址
+        - 路線或班次
+        - 清運時間
+        - 地圖或操作
+    validations:
+      required: true
+  - type: input
+    id: station
+    attributes:
+      label: 站點地址與路線
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 問題說明
+      description: 請提供觀察日期、錯誤內容及建議修正。
+    validations:
+      required: true

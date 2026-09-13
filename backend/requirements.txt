@@ -1,0 +1,12 @@
+fastapi
+argon2-cffi
+google-auth
+google-cloud-vision
+pymysql
+python-dotenv
+python-multipart
+requests
+pywebpush
+sqlalchemy
+uvicorn[standard]
+PyJWT

@@ -1,0 +1,9 @@
+.contract-combined-page {
+  display: flex;
+  width: 100%;
+  max-width: 1600px;
+  margin-inline: auto;
+  padding: 1.5rem;
+  flex-direction: column;
+  gap: 1.25rem;
+}
