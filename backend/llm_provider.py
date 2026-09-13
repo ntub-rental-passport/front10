@@ -19,7 +19,10 @@ LlmUnavailable，讓呼叫端回 503。曾經的作法是失敗時回一段寫�
 ## 設定
 
     LLM_PROVIDER_ORDER   嘗試順序，預設 "ollama,nvidia"
-    OLLAMA_URL           Ollama 位址（或 Cloudflare Tunnel 的網址）
+    LLM_TUNNEL_URL       桌機代理的網址（Cloudflare Tunnel）。未設定時沿用 OLLAMA_URL。
+                         ⚠️ 不要直接改 OLLAMA_URL —— 那個被 OCR 佔用了，
+                         而 OCR 的請求不帶憑證，改了會被 Access 擋掉。
+    OLLAMA_URL           本機 Ollama 位址（OCR 也用這個）
     OLLAMA_MODEL         合約分析用的模型，預設 gemma3:4b
     OLLAMA_CHAT_MODEL    Law Chat 用的模型（未設定就沿用 OLLAMA_MODEL）
     LLM_TUNNEL_API_KEY   桌機端代理的 API key（走隧道時才需要）
@@ -84,6 +87,21 @@ def _model_for(provider: str, purpose: str) -> str:
     return _env("OLLAMA_MODEL", "gemma3:4b")
 
 
+def ollama_base() -> str:
+    """合約分析要打的 Ollama 位址。
+
+    ⚠️ 為什麼不直接用 OLLAMA_URL：那個變數已經被 OCR 佔用了
+    （server/ollama-contract.js 打 {OLLAMA_URL}/api/chat）。而 OCR 的請求
+    **不帶任何憑證**，也用不同的模型（gemma4:e2b）。把 OLLAMA_URL 指向
+    隧道的話，OCR 會被 Cloudflare Access 擋掉 —— 一個本來好好的功能
+    會因為我們接桌機而壞掉。
+
+    所以隧道有自己的變數。沒設定時沿用 OLLAMA_URL，
+    本機開發（兩者都指向 127.0.0.1:11434）的行為完全不變。
+    """
+    return _env("LLM_TUNNEL_URL") or _env("OLLAMA_URL", "http://127.0.0.1:11434")
+
+
 def _disable_thinking(purpose: str) -> bool:
     """是否送出關閉思考模式的參數。
 
@@ -108,9 +126,9 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, pu
         沒帶的請求根本不會進到家裡的網路
       - X-API-Key：桌機端代理的第二道，Access 設定被改壞時仍擋得住
     """
-    base = _env("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    base = ollama_base().rstrip("/")
     if not base:
-        raise LlmUnavailable("未設定 OLLAMA_URL")
+        raise LlmUnavailable("未設定 LLM_TUNNEL_URL / OLLAMA_URL")
     if upstream_state.is_cooling(_OLLAMA_ENDPOINT):
         # 剛剛才確認連不上。再試一次只是讓使用者多等一個連線逾時，
         # 而備援（NVIDIA）本來就能用 —— 直接跳過。
@@ -235,7 +253,7 @@ def configured_providers() -> list[str]:
     for name in provider_order():
         if name == "nvidia" and not _env("NVIDIA_API_KEY"):
             continue
-        if name == "ollama" and not _env("OLLAMA_URL", "http://127.0.0.1:11434"):
+        if name == "ollama" and not ollama_base():
             continue
         available.append(name)
     return available

@@ -260,5 +260,45 @@ class CooldownTest(unittest.TestCase):
         self.assertFalse(upstream_state.is_cooling("沒看過的端點"))
 
 
+class TunnelUrlTest(unittest.TestCase):
+    """隧道網址必須跟 OCR 的 OLLAMA_URL 分開。
+
+    OCR（server/ollama-contract.js）打 {OLLAMA_URL}/api/chat 而且
+    **不帶任何憑證**。把 OLLAMA_URL 指向隧道的話，OCR 會被 Cloudflare
+    Access 回 403 —— 一個本來好好的功能會因為接桌機而壞掉。
+    """
+
+    def setUp(self):
+        import llm_provider
+        self.llm_provider = llm_provider
+        self.saved = dict(embeddings.os.environ)
+        for key in ("LLM_TUNNEL_URL", "OLLAMA_URL", "LOCAL_EMBEDDING_URL"):
+            embeddings.os.environ.pop(key, None)
+
+    def tearDown(self):
+        embeddings.os.environ.clear()
+        embeddings.os.environ.update(self.saved)
+
+    def test_tunnel_url_wins(self):
+        embeddings.os.environ["LLM_TUNNEL_URL"] = "https://llm.example.test"
+        embeddings.os.environ["OLLAMA_URL"] = "http://ocr-host:11434"
+        self.assertEqual(self.llm_provider.ollama_base(), "https://llm.example.test")
+        self.assertEqual(embeddings._local_base(), "https://llm.example.test")
+
+    def test_falls_back_to_ollama_url(self):
+        """本機開發沒有隧道，行為必須跟以前完全一樣。"""
+        embeddings.os.environ["OLLAMA_URL"] = "http://127.0.0.1:11434"
+        self.assertEqual(self.llm_provider.ollama_base(), "http://127.0.0.1:11434")
+        self.assertEqual(embeddings._local_base(), "http://127.0.0.1:11434")
+
+    def test_explicit_embedding_url_wins_over_both(self):
+        embeddings.os.environ["LOCAL_EMBEDDING_URL"] = "http://embed-only:9000"
+        embeddings.os.environ["LLM_TUNNEL_URL"] = "https://llm.example.test"
+        self.assertEqual(embeddings._local_base(), "http://embed-only:9000")
+
+    def test_default_when_nothing_set(self):
+        self.assertEqual(self.llm_provider.ollama_base(), "http://127.0.0.1:11434")
+
+
 if __name__ == "__main__":
     unittest.main()

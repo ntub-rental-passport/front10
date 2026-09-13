@@ -87,9 +87,11 @@ def show_config() -> None:
     print(f"  實際可用      : {' → '.join(configured) if configured else '（無）'}")
     print()
 
-    url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+    url = llm_provider.ollama_base()
     print("  ① Ollama")
     print(f"     位址       : {url}")
+    if os.getenv("LLM_TUNNEL_URL"):
+        print(f"     （OCR 另走 : {os.getenv('OLLAMA_URL', '未設定')}，不受隧道影響）")
     print(f"     分析模型   : {llm_provider._model_for('ollama', 'analyze')}")
     print(f"     對話模型   : {llm_provider._model_for('ollama', 'chat')}")
     print(f"     隧道 API key: {'已設定' if os.getenv('LLM_TUNNEL_API_KEY') else '未設定'}")
