@@ -25,9 +25,11 @@ echo "=========================================="
 #    （JWT_SECRET、MySQL 密碼與開發機不同），覆蓋掉會導致服務起不來、
 #    且所有已登入使用者的 token 失效。
 echo "[1/3] 上傳程式碼..."
+#    --exclude desktop：那是桌機端代理，VM 不需要，而且它的 README
+#    描述的是「怎麼連進家裡的網路」—— 沒有理由多放一份在別的機器上。
 rsync -avz \
   --exclude node_modules --exclude dist --exclude .venv --exclude .git \
-  --exclude logs --exclude '__pycache__' --exclude .env \
+  --exclude logs --exclude '__pycache__' --exclude .env --exclude desktop \
   "$SRC/" "$VM:~/rentmate/" | tail -3
 
 # ---------- 2. 套用 Nginx 設定 ----------
