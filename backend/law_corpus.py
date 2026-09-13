@@ -254,12 +254,38 @@ def _top_k_default() -> int:
 DEFAULT_TOP_K = _top_k_default()
 
 
-def _rank(query_vec: list[float], space: str, top_k: int) -> list[LawChunk]:
-    ranked = sorted(
-        CHUNKS,
-        key=lambda c: cosine(query_vec, list(c.vectors[space])),
-        reverse=True,
-    )[:top_k]
+# 查詢最多看幾個字。合約再長，後面多半是簽名欄與附件。
+MAX_QUERY_CHARS = 4000
+# 切窗上限。4000 ÷ 450 ≈ 9 窗，設 16 是留餘裕兼防呆。
+MAX_QUERY_WINDOWS = 16
+
+
+def _query_windows(query: str, provider: str) -> list[str]:
+    """把長查詢切成模型讀得完的片段。
+
+    不切的話短 context 的模型只會讀到開頭；切了取平均的話，
+    平均向量會退化成「這類文件的平均樣子」，反而配上最通用的段落。
+    所以切窗之後**不合併**，由 _rank 對每一窗各算一次相似度。
+    """
+    text = query[:MAX_QUERY_CHARS]
+    size = embeddings.query_window_chars(provider)
+    if size <= 0 or len(text) <= size:
+        return [text]
+    windows = [text[i:i + size] for i in range(0, len(text), size)]
+    return windows[:MAX_QUERY_WINDOWS]
+
+
+def _rank(query_vecs: list[list[float]], space: str, top_k: int) -> list[LawChunk]:
+    """每塊法規取「對任一查詢窗的最高相似度」。
+
+    用 max 而不是平均：合約裡只要**有一段**在講押金，
+    押金那塊法規就該被選上，不該被其他八段不相干的內容稀釋。
+    """
+    def score(chunk: LawChunk) -> float:
+        vector = list(chunk.vectors[space])
+        return max(cosine(qv, vector) for qv in query_vecs)
+
+    ranked = sorted(CHUNKS, key=score, reverse=True)[:top_k]
     # 依原始順序輸出：法規本來就有邏輯次序，照相似度排會讓 prompt 讀起來跳來跳去
     order = {c.id: i for i, c in enumerate(CHUNKS)}
     return sorted(ranked, key=lambda c: order[c.id])
@@ -297,23 +323,22 @@ async def retrieve(query: str = "", limit: int | None = None) -> list[LawChunk]:
                          provider, space.model, wanted)
             continue
 
+        windows = _query_windows(query, provider)
         try:
-            query_vec = (
-                await embed_texts([query[:4000]], input_type="query", provider=provider)
-            )[0]
+            query_vecs = await embed_texts(windows, input_type="query", provider=provider)
         except EmbeddingUnavailable as error:
             logger.warning("embedding provider %s 不可用（%s），換下一個", provider, error)
             continue
 
-        if len(query_vec) != space.dim:
+        if not query_vecs or len(query_vecs[0]) != space.dim:
             # 設定看起來一致但實際不一致 —— 例如桌機上的模型被換掉了
             logger.error("跳過向量空間 %s：查詢向量 %d 維，語料是 %d 維",
-                         provider, len(query_vec), space.dim)
+                         provider, len(query_vecs[0]) if query_vecs else 0, space.dim)
             continue
 
-        selected = _rank(query_vec, provider, top_k)
-        logger.info("法規檢索（%s/%s）：取 %d/%d 塊（%s）",
-                    provider, space.model, len(selected), len(CHUNKS),
+        selected = _rank(query_vecs, provider, top_k)
+        logger.info("法規檢索（%s/%s，%d 窗）：取 %d/%d 塊（%s）",
+                    provider, space.model, len(windows), len(selected), len(CHUNKS),
                     ",".join(c.id for c in selected))
         return selected
 
