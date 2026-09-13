@@ -25,6 +25,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 import sys
@@ -37,6 +38,16 @@ import embeddings  # noqa: E402
 import law_corpus  # noqa: E402
 import llm_provider  # noqa: E402
 import upstream_state  # noqa: E402
+
+# 開 INFO：這支程式的重點就是「實際上發生了什麼」。
+#
+# 2026-09-13 踩到：分析結果從 4/4 掉到 2/4、耗時從 25 秒變 102 秒，
+# 但看不出是「檢索換模型抓錯段落」還是「NVIDIA 失敗掉到 gemma3:4b」——
+# 因為這兩件事都只寫在 log 裡，而這支程式沒開 logging。
+# 診斷工具藏住最關鍵的線索，等於沒有診斷工具。
+logging.basicConfig(level=logging.INFO, format="  · %(message)s", force=True)
+# httpx 每次請求都印一行，會把上面那些訊息淹掉
+logging.getLogger("httpx").setLevel(logging.WARNING)
 from deidentify import deidentify  # noqa: E402
 from law_corpus import format_for_prompt, resolve_citations, retrieve, stats  # noqa: E402
 
