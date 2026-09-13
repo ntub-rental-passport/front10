@@ -22,10 +22,6 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
-# Ollama 位址：本機開發預設 127.0.0.1，容器內由 compose 覆寫為 host.docker.internal
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-
 # 逾時設定。
 #
 # 原本兩支端點都寫 timeout=None（永不逾時），那是最嚴重的問題：

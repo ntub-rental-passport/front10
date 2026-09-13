@@ -103,11 +103,14 @@ def model_for(provider: str) -> str:
 def _local_base() -> str:
     """桌機 embedding 服務的網址。
 
-    預設沿用 OLLAMA_URL：生成與檢索走的是同一台桌機、同一個代理、
+    預設沿用 LLM_TUNNEL_URL：生成與檢索走的是同一台桌機、同一個代理、
     同一條隧道，分成兩個變數只會多一個打錯的機會。
     真要分開時才設 LOCAL_EMBEDDING_URL。
+
+    最後才退到 OLLAMA_URL，那是本機開發用的（VM 上那個是 OCR 在用，
+    指向別的地方，見 llm_provider.ollama_base 的說明）。
     """
-    return _env("LOCAL_EMBEDDING_URL") or _env("OLLAMA_URL")
+    return _env("LOCAL_EMBEDDING_URL") or _env("LLM_TUNNEL_URL") or _env("OLLAMA_URL")
 
 
 def is_configured(provider: str) -> bool:
