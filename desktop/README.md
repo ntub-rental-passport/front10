@@ -221,8 +221,12 @@ curl -s https://llm.你的網域/health \
 ```bash
 # ---- 生成 ----
 LLM_PROVIDER_ORDER="ollama,nvidia"
-OLLAMA_URL="https://llm.你的網域"
+LLM_TUNNEL_URL="https://llm.你的網域"
 OLLAMA_MODEL="gemma3:4b"
+
+# ⚠️ 不要改 OLLAMA_URL！那個是 OCR 在用的（server/ollama-contract.js
+#    打 {OLLAMA_URL}/api/chat，用 gemma4:e2b，而且不帶任何憑證）。
+#    指向隧道的話 OCR 會被 Access 回 403。維持原樣不要動。
 
 # ---- 兩道憑證（生成與檢索共用）----
 LLM_TUNNEL_API_KEY="桌機 .env 裡的同一把"
