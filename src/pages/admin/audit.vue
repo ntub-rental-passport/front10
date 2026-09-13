@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
+<<<<<<< HEAD
 import { Button } from '@/components/ui/button/index'
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { Card, CardContent } from '@/components/ui/card/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
@@ -20,11 +23,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
+<<<<<<< HEAD
 import { Download, Search } from 'lucide-vue-next'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { formatDateTime } from '@/src/utils/admin-format'
 import { buildAuditCsv } from '@/src/utils/admin-audit-csv'
 import { dateKey } from '@/src/utils/date-key'
+=======
+import { Search } from 'lucide-vue-next'
+import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
+import { formatDateTime } from '@/src/utils/admin-format'
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import type { AuditActionType } from '@/src/mocks/admin-seed'
 
 const { events } = useAdminAudit()
@@ -62,6 +71,7 @@ const filteredEvents = computed(() =>
     return true
   }),
 )
+<<<<<<< HEAD
 
 /**
  * 匯出「目前篩選後」的結果，不是全部紀錄 —— 管理員通常是先縮小範圍才想匯出，
@@ -81,6 +91,8 @@ function exportCsv(): void {
 
   URL.revokeObjectURL(url)
 }
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 </script>
 
 <template>
@@ -118,11 +130,14 @@ function exportCsv(): void {
             <Label for="audit-to" class="text-xs text-muted-foreground">結束日</Label>
             <Input id="audit-to" v-model="toDate" type="date" class="w-40" />
           </div>
+<<<<<<< HEAD
           <!-- 匯出的是目前篩選後的結果，放在篩選列尾端才不會讓人誤以為是匯出全部 -->
           <Button variant="outline" class="ml-auto" @click="exportCsv">
             <Download class="mr-1 h-4 w-4" />
             匯出 CSV
           </Button>
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         </div>
 
         <Table>

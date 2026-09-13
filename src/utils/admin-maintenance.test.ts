@@ -9,7 +9,10 @@ import {
   maintenanceStatusLabels,
   maintenanceTransitions,
   migrateMaintenanceQueueFlags,
+<<<<<<< HEAD
   shouldAutoMarkOverdue,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   type AdminQueueTicket,
   type MaintenanceStatus,
 } from './admin-maintenance'
@@ -119,6 +122,7 @@ describe('adminQueueReason', () => {
   })
 })
 
+<<<<<<< HEAD
 describe('shouldAutoMarkOverdue', () => {
   const now = new Date('2026-08-10T09:00:00')
 
@@ -160,6 +164,8 @@ describe('shouldAutoMarkOverdue', () => {
   })
 })
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 describe('migrateMaintenanceQueueFlags', () => {
   it('缺少佇列旗標的舊資料補上 false', () => {
     const raw = [{ id: 'mt-1' }] as unknown as { interventionRequested?: boolean; manuallyQueued?: boolean }[]

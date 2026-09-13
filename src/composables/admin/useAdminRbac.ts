@@ -3,7 +3,10 @@ import {
   Banknote,
   Bell,
   Gauge,
+<<<<<<< HEAD
   Inbox,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   LayoutDashboard,
   Megaphone,
   ScrollText,
@@ -27,7 +30,10 @@ const navIcons: Record<string, Component> = {
   '/admin/subsidy': Banknote,
   '/admin/content': Megaphone,
   '/admin/notifications': Bell,
+<<<<<<< HEAD
   '/admin/notification-center': Inbox,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   '/admin/monitoring': Gauge,
   '/admin/audit': ScrollText,
   '/admin/settings': Settings,

@@ -6,12 +6,18 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+<<<<<<< HEAD
     Float,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     ForeignKey,
     Integer,
     String,
     Text,
+<<<<<<< HEAD
     UniqueConstraint,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 )
 from sqlalchemy.orm import relationship
 
@@ -22,8 +28,25 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String(254), unique=True, nullable=False, index=True)
+<<<<<<< HEAD
     display_name = Column(String(100), nullable=True)
     avatar_url = Column(Text, nullable=True)
+=======
+    display_name = Column(String(100), nullable=True)  # 使用者名稱/暱稱
+
+    # 登入機制：各自獨立，不用 provider 欄位！
+    password_hash = Column(
+        String(255), nullable=True
+    )  # 一般登入用 (Google登入可為 NULL)
+    google_sub = Column(
+        String(255), unique=True, nullable=True
+    )  # Google 登入用 (一般登入可為 NULL)
+
+    # 角色區分（搭配前段頁籤）
+    role = Column(Enum("tenant", "landlord"), nullable=False, default="tenant")
+
+    # 時間紀錄
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     email_verified_at = Column(DateTime, nullable=True)
     created_at = Column(
         DateTime, nullable=False, default=datetime.datetime.utcnow
@@ -42,6 +65,7 @@ class User(Base):
     subsidy_applications = relationship(
         "SubsidyApplication", back_populates="user", cascade="all, delete-orphan"
     )
+<<<<<<< HEAD
     roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
     identities = relationship("UserIdentity", back_populates="user", cascade="all, delete-orphan")
     password_credential = relationship(
@@ -92,10 +116,32 @@ class UserPasswordCredential(Base):
     password_changed_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="password_credential")
+=======
+    edited_messages = relationship("MessageBoard", back_populates="last_editor")
+    notes = relationship("Note", back_populates="user", cascade="all, delete-orphan")
+
+
+class Note(Base):
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False, default="")
+    note_date = Column(Date, nullable=False, index=True)
+    note_time = Column(String(5), nullable=True)
+    tag = Column(String(30), nullable=False)
+    is_done = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="notes")
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 
 class PendingRegistration(Base):
     __tablename__ = "pending_registrations"
+<<<<<<< HEAD
     __table_args__ = (
         UniqueConstraint("email", name="uq_pending_email"),
         UniqueConstraint("provider", "provider_subject", name="uq_pending_provider_subject"),
@@ -124,6 +170,25 @@ class PendingRegistration(Base):
         default=datetime.datetime.utcnow,
         onupdate=datetime.datetime.utcnow,
     )
+=======
+
+    id = Column(String(36), primary_key=True)  # UUID
+    email = Column(String(254), nullable=False, index=True)
+    verification_code_hash = Column(String(64), nullable=False)
+
+    # 暫存註冊時預填的資料
+    role = Column(Enum("tenant", "landlord"), nullable=False, default="tenant")
+    password_hash = Column(String(255), nullable=True)
+
+    # 頻率控管與過期
+    expires_at = Column(DateTime, nullable=False, index=True)
+    resend_available_at = Column(DateTime, nullable=False)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    send_count = Column(Integer, nullable=False, default=1)  # 👈 補上這一行！
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.datetime.utcnow
+    )
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 
 # 2. 租屋案件模型
@@ -308,6 +373,7 @@ class SubsidyApplication(Base):
 
 
 # 10. 停水停電快取模型
+<<<<<<< HEAD
 class LandlordProperty(Base):
     __tablename__ = "landlord_properties"
     __table_args__ = (UniqueConstraint("landlord_id", "name", name="uq_landlord_property_name"),)
@@ -423,6 +489,8 @@ class LandlordTenantActivity(Base):
     tenant = relationship("LandlordTenant", back_populates="activities")
 
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 class UtilityOutage(Base):
     __tablename__ = "utility_outages"
 
@@ -441,6 +509,7 @@ class UtilityOutage(Base):
     )
 
     rental = relationship("Rental", back_populates="utility_outages")
+<<<<<<< HEAD
 
 
 class PendingAdminLogin(Base):
@@ -471,3 +540,5 @@ class PendingAdminLogin(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
 
     user = relationship("User")
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

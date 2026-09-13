@@ -18,11 +18,19 @@ export const monitorStateLabels: Record<MonitorState, string> = {
   unavailable: '尚未接上',
 }
 
+<<<<<<< HEAD
+=======
+/** 回應時間的分級門檻（毫秒） */
+export const RESPONSE_OK_MS = 300
+export const RESPONSE_DEGRADED_MS = 1000
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 /**
  * 依回應時間分級。
  *
  * `null` 代表這次量測失敗（連不上、逾時），直接算 down —— 量不到本身就是資訊，
  * 不該退化成「尚未接上」，那是給還沒實作的項目用的。
+<<<<<<< HEAD
  *
  * 門檻由呼叫端傳入（來自系統設定的 responseOkMs / responseDegradedMs）——
  * 這個檔案是純邏輯，不能自己去讀設定 collection。
@@ -35,6 +43,13 @@ export function classifyResponseTime(
   if (ms === null) return 'down'
   if (ms < okMs) return 'ok'
   if (ms < degradedMs) return 'degraded'
+=======
+ */
+export function classifyResponseTime(ms: number | null): MonitorState {
+  if (ms === null) return 'down'
+  if (ms < RESPONSE_OK_MS) return 'ok'
+  if (ms < RESPONSE_DEGRADED_MS) return 'degraded'
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   return 'down'
 }
 
@@ -74,6 +89,7 @@ export function pendingMonitor(
 }
 
 /** 從一次量測結果組出後端服務的監控項 */
+<<<<<<< HEAD
 export function backendMonitor(
   responseMs: number | null,
   checkedAt: string | null,
@@ -81,6 +97,10 @@ export function backendMonitor(
   degradedMs: number,
 ): MonitorReading {
   const state = classifyResponseTime(responseMs, okMs, degradedMs)
+=======
+export function backendMonitor(responseMs: number | null, checkedAt: string | null): MonitorReading {
+  const state = classifyResponseTime(responseMs)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   return {
     id: 'backend',
     label: '後端服務',
@@ -96,6 +116,7 @@ export function backendMonitor(
     connected: true,
   }
 }
+<<<<<<< HEAD
 
 /**
  * 後端 /api/admin/metrics 的回傳形狀。
@@ -209,3 +230,5 @@ export function errorRateMonitor(snapshot: RequestSnapshot | null): MonitorReadi
     connected: true,
   }
 }
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

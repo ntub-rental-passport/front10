@@ -1,7 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
+<<<<<<< HEAD
 import Layout from '@/src/components/layouts/AppLayout.vue'
 import AdminLayout from '@/src/components/layouts/AdminLayout.vue'
 import LandlordLayout from '@/src/components/layouts/LandlordLayout.vue'
+=======
+import Layout from '@/src/components/layout.vue'
+import AdminLayout from '@/src/components/admin-layout.vue'
+import LandlordLayout from '@/src/components/landlord-layout.vue'
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import {
   getAuthSession,
   getPendingRegistration,
@@ -21,6 +27,7 @@ const router = createRouter({
   routes: [
     { path: '/', component: () => import('@/src/pages/home.vue') },
     { path: '/maintenance', component: () => import('@/src/pages/maintenance.vue') },
+<<<<<<< HEAD
     {
       path: '/login',
       alias: '/auth/login',
@@ -31,6 +38,10 @@ const router = createRouter({
       alias: '/auth/register',
       component: () => import('@/src/pages/auth/register.vue'),
     },
+=======
+    { path: '/login', component: () => import('@/src/pages/auth/login.vue') },
+    { path: '/register', component: () => import('@/src/pages/auth/register.vue') },
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     { path: '/staff-login', component: () => import('@/src/pages/auth/staff-login.vue') },
     { path: '/verify-email', component: () => import('@/src/pages/auth/verify-code.vue') },
     {
@@ -44,6 +55,7 @@ const router = createRouter({
       meta: { requiresAuth: true, roles: ['landlord'] as AuthRole[] },
       children: [
         { path: '', component: () => import('@/src/pages/landlord/dashboard.vue') },
+<<<<<<< HEAD
         { path: 'properties', component: () => import('@/src/pages/landlord/properties.vue') },
         { path: 'tenants', component: () => import('@/src/pages/landlord/tenants.vue') },
         { path: 'finance', component: () => import('@/src/pages/landlord/finance.vue') },
@@ -52,6 +64,14 @@ const router = createRouter({
         { path: 'subscription', component: () => import('@/src/pages/landlord/subscription.vue') },
         { path: 'settings', component: () => import('@/src/pages/landlord/settings.vue') },
         { path: 'settings/:section', component: () => import('@/src/pages/landlord/settings-detail.vue') },
+=======
+        { path: 'properties', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '房務管理', description: '管理棟別、房間、出租狀態與房屋設備。' } },
+        { path: 'tenants', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '租客管理', description: '管理租客資料、租約狀態、房號與聯絡資訊。' } },
+        { path: 'finance', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '帳務管理', description: '管理租金收款、待收款、逾期款項與日常支出。' } },
+        { path: 'maintenance', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '報修管理', description: '追蹤租客報修、處理狀態、費用與完成紀錄。' } },
+        { path: 'contracts', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '合約管理', description: '管理租約、附件、到期提醒與續約進度。' } },
+        { path: 'settings', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '房東設定', description: '設定收款提醒、通知方式與房東帳號偏好。' } },
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       ],
     },
     {
@@ -67,7 +87,10 @@ const router = createRouter({
         // 押金退還已併入使用者詳情，保留舊路徑避免既有書籤與稽核紀錄連結 404
         { path: 'deposits', redirect: '/admin/users' },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
+<<<<<<< HEAD
         { path: 'notification-center', component: () => import('@/src/pages/admin/notification-center.vue') },
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         { path: 'notifications', component: () => import('@/src/pages/admin/notifications.vue') },
         { path: 'notifications/:batchId', component: () => import('@/src/pages/admin/notifications-detail.vue') },
         { path: 'monitoring', component: () => import('@/src/pages/admin/monitoring.vue') },
@@ -89,6 +112,7 @@ const router = createRouter({
       meta: { requiresAuth: true, roles: ['tenant'] as AuthRole[] },
       children: [
         { path: '', component: () => import('@/src/pages/dashboard.vue') },
+<<<<<<< HEAD
         {
           path: 'tenant-guide',
           component: () => import('@/src/pages/dashboard/tenant-defense-guide/directory.vue'),
@@ -108,6 +132,9 @@ const router = createRouter({
             import('@/src/pages/dashboard/tenant-defense-guide/electricity-fee/article.vue'),
         },
         { path: 'contract/scanner', component: () => import('@/src/pages/contract/index.vue') },
+=======
+        { path: 'contract', component: () => import('@/src/pages/contract/index.vue') },
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         { path: 'contract-analysis', component: () => import('@/src/pages/contract/analysis.vue') },
         { path: 'contract/editor', component: () => import('@/src/pages/contract/editor.vue') },
         { path: 'contract/combined', component: () => import('@/src/pages/contract/combined.vue') },
@@ -132,7 +159,10 @@ const router = createRouter({
         { path: 'handover', component: () => import('@/src/pages/handover/index.vue') },
         { path: 'handover/baseline', component: () => import('@/src/pages/handover/baseline.vue') },
         { path: 'handover/checkout', component: () => import('@/src/pages/handover/checkout.vue') },
+<<<<<<< HEAD
         { path: 'repairs', component: () => import('@/src/pages/repairs.vue') },
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         {
           path: 'outage',
           component: () => import('@/src/pages/outage/OutageShell.vue'),
@@ -148,7 +178,11 @@ const router = createRouter({
         },
         {
           path: 'notes',
+<<<<<<< HEAD
           component: () => import('@/src/components/layouts/NotesLayout.vue'),
+=======
+          component: () => import('@/src/components/NotesLayout.vue'),
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
           children: [
             { path: '', component: () => import('@/src/pages/notes/index.vue') },
             { path: 'personal', redirect: '/app/notes' },
@@ -180,8 +214,12 @@ const router = createRouter({
   ],
 })
 
+<<<<<<< HEAD
 router.beforeEach((to , from, next) => {
   return next()
+=======
+router.beforeEach((to) => {
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   let session = getAuthSession()
 
   // Session 逾時：清掉再往下走，後續的 requiresAuth 檢查會自然導向登入頁
@@ -205,6 +243,7 @@ router.beforeEach((to , from, next) => {
     return '/register'
   }
 
+<<<<<<< HEAD
   if (
     session?.isAuthenticated &&
     ['/login', '/auth/login', '/register', '/auth/register'].includes(to.path)
@@ -212,6 +251,8 @@ router.beforeEach((to , from, next) => {
     return resolveRoleHome(session.role)
   }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   if (!requiresAuth) return true
 
   if (!session?.isAuthenticated) {

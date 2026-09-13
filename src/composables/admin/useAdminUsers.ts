@@ -1,7 +1,10 @@
 import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
 import { getAuthSession } from '@/src/composables/useAuth'
+<<<<<<< HEAD
 import { migrateLastLoginAt } from '@/src/utils/admin-activity'
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import {
   seedAdminUsers,
   type AdminUser,
@@ -13,6 +16,7 @@ import { migrateAdminRoleInUsers } from '@/src/utils/admin-role-migrate'
 import { ADMIN_DATASET_VERSION } from '@/src/utils/admin-collection-migrate'
 
 // 舊資料的 adminRole 可能是已淘汰的 'ops' / 'content'，載入時轉成新的兩種角色。
+<<<<<<< HEAD
 // 兩次欄位擴充（adminRole、lastLoginAt）都要能升級同一份舊資料，所以串起來跑
 function migrateUsers(list: AdminUser[]): AdminUser[] {
   return migrateLastLoginAt(migrateAdminRoleInUsers(list))
@@ -22,6 +26,12 @@ export const adminUsersCollection = createAdminCollection<AdminUser[]>(
   `users-${ADMIN_DATASET_VERSION}`,
   seedAdminUsers,
   migrateUsers,
+=======
+export const adminUsersCollection = createAdminCollection<AdminUser[]>(
+  `users-${ADMIN_DATASET_VERSION}`,
+  seedAdminUsers,
+  migrateAdminRoleInUsers,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 )
 const users = adminUsersCollection
 
@@ -44,6 +54,7 @@ export function getCurrentAdminRole(): AdminRole {
   return user?.adminRole ?? 'super'
 }
 
+<<<<<<< HEAD
 /**
  * 登入成功時蓋上時間戳。總覽頁的「近期活躍」就是數這個欄位，
  * 沒有這一步的話那個數字永遠只會是 seed 的靜態值。
@@ -55,6 +66,8 @@ export function recordLogin(email: string): void {
   user.lastLoginAt = new Date().toISOString()
 }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 export function useAdminUsers() {
   const { logAction } = useAdminAudit()
 

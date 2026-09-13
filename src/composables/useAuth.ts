@@ -1,8 +1,11 @@
 import {
   loginWithEmail,
+<<<<<<< HEAD
   startAdminLogin,
   verifyAdminLogin,
   logoutFromServer,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   resendRegistration,
   startRegistration,
   verifyRegistration,
@@ -12,8 +15,11 @@ import {
 export type AuthRole = 'tenant' | 'landlord' | 'admin'
 
 export interface AuthSession {
+<<<<<<< HEAD
   /** 後端帳號主鍵；所有租客資料授權皆以此欄位比對。 */
   userId?: string
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   email: string
   isAuthenticated: boolean
   role: AuthRole
@@ -21,7 +27,10 @@ export interface AuthSession {
   nickname: string | null
   /** 登入時間（epoch 毫秒）。舊 session 沒有這個欄位，視為不過期。 */
   issuedAt?: number
+<<<<<<< HEAD
   accessToken?: string
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 export interface PendingRegistration {
@@ -118,6 +127,7 @@ function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserPr
   return nextProfile
 }
 
+<<<<<<< HEAD
 function createSession(
   role: AuthRole,
   profile: UserProfile,
@@ -127,12 +137,20 @@ function createSession(
   const session: AuthSession = {
     email: profile.email,
     userId: userId === null || userId === undefined ? `email:${profile.email}` : String(userId),
+=======
+function createSession(role: AuthRole, profile: UserProfile): AuthSession {
+  const session: AuthSession = {
+    email: profile.email,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     isAuthenticated: true,
     role,
     emailVerified: profile.emailVerified,
     nickname: profile.nickname,
     issuedAt: Date.now(),
+<<<<<<< HEAD
     accessToken: accessToken || undefined,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   }
 
   writeJson(AUTH_STORAGE_KEY, session)
@@ -182,10 +200,14 @@ export async function signInWithEmail(
       nickname: result.displayName,
       role: result.role,
     })
+<<<<<<< HEAD
     return {
       ok: true,
       session: createSession(result.role, profile, result.accessToken, result.userId),
     }
+=======
+    return { ok: true, session: createSession(result.role, profile) }
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   } catch (error) {
     const knownErrors: EmailSignInError[] = [
       'account-not-found',
@@ -199,6 +221,7 @@ export async function signInWithEmail(
   }
 }
 
+<<<<<<< HEAD
 /** 管理員登入第一階段的狀態，供輸入驗證碼的畫面使用。 */
 export interface AdminLoginChallenge {
   challengeId: string
@@ -248,19 +271,29 @@ export function registerWithGoogle(
   accessToken?: string | null,
   userId?: string | number | null,
 ): AuthSession {
+=======
+export function registerWithGoogle(email: string, role: AuthRole = 'tenant'): AuthSession {
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   const profile = upsertUserProfile(email, {
     emailVerified: true,
     nickname: null,
   })
 
+<<<<<<< HEAD
   return createSession(role, profile, accessToken, userId)
+=======
+  return createSession(role, profile)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 export function signOut(): void {
   if (!canUseStorage()) return
   window.localStorage.removeItem(AUTH_STORAGE_KEY)
+<<<<<<< HEAD
   // HttpOnly cookie 前端刪不掉，必須請後端清除（fire-and-forget，不阻塞 UI）
   void logoutFromServer()
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 export function resolveRoleHome(role: AuthRole): '/app' | '/landlord' | '/admin' {
@@ -392,7 +425,11 @@ export async function completeEmailVerification(code: string): Promise<AuthSessi
 
   clearPendingRegistration()
   clearGoogleRegistrationContext()
+<<<<<<< HEAD
   return createSession(verified.role, profile, verified.accessToken, verified.userId)
+=======
+  return createSession(verified.role, profile)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 export function finishNicknameSetup(nickname: string): AuthSession | null {
@@ -405,10 +442,14 @@ export function finishNicknameSetup(nickname: string): AuthSession | null {
     emailVerified: session.emailVerified,
   })
 
+<<<<<<< HEAD
   return createSession(session.role, profile, session.accessToken, session.userId)
 }
 
 export function getAuthenticatedUserId(session: AuthSession | null = getAuthSession()): string {
   if (!session) return ''
   return session.userId || `email:${session.email.trim().toLowerCase()}`
+=======
+  return createSession(session.role, profile)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }

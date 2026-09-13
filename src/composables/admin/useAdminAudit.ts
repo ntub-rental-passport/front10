@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { computed } from 'vue'
 import { createAdminCollection, newId } from './useAdminStore'
 import { getAuthSession } from '@/src/composables/useAuth'
@@ -20,6 +21,21 @@ const settings = createAdminCollection<SystemSettings>('settings', seedSettings,
 export function useAdminAudit() {
   function logAction(action: AuditActionType, target: string, detail: string): void {
     rawEvents.value.unshift({
+=======
+import { createAdminCollection, newId } from './useAdminStore'
+import { getAuthSession } from '@/src/composables/useAuth'
+import {
+  seedAuditEvents,
+  type AuditActionType,
+  type AuditEvent,
+} from '@/src/mocks/admin-seed'
+
+const events = createAdminCollection<AuditEvent[]>('audit', seedAuditEvents)
+
+export function useAdminAudit() {
+  function logAction(action: AuditActionType, target: string, detail: string): void {
+    events.value.unshift({
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       id: newId('ev'),
       at: new Date().toISOString(),
       actor: getAuthSession()?.email ?? 'admin@rentmate.tw',
@@ -29,8 +45,11 @@ export function useAdminAudit() {
     })
   }
 
+<<<<<<< HEAD
   // 保留天數是視窗式篩選，不是刪除：原始紀錄仍在 rawEvents 裡，只是超過天數的不顯示
   const events = computed(() => filterByRetention(rawEvents.value, settings.value.auditRetentionDays))
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   return { events, logAction }
 }

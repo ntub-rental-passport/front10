@@ -1,4 +1,5 @@
 import os
+<<<<<<< HEAD
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
@@ -33,16 +34,32 @@ async def lifespan(app):
             await task
 
 app = FastAPI(title="RentMate 租隊友後端核心系統", lifespan=lifespan)
+=======
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from database import Base, engine
+from routers import auth, contract, notes
+
+if engine is not None:
+    Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="RentMate API")
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 cors_origins = os.getenv(
     "CORS_ORIGINS",
     "http://localhost:3000,http://localhost:5173",
 ).split(",")
+<<<<<<< HEAD
 # 請求計數 middleware，供後台監控頁計算錯誤率。
 # 放在 CORS 之前註冊 —— FastAPI 的 middleware 是後註冊者先執行，
 # 這樣計數器包在最外層，連 CORS 擋掉的請求也算得到。
 app.middleware("http")(count_requests)
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in cors_origins if origin.strip()],
@@ -51,6 +68,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+<<<<<<< HEAD
 # 將 AI 合約審查模組註冊進 FastAPI 總開關
 app.include_router(contract.router)
 app.include_router(auth.router)
@@ -89,6 +107,19 @@ def health_check():
 
     return {"status": "ok", "database": database}
 
+=======
+<<<<<<< HEAD
+app.include_router(contract.router)
+app.include_router(auth.router)
+app.include_router(notes.router)
+
+
+@app.get("/")
+def root():
+    return {"message": "RentMate FastAPI is running"}
+
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 if __name__ == "__main__":
     import uvicorn

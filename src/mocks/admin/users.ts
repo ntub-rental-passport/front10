@@ -13,8 +13,11 @@ export interface AdminUser {
   status: AdminUserStatus
   emailVerified: boolean
   registeredAt: string
+<<<<<<< HEAD
   /** 最後一次登入時間；從未登入過為 null。登入時由 recordLogin() 寫入 */
   lastLoginAt: string | null
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 /**
@@ -22,6 +25,7 @@ export interface AdminUser {
  *
  * 其他資料（工單、押金、訂閱）與測試都會指名這幾個 id，所以它們手寫、不由亂數產生。
  */
+<<<<<<< HEAD
 /**
  * 停用帳號不會再有新的登入紀錄；其餘約三成近期回訪過，其餘分散在更早以前，
  * 並保留一部分從未登入的帳號——註冊完就沒再回來的人，真實平台一定有。
@@ -45,6 +49,19 @@ function coreUsers(): AdminUser[] {
     { id: 'u-tenant-3', email: 'cindy.chang@example.com', nickname: null, role: 'user', adminRole: null, status: 'active', emailVerified: false, registeredAt: daysAgo(14), lastLoginAt: null },
     { id: 'u-tenant-4', email: 'derek.wu@example.com', nickname: '小德', role: 'user', adminRole: null, status: 'suspended', emailVerified: true, registeredAt: daysAgo(210), lastLoginAt: null },
     { id: 'u-tenant-5', email: 'elaine.ho@example.com', nickname: '伊蓮', role: 'user', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(180), lastLoginAt: daysAgo(5) },
+=======
+function coreUsers(): AdminUser[] {
+  return [
+    { id: 'u-admin-1', email: 'admin@rentmate.tw', nickname: '系統管理員', role: 'admin', adminRole: 'super', status: 'active', emailVerified: true, registeredAt: daysAgo(360) },
+    { id: 'u-admin-2', email: 'staff@rentmate.tw', nickname: '陳小管', role: 'admin', adminRole: 'admin', status: 'active', emailVerified: true, registeredAt: daysAgo(348) },
+    { id: 'u-landlord-1', email: 'chen.landlord@example.com', nickname: '陳房東', role: 'landlord', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(320) },
+    { id: 'u-landlord-2', email: 'lin.house@example.com', nickname: '林太太', role: 'landlord', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(295) },
+    { id: 'u-tenant-1', email: 'amy.wang@example.com', nickname: '小艾', role: 'user', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(280) },
+    { id: 'u-tenant-2', email: 'ben.liu@example.com', nickname: '阿賓', role: 'user', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(240) },
+    { id: 'u-tenant-3', email: 'cindy.chang@example.com', nickname: null, role: 'user', adminRole: null, status: 'active', emailVerified: false, registeredAt: daysAgo(14) },
+    { id: 'u-tenant-4', email: 'derek.wu@example.com', nickname: '小德', role: 'user', adminRole: null, status: 'suspended', emailVerified: true, registeredAt: daysAgo(210) },
+    { id: 'u-tenant-5', email: 'elaine.ho@example.com', nickname: '伊蓮', role: 'user', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(180) },
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   ]
 }
 
@@ -98,7 +115,10 @@ export function seedAdminUsers(): AdminUser[] {
         // 註冊未滿 3 天的帳號還沒驗證信箱，符合實際節奏
         emailVerified: registeredDaysAgo > 3 ? weightedPick(random, { yes: 92, no: 8 }) === 'yes' : false,
         registeredAt,
+<<<<<<< HEAD
         lastLoginAt: lastLoginFor(random, status),
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       })
       index += 1
     }

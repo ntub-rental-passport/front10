@@ -2,7 +2,10 @@ import { computed, ref } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
 import { adminUsersCollection } from './useAdminUsers'
+<<<<<<< HEAD
 import { adminSettings } from './useAdminSettings'
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { seedMaintenanceTickets, type MaintenanceTicket } from '@/src/mocks/admin-seed'
 import { ADMIN_DATASET_VERSION, discardLegacy } from '@/src/utils/admin-collection-migrate'
 import { userDisplayName } from '@/src/utils/admin-user-directory'
@@ -12,7 +15,10 @@ import {
   isInAdminQueue,
   maintenanceStatusLabels,
   migrateMaintenanceQueueFlags,
+<<<<<<< HEAD
   shouldAutoMarkOverdue,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   type MaintenanceCategory,
   type MaintenanceStatus,
 } from '@/src/utils/admin-maintenance'
@@ -95,6 +101,7 @@ export interface MaintenanceStats {
   byCategory: Record<MaintenanceCategory, number>
 }
 
+<<<<<<< HEAD
 /**
  * 掃一次 tickets，把符合門檻的 notified 工單真的轉成 overdue，並寫入 timeline 與稽核紀錄。
  *
@@ -144,14 +151,19 @@ function applyAutoOverdueTransitions(logAction: ReturnType<typeof useAdminAudit>
   }
 }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 export function useAdminMaintenance() {
   const { logAction } = useAdminAudit()
   const error = ref('')
 
+<<<<<<< HEAD
   // 讀取工單前先讓系統把逾期未回應的工單真的轉成 overdue 狀態，
   // 這樣底下的 ticketViews／isInAdminQueue／adminQueueReason 才看得到最新狀態。
   applyAutoOverdueTransitions(logAction)
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   // 預設落在待處理佇列 —— 管理員打開這頁該先看到自己要處理的事，不是全部工單
   const statusTab = ref<MaintenanceStatusTab>('queue')
   const categoryFilter = ref<MaintenanceCategory | 'all'>('all')

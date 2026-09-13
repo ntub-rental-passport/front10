@@ -3,7 +3,10 @@ import { adminUsersCollection } from './useAdminUsers'
 import { adminMaintenanceCollection } from './useAdminMaintenance'
 import { adminDepositCollection } from './useAdminDeposits'
 import { adminPlansCollection, adminSubscriptionCollection } from './useAdminSubscription'
+<<<<<<< HEAD
 import { adminSettings } from './useAdminSettings'
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import {
   adminRoleCounts,
   emptyUserDirectoryFilter,
@@ -24,6 +27,7 @@ const filter = ref<UserDirectoryFilter>({ ...emptyUserDirectoryFilter })
 
 export function useAdminDirectory() {
   const rows = computed<UserDirectoryRow[]>(() =>
+<<<<<<< HEAD
     joinUserDirectory(
       {
         users: adminUsersCollection.value,
@@ -34,6 +38,15 @@ export function useAdminDirectory() {
       },
       adminSettings.value.subscriptionExpiringSoonDays,
     ),
+=======
+    joinUserDirectory({
+      users: adminUsersCollection.value,
+      tickets: adminMaintenanceCollection.value,
+      deposits: adminDepositCollection.value,
+      subscriptions: adminSubscriptionCollection.value,
+      plans: adminPlansCollection.value,
+    }),
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   )
 
   const filteredRows = computed(() => filterUserDirectory(rows.value, filter.value))

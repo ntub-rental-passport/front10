@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+<<<<<<< HEAD
 import AuthShell from '@/src/components/layouts/AuthLayout.vue'
+=======
+import AuthShell from '@/src/components/auth-layout.vue'
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { Button } from '@/components/ui/button/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'

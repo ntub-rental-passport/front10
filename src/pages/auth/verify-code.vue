@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+<<<<<<< HEAD
 import AuthShell from '@/src/components/layouts/AuthLayout.vue'
+=======
+import AuthShell from '@/src/components/auth-layout.vue'
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { Button } from '@/components/ui/button/index'
 import { Label } from '@/components/ui/label/index'
 import { BadgeCheck } from 'lucide-vue-next'
@@ -12,7 +16,10 @@ import {
   resendEmailVerification,
   resolveRoleHome,
 } from '@/src/composables/useAuth'
+<<<<<<< HEAD
 import { normalizeAuthRedirect } from '@/src/utils/auth-redirect'
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +34,7 @@ onUnmounted(() => window.clearInterval(timer))
 const email = computed(() =>
   typeof route.query.email === 'string' ? route.query.email : pendingRegistration.value?.email ?? 'your@email.com',
 )
+<<<<<<< HEAD
 const redirectTarget = computed(() => normalizeAuthRedirect(route.query.redirect))
 const registerLink = computed(() => ({
   path: '/register',
@@ -35,6 +43,8 @@ const registerLink = computed(() => ({
     ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
   },
 }))
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 const resendAvailableIn = computed(() => Math.max(
   0,
   Math.ceil(((pendingRegistration.value?.resendAvailableAt ?? 0) - now.value) / 1000),
@@ -128,12 +138,16 @@ async function handleVerification(): Promise<void> {
     const session = await completeEmailVerification(getCode())
     if (!session) throw new Error('找不到待驗證資料，請重新註冊。')
     errorMessage.value = ''
+<<<<<<< HEAD
     const target = redirectTarget.value || resolveRoleHome(session.role)
     await router.push(
       needsNicknameSetup(session)
         ? { path: '/welcome', query: { redirect: target } }
         : target,
     )
+=======
+    await router.push(needsNicknameSetup(session) ? '/welcome' : resolveRoleHome(session.role))
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '驗證失敗，請稍後再試。'
   } finally {
@@ -237,7 +251,11 @@ async function handleResend(): Promise<void> {
           {{ resendAvailableIn > 0 ? `${resendAvailableIn} 秒後可重新寄送` : '重新寄送驗證碼' }}
         </Button>
         <Button as-child size="lg" variant="outline" class="h-14 w-full rounded-[1rem] text-base">
+<<<<<<< HEAD
           <RouterLink :to="registerLink">返回註冊</RouterLink>
+=======
+          <RouterLink to="/register">返回註冊</RouterLink>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         </Button>
       </div>
     </form>

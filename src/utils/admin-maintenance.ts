@@ -29,6 +29,7 @@ export const maintenanceStatusLabels: Record<MaintenanceStatus, string> = {
   closed: '已關閉',
 }
 
+<<<<<<< HEAD
 /**
  * 判斷一張工單「現在」是否該被系統自動標記為逾期未回應。
  *
@@ -56,6 +57,10 @@ export function shouldAutoMarkOverdue(
 
   return elapsedDays(notifiedAt, now) > thresholdDays
 }
+=======
+/** 通報房東後超過幾天未獲回應視為逾期 */
+export const overdueThresholdDays = 7
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 /**
  * 合法的狀態轉換。

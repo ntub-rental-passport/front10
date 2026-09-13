@@ -28,6 +28,29 @@ describe('validateSettings', () => {
     expect(result.supportEmail).toBe('請輸入客服信箱')
   })
 
+<<<<<<< HEAD
+=======
+  it('每頁筆數低於下限', () => {
+    const result = validateSettings({ ...baseSettings(), pageSize: 0 })
+    expect(result.pageSize).toBe('每頁筆數需介於 1 到 100')
+  })
+
+  it('每頁筆數高於上限', () => {
+    const result = validateSettings({ ...baseSettings(), pageSize: 101 })
+    expect(result.pageSize).toBe('每頁筆數需介於 1 到 100')
+  })
+
+  it('每頁筆數邊界值可通過', () => {
+    expect(validateSettings({ ...baseSettings(), pageSize: 1 }).pageSize).toBeUndefined()
+    expect(validateSettings({ ...baseSettings(), pageSize: 100 }).pageSize).toBeUndefined()
+  })
+
+  it('上傳上限超出範圍', () => {
+    const result = validateSettings({ ...baseSettings(), maxUploadMb: 51 })
+    expect(result.maxUploadMb).toBe('上傳上限需介於 1 到 50 MB')
+  })
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   it('開啟維護模式時維護文字不可空白', () => {
     const result = validateSettings({
       ...baseSettings(),
@@ -46,13 +69,38 @@ describe('validateSettings', () => {
     expect(result.maintenanceMessage).toBeUndefined()
   })
 
+<<<<<<< HEAD
+=======
+  it('每頁筆數為 NaN 視為錯誤', () => {
+    const result = validateSettings({ ...baseSettings(), pageSize: Number.NaN })
+    expect(result.pageSize).toBe('每頁筆數需介於 1 到 100')
+  })
+
+  it('上傳上限為 NaN 視為錯誤', () => {
+    const result = validateSettings({ ...baseSettings(), maxUploadMb: Number.NaN })
+    expect(result.maxUploadMb).toBe('上傳上限需介於 1 到 50 MB')
+  })
+
+  it('上傳上限下限與邊界值', () => {
+    expect(validateSettings({ ...baseSettings(), maxUploadMb: 0 }).maxUploadMb).toBe('上傳上限需介於 1 到 50 MB')
+    expect(validateSettings({ ...baseSettings(), maxUploadMb: 1 }).maxUploadMb).toBeUndefined()
+    expect(validateSettings({ ...baseSettings(), maxUploadMb: 50 }).maxUploadMb).toBeUndefined()
+  })
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   it('同時回報多個錯誤', () => {
     const result = validateSettings({
       ...baseSettings(),
       siteName: '',
+<<<<<<< HEAD
       maintenanceOverdueDays: 999,
     })
     expect(Object.keys(result).sort()).toEqual(['maintenanceOverdueDays', 'siteName'])
+=======
+      pageSize: 999,
+    })
+    expect(Object.keys(result).sort()).toEqual(['pageSize', 'siteName'])
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   })
 })
 
@@ -90,6 +138,11 @@ describe('migrateSettings', () => {
       supportEmail: 'old@rentmate.tw',
       maintenanceMode: false,
       maintenanceMessage: '維護中',
+<<<<<<< HEAD
+=======
+      pageSize: 50,
+      maxUploadMb: 20,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     }
 
     const migrated = migrateSettings(legacy)
@@ -98,6 +151,7 @@ describe('migrateSettings', () => {
     expect(migrated.platformVisionPageQuota).toBe(3_000)
     expect(migrated.quotaWarnPercent).toBe(80)
     expect(migrated.quotaCriticalPercent).toBe(95)
+<<<<<<< HEAD
     expect(migrated.auditRetentionDays).toBe(90)
     expect(migrated.maintenanceOverdueDays).toBe(7)
     expect(migrated.subscriptionExpiringSoonDays).toBe(14)
@@ -106,6 +160,11 @@ describe('migrateSettings', () => {
     expect(migrated.responseDegradedMs).toBe(1000)
     // 使用者原本的設定不可被預設值覆蓋
     expect(migrated.siteName).toBe('舊站名')
+=======
+    // 使用者原本的設定不可被預設值覆蓋
+    expect(migrated.siteName).toBe('舊站名')
+    expect(migrated.pageSize).toBe(50)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   })
 })
 
@@ -192,6 +251,7 @@ describe('安全性設定驗證', () => {
     expect(result.sessionTimeoutMinutes).toBe('Session 逾時需介於 5 到 10080 分鐘')
   })
 })
+<<<<<<< HEAD
 
 describe('稽核保留天數與逾期門檻驗證', () => {
   it('保留天數為 0 或負數代表不限制，不是錯誤', () => {
@@ -315,3 +375,5 @@ describe('後端回應時間分級門檻驗證', () => {
     expect(result.responseDegradedMs).toBeUndefined()
   })
 })
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

@@ -29,7 +29,10 @@ function user(id: string, over: Partial<AdminUser> = {}): AdminUser {
     status: 'active',
     emailVerified: true,
     registeredAt: '2026-01-01T00:00:00.000Z',
+<<<<<<< HEAD
     lastLoginAt: null,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     ...over,
   }
 }
@@ -118,9 +121,12 @@ function sources(over: Partial<UserDirectorySources> = {}): UserDirectorySources
   }
 }
 
+<<<<<<< HEAD
 // 沿用種子預設值。這個常數只在測試內部使用，不代表 production 還留著寫死的門檻。
 const EXPIRING_SOON_DAYS = 14
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 describe('isTicketOpen', () => {
   it('完成與關閉不算待處理', () => {
     expect(isTicketOpen('completed')).toBe(false)
@@ -138,7 +144,11 @@ describe('isTicketOpen', () => {
 
 describe('joinUserDirectory', () => {
   it('同一筆案件同時掛在房東與租客兩邊，且各自標記身分', () => {
+<<<<<<< HEAD
     const rows = joinUserDirectory(sources({ deposits: [deposit('dr-1')] }), EXPIRING_SOON_DAYS)
+=======
+    const rows = joinUserDirectory(sources({ deposits: [deposit('dr-1')] }))
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
     const tenantRow = rows.find((row) => row.user.id === 'u-tenant')!
     const landlordRow = rows.find((row) => row.user.id === 'u-landlord')!
@@ -152,7 +162,10 @@ describe('joinUserDirectory', () => {
   it('工單同樣兩邊都掛，並標記是否待處理', () => {
     const rows = joinUserDirectory(
       sources({ tickets: [ticket('mt-1', { status: 'in_progress' }), ticket('mt-2', { status: 'closed' })] }),
+<<<<<<< HEAD
       EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
 
     const tenantRow = rows.find((row) => row.user.id === 'u-tenant')!
@@ -163,7 +176,10 @@ describe('joinUserDirectory', () => {
   it('逾期工單另外計數', () => {
     const rows = joinUserDirectory(
       sources({ tickets: [ticket('mt-1', { status: 'overdue' }), ticket('mt-2', { status: 'overdue' })] }),
+<<<<<<< HEAD
       EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
 
     expect(rows.find((row) => row.user.id === 'u-tenant')!.overdueTicketCount).toBe(2)
@@ -178,7 +194,10 @@ describe('joinUserDirectory', () => {
           deposit('dr-3'),
         ],
       }),
+<<<<<<< HEAD
       EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
 
     const tenantRow = rows.find((row) => row.user.id === 'u-tenant')!
@@ -188,13 +207,21 @@ describe('joinUserDirectory', () => {
   })
 
   it('沒有訂閱記錄時 subscription 與 plan 都是 null', () => {
+<<<<<<< HEAD
     const rows = joinUserDirectory(sources(), EXPIRING_SOON_DAYS)
+=======
+    const rows = joinUserDirectory(sources())
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     expect(rows[0].subscription).toBeNull()
     expect(rows[0].plan).toBeNull()
   })
 
   it('有訂閱時接上對應方案', () => {
+<<<<<<< HEAD
     const rows = joinUserDirectory(sources({ subscriptions: [subscription()] }), EXPIRING_SOON_DAYS)
+=======
+    const rows = joinUserDirectory(sources({ subscriptions: [subscription()] }))
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     const tenantRow = rows.find((row) => row.user.id === 'u-tenant')!
     expect(tenantRow.plan?.name).toBe('進階方案')
   })
@@ -206,7 +233,10 @@ describe('joinUserDirectory', () => {
         deposits: [deposit('dr-1')],
         tickets: [ticket('mt-1')],
       }),
+<<<<<<< HEAD
       EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
 
     expect(rows[0].deposits).toHaveLength(0)
@@ -228,7 +258,10 @@ describe('filterUserDirectory', () => {
       tickets: [ticket('mt-1', { status: 'overdue' })],
       subscriptions: [subscription()],
     }),
+<<<<<<< HEAD
     EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     NOW,
   )
 
@@ -286,7 +319,10 @@ describe('filterUserDirectory', () => {
           subscription({ id: 's3', userId: 'u-fine' }),
         ],
       }),
+<<<<<<< HEAD
       EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       NOW,
     )
 
@@ -304,6 +340,7 @@ describe('isSubscriptionExpiring', () => {
     subscription({ expiresAt: iso, ...over })
 
   it('14 天內到期算即將到期', () => {
+<<<<<<< HEAD
     expect(isSubscriptionExpiring(at('2026-08-20T00:00:00.000Z'), EXPIRING_SOON_DAYS, now)).toBe(true)
   })
 
@@ -330,6 +367,28 @@ describe('isSubscriptionExpiring', () => {
     // 距今 20 天到期，14 天的預設門檻擋不到，拉大到 30 天後就算即將到期
     expect(isSubscriptionExpiring(at('2026-09-03T00:00:00.000Z'), 14, now)).toBe(false)
     expect(isSubscriptionExpiring(at('2026-09-03T00:00:00.000Z'), 30, now)).toBe(true)
+=======
+    expect(isSubscriptionExpiring(at('2026-08-20T00:00:00.000Z'), now)).toBe(true)
+  })
+
+  it('恰好 14 天仍算，第 15 天不算', () => {
+    expect(isSubscriptionExpiring(at('2026-08-28T00:00:00.000Z'), now)).toBe(true)
+    expect(isSubscriptionExpiring(at('2026-08-29T00:00:00.000Z'), now)).toBe(false)
+  })
+
+  it('已經過期不算即將到期', () => {
+    expect(isSubscriptionExpiring(at('2026-08-01T00:00:00.000Z'), now)).toBe(false)
+  })
+
+  it('已停用的訂閱一律不算，即使日期落在區間內', () => {
+    expect(isSubscriptionExpiring(at('2026-08-20T00:00:00.000Z', { active: false }), now)).toBe(
+      false,
+    )
+  })
+
+  it('沒有訂閱時為 false', () => {
+    expect(isSubscriptionExpiring(null, now)).toBe(false)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   })
 })
 
@@ -374,7 +433,10 @@ describe('planDistribution', () => {
           subscription({ id: 's2', userId: 'b', planId: 'free' }),
         ],
       }),
+<<<<<<< HEAD
       EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
 
     expect(planDistribution(rows, plans)).toEqual([
@@ -385,7 +447,11 @@ describe('planDistribution', () => {
   })
 
   it('沒有人訂閱時每個方案都是 0，不會少掉分段', () => {
+<<<<<<< HEAD
     const rows = joinUserDirectory(sources({ users: [user('a')] }), EXPIRING_SOON_DAYS)
+=======
+    const rows = joinUserDirectory(sources({ users: [user('a')] }))
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     const segments = planDistribution(rows, plans)
     expect(segments).toHaveLength(3)
     expect(segments.find((s) => s.planId === 'none')?.value).toBe(1)
@@ -403,7 +469,10 @@ describe('adminRoleCounts', () => {
           user('d'),
         ],
       }),
+<<<<<<< HEAD
       EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
 
     expect(adminRoleCounts(rows)).toEqual({ super: 1, admin: 1 })
@@ -412,13 +481,20 @@ describe('adminRoleCounts', () => {
   it('adminRole 為 null 的管理員視為超級管理員', () => {
     const rows = joinUserDirectory(
       sources({ users: [user('a', { role: 'admin', adminRole: null })] }),
+<<<<<<< HEAD
       EXPIRING_SOON_DAYS,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
     expect(adminRoleCounts(rows)).toEqual({ super: 1, admin: 0 })
   })
 
   it('沒有管理員時兩者皆為 0', () => {
+<<<<<<< HEAD
     const rows = joinUserDirectory(sources({ users: [user('a')] }), EXPIRING_SOON_DAYS)
+=======
+    const rows = joinUserDirectory(sources({ users: [user('a')] }))
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     expect(adminRoleCounts(rows)).toEqual({ super: 0, admin: 0 })
   })
 })

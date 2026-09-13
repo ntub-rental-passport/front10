@@ -77,7 +77,11 @@ describe('daysLeftInMonth', () => {
 })
 
 describe('quotaStatus', () => {
+<<<<<<< HEAD
   const base = { today: TODAY, warnPercent: 80, criticalPercent: 95, criticalDaysLeft: 3 }
+=======
+  const base = { today: TODAY, warnPercent: 80, criticalPercent: 95 }
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
   it('用量高、消耗慢時由百分比門檻決定', () => {
     // 用量 85%，日均 1 -> 剩 150 份可撐 150 天，規則二為 ok
@@ -103,6 +107,7 @@ describe('quotaStatus', () => {
   it('用量低且消耗慢時為 ok', () => {
     expect(quotaStatus({ ...base, usedUnits: 100, quota: 1000, dailyAvg: 5 })).toBe('ok')
   })
+<<<<<<< HEAD
 
   it('criticalDaysLeft 為邊界值時判為 critical，多一天就不算', () => {
     // 用量僅 40%，遠低於 warnPercent，狀態完全由規則二（耗盡預估）決定
@@ -118,4 +123,6 @@ describe('quotaStatus', () => {
       quotaStatus({ ...base, criticalDaysLeft: 5, usedUnits: 400, quota: 1000, dailyAvg: 150 }),
     ).toBe('critical')
   })
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 })

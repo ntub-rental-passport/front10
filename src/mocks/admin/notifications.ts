@@ -2,6 +2,7 @@ import { daysAgo } from './helpers'
 
 export type NotifChannel = 'inapp' | 'email' | 'push'
 export type NotifCategory = '系統' | '租約' | '補貼' | '帳務'
+<<<<<<< HEAD
 export type NotifSourceType = 'system' | 'landlord' | 'admin' | 'roommate'
 
 export const notifSourceLabels: Record<NotifSourceType, string> = {
@@ -10,6 +11,8 @@ export const notifSourceLabels: Record<NotifSourceType, string> = {
   admin: '管理員',
   roommate: '室友',
 }
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 export interface NotifTemplate {
   id: string
@@ -34,18 +37,25 @@ export interface UserNotification {
   category: NotifCategory
   channels: NotifChannel[]
   deliveryStatus: Partial<Record<NotifChannel, NotifDeliveryStatus>>
+<<<<<<< HEAD
   /** 同一次發送共用，發送紀錄以此聯合成批次 */
+=======
+  /** 同一次發送共用，發送紀錄以此聚合成批次 */
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   batchId: string
   /** 當初挑選的收件人條件（全部使用者／全部租客／指定使用者），純顯示用 */
   recipientLabel: string
   /** 這次發送的來源：套用模板時存模板名稱，自由撰寫時存「一次性撰寫」，只在批次詳情頁顯示 */
   sourceLabel: string
+<<<<<<< HEAD
   /** 通知來源類型，用於通知中心的來源 badge */
   sourceType?: NotifSourceType
   /** 可選的操作連結，通知中心顯示為按鈕 */
   actionUrl?: string
   /** 操作按鈕文字，搭配 actionUrl 使用 */
   actionLabel?: string
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   createdAt: string
   read: boolean
 }
@@ -118,13 +128,17 @@ export function seedUserNotifications(): UserNotification[] {
       category: '帳務',
       channels: ['inapp', 'email', 'push'],
       deliveryStatus: { inapp: 'sent', email: 'pending', push: 'pending' },
+<<<<<<< HEAD
       sourceType: 'landlord',
       actionUrl: '/app/billing',
       actionLabel: '查看帳單',
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       createdAt: daysAgo(1),
       read: false,
     },
     {
+<<<<<<< HEAD
       id: 'nm-5',
       batchId: 'nb-5',
       recipientLabel: '指定使用者',
@@ -159,6 +173,8 @@ export function seedUserNotifications(): UserNotification[] {
       read: false,
     },
     {
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       id: 'nm-2',
       batchId: 'nb-2',
       recipientLabel: '指定使用者',
@@ -169,11 +185,15 @@ export function seedUserNotifications(): UserNotification[] {
       category: '補貼',
       channels: ['inapp', 'push'],
       deliveryStatus: { inapp: 'sent', push: 'pending' },
+<<<<<<< HEAD
       sourceType: 'admin',
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       createdAt: daysAgo(4),
       read: false,
     },
     {
+<<<<<<< HEAD
       id: 'nm-7',
       batchId: 'nb-7',
       recipientLabel: '指定使用者',
@@ -189,6 +209,8 @@ export function seedUserNotifications(): UserNotification[] {
       read: true,
     },
     {
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       id: 'nm-3',
       batchId: 'nb-3',
       recipientLabel: '指定使用者',
@@ -199,11 +221,15 @@ export function seedUserNotifications(): UserNotification[] {
       category: '租約',
       channels: ['inapp', 'email'],
       deliveryStatus: { inapp: 'sent', email: 'pending' },
+<<<<<<< HEAD
       sourceType: 'landlord',
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       createdAt: daysAgo(12),
       read: true,
     },
     {
+<<<<<<< HEAD
       id: 'nm-8',
       batchId: 'nb-8',
       recipientLabel: '指定使用者',
@@ -219,6 +245,8 @@ export function seedUserNotifications(): UserNotification[] {
       read: true,
     },
     {
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       id: 'nm-4',
       batchId: 'nb-4',
       recipientLabel: '指定使用者',
@@ -229,9 +257,12 @@ export function seedUserNotifications(): UserNotification[] {
       category: '系統',
       channels: ['inapp'],
       deliveryStatus: { inapp: 'sent' },
+<<<<<<< HEAD
       sourceType: 'system',
       actionUrl: '/app/contracts',
       actionLabel: '查看結果',
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       createdAt: daysAgo(25),
       read: true,
     },

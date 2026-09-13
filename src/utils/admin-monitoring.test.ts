@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+<<<<<<< HEAD
   backendMonitor,
   classifyResponseTime,
   dbPoolMonitor,
@@ -29,16 +30,45 @@ describe('classifyResponseTime', () => {
   it('超過上限算無回應', () => {
     expect(classifyResponseTime(DEGRADED_MS, OK_MS, DEGRADED_MS)).toBe('down')
     expect(classifyResponseTime(5000, OK_MS, DEGRADED_MS)).toBe('down')
+=======
+  RESPONSE_DEGRADED_MS,
+  RESPONSE_OK_MS,
+  backendMonitor,
+  classifyResponseTime,
+  formatResponseTime,
+  pendingMonitor,
+} from './admin-monitoring'
+
+describe('classifyResponseTime', () => {
+  it('快於門檻算正常', () => {
+    expect(classifyResponseTime(0)).toBe('ok')
+    expect(classifyResponseTime(RESPONSE_OK_MS - 1)).toBe('ok')
+  })
+
+  it('介於兩個門檻之間算緩慢', () => {
+    expect(classifyResponseTime(RESPONSE_OK_MS)).toBe('degraded')
+    expect(classifyResponseTime(RESPONSE_DEGRADED_MS - 1)).toBe('degraded')
+  })
+
+  it('超過上限算無回應', () => {
+    expect(classifyResponseTime(RESPONSE_DEGRADED_MS)).toBe('down')
+    expect(classifyResponseTime(5000)).toBe('down')
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   })
 
   it('量測失敗算無回應，而不是尚未接上', () => {
     // 這兩者語意不同：量不到是故障，尚未接上是還沒實作
+<<<<<<< HEAD
     expect(classifyResponseTime(null, OK_MS, DEGRADED_MS)).toBe('down')
     expect(classifyResponseTime(null, OK_MS, DEGRADED_MS)).not.toBe('unavailable')
   })
 
   it('門檻可調整：正常門檻拉高後，原本算緩慢的回應改判為正常', () => {
     expect(classifyResponseTime(500, 600, 1000)).toBe('ok')
+=======
+    expect(classifyResponseTime(null)).toBe('down')
+    expect(classifyResponseTime(null)).not.toBe('unavailable')
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   })
 })
 
@@ -55,7 +85,11 @@ describe('formatResponseTime', () => {
 
 describe('backendMonitor', () => {
   it('量到時給值並標記為已接上', () => {
+<<<<<<< HEAD
     const reading = backendMonitor(120, '10:00', OK_MS, DEGRADED_MS)
+=======
+    const reading = backendMonitor(120, '10:00')
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     expect(reading.state).toBe('ok')
     expect(reading.value).toBe('120 ms')
     expect(reading.connected).toBe(true)
@@ -63,7 +97,11 @@ describe('backendMonitor', () => {
   })
 
   it('連不上時說明要檢查後端，而不是留白', () => {
+<<<<<<< HEAD
     const reading = backendMonitor(null, null, OK_MS, DEGRADED_MS)
+=======
+    const reading = backendMonitor(null, null)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     expect(reading.state).toBe('down')
     expect(reading.value).toBe('—')
     expect(reading.detail).toContain('後端')
@@ -78,6 +116,7 @@ describe('pendingMonitor', () => {
     expect(reading.connected).toBe(false)
   })
 })
+<<<<<<< HEAD
 
 describe('dbPoolMonitor', () => {
   const pool = (over: Partial<DbPoolSnapshot> = {}): DbPoolSnapshot => ({
@@ -147,3 +186,5 @@ describe('errorRateMonitor', () => {
     expect(errorRateMonitor(req({ serverErrors: 200, serverErrorRate: 0.2 })).state).toBe('down')
   })
 })
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

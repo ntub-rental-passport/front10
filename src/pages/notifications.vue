@@ -1,4 +1,5 @@
 <script setup lang="ts">
+<<<<<<< HEAD
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ArrowUpRight } from 'lucide-vue-next'
@@ -54,6 +55,24 @@ const tabCounts = computed(() => {
   return counts
 })
 
+=======
+import { Badge } from '@/components/ui/badge/index'
+import { Button } from '@/components/ui/button/index'
+import MaintenanceStatusPanel from '@/src/components/MaintenanceStatusPanel.vue'
+import LevelBadge from '@/src/components/admin/LevelBadge.vue'
+import { useNotifications, type InboxItem } from '@/src/composables/useNotifications'
+import { formatDateTime } from '@/src/utils/admin-format'
+import type { AnnouncementLevel, NotifChannel } from '@/src/mocks/admin-seed'
+
+const { inboxItems, unreadCount, markRead, markAllRead } = useNotifications()
+
+const channelLabels: Record<NotifChannel, string> = {
+  inapp: '站內',
+  email: 'Email',
+  push: '推播',
+}
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 function unreadAccent(item: InboxItem): string {
   if (item.source !== 'announcement' || !item.level) return 'border-l-primary'
   return item.level === 'urgent'
@@ -69,7 +88,11 @@ function unreadAccent(item: InboxItem): string {
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-3xl font-bold tracking-tight">通知中心</h1>
+<<<<<<< HEAD
         <p class="text-muted-foreground">系統公告、房東訊息、管理員通知與室友動態都在這裡。</p>
+=======
+        <p class="text-muted-foreground">這裡會顯示系統公告，以及管理員發送給您的通知。</p>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       </div>
       <div class="flex items-center gap-2">
         <Badge v-if="unreadCount > 0" variant="default">{{ unreadCount }} 則未讀</Badge>
@@ -81,6 +104,7 @@ function unreadAccent(item: InboxItem): string {
 
     <MaintenanceStatusPanel />
 
+<<<<<<< HEAD
     <!-- 分類篩選 -->
     <div class="flex flex-wrap gap-2">
       <button
@@ -110,21 +134,34 @@ function unreadAccent(item: InboxItem): string {
       </button>
     </div>
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     <!--
       維護狀態不是通知，所以就算收件匣是空的，只要有功能維護中，上面的
       MaintenanceStatusPanel 一樣會顯示，畫面同時出現狀態區塊與這則空狀態
       是刻意的，不要因為想讓畫面「看起來乾淨」而改動這個條件。
     -->
     <div
+<<<<<<< HEAD
       v-if="filteredItems.length === 0"
       class="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-muted-foreground"
     >
       {{ activeTab === 'all' ? '目前沒有任何通知。' : '此分類沒有通知。' }}
+=======
+      v-if="inboxItems.length === 0"
+      class="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-muted-foreground"
+    >
+      目前沒有任何通知。
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     </div>
 
     <div v-else class="space-y-3">
       <div
+<<<<<<< HEAD
         v-for="item in filteredItems"
+=======
+        v-for="item in inboxItems"
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         :key="item.key"
         :class="[
           'rounded-2xl border p-4 transition-colors',
@@ -152,16 +189,24 @@ function unreadAccent(item: InboxItem): string {
             :level="item.level"
             prefixed
           />
+<<<<<<< HEAD
           <Badge
             v-if="item.sourceType"
             variant="secondary"
             :class="sourceColors[item.sourceType]"
           >
             {{ notifSourceLabels[item.sourceType] }}
+=======
+          <Badge v-else variant="secondary">{{ item.category }}</Badge>
+
+          <Badge v-for="ch in item.channels" :key="ch" variant="secondary">
+            {{ channelLabels[ch] }}
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
           </Badge>
         </div>
 
         <p class="mt-2 text-sm text-muted-foreground">{{ item.body }}</p>
+<<<<<<< HEAD
 
         <div v-if="item.actionUrl" class="mt-3">
           <Button
@@ -176,6 +221,8 @@ function unreadAccent(item: InboxItem): string {
             </RouterLink>
           </Button>
         </div>
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       </div>
     </div>
   </div>

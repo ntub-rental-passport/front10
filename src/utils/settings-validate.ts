@@ -4,6 +4,13 @@ import { parseAllowlist } from './maintenance'
 export type SettingsErrors = Partial<Record<keyof SystemSettings, string>>
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+<<<<<<< HEAD
+=======
+const PAGE_SIZE_MIN = 1
+const PAGE_SIZE_MAX = 100
+const MAX_UPLOAD_MB_MIN = 1
+const MAX_UPLOAD_MB_MAX = 50
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 const PERCENT_MIN = 1
 const PERCENT_MAX = 100
 const LOGIN_ATTEMPTS_MIN = 1
@@ -14,6 +21,7 @@ const SESSION_MINUTES_MIN = 5
 const SESSION_MINUTES_MAX = 10080
 const PASSWORD_LENGTH_MIN = 6
 const PASSWORD_LENGTH_MAX = 64
+<<<<<<< HEAD
 const AUDIT_RETENTION_DAYS_MAX = 3650
 const OVERDUE_DAYS_MIN = 1
 const OVERDUE_DAYS_MAX = 90
@@ -25,6 +33,8 @@ const AI_CRITICAL_DAYS_MAX = 30
 // 上限跟著抓一致，避免看起來「合法」卻永遠不會生效的門檻
 const RESPONSE_MS_MIN = 50
 const RESPONSE_MS_MAX = 5000
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 export function validateSettings(settings: SystemSettings): SettingsErrors {
   const errors: SettingsErrors = {}
@@ -39,6 +49,17 @@ export function validateSettings(settings: SystemSettings): SettingsErrors {
     errors.supportEmail = '請輸入有效的 Email'
   }
 
+<<<<<<< HEAD
+=======
+  if (!Number.isFinite(settings.pageSize) || settings.pageSize < PAGE_SIZE_MIN || settings.pageSize > PAGE_SIZE_MAX) {
+    errors.pageSize = '每頁筆數需介於 1 到 100'
+  }
+
+  if (!Number.isFinite(settings.maxUploadMb) || settings.maxUploadMb < MAX_UPLOAD_MB_MIN || settings.maxUploadMb > MAX_UPLOAD_MB_MAX) {
+    errors.maxUploadMb = '上傳上限需介於 1 到 50 MB'
+  }
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   if (!Number.isFinite(settings.platformGeminiTokenQuota) || settings.platformGeminiTokenQuota < 0) {
     errors.platformGeminiTokenQuota = 'Gemini token 額度不可為負數'
   }
@@ -119,6 +140,7 @@ export function validateSettings(settings: SystemSettings): SettingsErrors {
     errors.passwordMinLength = '密碼最短長度需介於 6 到 64'
   }
 
+<<<<<<< HEAD
   // 0 或負數是刻意支援的「不限制」值，不是錯誤，只擋非數字與離譜的上限
   if (!Number.isFinite(settings.auditRetentionDays) || settings.auditRetentionDays > AUDIT_RETENTION_DAYS_MAX) {
     errors.auditRetentionDays = `保留天數需為數字，且不超過 ${AUDIT_RETENTION_DAYS_MAX} 天（0 或負數代表不限制）`
@@ -171,5 +193,7 @@ export function validateSettings(settings: SystemSettings): SettingsErrors {
     errors.responseDegradedMs = `變慢門檻需介於 ${RESPONSE_MS_MIN} 到 ${RESPONSE_MS_MAX} 毫秒`
   }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   return errors
 }

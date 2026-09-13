@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+<<<<<<< HEAD
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -7,6 +8,11 @@ import { useRouter } from 'vue-router'
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
 import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'
+=======
+import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import {
   CONTRACT_FIELD_DEFINITIONS,
   CONTRACT_FIELD_GROUPS,
@@ -24,14 +30,20 @@ import {
   Copy,
   Database,
   ExternalLink,
+<<<<<<< HEAD
   FileDown,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   FileSearch,
   FileText,
   MessageSquareText,
   Search,
   Scale,
   Send,
+<<<<<<< HEAD
   ShieldCheck,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   Sparkles,
   UserRound,
   X,
@@ -121,6 +133,7 @@ const legalSourceScopes = [
   },
 ] as const
 
+<<<<<<< HEAD
 const prefersReducedMotion =
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -153,6 +166,8 @@ function useAnimatedNumber(source: () => number) {
   return display
 }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 const router = useRouter()
 const ocrResult = loadContractOcrResult()
 const pages = ref<string[]>(
@@ -175,10 +190,13 @@ const chatPanelRef = ref<HTMLElement | null>(null)
 const chatPosition = reactive({ x: 24, y: 72 })
 const chatDragOffset = reactive({ x: 0, y: 0 })
 const chatDragging = ref(false)
+<<<<<<< HEAD
 const exportDialogOpen = ref(false)
 const exportPrivacyMode = ref(true)
 const exportingReport = ref(false)
 const exportError = ref('')
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 let chatHasBeenPositioned = false
 
 const pageCount = computed(() => pages.value.length)
@@ -426,10 +444,13 @@ const filteredRisks = computed(() => risks.value.filter((risk) => risk.source ==
 const highRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'high').length)
 const mediumRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'medium').length)
 const lowRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'low').length)
+<<<<<<< HEAD
 const displayTotalRisk = useAnimatedNumber(() => risks.value.length)
 const displayHighRisk = useAnimatedNumber(() => highRiskCount.value)
 const displayMediumRisk = useAnimatedNumber(() => mediumRiskCount.value)
 const displayLowRisk = useAnimatedNumber(() => lowRiskCount.value)
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 const riskTabs = computed(() => [
   { id: 'field' as const, label: '關鍵欄位檢查', count: risks.value.filter((risk) => risk.source === 'field').length },
   { id: 'rag' as const, label: 'RAG 風險分析', count: risks.value.filter((risk) => risk.source === 'rag').length },
@@ -439,10 +460,16 @@ async function loadBackendRagAndAiAnalysis() {
   if (!ocrResult?.text) return
 
   try {
+<<<<<<< HEAD
     const response = await fetch(`${API_BASE_URL}/contract/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
+=======
+    const response = await fetch('http://localhost:8000/api/contract/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       body: JSON.stringify({
         ocr_text: ocrResult.text,
         page_texts: ocrResult.pageTexts ?? [ocrResult.text],
@@ -450,11 +477,14 @@ async function loadBackendRagAndAiAnalysis() {
       })
     })
 
+<<<<<<< HEAD
     if (response.status === 401) {
       // 登入逾期：導回登入頁，完成後回到本頁
       window.location.assign('/login?redirect=' + encodeURIComponent(window.location.pathname))
       return
     }
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     if (!response.ok) return
     const data = await response.json()
 
@@ -523,6 +553,7 @@ function focusRisk(risk: RiskItem): void {
   void scrollToReaderHighlight()
 }
 
+<<<<<<< HEAD
 function toggleRiskDetails(risk: RiskItem): void {
   if (activeRiskId.value === risk.id) {
     activeRiskId.value = null
@@ -532,6 +563,8 @@ function toggleRiskDetails(risk: RiskItem): void {
   focusRisk(risk)
 }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 function focusRiskDetail(detail: RiskDetail): void {
   if (detail.pageIndex === null) return
   riskFocusText.value = detail.focusText
@@ -629,10 +662,16 @@ async function fetchAiChatResponse(
   activeRisk: RiskItem | undefined
 ): Promise<void> {
   try {
+<<<<<<< HEAD
     const response = await fetch(`${API_BASE_URL}/contract/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
+=======
+    const response = await fetch('http://localhost:8000/api/contract/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       body: JSON.stringify({
         message: userMessage,
         contract_text: ocrResult?.text ?? '',
@@ -640,10 +679,13 @@ async function fetchAiChatResponse(
       }),
     })
 
+<<<<<<< HEAD
     if (response.status === 401) {
       window.location.assign('/login?redirect=' + encodeURIComponent(window.location.pathname))
       return
     }
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     if (!response.ok) throw new Error('API 響應失敗')
 
     const data = await response.json()
@@ -679,6 +721,7 @@ async function sendChat(message = chatInput.value): Promise<void> {
 function copyMessage(message: ChatMessage): void {
   void navigator.clipboard.writeText(message.text)
 }
+<<<<<<< HEAD
 
 function openExportDialog(): void {
   exportError.value = ''
@@ -711,6 +754,8 @@ async function exportAnalysisReport(): Promise<void> {
     exportingReport.value = false
   }
 }
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 </script>
 
 <template>
@@ -723,6 +768,7 @@ async function exportAnalysisReport(): Promise<void> {
         <div class="analysis-title-row">
           <span class="analysis-ai-mark">AI</span>
           <div>
+<<<<<<< HEAD
             <span class="analysis-eyebrow">CONTRACT REVIEW · 01</span>
             <h1>契約 AI 診斷分析</h1>
             <p>把複雜條文整理成可採取行動的重點，先看風險，再回到原文確認。</p>
@@ -805,22 +851,51 @@ async function exportAnalysisReport(): Promise<void> {
           </div>
           <p v-if="highRiskCount">優先確認 {{ highRiskCount }} 項高風險，再依序檢視其他提醒。</p>
           <p v-else>目前沒有高風險項目，可依序確認其餘提醒。</p>
+=======
+            <h1>契約 AI 診斷分析</h1>
+            <p>整合關鍵欄位、RAG 法規比對與 AI 語意分析，協助你看懂租約風險。</p>
+          </div>
+        </div>
+      </div>
+      <Button variant="outline" @click="router.push('/app/contract')">
+        重新上傳
+      </Button>
+    </header>
+
+    <section class="analysis-overview" aria-label="AI 診斷結果總覽">
+      <div class="analysis-overview-heading">
+        <div>
+          <span>AI 診斷結果總覽</span>
+          <strong>共發現 {{ risks.length }} 項需留意內容</strong>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         </div>
         <span class="analysis-status-pill"><CheckCircle2 :size="15" /> 分析完成</span>
       </div>
       <div class="analysis-stats">
+<<<<<<< HEAD
         <div class="is-high"><span>HIGH · 高風險</span><strong>{{ displayHighRisk }}</strong><small>建議優先處理</small></div>
         <div class="is-medium"><span>MED · 中風險</span><strong>{{ displayMediumRisk }}</strong><small>簽約前再確認</small></div>
         <div class="is-low"><span>LOW · 低風險</span><strong>{{ displayLowRisk }}</strong><small>閱讀時留意</small></div>
+=======
+        <div><span>總風險項目</span><strong>{{ risks.length }}</strong></div>
+        <div class="is-high"><span>高風險</span><strong>{{ highRiskCount }}</strong></div>
+        <div class="is-medium"><span>中風險</span><strong>{{ mediumRiskCount }}</strong></div>
+        <div class="is-low"><span>低風險</span><strong>{{ lowRiskCount }}</strong></div>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       </div>
     </section>
 
     <section class="legal-scope-panel" aria-labelledby="legal-scope-title">
       <div class="legal-scope-heading">
         <div>
+<<<<<<< HEAD
           <span class="analysis-section-index">LEGAL BASIS · 03</span>
           <strong id="legal-scope-title"><Scale :size="16" /> 本次分析參照法規</strong>
           <span>只列出與這份契約相關的依據。</span>
+=======
+          <strong id="legal-scope-title"><Scale :size="16" /> 法律依據範圍</strong>
+          <span>依契約條文比對適用法規，風險卡只顯示實際相關的條文。</span>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         </div>
         <span class="legal-scope-relation">住宅租賃依租賃住宅條例第 5 條視為具消費關係</span>
       </div>
@@ -846,9 +921,14 @@ async function exportAnalysisReport(): Promise<void> {
       <section class="analysis-reader-card" aria-labelledby="analysis-reader-title">
         <div class="analysis-panel-heading">
           <div>
+<<<<<<< HEAD
             <span class="analysis-section-index">DOCUMENT · 04</span>
             <h2 id="analysis-reader-title"><FileText :size="19" /> 契約 PDF 閱讀器</h2>
             <p>搜尋全文，或從右側風險直接定位原文。</p>
+=======
+            <h2 id="analysis-reader-title"><FileText :size="19" /> 契約 PDF 閱讀器</h2>
+            <p>一次顯示一頁 OCR 內容，可搜尋全文並定位風險條文。</p>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
           </div>
         </div>
 
@@ -933,9 +1013,14 @@ async function exportAnalysisReport(): Promise<void> {
         <section class="risk-panel" aria-labelledby="risk-panel-title">
           <div class="analysis-panel-heading risk-panel-heading">
             <div>
+<<<<<<< HEAD
               <span class="analysis-section-index">RISK MAP · 05</span>
               <h2 id="risk-panel-title"><AlertTriangle :size="19" /> 偵測到的風險項次</h2>
               <p>先看摘要，展開後再定位條文或詢問 AI。</p>
+=======
+              <h2 id="risk-panel-title"><AlertTriangle :size="19" /> 偵測到的風險項次</h2>
+              <p>依來源分類；點擊頁碼即可定位條文，亦可返回欄位修改。</p>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
             </div>
           </div>
 
@@ -984,7 +1069,11 @@ async function exportAnalysisReport(): Promise<void> {
                       <FileSearch :size="12" /> 第 {{ risk.pageIndex + 1 }} 頁
                     </button>
                   </span>
+<<<<<<< HEAD
                   <ul v-if="risk.details?.length && activeRiskId === risk.id" class="risk-detail-list">
+=======
+                  <ul v-if="risk.details?.length" class="risk-detail-list">
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
                     <li v-for="detail in risk.details" :key="detail.label">
                       <span>{{ detail.label }}</span>
                       <button
@@ -1000,14 +1089,20 @@ async function exportAnalysisReport(): Promise<void> {
                     </li>
                   </ul>
                   <span v-else class="risk-clause">{{ risk.clause }}</span>
+<<<<<<< HEAD
                   <span v-show="activeRiskId === risk.id" class="risk-description">{{ risk.description }}</span>
                   <span v-if="risk.legalBasis?.length && activeRiskId === risk.id" class="risk-legal-basis">
+=======
+                  <span class="risk-description">{{ risk.description }}</span>
+                  <span v-if="risk.legalBasis?.length" class="risk-legal-basis">
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
                     <span v-for="basis in risk.legalBasis" :key="basis">{{ basis }}</span>
                   </span>
                 </span>
               </div>
               <div class="risk-actions">
                 <button
+<<<<<<< HEAD
                   type="button"
                   class="risk-summary-button"
                   :aria-expanded="activeRiskId === risk.id"
@@ -1017,6 +1112,8 @@ async function exportAnalysisReport(): Promise<void> {
                   <ChevronRight :size="14" aria-hidden="true" />
                 </button>
                 <button
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
                   v-if="risk.source === 'field' && risk.groupId"
                   type="button"
                   class="risk-link-button"
@@ -1129,4 +1226,8 @@ async function exportAnalysisReport(): Promise<void> {
   </main>
 </template>
 
+<<<<<<< HEAD
 <style scoped src="./analysis.css"></style>
+=======
+<style scoped src="./analysis.css"></style>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

@@ -5,8 +5,11 @@ import { performance } from 'node:perf_hooks'
 import process from 'node:process'
 import express from 'express'
 import multer from 'multer'
+<<<<<<< HEAD
 import cookieParser from 'cookie-parser'
 import jwt from 'jsonwebtoken'
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { PDFDocument } from 'pdf-lib'
 import vision from '@google-cloud/vision'
 import { getOllamaConfig, reviewContractFieldsWithOllama } from './ollama-contract.js'
@@ -23,6 +26,7 @@ import {
 } from './vision-field-crops.js'
 
 const app = express()
+<<<<<<< HEAD
 app.use(cookieParser())
 
 // JWT 驗證：與 FastAPI 共用同一組 JWT_SECRET（都從根目錄 .env 讀取）。
@@ -47,6 +51,8 @@ function requireAuth(req, res, next) {
   }
 }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 const port = Number(process.env.OCR_API_PORT || 8787)
 const maxFileSizeMb = Number(process.env.OCR_MAX_FILE_SIZE_MB || 20)
 const maxTotalSizeMb = Number(process.env.OCR_MAX_TOTAL_SIZE_MB || 80)
@@ -423,10 +429,14 @@ function selectAiReviewFields(unresolvedFieldIds) {
 }
 
 function saveAiReviewJob(jobId, result) {
+<<<<<<< HEAD
   // 保留原本記錄的 ownerId —— 這裡是整個覆蓋寫入，若不保留，
   // 建立時記下的擁有者會被洗掉，讀取端點的擁有權檢查就會失效。
   const previous = aiReviewJobs.get(jobId)
   aiReviewJobs.set(jobId, { ...result, ownerId: previous?.ownerId ?? result.ownerId })
+=======
+  aiReviewJobs.set(jobId, result)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   setTimeout(() => aiReviewJobs.delete(jobId), AI_REVIEW_JOB_TTL_MS).unref()
 }
 
@@ -553,6 +563,7 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
+<<<<<<< HEAD
 app.get('/api/ocr/review/:jobId', requireAuth, (req, res) => {
   const job = aiReviewJobs.get(req.params.jobId)
   if (!job) return res.status(404).json({ error: '找不到這次 AI 複核工作，可能已逾期。' })
@@ -565,6 +576,11 @@ app.get('/api/ocr/review/:jobId', requireAuth, (req, res) => {
   if (job.ownerId !== req.user?.sub) {
     return res.status(404).json({ error: '找不到這次 AI 複核工作，可能已逾期。' })
   }
+=======
+app.get('/api/ocr/review/:jobId', (req, res) => {
+  const job = aiReviewJobs.get(req.params.jobId)
+  if (!job) return res.status(404).json({ error: '找不到這次 AI 複核工作，可能已逾期。' })
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   return res.json(job)
 })
 
@@ -606,7 +622,11 @@ function createOcrProgressResponse(req, res) {
   }
 }
 
+<<<<<<< HEAD
 app.post('/api/ocr', requireAuth, upload.array('files', maxFileCount), async (req, res) => {
+=======
+app.post('/api/ocr', upload.array('files', maxFileCount), async (req, res) => {
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   let progressResponse
 
   try {
@@ -671,8 +691,11 @@ app.post('/api/ocr', requireAuth, upload.array('files', maxFileCount), async (re
     if (jobId) {
       aiReviewJobs.set(jobId, {
         jobId,
+<<<<<<< HEAD
         // 記錄建立者，供讀取端點做擁有權檢查（req.user 由 requireAuth 從 JWT 解出）
         ownerId: req.user?.sub,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         status: 'pending',
         model: ollamaConfig.model,
         fieldReviews: {},

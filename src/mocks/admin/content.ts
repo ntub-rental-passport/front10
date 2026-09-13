@@ -77,6 +77,7 @@ export function seedAnnouncements(): Announcement[] {
   ]
 }
 
+<<<<<<< HEAD
 const bannerImageMap: Record<string, string> = {
   'ban-1': 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200&h=400&fit=crop&crop=center',
   'ban-2': 'https://images.unsplash.com/photo-1554995207-c18c203602cb?w=1200&h=400&fit=crop&crop=center',
@@ -98,5 +99,12 @@ export function seedBanners(): Banner[] {
     { id: 'ban-1', title: '租補試算上線', imageUrl: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/subsidy', order: 0, published: true, updatedAt: daysAgo(6) },
     { id: 'ban-2', title: '契約分析教學', imageUrl: 'https://images.unsplash.com/photo-1554995207-c18c203602cb?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/contract', order: 1, published: true, updatedAt: daysAgo(6) },
     { id: 'ban-3', title: '點交存證（下架中）', imageUrl: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/handover', order: 2, published: false, updatedAt: daysAgo(6) },
+=======
+export function seedBanners(): Banner[] {
+  return [
+    { id: 'ban-1', title: '租補試算上線', imageUrl: 'https://placehold.co/1200x400/5660D6/FFFFFF?text=Subsidy', linkUrl: '/app/subsidy', order: 0, published: true, updatedAt: daysAgo(6) },
+    { id: 'ban-2', title: '契約分析教學', imageUrl: 'https://placehold.co/1200x400/0E9488/FFFFFF?text=Contract', linkUrl: '/app/contract', order: 1, published: true, updatedAt: daysAgo(6) },
+    { id: 'ban-3', title: '點交存證（下架中）', imageUrl: 'https://placehold.co/1200x400/D97706/FFFFFF?text=Handover', linkUrl: '/app/handover', order: 2, published: false, updatedAt: daysAgo(6) },
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   ]
 }

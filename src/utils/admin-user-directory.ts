@@ -13,10 +13,17 @@ import { depositGap, depositMatchOf, type DepositMatch } from './admin-deposit'
 import type { MaintenanceStatus } from './admin-maintenance'
 import { featureVerdict } from './admin-entitlements'
 
+<<<<<<< HEAD
+=======
+/** 到期前幾天開始標示「即將到期」 */
+export const EXPIRING_SOON_DAYS = 14
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 /**
  * 訂閱是否即將到期。
  *
  * 已停用的訂閱不算 —— 它已經沒有續約可言，混進警示只會製造雜訊。
+<<<<<<< HEAD
  *
  * `expiringSoonDays`（到期前幾天開始算「即將到期」）由呼叫端傳入，
  * 對應系統設定的 subscriptionExpiringSoonDays —— 這個檔案是純邏輯，不能自己去讀設定 collection。
@@ -24,11 +31,20 @@ import { featureVerdict } from './admin-entitlements'
 export function isSubscriptionExpiring(
   subscription: Subscription | null,
   expiringSoonDays: number,
+=======
+ */
+export function isSubscriptionExpiring(
+  subscription: Subscription | null,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   now: Date = new Date(),
 ): boolean {
   if (!subscription || !subscription.active) return false
   const remainingMs = new Date(subscription.expiresAt).getTime() - now.getTime()
+<<<<<<< HEAD
   return remainingMs > 0 && remainingMs <= expiringSoonDays * 24 * 60 * 60 * 1000
+=======
+  return remainingMs > 0 && remainingMs <= EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 /**
@@ -111,11 +127,17 @@ export interface UserDirectorySources {
  * 把工單／押金／訂閱接到每個使用者身上。一筆案件會同時掛在房東與租客兩邊。
  *
  * `now` 可注入，讓「即將到期」的測試不必跟著真實日期飄。
+<<<<<<< HEAD
  * `expiringSoonDays` 是訂閱到期提醒門檻，見 isSubscriptionExpiring 的說明。
  */
 export function joinUserDirectory(
   sources: UserDirectorySources,
   expiringSoonDays: number,
+=======
+ */
+export function joinUserDirectory(
+  sources: UserDirectorySources,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   now: Date = new Date(),
 ): UserDirectoryRow[] {
   const { users, tickets, deposits, subscriptions, plans } = sources
@@ -152,7 +174,11 @@ export function joinUserDirectory(
       openTicketCount: userTickets.filter((item) => item.open).length,
       overdueTicketCount: userTickets.filter((item) => item.status === 'overdue').length,
       mismatchedDepositCount: userDeposits.filter((item) => item.match === 'mismatched').length,
+<<<<<<< HEAD
       subscriptionExpiring: isSubscriptionExpiring(subscription, expiringSoonDays, now),
+=======
+      subscriptionExpiring: isSubscriptionExpiring(subscription, now),
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       quotaExhausted: isQuotaExhausted(subscription, plan),
     }
   })

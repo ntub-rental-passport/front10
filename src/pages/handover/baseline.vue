@@ -12,7 +12,11 @@
  * 匯出機制：把對應的 print-only 區塊用 v-if 渲染後呼叫 window.print()，
  * 瀏覽器列印對話框可以選擇實體列印或「另存 PDF」，兩種需求一次滿足。
  */
+<<<<<<< HEAD
 import SmartCaptureCamera, { type CapturePayload } from '@/src/components/handover/SmartCaptureCamera.vue'
+=======
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -59,6 +63,7 @@ import {
   groupItemsByRoom,
   hasEvidenceInPhase,
 } from '@/src/utils/handover'
+<<<<<<< HEAD
 // ---------- AR 相機彈窗狀態 ---------- //
 const showCameraDialog = ref(false)
 const activeTargetItem = ref<HandoverItem | null>(null)
@@ -77,6 +82,9 @@ function handlePhotoCaptured(payload: CapturePayload) {
     note: `已透過 AR 輔助拍攝存證（清晰度：${payload.quality.sharpness}）`,
   })
 }
+=======
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 const router = useRouter()
 const {
   properties,
@@ -423,12 +431,17 @@ function fmtDate(iso: string) {
                     variant="outline"
                     size="sm"
                     class="w-full"
+<<<<<<< HEAD
                     @click="openCaptureModal(it)"
+=======
+                    @click="removeEvidence(it.id, firstBaseline(it)!.id)"
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
                   >
                     重拍
                   </Button>
                 </div>
 
+<<<<<<< HEAD
                 <div
                   v-else
                   class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center p-3 gap-2"
@@ -460,6 +473,17 @@ function fmtDate(iso: string) {
                     </Button>
                   </div>
                 </div>
+=======
+                <button
+                  v-else
+                  class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                  @click="capturePhoto(it.id)"
+                >
+                  <Camera class="h-8 w-8 mb-2" />
+                  <span class="text-sm font-medium">點擊拍攝或上傳</span>
+                  <span class="text-xs mt-1">系統會 AI 把關清晰度</span>
+                </button>
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
               </CardContent>
             </Card>
           </div>
@@ -566,6 +590,7 @@ function fmtDate(iso: string) {
         </div>
       </div>
     </div>
+<<<<<<< HEAD
     <!-- AR 智慧相機彈窗 -->
     <SmartCaptureCamera
       v-if="activeTargetItem"
@@ -575,6 +600,8 @@ function fmtDate(iso: string) {
       :room-name="activeTargetItem.room"
       @captured="handlePhotoCaptured"
     />
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   </div>
 </template>
 

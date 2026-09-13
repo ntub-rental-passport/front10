@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite --port=5173 --strictPort --host=0.0.0.0",
     "dev:backend": "python -m uvicorn --app-dir backend main:app --port 8000",
+<<<<<<< HEAD
     "dev:all": "run-p dev dev:backend dev:api",
+=======
+    "dev:all": "run-p dev dev:backend",
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     "dev:api": "tsx watch server/index.js",
     "start:api": "node server/index.js",
     "build": "vue-tsc -b && vite build",
@@ -36,10 +40,15 @@
     "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+<<<<<<< HEAD
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
+=======
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     "lucide-vue-next": "^0.513.0",
     "maplibre-gl": "^5.24.0",
     "motion": "^12.23.24",
@@ -75,8 +84,11 @@
     "vite-plugin-vue-devtools": "^8.1.2",
     "vitest": "^3.2.7",
     "vue-tsc": "^2.2.0"
+<<<<<<< HEAD
   },
   "overrides": {
     "qs": "^6.16.0"
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   }
 }

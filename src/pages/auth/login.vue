@@ -45,7 +45,10 @@ import {
   exchangeGoogleTicket,
   getGoogleLoginUrl,
 } from '@/src/services/authApi'
+<<<<<<< HEAD
 import { normalizeAuthRedirect } from '@/src/utils/auth-redirect'
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 const email = ref('')
 const password = ref('')
@@ -66,12 +69,18 @@ const registerLink = computed(() => ({
   path: '/register',
   query: {
     role: selectedIdentity.value,
+<<<<<<< HEAD
     ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
   },
 }))
 
 const redirectTarget = computed(() => normalizeAuthRedirect(route.query.redirect))
 
+=======
+  },
+}))
+
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 function selectIdentity(identity: AuthIdentity): void {
   selectedIdentity.value = identity
   void router.replace({
@@ -83,7 +92,12 @@ function selectIdentity(identity: AuthIdentity): void {
 }
 
 function getPostLoginTarget(): string {
+<<<<<<< HEAD
   return redirectTarget.value || resolveRoleHome(selectedOption.value.authRole)
+=======
+  const redirectTarget = typeof route.query.redirect === 'string' ? route.query.redirect : null
+  return redirectTarget || resolveRoleHome(selectedOption.value.authRole)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 const googleLoginUrl = computed(() =>
@@ -190,6 +204,7 @@ async function handleGoogleOAuthReturn(): Promise<void> {
     const account = await exchangeGoogleTicket(ticket)
     if (account.registrationRequired === true) {
       saveGoogleRegistrationContext(account)
+<<<<<<< HEAD
       const accountRedirect = normalizeAuthRedirect(account.redirectPath)
       await router.replace({
         path: '/register',
@@ -202,6 +217,15 @@ async function handleGoogleOAuthReturn(): Promise<void> {
       return
     }
     const session = registerWithGoogle(account.email, account.role, account.accessToken, account.userId)
+=======
+      await router.replace({
+        path: '/register',
+        query: { role: account.role, google: '1' },
+      })
+      return
+    }
+    const session = registerWithGoogle(account.email, account.role)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     const target = needsNicknameSetup(session)
       ? '/welcome'
       : account.redirectPath || resolveRoleHome(session.role)

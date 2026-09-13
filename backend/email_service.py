@@ -8,6 +8,7 @@ class EmailConfigurationError(RuntimeError):
     pass
 
 
+<<<<<<< HEAD
 def _smtp_config() -> dict[str, str | int]:
     """讀取並檢查 SMTP 設定。由各寄信函式共用，避免重複與設定漏檢。"""
     config = {
@@ -40,6 +41,20 @@ def _send(message: EmailMessage, config: dict[str, str | int]) -> None:
 def send_verification_email(recipient: str, code: str, expires_minutes: int = 2) -> None:
     config = _smtp_config()
     from_name, from_email = config["from_name"], config["from_email"]
+=======
+def send_verification_email(recipient: str, code: str, expires_minutes: int = 2) -> None:
+    host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME", "").strip()
+    app_password = os.getenv("SMTP_APP_PASSWORD", "").replace(" ", "")
+    from_email = os.getenv("SMTP_FROM_EMAIL", username).strip()
+    from_name = os.getenv("SMTP_FROM_NAME", "RentMate").strip()
+
+    if not username or not app_password or not from_email:
+        raise EmailConfigurationError(
+            "尚未設定 Gmail SMTP，請檢查 SMTP_USERNAME、SMTP_APP_PASSWORD 與 SMTP_FROM_EMAIL。"
+        )
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
     message = EmailMessage()
     message["Subject"] = f"RentMate 電子信箱驗證碼：{code}"
@@ -65,6 +80,7 @@ def send_verification_email(recipient: str, code: str, expires_minutes: int = 2)
         subtype="html",
     )
 
+<<<<<<< HEAD
     _send(message, config)
 
 
@@ -115,3 +131,12 @@ def send_admin_login_code(
         subtype="html",
     )
     _send(message, config)
+=======
+    context = ssl.create_default_context()
+    with smtplib.SMTP(host, port, timeout=15) as smtp:
+        smtp.ehlo()
+        smtp.starttls(context=context)
+        smtp.ehlo()
+        smtp.login(username, app_password)
+        smtp.send_message(message)
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

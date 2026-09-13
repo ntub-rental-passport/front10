@@ -454,7 +454,11 @@
   border-radius: 0.25rem;
   background: #fff;
   box-shadow: 0 12px 28px rgb(15 23 42 / 12%);
+<<<<<<< HEAD
   color: var(--ink, #17213b);
+=======
+  color: #17213b;
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 .analysis-pdf-page::before {
@@ -594,7 +598,11 @@
 }
 
 .risk-card.is-low {
+<<<<<<< HEAD
   border-left-color: #17b26a;
+=======
+  border-left-color: #10b981;
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 .risk-card-main {
@@ -802,7 +810,11 @@
 }
 
 .risk-empty-state svg {
+<<<<<<< HEAD
   color: #17b26a;
+=======
+  color: #10b981;
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 .risk-empty-state strong {
@@ -1188,6 +1200,7 @@ textarea:focus-visible {
   }
 }
 
+<<<<<<< HEAD
 .analysis-page-text,
 .analysis-reader-canvas,
 .risk-list,
@@ -1931,6 +1944,8 @@ textarea:focus-visible {
   }
 }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 /* =========================================================
    Workspace height + independent scrolling corrections
    ========================================================= */
@@ -1944,6 +1959,7 @@ textarea:focus-visible {
   align-items: stretch;
 }
 
+<<<<<<< HEAD
 .analysis-header-actions {
   display: flex;
   align-items: center;
@@ -2102,6 +2118,8 @@ textarea:focus-visible {
   }
 }
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 .analysis-reader-card,
 .analysis-right-column,
 .risk-panel {
@@ -2239,4 +2257,8 @@ textarea:focus-visible {
     height: min(68dvh, 36rem);
     min-height: 28rem;
   }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

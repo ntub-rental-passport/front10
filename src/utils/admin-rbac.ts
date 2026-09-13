@@ -37,7 +37,10 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       { label: '內容管理', path: '/admin/content', roles: ['super', 'admin'] },
       { label: '通知管理', path: '/admin/notifications', roles: ['super', 'admin'] },
+<<<<<<< HEAD
       { label: '通知中心', path: '/admin/notification-center', roles: ['super', 'admin'] },
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     ],
   },
   {

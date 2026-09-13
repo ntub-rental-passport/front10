@@ -16,7 +16,11 @@ import requests as http_requests
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from dotenv import dotenv_values, load_dotenv
+<<<<<<< HEAD
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
+=======
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, status
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 from fastapi.responses import RedirectResponse
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleRequest
@@ -26,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
+<<<<<<< HEAD
 from email_service import (
     EmailConfigurationError,
     send_admin_login_code,
@@ -46,6 +51,12 @@ from security import (
     create_cookie_token,   # Cookie 版（HttpOnly JWT）
     get_current_user,
     set_auth_cookie,
+=======
+from email_service import EmailConfigurationError, send_verification_email
+from models import (
+    PendingRegistration,
+    User,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 )
 from verification import (
     generate_verification_code,
@@ -80,12 +91,18 @@ class EmailLoginRequest(BaseModel):
 
 
 class EmailLoginResponse(BaseModel):
+<<<<<<< HEAD
     userId: int
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     email: str
     role: str
     displayName: str | None = None
     avatarUrl: str | None = None
+<<<<<<< HEAD
     accessToken: str
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 
 class GoogleLoginRequest(BaseModel):
@@ -105,13 +122,19 @@ class GoogleAccountResponse(BaseModel):
 
 
 class GoogleOAuthSessionResponse(GoogleAccountResponse):
+<<<<<<< HEAD
     userId: int | None = None
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     flowVersion: int = 2
     role: str
     redirectPath: str | None = None
     registrationRequired: bool
     registrationToken: str | None = None
+<<<<<<< HEAD
     accessToken: str | None = None
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 
 class RegistrationStartRequest(BaseModel):
@@ -140,12 +163,18 @@ class RegistrationPendingResponse(BaseModel):
 
 
 class RegistrationVerifyResponse(BaseModel):
+<<<<<<< HEAD
     userId: int
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     email: str
     role: str
     displayName: str | None = None
     avatarUrl: str | None = None
+<<<<<<< HEAD
     accessToken: str
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 
 def _google_config() -> tuple[str, str, str, str]:
@@ -258,6 +287,7 @@ def _read_signed_state(state_value: str, signing_key: str) -> dict[str, object]:
         ) from error
 
 
+<<<<<<< HEAD
 def _create_google_registration_token(
     account: GoogleAccountResponse,
     role: str,
@@ -293,6 +323,8 @@ def _read_google_registration_token(token: str, signing_key: str) -> dict[str, o
         ) from error
 
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 def _normalize_email(value: str | None) -> str:
     email = (value or "").strip().lower()
     if not email or len(email) > 254 or "@" not in email:
@@ -306,7 +338,10 @@ def _normalize_email(value: str | None) -> str:
 @router.post("/login", response_model=EmailLoginResponse)
 def login_with_email(
     payload: EmailLoginRequest,
+<<<<<<< HEAD
     response: Response,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     db: Session = Depends(get_db),
 ) -> EmailLoginResponse:
     email = _normalize_email(payload.email)
@@ -314,6 +349,7 @@ def login_with_email(
         raise HTTPException(status_code=422, detail="role-mismatch")
 
     user = db.query(User).filter(User.email == email).first()
+<<<<<<< HEAD
     if user is None or user.password_credential is None:
         raise HTTPException(status_code=404, detail="account-not-found")
     if user.email_verified_at is None:
@@ -344,6 +380,29 @@ def login_with_email(
         displayName=user.display_name,
         avatarUrl=user.avatar_url,
         accessToken=create_access_token(user.id, payload.role),
+=======
+    if user is None or user.password_hash is None:
+        raise HTTPException(status_code=404, detail="account-not-found")
+    if user.email_verified_at is None:
+        raise HTTPException(status_code=403, detail="email-not-verified")
+    if user.role != payload.role:
+        raise HTTPException(status_code=403, detail="role-mismatch")
+
+    try:
+        password_hasher.verify(user.password_hash, payload.password)
+    except (InvalidHashError, VerificationError, VerifyMismatchError):
+        raise HTTPException(status_code=401, detail="invalid-password")
+
+    if password_hasher.check_needs_rehash(user.password_hash):
+        user.password_hash = password_hasher.hash(payload.password)
+        db.commit()
+
+    return EmailLoginResponse(
+        email=user.email,
+        role=user.role,
+        displayName=user.display_name,
+        avatarUrl=getattr(user, "avatar_url", None),
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
 
 
@@ -355,6 +414,7 @@ def _registration_limits() -> tuple[int, int, int, int]:
     return expires_seconds, max_attempts, resend_cooldown, max_sends
 
 
+<<<<<<< HEAD
 def _google_http_session() -> http_requests.Session:
     session = http_requests.Session()
     session.trust_env = os.getenv("GOOGLE_OAUTH_TRUST_ENV_PROXY", "false").lower() in {
@@ -365,6 +425,8 @@ def _google_http_session() -> http_requests.Session:
     return session
 
 
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 def _pending_response(pending: PendingRegistration, now: datetime) -> RegistrationPendingResponse:
     _, max_attempts, _, _ = _registration_limits()
     return RegistrationPendingResponse(
@@ -379,12 +441,20 @@ def _pending_response(pending: PendingRegistration, now: datetime) -> Registrati
 
 def _verify_google_id_token(credential: str, client_id: str) -> GoogleAccountResponse:
     try:
+<<<<<<< HEAD
         with _google_http_session() as session:
             claims = id_token.verify_oauth2_token(
                 credential,
                 GoogleRequest(session=session),
                 client_id,
             )
+=======
+        claims = id_token.verify_oauth2_token(
+            credential,
+            GoogleRequest(),
+            client_id,
+        )
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -489,6 +559,7 @@ def google_oauth_callback(
 
     try:
         state_payload = _read_signed_state(state_value, client_secret)
+<<<<<<< HEAD
         with _google_http_session() as session:
             token_response = session.post(
                 GOOGLE_TOKEN_URL,
@@ -501,6 +572,19 @@ def google_oauth_callback(
                 },
                 timeout=15,
             )
+=======
+        token_response = http_requests.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": redirect_uri,
+            },
+            timeout=15,
+        )
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         token_response.raise_for_status()
         credential = token_response.json().get("id_token")
         if not credential:
@@ -528,7 +612,10 @@ def google_oauth_callback(
 @router.post("/google/session", response_model=GoogleOAuthSessionResponse)
 def exchange_google_ticket(
     payload: GoogleTicketRequest,
+<<<<<<< HEAD
     response: Response,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     db: Session = Depends(get_db),
 ) -> GoogleOAuthSessionResponse:
     with _ticket_lock:
@@ -547,6 +634,7 @@ def exchange_google_ticket(
             detail="Google 登入資料格式錯誤。",
         )
 
+<<<<<<< HEAD
     identity = db.query(UserIdentity).filter(
         UserIdentity.provider == "google",
         UserIdentity.provider_subject == account.subject,
@@ -586,14 +674,62 @@ def exchange_google_ticket(
         userId=(identity.user_id if identity else None),
         flowVersion=2,
         role=requested_role,
+=======
+    requested_role = _safe_role(str(ticket_data["role"]))
+
+    # 直接使用 google_sub 查詢 Users 表
+    user = db.query(User).filter(User.google_sub == account.subject).first()
+
+    if user is None:
+        # 首次 Google 登入：直接新增使用者
+        now = datetime.utcnow()
+        user = User(
+            email=account.email,
+            display_name=account.name,
+            google_sub=account.subject,
+            role=requested_role,
+            email_verified_at=now,
+            created_at=now,
+        )
+        db.add(user)
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError:
+            db.rollback()
+            # 若已有此 Email 的一般密碼帳號，自動補上 google_sub 綁定
+            user = db.query(User).filter(User.email == account.email).first()
+            if user:
+                user.google_sub = account.subject
+                db.commit()
+            else:
+                raise HTTPException(status_code=409, detail="帳號建立失敗，請稍後再試。")
+    else:
+        # 已有 Google 帳號：比對角色
+        if user.role != requested_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"此帳號的角色為「{'租客' if user.role == 'tenant' else '房東'}」，請切換頁籤登入。",
+            )
+
+    return GoogleOAuthSessionResponse(
+        **account.model_dump(),
+        flowVersion=2,
+        role=user.role,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         redirectPath=(
             str(ticket_data["redirectPath"])
             if ticket_data.get("redirectPath")
             else None
         ),
+<<<<<<< HEAD
         registrationRequired=registration_required,
         registrationToken=registration_token,
         accessToken=(create_access_token(identity.user_id, requested_role) if identity else None),
+=======
+        registrationRequired=False,
+        registrationToken=None,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     )
 
 
@@ -618,6 +754,7 @@ def start_registration(
 ) -> RegistrationPendingResponse:
     now = datetime.utcnow()
     expires_seconds, _, resend_cooldown, max_sends = _registration_limits()
+<<<<<<< HEAD
     provider = "password"
     provider_subject = None
     display_name = None
@@ -657,6 +794,20 @@ def start_registration(
         UserIdentity.provider_subject == provider_subject,
     ).first():
         raise HTTPException(status_code=409, detail="此 Google 帳號已經註冊，請直接登入。")
+=======
+    
+    email = _normalize_email(payload.email)
+    password = payload.password or ""
+    if len(password) < 8 or len(password) > 128:
+        raise HTTPException(status_code=422, detail="密碼長度必須介於 8 到 128 個字元。")
+    
+    password_hash = password_hasher.hash(password)
+    role = _safe_role(payload.role)
+
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user:
+        raise HTTPException(status_code=409, detail="此電子信箱已經註冊，請直接登入。")
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
     pending = db.query(PendingRegistration).filter(
         PendingRegistration.email == email
@@ -677,7 +828,10 @@ def start_registration(
         pending = PendingRegistration(
             id=str(uuid.uuid4()),
             email=email,
+<<<<<<< HEAD
             provider=provider,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
             send_count=1,
             created_at=now,
         )
@@ -685,6 +839,7 @@ def start_registration(
     else:
         pending.send_count += 1
 
+<<<<<<< HEAD
     pending.provider = provider
     pending.provider_subject = provider_subject
     pending.display_name = display_name
@@ -692,11 +847,18 @@ def start_registration(
     pending.password_hash = password_hash
     pending.role = role
     pending.invite_code = payload.inviteCode.strip() if payload.inviteCode else None
+=======
+    pending.password_hash = password_hash
+    pending.role = role
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     pending.verification_code_hash = hash_verification_code(pending.id, code)
     pending.expires_at = now + timedelta(seconds=expires_seconds)
     pending.resend_available_at = now + timedelta(seconds=resend_cooldown)
     pending.attempt_count = 0
+<<<<<<< HEAD
     pending.updated_at = now
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
     try:
         db.flush()
@@ -769,7 +931,10 @@ def resend_registration_code(
 @router.post("/registration/verify", response_model=RegistrationVerifyResponse)
 def verify_registration(
     payload: RegistrationVerifyRequest,
+<<<<<<< HEAD
     http_response: Response,
+=======
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     db: Session = Depends(get_db),
 ) -> RegistrationVerifyResponse:
     now = datetime.utcnow()
@@ -801,12 +966,18 @@ def verify_registration(
     # 建立正式的 User 紀錄
     user = User(
         email=pending.email,
+<<<<<<< HEAD
         display_name=pending.display_name,
         avatar_url=pending.avatar_url,
+=======
+        password_hash=pending.password_hash,
+        role=pending.role,
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         email_verified_at=now,
         created_at=now,
     )
     db.add(user)
+<<<<<<< HEAD
     try:
         db.flush()  # 先取得新使用者的自增 id，才能建立關聯資料與簽發 token
         db.add(UserRole(user_id=user.id, role=pending.role, created_at=now))
@@ -1054,3 +1225,19 @@ def admin_login_verify(
         avatarUrl=user.avatar_url,
         accessToken=create_access_token(user.id, "admin"),
     )
+=======
+    
+    try:
+        response = RegistrationVerifyResponse(
+            email=pending.email,
+            role=pending.role,
+            displayName=None,
+            avatarUrl=None,
+        )
+        db.delete(pending)
+        db.commit()
+        return response
+    except IntegrityError as error:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="帳號已由另一個驗證程序建立，請直接登入。") from error
+>>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
