@@ -180,6 +180,11 @@ export interface AdminLoginChallengeResponse {
   email: string
   expiresIn: number
   attemptsRemaining: number
+  /**
+   * 開發用的驗證碼。只有在本機、且該帳號被 DEV_ADMIN_NO_2FA_EMAIL 指定時才有值。
+   * 正式環境永遠是 undefined —— 驗證碼只會出現在信箱裡。
+   */
+  devCode?: string | null
 }
 
 /**
