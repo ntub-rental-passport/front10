@@ -151,7 +151,7 @@ async function processPhotoWithAI(item: HandoverItem, dataUrl: string) {
 
   try {
     // 3. 發送 POST 請求至 FastAPI
-    const response = await fetch('http://127.0.0.1:8000/api/inspection/analyze', {
+    const response = await fetch(`${(import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/api\/?$/, '')}/api/inspection/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

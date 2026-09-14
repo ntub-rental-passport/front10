@@ -21,11 +21,6 @@ NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 router = APIRouter(prefix="/api/inspection", tags=["Inspection"])
 
-client = OpenAI(
-    base_url="https://integrate.api.nvidia.com/v1",
-    api_key=NVIDIA_API_KEY,
-    timeout=60.0,
-)
 
 def compress_image(base64_data_url: str, max_size=(1280, 1280)) -> str:
     """去除 DataURL 前綴、校正方向並壓縮為 JPEG Base64 字串"""
@@ -98,6 +93,11 @@ async def analyze_defect(req: InspectRequest):
     )
 
     try:
+        client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=current_key,
+            timeout=60.0,
+        )
         response = client.chat.completions.create(
             model="meta/llama-3.2-11b-vision-instruct",
             messages=[

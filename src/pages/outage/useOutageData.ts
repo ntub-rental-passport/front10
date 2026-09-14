@@ -92,7 +92,7 @@ async function fetchOutages(addressToQuery?: string) {
   const queryAddr = addressToQuery || rentalAddress.value
 
   try {
-    const res = await fetch(`http://127.0.0.1:8000/api/outage/notices?address=${encodeURIComponent(queryAddr)}`)
+    const res = await fetch(`${(import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/api\/?$/, '')}/api/outage/notices?address=${encodeURIComponent(queryAddr)}`)
     if (!res.ok) throw new Error(`HTTP 錯誤: ${res.status}`)
     const data = await res.json()
 
