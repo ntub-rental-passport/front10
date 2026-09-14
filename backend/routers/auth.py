@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import smtplib
@@ -10,7 +11,7 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import requests as http_requests
 from argon2 import PasswordHasher
@@ -56,6 +57,8 @@ from verification import (
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(ROOT_ENV_FILE)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -956,18 +959,70 @@ ADMIN_LOGIN_CODE_EXPIRES_SECONDS = 5 * 60
 ADMIN_LOGIN_MAX_ATTEMPTS = 3
 
 
+# 本機開發：資料庫在這幾個主機上，才允許免驗證碼登入
+_LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _dev_no_2fa_email() -> str:
+    """本機開發時可以免驗證碼登入的那一個帳號。沒有就回空字串。
+
+    ## 為什麼需要
+
+    管理員登入的第二階段靠信箱收驗證碼。開發用的測試帳號信箱是假的
+    （admin@rentmate.tw 這種），信寄得出去但沒有人收得到 ——
+    結果是後台頁面在開發機根本打不開。
+
+    真正的管理員用真信箱，不受影響，也不該受影響。
+
+    ## 兩道守衛，缺一不可
+
+      1. DEV_ADMIN_NO_2FA_EMAIL 必須設定，而且只對這一個帳號生效
+      2. DATABASE_URL 的主機必須是本機
+
+    第 2 道是結構性的：VM 上的 DATABASE_URL 指向 compose 的 `mysql`
+    主機名，所以就算有人不小心把 DEV_ADMIN_NO_2FA_EMAIL 抄進正式環境的
+    .env，這裡也不會生效。只靠環境變數的話，一次複製貼上就會把
+    2FA 關掉，而且不會有任何人發現。
+
+    ## 它沒有繞過的東西
+
+    挑戰紀錄、雜湊、嘗試次數上限、過期時間全部照走，/admin/verify
+    也是同一個端點 —— 只是把驗證碼從信箱改成直接回給前端。
+    帳號密碼一樣要正確，停用的帳號一樣進不來。
+    """
+    email = (os.getenv("DEV_ADMIN_NO_2FA_EMAIL") or "").strip().lower()
+    if not email:
+        return ""
+
+    host = (urlparse(os.getenv("DATABASE_URL", "")).hostname or "").lower()
+    if host not in _LOCAL_DB_HOSTS:
+        logger.warning(
+            "DEV_ADMIN_NO_2FA_EMAIL 有設定，但資料庫主機是「%s」不是本機 —— 已忽略。"
+            "免驗證碼登入只能用在開發機。",
+            host or "（未設定）",
+        )
+        return ""
+
+    return email
+
+
 class AdminLoginRequest(BaseModel):
     email: str
     password: str = Field(min_length=1, max_length=128)
 
 
 class AdminLoginChallengeResponse(BaseModel):
-    """第一階段回應：不含任何身分資訊，僅給後續驗證用的識別碼。"""
+    """第一階段回應：不含任何身分資訊，僅給後續驗證用的識別碼。
+
+    devCode 只在本機開發、且該帳號被明確指定時才有值（見 _dev_no_2fa_email）。
+    正式環境永遠是 None —— 驗證碼只會出現在信箱裡。
+    """
 
     challengeId: str
     email: str
     expiresIn: int
     attemptsRemaining: int
+    devCode: str | None = None
 
 
 class AdminLoginVerifyRequest(BaseModel):
@@ -1036,6 +1091,24 @@ def admin_login_start(
         created_at=now,
     )
     db.add(challenge)
+
+    # 本機開發的指定帳號：不寄信，驗證碼直接回給前端。
+    #
+    # 之所以需要這條路：測試帳號的信箱是假的，寄出去沒人收得到。
+    #
+    # 注意這裡**沒有**跳過驗證 —— 挑戰紀錄照建、雜湊照算、嘗試次數與
+    # 過期時間照舊，前端仍要拿這個碼去打 /admin/verify。差別只在
+    # 「碼從哪裡來」。這樣就不會多出一條沒人在看的登入路徑。
+    if email == _dev_no_2fa_email():
+        db.commit()
+        logger.warning("本機免驗證碼登入：%s（正式環境不會有這行）", user.email)
+        return AdminLoginChallengeResponse(
+            challengeId=challenge_id,
+            email=user.email,
+            expiresIn=ADMIN_LOGIN_CODE_EXPIRES_SECONDS,
+            attemptsRemaining=ADMIN_LOGIN_MAX_ATTEMPTS,
+            devCode=code,
+        )
 
     try:
         db.flush()

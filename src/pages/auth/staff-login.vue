@@ -70,6 +70,14 @@ async function submitCredentials(): Promise<void> {
     password.value = ''
     code.value = ''
     step.value = 'code'
+
+    // 本機開發：測試帳號的信箱是假的，後端直接把驗證碼回給我們。
+    // 自動送出而不是叫人手抄一次 —— 那一步沒有任何驗證價值。
+    // 正式環境不會有 devCode，這段等於不存在。
+    if (challenge.value.devCode) {
+      code.value = challenge.value.devCode
+      await submitCode()
+    }
   } catch (error) {
     // 後端對「帳號不存在／非管理員／密碼錯誤」一律回同一句話，
     // 前端原樣顯示即可，不可再自行細分，否則等於還原了列舉管道

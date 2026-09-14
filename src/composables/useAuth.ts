@@ -207,6 +207,12 @@ export interface AdminLoginChallenge {
   /** 驗證碼失效時間（epoch 毫秒），用於倒數。 */
   expiresAt: number
   attemptsRemaining: number
+  /**
+   * 本機開發時後端直接給的驗證碼（測試帳號的信箱是假的，收不到信）。
+   * 有值時登入頁會自動帶入並送出，不讓人手動抄一次。
+   * 正式環境永遠沒有這個值。
+   */
+  devCode?: string | null
 }
 
 /**
@@ -226,6 +232,7 @@ export async function startAdminSignIn(
     email: result.email,
     expiresAt: Date.now() + result.expiresIn * 1000,
     attemptsRemaining: result.attemptsRemaining,
+    devCode: result.devCode ?? null,
   }
 }
 
