@@ -9,6 +9,7 @@ from sqlalchemy import text
 from database import engine, Base
 from metrics import count_requests
 from routers import admin, auth, contract, garbage, landlord_properties, landlord_tenants, inspection, tenant_leases, outage
+from routers import notes, households
 from garbage_service import dispatch_due
 
 # 有設定 MySQL 時才建立資料表；Google 登入驗證本身不依賴資料庫。
@@ -61,6 +62,8 @@ app.include_router(admin.router)
 app.include_router(garbage.router)
 app.include_router(inspection.router)
 app.include_router(outage.router)
+app.include_router(notes.router)
+app.include_router(households.router)
 
 @app.get("/")
 def root():

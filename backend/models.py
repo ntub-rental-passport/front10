@@ -480,3 +480,20 @@ class PendingAdminLogin(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
 
     user = relationship("User")
+
+
+class Note(Base):
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False, default="")
+    note_date = Column(Date, nullable=False, index=True)
+    note_time = Column(String(5), nullable=True)
+    tag = Column(String(30), nullable=False)
+    is_done = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    user = relationship("User")
