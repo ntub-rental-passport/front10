@@ -87,6 +87,17 @@ export interface UserTicketView extends MaintenanceTicket {
 
 export interface UserDirectoryRow {
   user: AdminUser
+  /**
+   * 資料庫裡的帳號 id。只有真實帳號有值，展示資料為 undefined。
+   *
+   * 它同時是兩件事的依據：
+   *   1. 畫面上要不要標「真實帳號」
+   *   2. 停用這一列時要打哪個 API（展示資料沒有真的可以停用的對象）
+   *
+   * 用「有沒有值」而不是另開一個布林旗標：需要 id 的地方剛好就是需要
+   * 區分真假的地方，兩個欄位可能不同步，一個不會。
+   */
+  realAccountId?: number
   /** 沒有訂閱記錄時為 null，詳情頁顯示空狀態 */
   subscription: Subscription | null
   plan: SubscriptionPlan | null
@@ -98,6 +109,65 @@ export interface UserDirectoryRow {
   subscriptionExpiring: boolean
   quotaExhausted: boolean
 }
+
+/** 後端 /api/admin/users 回傳的一列，只取這個檔案用得到的欄位。 */
+export interface RealAccountInput {
+  id: number
+  email: string
+  displayName: string | null
+  roles: string[]
+  status: string
+  emailVerified: boolean
+  createdAt: string | null
+  lastLoginAt: string | null
+}
+
+
+/**
+ * 把資料庫的真實帳號接成列表的一列。
+ *
+ * 真實帳號沒有訂閱、押金、工單這些關聯資料 —— 那些是展示資料集為了
+ * 呈現各模組而生成的，彼此以固定 id 互相指涉。所以這裡一律給空值，
+ * 讓畫面顯示「—」，而不是編造數字。
+ *
+ * adminRole 一律是 'super'：後台沒有、也刻意不做「網頁上新增管理員」的
+ * 功能，管理員只能由能登入伺服器的人用 manage_admin.py 授予。
+ * 所以資料庫裡帶 admin 角色的人，就是最高權限的那一群。
+ */
+export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
+  const isAdmin = account.roles.includes('admin')
+  const role: AdminUserRole = isAdmin
+    ? 'admin'
+    : account.roles.includes('landlord')
+      ? 'landlord'
+      : 'user'
+
+  return {
+    realAccountId: account.id,
+    user: {
+      // 加前綴避免與展示資料的 id（u-001 之類）相撞
+      id: `real-${account.id}`,
+      email: account.email,
+      nickname: account.displayName,
+      role,
+      adminRole: isAdmin ? 'super' : null,
+      status: account.status === 'suspended' ? 'suspended' : 'active',
+      emailVerified: account.emailVerified,
+      registeredAt: account.createdAt ?? '',
+      lastLoginAt: account.lastLoginAt,
+    },
+    subscription: null,
+    plan: null,
+    deposits: [],
+    tickets: [],
+    openTicketCount: 0,
+    overdueTicketCount: 0,
+    mismatchedDepositCount: 0,
+    subscriptionExpiring: false,
+    quotaExhausted: false,
+  }
+}
+
 
 export interface UserDirectorySources {
   users: AdminUser[]

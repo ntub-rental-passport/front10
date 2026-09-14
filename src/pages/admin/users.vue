@@ -20,9 +20,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { BadgeCheck, Search, ShieldAlert, X } from 'lucide-vue-next'
+import { BadgeCheck, RefreshCw, Search, ShieldAlert, X } from 'lucide-vue-next'
 import AdminRoleCountCard from '@/src/components/admin/AdminRoleCountCard.vue'
-import RealAccountsCard from '@/src/components/admin/RealAccountsCard.vue'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vue'
 import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
@@ -39,8 +38,19 @@ import { chartColor, chartSeries } from '@/src/constants/admin-chart'
 const route = useRoute()
 const router = useRouter()
 
-const { rows, filteredRows, filter, filterActive, clearFilter, planSegments, adminCounts } =
-  useAdminDirectory()
+const {
+  rows,
+  filteredRows,
+  filter,
+  filterActive,
+  clearFilter,
+  planSegments,
+  adminCounts,
+  realAccountsLoading,
+  realAccountsError,
+  reloadRealAccounts,
+  setRealAccountStatus,
+} = useAdminDirectory()
 
 // 對應 planDistribution 的順序：免費、進階、專業、尚未訂閱。
 // 用明度表達層級 —— 方案越高階顏色越深，未訂閱最淡。
@@ -72,6 +82,40 @@ watch(
 )
 
 const alertOptions = Object.keys(userAlertLabels) as UserAlert[]
+
+/**
+ * 身分欄的文字。
+ *
+ * 「超級管理員」與一般管理員分開顯示：前者只能由能登入伺服器的人用
+ * manage_admin.py 授予，權限與影響範圍完全不同，混用同一個標籤
+ * 會讓人以為後台可以自己加。
+ */
+function roleLabel(row: UserDirectoryRow): string {
+  if (row.user.role === 'admin' && row.user.adminRole === 'super') return '超級管理員'
+  return adminRoleLabels[row.user.role]
+}
+
+// ── 停用／啟用真實帳號 ──────────────────────────────────────────
+//
+// 只有真實帳號有這個操作。展示資料沒有可以停用的對象 ——
+// 給它一顆按不動的按鈕，只會讓人以為是壞掉了。
+
+const statusBusyId = ref<number | null>(null)
+const statusError = ref('')
+
+async function toggleStatus(row: UserDirectoryRow): Promise<void> {
+  if (row.realAccountId === undefined) return
+  statusError.value = ''
+  statusBusyId.value = row.realAccountId
+  try {
+    await setRealAccountStatus(row, row.user.status === 'active' ? 'suspended' : 'active')
+  } catch (error) {
+    // 後端的拒絕理由要讓操作者看到（不能停用自己、這是最後一位管理員）
+    statusError.value = error instanceof Error ? error.message : '操作失敗，請稍後再試。'
+  } finally {
+    statusBusyId.value = null
+  }
+}
 
 function depositLabel(row: UserDirectoryRow): string {
   if (row.deposits.length === 0) return '—'
@@ -123,20 +167,27 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
     </div>
 
     <!--
-      真實帳號放最上面，與下方的展示資料明確分開。
-      下方那份是為了展示各模組（訂閱、押金、工單）而生成的假資料，
-      彼此以固定 id 互相指涉；真實帳號沒有那些關聯資料，
-      硬併成一張表會讓人分不清哪一列的「停用」是真的會生效的。
+      真實帳號與展示資料併在同一張表，真實的排在前面並帶「真實帳號」標記。
+      標記不是裝飾：只有帶標記的列才有「停用」，而那個停用會讓對方
+      立刻登不進來。看不出差別的話，管理員會分不清自己按的是哪一種。
     -->
-    <RealAccountsCard />
-
-    <div>
-      <h2 class="text-lg font-bold">展示資料</h2>
-      <p class="mt-1 text-sm text-muted-foreground">
-        以下為展示用資料集，用於呈現訂閱容量、押金對帳與報修工單的關聯檢視，
-        與資料庫中的真實帳號無關。
-      </p>
+    <div
+      v-if="realAccountsError"
+      class="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm"
+    >
+      <p class="font-medium text-amber-700 dark:text-amber-400">{{ realAccountsError }}</p>
+      <Button variant="outline" size="sm" class="mt-2" @click="reloadRealAccounts">
+        <RefreshCw class="mr-1 h-3.5 w-3.5" />
+        重新讀取
+      </Button>
     </div>
+
+    <p
+      v-if="statusError"
+      class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm font-medium text-destructive"
+    >
+      {{ statusError }}
+    </p>
 
     <!--
       甜甜圈要留白給外側標籤所以吃比較多寬度；管理員人數只有兩個數字，
@@ -220,6 +271,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
           <p class="whitespace-nowrap text-sm text-muted-foreground">
             共 {{ filteredRows.length }} 人
+            <span v-if="realAccountsLoading">（真實帳號讀取中…）</span>
           </p>
         </div>
 
@@ -257,10 +309,16 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
                     </span>
                   </span>
                 </div>
-                <p class="text-sm text-muted-foreground">{{ row.user.nickname ?? '—' }}</p>
+                <div class="flex items-center gap-1.5">
+                  <p class="text-sm text-muted-foreground">{{ row.user.nickname ?? '—' }}</p>
+                  <!-- 只有真實帳號帶標記：帶標記的列，停用會讓對方真的登不進來 -->
+                  <Badge v-if="row.realAccountId !== undefined" variant="outline" class="text-[10px]">
+                    真實帳號
+                  </Badge>
+                </div>
               </TableCell>
 
-              <TableCell class="whitespace-nowrap">{{ adminRoleLabels[row.user.role] }}</TableCell>
+              <TableCell class="whitespace-nowrap">{{ roleLabel(row) }}</TableCell>
 
               <TableCell class="whitespace-nowrap">
                 <span v-if="row.plan">{{ row.plan.name }}</span>
@@ -299,6 +357,15 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
               <TableCell class="text-right" @click.stop>
                 <AdminRowActions :actions="[]">
                   <Button variant="outline" size="sm" @click="openSend(row)">發送通知</Button>
+                  <Button
+                    v-if="row.realAccountId !== undefined"
+                    :variant="row.user.status === 'active' ? 'destructive' : 'outline'"
+                    size="sm"
+                    :disabled="statusBusyId === row.realAccountId"
+                    @click="toggleStatus(row)"
+                  >
+                    {{ row.user.status === 'active' ? '停用' : '啟用' }}
+                  </Button>
                 </AdminRowActions>
               </TableCell>
             </TableRow>

@@ -10,6 +10,7 @@ import {
   isTicketOpen,
   joinUserDirectory,
   planDistribution,
+  realAccountToRow,
   type UserDirectoryFilter,
   type UserDirectorySources,
 } from './admin-user-directory'
@@ -435,5 +436,68 @@ describe('isFilterActive', () => {
   it('任一軸有值就為 true', () => {
     expect(isFilterActive({ ...emptyUserDirectoryFilter, alert: 'ticket-overdue' })).toBe(true)
     expect(isFilterActive({ ...emptyUserDirectoryFilter, plan: 'none' })).toBe(true)
+  })
+})
+
+describe('realAccountToRow', () => {
+  const base = {
+    id: 7,
+    email: 'teammate@ntub.edu.tw',
+    displayName: '組員',
+    roles: ['tenant'],
+    status: 'active',
+    emailVerified: true,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    lastLoginAt: '2026-09-13T00:00:00.000Z',
+  }
+
+  it('帶 admin 角色的就是超級管理員', () => {
+    // 後台刻意不做「網頁上新增管理員」，資料庫裡帶 admin 的人
+    // 都是由能登入伺服器的人用 manage_admin.py 授予的
+    const row = realAccountToRow({ ...base, roles: ['tenant', 'admin'] })
+    expect(row.user.role).toBe('admin')
+    expect(row.user.adminRole).toBe('super')
+  })
+
+  it('房東與租客不是管理員', () => {
+    expect(realAccountToRow({ ...base, roles: ['landlord'] }).user.role).toBe('landlord')
+    expect(realAccountToRow({ ...base, roles: ['landlord'] }).user.adminRole).toBeNull()
+    expect(realAccountToRow({ ...base, roles: ['tenant'] }).user.role).toBe('user')
+  })
+
+  it('id 加前綴，不與展示資料相撞', () => {
+    expect(realAccountToRow(base).user.id).toBe('real-7')
+    expect(realAccountToRow(base).realAccountId).toBe(7)
+  })
+
+  it('realAccountId 有值，才代表這一列的停用會真的生效', () => {
+    // 畫面靠這個欄位決定要不要顯示停用按鈕；展示資料沒有這個欄位
+    expect(realAccountToRow(base).realAccountId).toBeDefined()
+  })
+
+  it('不編造關聯資料', () => {
+    // 真實帳號沒有訂閱／押金／工單 —— 那些只存在於展示資料集。
+    // 給 0 或空陣列讓畫面顯示「—」，不要生一個看起來很合理的數字。
+    const row = realAccountToRow(base)
+    expect(row.subscription).toBeNull()
+    expect(row.plan).toBeNull()
+    expect(row.deposits).toEqual([])
+    expect(row.tickets).toEqual([])
+    expect(row.openTicketCount).toBe(0)
+    expect(row.mismatchedDepositCount).toBe(0)
+    expect(row.subscriptionExpiring).toBe(false)
+    expect(row.quotaExhausted).toBe(false)
+  })
+
+  it('認不得的 status 一律當成正常', () => {
+    // 後端只會回 active / suspended；真的收到別的值時，
+    // 寧可顯示「正常」也不要把一個好好的帳號標成停用
+    expect(realAccountToRow({ ...base, status: 'suspended' }).user.status).toBe('suspended')
+    expect(realAccountToRow({ ...base, status: '???' }).user.status).toBe('active')
+  })
+
+  it('沒有註冊時間也不會壞', () => {
+    expect(realAccountToRow({ ...base, createdAt: null }).user.registeredAt).toBe('')
+    expect(realAccountToRow({ ...base, lastLoginAt: null }).user.lastLoginAt).toBeNull()
   })
 })
