@@ -1,15 +1,32 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Clock, MapPin, RefreshCw } from 'lucide-vue-next'
 
 import outageHeroIllustration from '@/src/assets/outage/outage-hero.png'
 import { useOutageData } from './useOutageData'
 
 const route = useRoute()
-const { featuredSourceUpdatedAt, pageTabs, rentalAddress } = useOutageData()
+const {
+  featuredSourceUpdatedAt,
+  fetchOutages,
+  isLoading,
+  pageTabs,
+  rentalAddress,
+  updateAddress,
+} = useOutageData()
 
 const activeTabPath = computed(() => {
   if (route.path === '/app/outage') return '/app/outage'
@@ -18,6 +35,22 @@ const activeTabPath = computed(() => {
   if (route.path.startsWith('/app/outage/sources')) return '/app/outage/sources'
   return '/app/outage'
 })
+
+// 更換地址彈窗控制
+const showAddressDialog = ref(false)
+const inputAddress = ref('')
+
+function openAddressModal() {
+  inputAddress.value = rentalAddress.value
+  showAddressDialog.value = true
+}
+
+function confirmChangeAddress() {
+  if (inputAddress.value.trim()) {
+    updateAddress(inputAddress.value.trim())
+  }
+  showAddressDialog.value = false
+}
 </script>
 
 <template>
@@ -64,14 +97,27 @@ const activeTabPath = computed(() => {
 
                 <div class="flex shrink-0 flex-col gap-3 xl:items-end">
                   <div class="flex flex-wrap gap-3 xl:justify-end">
-                    <Button variant="outline" class="h-11 rounded-2xl border-slate-200 bg-white px-5 text-slate-700 hover:bg-slate-50">
+                    <!-- 更換地址按鈕 -->
+                    <Button 
+                      variant="outline" 
+                      class="h-11 rounded-2xl border-slate-200 bg-white px-5 text-slate-700 hover:bg-slate-50"
+                      @click="openAddressModal"
+                    >
                       <MapPin class="mr-2 h-4 w-4" />
                       更換地址
                     </Button>
-                    <Button variant="outline" class="h-11 rounded-2xl border-slate-200 bg-white px-5 text-slate-700 hover:bg-slate-50">
-                      <RefreshCw class="mr-2 h-4 w-4" />
-                      重新整理
+
+                    <!-- 重新整理按鈕 -->
+                    <Button 
+                      variant="outline" 
+                      class="h-11 rounded-2xl border-slate-200 bg-white px-5 text-slate-700 hover:bg-slate-50"
+                      :disabled="isLoading"
+                      @click="() => fetchOutages()"
+                    >
+                      <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': isLoading }" />
+                      {{ isLoading ? '查詢中...' : '重新整理' }}
                     </Button>
+
                     <div class="flex h-11 items-center gap-2 rounded-2xl px-2 text-sm font-medium text-slate-500">
                       <Clock class="h-4 w-4" />
                       最後更新：{{ featuredSourceUpdatedAt }}
@@ -105,5 +151,32 @@ const activeTabPath = computed(() => {
         </div>
       </div>
     </section>
+
+    <!-- 更換地址彈窗 -->
+    <Dialog v-model:open="showAddressDialog">
+      <DialogContent class="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>更換查詢地址</DialogTitle>
+          <DialogDescription>
+            輸入租屋處或其他行政區地址，系統將自動比對該地區的台電與自來水供水供電排程。
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3 py-3">
+          <div class="space-y-1">
+            <Label for="address-input">地址</Label>
+            <Input
+              id="address-input"
+              v-model="inputAddress"
+              placeholder="例如：台北市信義區忠孝東路五段"
+              @keyup.enter="confirmChangeAddress"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showAddressDialog = false">取消</Button>
+          <Button @click="confirmChangeAddress">確認查詢</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
