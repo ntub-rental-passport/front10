@@ -1,0 +1,62 @@
+﻿分類,相對路徑,用途,閱讀對象,交接方式
+設定與依賴,.env.example,環境設定範例；真實 .env 不交付,前端／後端／資料庫,共用檔案，勿整檔搬移
+資料更新與工具,.github/ISSUE_TEMPLATE/garbage-data.yml,GitHub 清運資料回報表單範本，含問題類型、站點與觀察說明,前端／後端／資料庫,納入交接索引
+資料更新與工具,.github/workflows/update-taipei-garbage.yml,每月更新兩市資料、測試建置及建立 PR,前端／後端／資料庫,納入交接索引
+設定與依賴,.gitignore,排除 DB、憑證與建置產物等,前端／後端／資料庫,共用檔案，勿整檔搬移
+共用整合,backend/database.py,既有 SQLAlchemy 帳號資料庫連線,前端／後端／資料庫,共用檔案，勿整檔搬移
+執行期資料（不交付）,backend/garbage-reminders.db,SQLite 提醒資料；僅盤點路徑，未讀取內容,後端／資料庫,不交付真實內容
+後端清運模組,backend/garbage_service.py,班表快取、SQLite schema、提醒驗證與通知派送,後端／資料庫,納入交接索引
+共用整合,backend/main.py,註冊 API、啟動每 20 秒提醒排程,前端／後端／資料庫,共用檔案，勿整檔搬移
+共用整合,backend/models.py,users、user_roles 等既有帳號模型；非清運班表模型,前端／後端／資料庫,共用檔案，勿整檔搬移
+設定與依賴,backend/requirements.txt,FastAPI、SQLAlchemy、requests、推播等後端依賴,前端／後端／資料庫,共用檔案，勿整檔搬移
+後端清運模組,backend/routers/garbage.py,能力／車輛 API 與受保護提醒 CRUD,後端／資料庫,納入交接索引
+共用整合,backend/security.py,正式租客身分與 Bearer token 驗證,前端／後端／資料庫,共用檔案，勿整檔搬移
+核心測試,backend/tests/test_garbage.py,提醒擁有者隔離、服務日、原子領取、傳送狀態與推播端點驗證,前端／後端／資料庫,納入交接索引
+文件與交接,docs/garbage-file-inventory.csv,本次系統報告／分類索引,前端／後端／資料庫,納入交接索引
+文件與交接,docs/garbage-system-report.html,本次系統報告／分類索引,前端／後端／資料庫,納入交接索引
+文件與交接,docs/garbage-system-report.md,本次系統報告／分類索引,前端／後端／資料庫,納入交接索引
+文件與交接,docs/new-taipei-garbage.md,既有開發文件，包含舊版行為,前端／後端／資料庫,納入交接索引
+文件與交接,docs/taipei-garbage.md,既有開發文件，包含舊版行為,前端／後端／資料庫,納入交接索引
+設定與依賴,package-lock.json,前端安裝版本鎖定,前端／後端／資料庫,共用檔案，勿整檔搬移
+設定與依賴,package.json,前端依賴、開發／建置／測試指令,前端／後端／資料庫,共用檔案，勿整檔搬移
+資料快照與來源,public/data/new-taipei-garbage-source.json,新北來源、checksum 與匯入摘要,前端／後端／資料庫,納入交接索引
+資料快照與來源,public/data/new-taipei-garbage.json,"新北原始班表快照，26,655 筆",前端／後端／資料庫,納入交接索引
+資料快照與來源,public/data/taipei-garbage-source.json,臺北來源與匯入摘要,前端／後端／資料庫,納入交接索引
+資料快照與來源,public/data/taipei-garbage.csv,"臺北原始班表快照，4,010 筆",前端／後端／資料庫,納入交接索引
+推播接收,public/garbage-sw.js,Web Push 接收與通知點擊入口,前端／後端／資料庫,納入交接索引
+資料更新與工具,scripts/build-garbage-report.py,重建 HTML 系統報告與 CSV 分類索引,前端／後端／資料庫,納入交接索引
+資料更新與工具,scripts/update-new-taipei-garbage.ts,新北分頁資料下載、品質檢查及快照更新,前端／後端／資料庫,納入交接索引
+資料更新與工具,scripts/update-taipei-garbage.ts,臺北資料下載、品質檢查及快照更新,前端／後端／資料庫,納入交接索引
+瀏覽器驗證,scripts/verify-garbage-browser.mjs,Chrome 模擬操作、API mock、路線與地圖圖層回歸驗證,前端／後端／資料庫,納入交接索引
+瀏覽器驗證,scripts/verify-garbage-scroll.mjs,捲動與不同像素比例的畫布尺寸驗證,前端／後端／資料庫,納入交接索引
+前端頁面與元件,src/components/garbage/CollectionCountdown.vue,垃圾／回收／廚餘獨立倒數與展開內容,前端／後端／資料庫,納入交接索引
+前端頁面與元件,src/components/garbage/GarbageFilters.vue,縣市、行政區、里、道路、日期與時段篩選,前端／後端／資料庫,納入交接索引
+前端頁面與元件,src/components/garbage/GarbageGuide.vue,操作指引,前端／後端／資料庫,納入交接索引
+前端頁面與元件,src/components/garbage/GarbageMap.vue,地圖、路線搜尋與站序、霓虹實線、拖曳、隱藏及畫布同步,前端／後端／資料庫,納入交接索引
+前端頁面與元件,src/components/garbage/GarbageReport.vue,建立 GitHub Issue 草稿連結，不直接送出,前端／後端／資料庫,納入交接索引
+前端頁面與元件,src/components/garbage/WeeklySchedule.vue,站點每週清運班表,前端／後端／資料庫,納入交接索引
+共用整合,src/components/layouts/AppLayout.vue,頁面容器、導覽與捲動區域,前端／後端／資料庫,共用檔案，勿整檔搬移
+共用整合,src/composables/useAuth.ts,登入 session、accessToken、帳號識別,前端／後端／資料庫,共用檔案，勿整檔搬移
+共用整合,src/composables/useNavigation.ts,垃圾清運功能導覽入口,前端／後端／資料庫,共用檔案，勿整檔搬移
+周邊功能登錄,src/mocks/admin/subscription.ts,管理端方案 mock 的垃圾清運功能項目,前端／後端／資料庫,共用檔案，勿整檔搬移
+前端頁面與元件,src/pages/garbage/garbage.css,清運頁面、固定頁首、資訊卡、列表與響應式排版,前端／後端／資料庫,納入交接索引
+前端頁面與元件,src/pages/garbage/index.vue,清運頁面總控、查詢模式、定位、看板、詳情、收藏與提醒,前端／後端／資料庫,納入交接索引
+共用整合,src/router/index.ts,清運頁面路由與舊路徑重新導向,前端／後端／資料庫,共用檔案，勿整檔搬移
+前端 API,src/services/garbageApi.ts,靜態資料載入與 Bearer 清運 API client,前端／後端／資料庫,納入交接索引
+周邊測試,src/utils/admin-entitlements.test.ts,功能登錄、維護或權限測試中的 garbage 案例；非清運核心演算法,前端／後端／資料庫,共用檔案，勿整檔搬移
+周邊測試,src/utils/admin-feature-status.test.ts,功能登錄、維護或權限測試中的 garbage 案例；非清運核心演算法,前端／後端／資料庫,共用檔案，勿整檔搬移
+周邊測試,src/utils/admin-user-directory.test.ts,功能登錄、維護或權限測試中的 garbage 案例；非清運核心演算法,前端／後端／資料庫,共用檔案，勿整檔搬移
+周邊測試,src/utils/feature-routes.test.ts,功能登錄、維護或權限測試中的 garbage 案例；非清運核心演算法,前端／後端／資料庫,共用檔案，勿整檔搬移
+共用整合,src/utils/feature-routes.ts,清運功能維護開關的路由對應,前端／後端／資料庫,共用檔案，勿整檔搬移
+核心測試,src/utils/garbage-countdown.test.ts,下一班、分類收運、服務日與跨午夜倒數,前端／後端／資料庫,納入交接索引
+前端資料與演算法,src/utils/garbage-countdown.ts,分類班表、週期、下一班與跨午夜計算,前端／後端／資料庫,納入交接索引
+核心測試,src/utils/garbage-routes.test.ts,路線分組、排序與缺少座標時的斷線,前端／後端／資料庫,納入交接索引
+前端資料與演算法,src/utils/garbage-routes.ts,路線分組、官方站序／時間排序及斷線示意,前端／後端／資料庫,納入交接索引
+核心測試,src/utils/garbage-status.test.ts,15 分鐘狀態門檻、整分鐘離站、快速篩選與跨日,前端／後端／資料庫,納入交接索引
+前端資料與演算法,src/utils/garbage-status.ts,15 分鐘即將抵達及快速篩選判定,前端／後端／資料庫,納入交接索引
+核心測試,src/utils/garbage-update.test.ts,政府資料更新驗證與拒絕異常資料,前端／後端／資料庫,納入交接索引
+核心測試,src/utils/garbage.test.ts,臺北 CSV、資料品質、時間、座標、距離與 GPS 新鮮度,前端／後端／資料庫,納入交接索引
+前端資料與演算法,src/utils/garbage.ts,資料型別、兩市解析、座標、ID、時間與距離,前端／後端／資料庫,納入交接索引
+周邊測試,src/utils/maintenance-toast-diff.test.ts,功能登錄、維護或權限測試中的 garbage 案例；非清運核心演算法,前端／後端／資料庫,共用檔案，勿整檔搬移
+核心測試,src/utils/new-taipei-garbage.test.ts,新北解析、官方站序、分類服務日與估計離站,前端／後端／資料庫,納入交接索引
+設定與依賴,vite.config.ts,API 代理、Vue／Vite 與測試設定,前端／後端／資料庫,共用檔案，勿整檔搬移

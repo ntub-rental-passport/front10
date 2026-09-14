@@ -1,0 +1,156 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>RentMate 垃圾清運系統報告書</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f4f8;color:#252b40;font:16px/1.85 "Microsoft JhengHei",sans-serif}
+header{padding:24px max(24px,calc((100vw - 1120px)/2));background:#5146a5;color:#fff}header a{color:#fff}
+main{max-width:1120px;margin:24px auto;background:white;padding:42px;border-radius:16px}
+nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:6px;background:#f3f1fc;padding:20px;border-radius:12px}
+h1{font-size:30px;line-height:1.45}h2{margin-top:48px;padding-bottom:8px;border-bottom:2px solid #e9e5f7;font-size:23px;scroll-margin-top:20px}h3{font-size:19px}
+a{color:#5146a5;overflow-wrap:anywhere}p,li,td{overflow-wrap:anywhere}code{font-size:13px;background:#f2f3f6;padding:2px 4px;border-radius:4px}
+pre{background:#20263c;color:#f3f4ff;padding:20px;overflow:auto;border-radius:10px}pre code{background:none;padding:0;color:inherit}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{border:1px solid #e1e3eb;padding:10px 12px;text-align:left;vertical-align:top}th{background:#efedf9}tr:nth-child(odd) td{background:#fafaff}
+@media(max-width:700px){main{padding:20px;margin:10px}h1{font-size:25px}}
+@media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}header{display:none}main{margin:0;padding:0;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{break-after:avoid}table{font-size:9pt}tr{break-inside:avoid}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f4f8;color:#252b40}nav{display:none}a{color:inherit;text-decoration:none}.table-wrap{overflow:visible}}
+</style><header>RentMate 系統交接文件 · 2026-09-11<br><a href="garbage-system-report.md">Markdown 原稿</a>　<a href="garbage-file-inventory.csv">下載檔案分類 CSV</a>　瀏覽器列印可另存 PDF</header><main>
+<nav aria-label="報告目錄"><a href="#section-6">1. 系統定位與交接摘要</a><a href="#section-24">2. 頁面功能與操作流程</a><a href="#section-75">3. 檔案分類與閱讀順序</a><a href="#section-100">4. 系統架構與資料流</a><a href="#section-124">5. 資料字典與計算規則</a><a href="#section-174">6. 現有 API 契約</a><a href="#section-225">7. 目前資料庫設計</a><a href="#section-277">8. 建議的正式資料庫整合方案（尚未實作）</a><a href="#section-297">9. 後端待辦與責任分工</a><a href="#section-315">10. 設定、更新與部署</a><a href="#section-354">11. 驗收清單與交接風險</a><a href="#section-375">12. 對成員說明的建議順序</a><a href="#section-393">附錄：來源與既有文件</a></nav><h1 id="section-0">RentMate 臺北市／新北市垃圾清運查詢系統報告書</h1>
+<p>文件日期：2026-09-11　｜　程式基準：<code>d7477f1</code>　｜　用途：專題系統說明、後端與資料庫交接</p>
+<p>本報告依目前儲存庫程式與本地資料快照整理。文中「已實作」表示程式具備該能力，不代表正式環境的憑證、GPS 來源、通知或排程已驗收。外部資料來源連結來自專案內的來源紀錄，本次未重新查核官網資料。</p>
+<h2 id="section-6">1. 系統定位與交接摘要</h2>
+<p>本功能整合臺北市、新北市清運班表，讓使用者以地圖、條件列表、GPS 或手動選點找到清運站點，查看各類清運班次與下一班倒數，並使用收藏及到達前提醒。</p>
+<p>目前的核心是「官方表定班表查詢」，不是已完成的即時車輛追蹤或 ETA 預測系統。介面「營運中」「即將抵達」依班表時間判定，不是由車輛到站事件決定。</p>
+<div class="table-wrap"><table><tr><th>交接重點</th><th>現況</th><th>後端／資料庫成員需要知道的事</th></tr><tr><td>頁面入口</td><td><code>/app/garbage</code>；<code>/garbage</code> 重新導向前者</td><td>共用既有登入、導覽、維護開關</td></tr><tr><td>站點與班表</td><td>前端直接讀取 <code>public/data</code> 靜態檔案</td><td>目前沒有站點查詢 REST API，也沒有清運站點 ORM 資料表</td></tr><tr><td>收藏</td><td>依帳號區分的瀏覽器 localStorage</td><td>未存進後端，無跨裝置同步</td></tr><tr><td>個人 GPS／手動選點</td><td>僅在前端記憶體使用</td><td>現有清運 API 不上傳使用者查詢位置</td></tr><tr><td>車輛 GPS</td><td>臺北市有可設定的代理介面；新北市尚未串接</td><td>需另取得合法可用來源並轉換欄位；不能把手機 GPS 當成車輛 GPS</td></tr><tr><td>提醒 API</td><td>FastAPI 已有新增、查詢、啟停、刪除</td><td>必須用正式租客 Bearer token；收件者取自帳號</td></tr><tr><td>提醒儲存</td><td>獨立 SQLite <code>garbage_reminders</code></td><td>不在既有 SQLAlchemy 帳號資料庫內</td></tr><tr><td>通知傳送</td><td>SMTP、Web Push 程式已實作</td><td>需憑證、HTTPS／裝置授權、持久化資料與常駐排程</td></tr><tr><td>路線圖</td><td>官方站序／表定時間排序後的霓虹實線</td><td>是站點連線示意，不是沿道路導航或實測車輛軌跡</td></tr></table></div>
+<h2 id="section-24">2. 頁面功能與操作流程</h2>
+<h3 id="section-26">2.1 共用介面</h3>
+<p>桌面版將標題、七個功能分頁、縣市選擇整合成水平一列，縣市選擇位於最右側；頁首會隨捲動保持可見。窄螢幕將功能分頁另列，允許水平捲動。標題副標與班表時鐘已移除，但內部時鐘仍持續計算倒數及狀態。</p>
+<div class="table-wrap"><table><tr><th>功能分頁</th><th>操作與結果</th><th>資料來源／依賴</th></tr><tr><td>地圖查詢</td><td>地圖左上「查詢條件」開啟彈窗；篩選行政區、里、道路、日期與時段；點選站點查看詳情</td><td>靜態班表、MapLibre、OpenFreeMap</td></tr><tr><td>列表查詢</td><td>左側條件欄、站點列表、每頁 20 筆；地址字體 16px；可開啟每週班表</td><td>前端篩選、分頁；不顯示附近動態看板</td></tr><tr><td>附近查詢</td><td>啟用 GPS；半徑可選 100、200、300、400、500 公尺，預設 500；按直線距離排序</td><td>瀏覽器定位；不顯示附近動態看板</td></tr><tr><td>手動定位</td><td>點擊地圖指定中心，以半徑 200 公尺找站點；再點選即更新</td><td>不需要 GPS；看板與結果都以手動位置為中心</td></tr><tr><td>我的收藏</td><td>星號加入／取消收藏；依目前縣市顯示</td><td>本機 localStorage，不等於後端收藏資料</td></tr><tr><td>提醒設定</td><td>選站點、日期、提前分鐘及通知方式；檢視啟用與傳送狀態</td><td>FastAPI、SQLite、SMTP／Web Push</td></tr><tr><td>操作指引</td><td>說明查詢、定位、路線、收藏、提醒與資料限制</td><td>說明元件</td></tr></table></div>
+<h3 id="section-40">2.2 附近清運地點看板與快速篩選</h3>
+<p>看板位於地圖上方；順序是「看板 → 單列快速篩選 → 地圖」。目前看板出現在地圖、手動定位與收藏模式；列表及附近模式不顯示。以目前查詢中心找出附近實體地點，去除重複地點後最多顯示三張卡片；部分螢幕寬度會隱藏第三張卡。</p>
+<p>地圖／收藏看板使用 GPS 中心的 500 公尺範圍；手動看板使用手動中心的 200 公尺範圍。卡片提供今日表定班次、下一班倒數、下一班日期時間、三類清運資料、距離、收藏與每週班表入口。</p>
+<p>快速篩選有「全部站點、現在、10 分內、30 分內、1 小時內抵達」。選擇快速篩選會把查詢日期切回今天，清空自訂起迄時間。「30 分內」可以包含尚未進入黃色 15 分鐘提示的站點；篩選範圍與狀態顏色是不同規則。</p>
+<h3 id="section-48">2.3 STOP DETAILS 站點資訊卡</h3>
+<p>由地圖或站點地址開啟。上方保留地址、行政區／里別／清運單位、狀態標籤與大字時間；主要資訊改成下列三列：</p>
+<div class="table-wrap"><table><tr><th>欄位</th><th>顯示與規則</th></tr><tr><td>表定抵達</td><td>抵達時間旁附剩餘小時／分鐘；跨服務日標示「下一班」；倒數不是 ETA</td></tr><tr><td>離站時間</td><td>臺北顯示「表定離站」；新北顯示「估計離站」</td></tr><tr><td>路線名稱</td><td>可點擊，關閉站點卡並開啟該完整班次路線卡</td></tr></table></div>
+<p>下方仍可展開垃圾／回收／廚餘班表、回報資料問題、收藏與設定提醒。原有長段估算及準誤點說明已從卡片移除；估計離站的資料旗標及底層邏輯仍保留。</p>
+<h3 id="section-60">2.4 清運班次路線</h3>
+<p>支援搜尋路線名稱、行政區、車號、地址。路線使用目前城市完整班表分組，不因附近半徑或目前站點篩選而截短。分組鍵包含城市、行政區、路線 ID／名稱、清運單位、車牌、車次，避免同名不同車次串接在一起。</p>
+<p>有官方 <code>rank</code> 時依站序排列；其餘依抵達時間及 ID 排序。列表顯示 1、2、3…，地圖對應相同編號；無效座標仍保留列表位置，不繪點，線段在缺少座標處斷開。</p>
+<p>地圖使用三層藍色霓虹實線：外層模糊光暈、藍色主線、亮色細線。卡片可拖曳標題區移動，也可用方向鍵調整，移動範圍限制在地圖容器內。</p>
+<div class="table-wrap"><table><tr><th>操作</th><th>卡片／選取</th><th>地圖連線與順序編號</th></tr><tr><td>隱藏路線</td><td>保留目前路線及站點列表</td><td>隱藏</td></tr><tr><td>顯示路線</td><td>保留目前選取</td><td>恢復</td></tr><tr><td>清除路線</td><td>清空路線選取，卡片保留</td><td>清除</td></tr><tr><td>按叉叉／關閉路線工具</td><td>關閉卡片並清空選取</td><td>一併清除</td></tr></table></div>
+<h2 id="section-75">3. 檔案分類與閱讀順序</h2>
+<p>完整逐檔清單請開啟 <a href="garbage-file-inventory.csv">garbage-file-inventory.csv</a>。清單包含直接模組、共用整合依賴、周邊功能登錄、以及不應交付內容的執行期檔案。此次整理建立分類索引，不搬動程式檔案，避免破壞 import、路由與部署路徑。</p>
+<div class="table-wrap"><table><tr><th>分類</th><th>主要檔案</th><th>責任</th></tr><tr><td>頁面總控</td><td><a href="../src/pages/garbage/index.vue">index.vue</a>、<a href="../src/pages/garbage/garbage.css">garbage.css</a></td><td>模式切換、篩選、定位、詳情、收藏、提醒表單、整體排版</td></tr><tr><td>地圖與路線</td><td><a href="../src/components/garbage/GarbageMap.vue">GarbageMap.vue</a></td><td>地圖來源、標記、圈選、路線搜尋、霓虹線、拖曳、畫布尺寸同步</td></tr><tr><td>UI 子元件</td><td><code>GarbageFilters.vue</code>、<code>CollectionCountdown.vue</code>、<code>WeeklySchedule.vue</code>、<code>GarbageReport.vue</code>、<code>GarbageGuide.vue</code></td><td>篩選、分類倒數、週表、回報草稿、指引</td></tr><tr><td>前端 API</td><td><a href="../src/services/garbageApi.ts">garbageApi.ts</a></td><td>靜態檔案載入、清運 API、Bearer header、逾時與錯誤處理</td></tr><tr><td>資料規則</td><td><a href="../src/utils/garbage.ts">garbage.ts</a></td><td>兩市解析、資料型別、ID、座標、距離、時間</td></tr><tr><td>狀態／班表／路線</td><td><code>garbage-status.ts</code>、<code>garbage-countdown.ts</code>、<code>garbage-routes.ts</code></td><td>15 分鐘提示、下一班、週期、跨日、路線分组</td></tr><tr><td>後端路由</td><td><a href="../backend/routers/garbage.py">routers/garbage.py</a></td><td>公開能力與 GPS API、受保護的提醒 CRUD</td></tr><tr><td>後端服務</td><td><a href="../backend/garbage_service.py">garbage_service.py</a></td><td>班表快取、SQLite、提醒驗證、通知派送與狀態</td></tr><tr><td>推播接收</td><td><a href="../public/garbage-sw.js">garbage-sw.js</a></td><td>背景通知、點擊後開啟清運頁</td></tr><tr><td>問題回報範本</td><td><a href="../.github/ISSUE_TEMPLATE/garbage-data.yml">.github/ISSUE_TEMPLATE/garbage-data.yml</a></td><td>GitHub 清運資料問題表單</td></tr><tr><td>靜態資料</td><td><code>public/data/</code> 下兩市快照與兩份 source JSON</td><td>原始班次資料、來源與版本摘要</td></tr><tr><td>更新腳本</td><td><code>scripts/update-taipei-garbage.ts</code>、<code>scripts/update-new-taipei-garbage.ts</code></td><td>下載、驗證、寫入快照</td></tr><tr><td>自動更新</td><td><a href="../.github/workflows/update-taipei-garbage.yml">.github/workflows/update-taipei-garbage.yml</a></td><td>每月更新兩市資料、測試、建置、建立 PR</td></tr><tr><td>測試</td><td><code>src/utils/*garbage*.test.ts</code>、<code>backend/tests/test_garbage.py</code>、兩個瀏覽器驗證腳本</td><td>邊界、解析、提醒服務、操作與畫布尺寸</td></tr></table></div>
+<p>後端成員建議閱讀：<code>garbageApi.ts → routers/garbage.py → garbage_service.py → main.py → security.py</code>。</p>
+<p>資料庫成員建議閱讀：<code>garbage.ts → garbage-routes.ts → garbage_service.py → database.py／models.py → 本報告第 7、8 節</code>。</p>
+<h2 id="section-100">4. 系統架構與資料流</h2>
+<pre><code>政府開放資料
+  └─ 更新腳本／GitHub Actions → 驗證 → 資料更新 PR → 合併與部署
+       └─ public/data/臺北 CSV、新北 JSON
+            ├─ 前端 garbageApi → parser → 篩選／距離／狀態／倒數 → 地圖與列表
+            └─ 後端 stops() 快取 → 驗證站點與服務日 → 建立提醒快照
+
+瀏覽器 GPS／手動選點 → 前端查詢中心 → 附近結果與看板
+瀏覽器 localStorage ↔ 收藏 ID 清單
+
+提醒表單 → Bearer token → FastAPI → 帳號資料庫驗證租客
+                                   └─ SQLite 提醒佇列
+                                        └─ 每 20 秒排程 → SMTP／Web Push
+                                                             └─ garbage-sw.js → 通知
+
+已設定的臺北車輛資料服務 → FastAPI /vehicles → 前端新鮮度檢查 → 車輛標記</code></pre>
+<p>地圖底圖直接向 OpenFreeMap 載入；航照為國土測繪中心 PHOTO2 WMTS。外部底圖失敗時，列表仍能使用。查詢使用者的位置與清運車輛位置是分開的資料通道。</p>
+<p>程式已針對容器大小、顯示像素比例、捲動及視窗變化排程地圖 resize／重繪，並在卸載時清理事件監聽；一般捲動不應改變站點地理座標或查詢半徑。</p>
+<h2 id="section-124">5. 資料字典與計算規則</h2>
+<h3 id="section-126">5.1 本地資料快照</h3>
+<div class="table-wrap"><table><tr><th>城市</th><th>檔案</th><th>班次記錄數</th><th>行政區</th><th>來源紀錄</th></tr><tr><td>臺北市</td><td><code>taipei-garbage.csv</code></td><td>4,010</td><td>12</td><td>匯入 2026-09-08；metadata 記錄來源更新 2026-08-25T16:33:23+08:00</td></tr><tr><td>新北市</td><td><code>new-taipei-garbage.json</code></td><td>26,655</td><td>29</td><td>匯入 2026-09-10T10:39:52.186Z；來源更新時間為 null</td></tr></table></div>
+<p>數量是班表停靠記錄，不是去重後的實體站點，也不是車輛數。臺北既有資料檢核記錄有 9 筆無效座標、3 筆 24:xx 跨日記錄；新北 metadata 記錄無效座標為 0。正式匯入仍應重新跑驗證，不能把這些數量當成永遠固定的規格。</p>
+<h3 id="section-135">5.2 前端統一型別 GarbageStop</h3>
+<div class="table-wrap"><table><tr><th>欄位</th><th>型別</th><th>意義與交接注意</th></tr><tr><td>id</td><td>string</td><td>班次站點識別碼，供收藏、提醒與選取使用</td></tr><tr><td>city／district／village</td><td>string</td><td>縣市／行政區／里；資料值統一使用「臺北市」</td></tr><tr><td>address／road</td><td>string</td><td>顯示地址與道路篩選欄位</td></tr><tr><td>lat／lng</td><td>number</td><td>緯度／經度；地圖座標陣列使用 <code>[lng, lat]</code></td></tr><tr><td>route／routeId</td><td>string／optional string</td><td>顯示名稱／來源路線 ID</td></tr><tr><td>rank</td><td>optional number</td><td>官方清運順序；新北提供</td></tr><tr><td>team／plate／trip</td><td>string</td><td>清運單位／車號／車次；新北目前車號、車次為空字串</td></tr><tr><td>arrival／departure</td><td>string</td><td><code>HH:mm</code>，允許 <code>24:xx</code>；不可直接當成一般 SQL 時間截斷</td></tr><tr><td>departureEstimated</td><td>optional boolean</td><td>新北 true，代表抵達後 10 分鐘的估計離站</td></tr><tr><td>collections</td><td>optional object</td><td><code>garbage</code>、<code>recycling</code>、<code>food</code>，各自包含 arrival、departure、days</td></tr></table></div>
+<p><code>collections.days</code> 前端使用 JavaScript 星期編碼：0＝星期日、1＝星期一…6＝星期六。後端 Python <code>weekday()</code> 則為 0＝星期一…6＝星期日；新北後端解析已做自己的轉換，資料庫整合必須明確指定同一編碼。</p>
+<p>臺北 ID：<code>行政區|里別|路線|車次|地點|抵達時間</code>，使用原始欄位清理後組合。新北 ID：<code>ntpc|lineid|rank|latitude|longitude</code>，座標片段保留來源字串。不要只以地址去重，也不要把 ID 中座標重新格式化；班表更新、站序或座標變動可能造成 ID 改變，需規劃舊 ID 對照。</p>
+<h3 id="section-154">5.3 時間、狀態與距離</h3>
+<div class="table-wrap"><table><tr><th>規則</th><th>目前行為</th></tr><tr><td>時區</td><td>Asia/Taipei／UTC+08:00</td></tr><tr><td>即將抵達</td><td>下一個符合日期範圍的表定抵達時間，距現在大於 0 且不超過 15 分鐘；黃色</td></tr><tr><td>尚未抵達</td><td>當日尚有班次，但未進入 15 分鐘提示；灰色</td></tr><tr><td>營運中</td><td>現在位於表定抵達至離站區間；綠色；包含離站時間整分鐘</td></tr><tr><td>已結束／當日無班表</td><td>所選日期時段已過／該日期沒有班表；不是 GPS 確認結果</td></tr><tr><td>時鐘更新</td><td>前端每秒更新 now；地圖／狀態以 10 秒時間桶計算</td></tr><tr><td>臺北收運日</td><td>一般班表預設週一、二、四、五、六；特殊文字備註不擅自推論分類班表</td></tr><tr><td>新北收運日</td><td>依垃圾、回收、廚餘各自星期欄位，不套臺北週三／週日規則</td></tr><tr><td>新北離站</td><td>抵達時間加 10 分鐘；屬估計，非官方資料</td></tr><tr><td>24:xx</td><td>以服務日加超過 24 的小時數換算；仍按原服務日判斷收運日</td></tr><tr><td>下一班</td><td>檢查跨日及未來週期；與指定查詢日期不同，倒數以現在時間為基準</td></tr><tr><td>附近距離</td><td>Haversine 直線距離；原始值小於等於半徑才納入，顯示時才四捨五入</td></tr><tr><td>路線先後</td><td>新北 rank 優先；未提供站序者按時間排序，同時刻先後無官方保證</td></tr></table></div>
+<p>「即將抵達」目前以 15 分鐘門檻實作，沒有根據即時車輛進度辨識真正下一站／下下站。若未來要加入此能力，需要車輛、班次、站序與到離站事件的對應資料。</p>
+<h2 id="section-174">6. 現有 API 契約</h2>
+<p>開發環境由 Vite 將 <code>/api</code> 代理至 FastAPI，預設 <code>http://127.0.0.1:8000</code>。正式前端以 <code>VITE_API_BASE_URL</code> 或 <code>/api</code> 組合路徑。<code>garbageRequest</code> 逾時 15 秒，會附上現有 session 的 <code>Authorization: Bearer &lt;accessToken&gt;</code>。</p>
+<div class="table-wrap"><table><tr><th>Method</th><th>路徑</th><th>身分</th><th>回應／用途</th></tr><tr><td>GET</td><td><code>/api/garbage/capabilities</code></td><td>公開</td><td><code>{email, push, publicKey}</code>，控制可用通知方式</td></tr><tr><td>GET</td><td><code>/api/garbage/vehicles</code></td><td>公開</td><td><code>{status, message, vehicles}</code>，目前只供臺北來源</td></tr><tr><td>GET</td><td><code>/api/garbage/reminders</code></td><td>正式租客</td><td>自己的提醒陣列，依 due 遞減</td></tr><tr><td>POST</td><td><code>/api/garbage/reminders</code></td><td>正式租客</td><td>建立提醒，成功 HTTP 201</td></tr><tr><td>PATCH</td><td><code>/api/garbage/reminders/{id}</code></td><td>正式租客</td><td>body <code>{active: boolean}</code>，成功 <code>{ok: true}</code></td></tr><tr><td>DELETE</td><td><code>/api/garbage/reminders/{id}</code></td><td>正式租客</td><td>刪除自己提醒，成功 <code>{ok: true}</code></td></tr></table></div>
+<p>站點、路線、收藏、問題回報都沒有對應的現有後端 CRUD API。回報功能只組成 GitHub Issue 草稿連結，最後由使用者自行送出。</p>
+<h3 id="section-189">6.1 建立提醒</h3>
+<p>以下為欄位示例，<code>stationId</code> 必須取自同版本班表，示例日期不表示可直接在任意日期測試成功。</p>
+<pre><code>{
+  &quot;stationId&quot;: &quot;&lt;目前班表中的完整 ID&gt;&quot;,
+  &quot;date&quot;: &quot;2026-09-12&quot;,
+  &quot;minutesBefore&quot;: 15,
+  &quot;notifyPush&quot;: false,
+  &quot;notifyEmail&quot;: true
+}</code></pre>
+<p>選擇推播時另帶 <code>subscription: {endpoint, keys: {p256dh, auth}}</code>。目前前端 <code>ReminderInput</code> 型別未列 subscription，但頁面送出 payload 與後端模型支援該欄位，正式 API 文件與型別整合時應補齊。</p>
+<p>後端驗證站點存在、服務日合法、提前時間 1～120 分鐘、due 在未來且不超過現在 366 天、至少一種通知方式及通道已設定。每帳號最多 50 筆啟用且未到期提醒。收件信箱由租客帳號取得，不接受前端自由指定。</p>
+<p>提醒回應欄位包含 <code>id, stationId, stationName, date, arrival, minutesBefore, notifyPush, notifyEmail, active, dueAt, emailStatus, pushStatus</code>。<code>recipient</code> 與 <code>subscription</code> 不會回傳前端。</p>
+<p>輸入驗證錯誤為 HTTP 422；找不到本人提醒為 404；身分驗證交由既有 <code>get_current_tenant</code>。前端只直接顯示字串型 <code>detail</code>，Pydantic 陣列錯誤目前會落到通用錯誤提示。</p>
+<h3 id="section-211">6.2 車輛定位</h3>
+<p>標準化來源需回傳下列結構，這是本系統要求的 adapter 格式，不是保證官網原生 API 就有的格式：</p>
+<pre><code>{
+  &quot;vehicles&quot;: [
+    {&quot;plate&quot;: &quot;821-BT&quot;, &quot;lat&quot;: 25.11836, &quot;lng&quot;: 121.525, &quot;updatedAt&quot;: &quot;2026-09-11T18:30:00+08:00&quot;}
+  ]
+}</code></pre>
+<p>後端來源請求逾時 8 秒、快取 20 秒；前端每 30 秒刷新。後端接受臺北座標範圍與帶時區時間戳，排除超過 120 秒、或未來超過 30 秒的車輛。status 可為 <code>unconfigured</code>、<code>live</code>、<code>stale</code>、<code>unavailable</code>。新北模式直接清空車輛陣列，不使用臺北 API 冒充新北即時資料。</p>
+<h2 id="section-225">7. 目前資料庫設計</h2>
+<h3 id="section-227">7.1 三種儲存邊界</h3>
+<div class="table-wrap"><table><tr><th>儲存區</th><th>內容</th><th>現有關聯</th></tr><tr><td>public/data</td><td>政府班表快照</td><td>前後端各自讀取，沒有資料庫外鍵</td></tr><tr><td>瀏覽器 localStorage</td><td>收藏 stationId 陣列</td><td>key 為 <code>rentmate-taipei-garbage-favorites:</code> 加 userId／email／guest</td></tr><tr><td>SQLite</td><td>提醒與通知狀態</td><td>user_id 邏輯對應既有帳號；無跨 DB 外鍵</td></tr><tr><td>既有 SQLAlchemy 帳號 DB</td><td>users、user_roles 等</td><td>認證租客身分與收件信箱；連線依 DATABASE_URL</td></tr></table></div>
+<p><code>backend/garbage-reminders.db</code> 是執行期資料，不應當成程式碼或一般交接附件傳送。本次只依建表程式整理 schema，沒有讀取使用者提醒內容、token、推播訂閱或私密設定。</p>
+<h3 id="section-238">7.2 現有 SQLite schema（非建議版）</h3>
+<pre><code>CREATE TABLE IF NOT EXISTS garbage_reminders (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    due REAL NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    email_status TEXT NOT NULL,
+    push_status TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS garbage_due ON garbage_reminders(active, due);</code></pre>
+<div class="table-wrap"><table><tr><th>欄位</th><th>說明</th></tr><tr><td>id</td><td>UUID 字串</td></tr><tr><td>user_id</td><td>既有租客帳號 ID，SQL 查詢均帶本人條件</td></tr><tr><td>payload</td><td>JSON 文字；含原請求、站名、抵達時間、dueAt，以及 recipient／subscription</td></tr><tr><td>due</td><td>Unix timestamp 秒數，供排程掃描</td></tr><tr><td>active</td><td>1／0，是否啟用</td></tr><tr><td>email_status／push_status</td><td>各通道獨立狀態</td></tr></table></div>
+<p>現有表沒有 created_at、updated_at、重試次數、provider message ID、外鍵、去重鍵或訂閱獨立表。這些不是已完成能力。</p>
+<h3 id="section-264">7.3 通知生命週期</h3>
+<pre><code>未選通道 → disabled
+已選通道 → pending → 原子領取 sending → sent / failed
+pending 超過應發送時間 5 分鐘 → missed
+active=0 → 排程略過</code></pre>
+<p>每 20 秒檢查，每通道每輪最多取 50 筆；以條件 UPDATE 將 pending 改為 sending，避免共用同一 SQLite 的 worker 同時領取。程式中斷可能留在 sending，需要人工確認，沒有自動重試。這不是端到端 exactly-once 保證；SMTP 成功只代表寄送呼叫成功，不保證送達收件匣。</p>
+<p>提醒保存建立時的班表快照。更新政府資料不會自動重算已排程提醒；後端 <code>stops()</code> 有 lru_cache，資料更新後需重啟服務。</p>
+<h2 id="section-277">8. 建議的正式資料庫整合方案（尚未實作）</h2>
+<p>第一階段可保留靜態班表，先將提醒遷入團隊共用資料庫並完成通知驗收；第二階段再導入站點與班表 API。不要一次改掉 stationId，造成收藏與提醒失效。</p>
+<div class="table-wrap"><table><tr><th>建議資料表</th><th>主要欄位</th><th>關聯／索引建議</th></tr><tr><td>garbage_dataset_versions</td><td>id、city、source_url、checked_at、source_updated_at、checksum、record_count、status</td><td>城市＋版本唯一；區分檢查與來源更新時間</td></tr><tr><td>garbage_stops</td><td>id、city、district、village、address、lat、lng、coordinate_valid</td><td>實體站點；地址不能單獨當唯一鍵；可評估空間索引</td></tr><tr><td>garbage_routes</td><td>id、city、source_route_id、name、team、plate、trip</td><td>保留不同車次／車輛分組條件</td></tr><tr><td>garbage_route_stops</td><td>id、route_id、stop_id、sequence、legacy_station_id、version_id</td><td>一站可屬多條路線；維持舊 ID 對照</td></tr><tr><td>garbage_schedules</td><td>id、route_stop_id、kind、weekday、arrival_minutes、departure_minutes、departure_estimated</td><td>分鐘偏移可大於 1440，以保留 24:xx</td></tr><tr><td>garbage_favorites</td><td>user_id、stop_or_route_stop_id、created_at</td><td>先決定收藏是實體站點還是班次；複合唯一鍵</td></tr><tr><td>garbage_reminders</td><td>id、user_id、station_ref、service_date、minutes_before、due_at、active、snapshot、created_at</td><td><code>(active, due_at)</code>、<code>(user_id, due_at)</code>；保留舊提醒快照</td></tr><tr><td>garbage_notification_deliveries</td><td>id、reminder_id、channel、status、attempt_count、claimed_at、sent_at、error_code、dedupe_key</td><td>reminder＋channel 唯一，原子領取及可稽核狀態</td></tr><tr><td>garbage_push_subscriptions</td><td>id、user_id、endpoint、p256dh、auth、revoked_at</td><td>私密訂閱分開管理，處理失效端點</td></tr></table></div>
+<p>建議關係：User 1→N Favorites／Reminders／PushSubscriptions；Route 1→N RouteStops；Stop 1→N RouteStops；RouteStop 1→N Schedules；Reminder 1→N NotificationDeliveries。</p>
+<p>上表是設計提案，沒有建立 migration 或變更既有 DB。MySQL／PostgreSQL 型別、UTC 儲存策略、外鍵、保留期限、訂閱保護方式及 worker 鎖定機制，需要團隊共同決定。</p>
+<h2 id="section-297">9. 後端待辦與責任分工</h2>
+<div class="table-wrap"><table><tr><th>優先度</th><th>工作</th><th>建議負責</th><th>驗收條件</th></tr><tr><td>P0</td><td>確認正式 API、帳號 DB、SMTP／VAPID、HTTPS</td><td>後端＋部署</td><td>登入租客可建立提醒；實際 email 與裝置推播各驗證一次</td></tr><tr><td>P0</td><td>決定 SQLite 持久化或遷移共用 DB</td><td>DB＋後端</td><td>重啟不遺失資料；多人隔離；多 worker 不重複領取</td></tr><tr><td>P0</td><td>前後端部署同版班表</td><td>後端＋前端</td><td>前端選到的 stationId 可被後端辨識；更新後快取已清理</td></tr><tr><td>P1</td><td>班表異動與 stationId 對照策略</td><td>DB＋資料整合</td><td>舊收藏可對照；已建立提醒有明確保留／取消／重排政策</td></tr><tr><td>P1</td><td>統一三類班表與服務日語意</td><td>前端＋後端</td><td>特殊站點、停收、24:xx、分類收運日有共同測試案例</td></tr><tr><td>P1</td><td>站點／路線 API 與收藏同步</td><td>後端＋DB</td><td>規格定稿後再實作；支援城市、半徑、分頁與版本</td></tr><tr><td>P1</td><td>GPS adapter 與新北即時資料</td><td>後端＋資料整合</td><td>明確來源、授權、車號／班次匹配、新鮮度及失敗狀態</td></tr><tr><td>P2</td><td>到離站事件、真實下一站與 ETA</td><td>後端＋資料分析</td><td>有可驗證事件與歷史資料，再對外顯示預測</td></tr><tr><td>P2</td><td>臨時停收與公告</td><td>資料整合＋後端</td><td>可取消或覆蓋例行班表，同步提醒</td></tr></table></div>
+<p>需特別注意前後端目前各自解析班表：前端對臺北特殊文字備註有較保守的倒數處理，後端主要依一般服務日驗證，不能假設兩套規則完全一致。若新增 API 或改 DB，應抽出共同契約與一致性測試。</p>
+<p>目前未依 GPS 判定到站；「下一站」不要只拿 rank＋1 當真實進度。新北原始資料的 plate、trip 缺值，也需要後端決定如何與真實車輛對應。</p>
+<h2 id="section-315">10. 設定、更新與部署</h2>
+<div class="table-wrap"><table><tr><th>設定</th><th>用途</th><th>放置位置</th></tr><tr><td>VITE_API_BASE_URL</td><td>前端清運 API 基底／開發代理目標</td><td>前端環境設定</td></tr><tr><td>DATABASE_URL</td><td>既有帳號 DB</td><td>後端私密環境設定</td></tr><tr><td>JWT_SECRET、AUTH_TOKEN_SECRET</td><td>既有認證系統所需設定，實際使用依 security.py</td><td>後端；不得放進 VITE 變數</td></tr><tr><td>GARBAGE_REMINDER_DB</td><td>SQLite 持久化檔案路徑</td><td>後端，預設 backend/garbage-reminders.db</td></tr><tr><td>TAIPEI_GARBAGE_GPS_URL</td><td>已標準化臺北車輛資料來源</td><td>後端</td></tr><tr><td>SMTP_HOST／PORT／USERNAME／APP_PASSWORD／FROM_EMAIL</td><td>Email 傳送</td><td>後端</td></tr><tr><td>VAPID_PUBLIC_KEY／PRIVATE_KEY／SUBJECT</td><td>Web Push</td><td>公鑰可經 capabilities 回傳；私鑰僅在後端</td></tr><tr><td>CORS_ORIGINS</td><td>允許的前端來源</td><td>後端</td></tr></table></div>
+<p>環境變數名稱以現有程式為準，不應把 <code>.env</code>、SQLite 真實資料、SMTP 密碼或推播訂閱夾帶進交接檔案。系統推播依賴 HTTPS／瀏覽器支援與使用者授權；目前 service worker URL 與通知入口使用根路徑，非根目錄部署需另調整。</p>
+<p>開發啟動與檢查：</p>
+<pre><code>npm run dev
+npm run dev:backend
+npm run build
+npm test -- src/utils/garbage.test.ts src/utils/garbage-status.test.ts src/utils/garbage-countdown.test.ts src/utils/garbage-routes.test.ts src/utils/new-taipei-garbage.test.ts src/utils/garbage-update.test.ts
+node scripts/verify-garbage-browser.mjs
+node scripts/verify-garbage-scroll.mjs</code></pre>
+<p>後端測試請在 <code>backend</code> 目錄執行 <code>python -m unittest discover -s tests -p test_garbage.py -v</code>，並先備妥後端依賴與認證模組需要的環境設定。瀏覽器驗證需要已啟動前端與 Chrome；用 mock API，不等於正式通知驗收。</p>
+<p>更新資料預設只檢查，加 <code>--write</code> 才寫入：</p>
+<pre><code>npx tsx scripts/update-taipei-garbage.ts
+npx tsx scripts/update-new-taipei-garbage.ts
+npx tsx scripts/update-taipei-garbage.ts --write
+npx tsx scripts/update-new-taipei-garbage.ts --write</code></pre>
+<p>GitHub Actions 每月 1 日臺北時間 10:17 排程，亦可手動觸發。流程更新兩市、跑指定測試及建置、上傳產物並建立 PR，不直接部署。GitHub 端是否啟用排程／允許建立 PR，本次沒有遠端驗證。現有 workflow 未包含所有狀態、畫布、後端測試，不能等同完整系統驗收。</p>
+<h2 id="section-354">11. 驗收清單與交接風險</h2>
+<div class="table-wrap"><table><tr><th>驗收情境</th><th>預期</th></tr><tr><td>兩市切換、列表篩選、分頁</td><td>正確城市與班次；不混用收藏或車輛</td></tr><tr><td>GPS 權限拒絕／定位失敗</td><td>有提示，可改手動選點</td></tr><tr><td>附近五種半徑、手動 200 公尺</td><td>排除半徑外站點；手動看板依所選中心更新</td></tr><tr><td>19:05 抵達，現在 18:49:59／18:50／19:05</td><td>尚未抵達／即將抵達／營運中</td></tr><tr><td>官方離站時間最後 59 秒</td><td>仍在該整分鐘區間；下一分鐘才結束</td></tr><tr><td>週三、週日、新北分類服務日、24:xx</td><td>按各自服務日規則，不跨市套用</td></tr><tr><td>路線搜尋、詳情路線連結</td><td>開啟正確完整班次，編號與地圖一致</td></tr><tr><td>路線隱藏／恢復／叉叉</td><td>保留列表／恢復繪圖／清除選取與繪圖</td></tr><tr><td>地圖捲到底、縮放比例改變</td><td>畫布大小同步，沒有不必要留白</td></tr><tr><td>收藏後重整／換裝置</td><td>同瀏覽器保留；換裝置目前不會同步</td></tr><tr><td>提醒資料權限</td><td>使用者不能查改他人提醒；不可任意指定收件者</td></tr><tr><td>通道未設定／提醒過期／停收</td><td>不得儲存成已成功發送</td></tr><tr><td>後端停機超過 5 分鐘後啟動</td><td>舊 pending 標為 missed；sending 需人工確認</td></tr><tr><td>班表升版／後端未重啟</td><td>須偵測或排除舊快取與 stationId 不一致</td></tr></table></div>
+<p>已有 Vitest、Python unittest、瀏覽器與畫布驗證腳本。開發過程已做過建置、狀態／路線測試及瀏覽器操作驗證；本次報告整理僅做檔案、文件連結與資料盤點檢查，沒有重新發送真實通知或驗證正式 GPS。</p>
+<h2 id="section-375">12. 對成員說明的建議順序</h2>
+<ol><li>用兩分鐘說明：這是兩市的班表查詢與提醒系統，資料分別位於快照、本機收藏與提醒 DB。</li><li>展示地圖、15 分鐘顏色、STOP DETAILS 三列資訊，以及路線文字連結。</li><li>展示文字搜尋路線、官方站序、霓虹實線、拖曳、隱藏與關閉。</li><li>切到附近與手動模式，示範 100～500 公尺及手動 200 公尺，說明 GPS 不会上傳到清運 API。</li><li>展示收藏及提醒設定，再用第 6 節交接 API、第 7 節交接現有資料表。</li><li>最後共同決定：提醒資料庫落點、正式通知驗收、班表版本策略、GPS 資料來源；將第 8 節標成下一階段提案。</li></ol>
+<h3 id="section-384">交接會議需確認</h3>
+<ul><li>正式後端網址、帳號系統負責人、允許使用提醒的角色。</li><li>提醒使用持久化 SQLite 還是團隊統一 DB；單機或多機部署。</li><li>哪位成員負責政府資料更新 PR、前後端同步發布與班表異動通知。</li><li>收藏以實體站點還是某條路線的停靠班次為單位。</li><li>SMTP／VAPID／GPS 憑證負責人與測試帳號，透過團隊私密管道交接。</li><li>正式版是否需要臨時停收、即時下一站、到離站與 ETA；需哪些新資料與驗收方式。</li></ul>
+<h2 id="section-393">附錄：來源與既有文件</h2>
+<ul><li><a href="../src/utils/garbage.ts">前端資料與計算型別</a></li><li><a href="../src/utils/garbage-status.ts">狀態判定</a>、<a href="../src/utils/garbage-countdown.ts">下一班計算</a>、<a href="../src/utils/garbage-routes.ts">路線分組</a></li><li><a href="../src/services/garbageApi.ts">前端 API</a>、<a href="../backend/routers/garbage.py">後端 API</a>、<a href="../backend/garbage_service.py">提醒服務與 schema</a></li><li><a href="../public/data/taipei-garbage-source.json">臺北來源摘要</a>、<a href="../public/data/new-taipei-garbage-source.json">新北來源摘要</a></li><li><a href="taipei-garbage.md">既有臺北說明</a>、<a href="new-taipei-garbage.md">既有新北說明</a>：包含開發歷程，部分舊版文字仍為手動 500 公尺或虛線；目前行為以本報告及程式為準。</li><li><a href="https://data.gov.tw/dataset/136515">臺北資料集</a>、<a href="https://data.ntpc.gov.tw/api/datasets/edc3ad26-8ae7-4916-a00b-bc6048d19bf8/json">新北資料集 API</a>：依本地來源紀錄列示。</li></ul></main></html>

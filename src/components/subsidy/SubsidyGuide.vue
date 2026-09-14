@@ -338,35 +338,85 @@ function exportRecovery() {
               <option value="">請選擇</option>
               <option v-for="(_, city) in incomeLimits" :key="city">{{ city }}</option>
             </select></label
-          ><label
-            >計入家庭成員人數<input
+          >
+          <div class="field-with-help">
+            <label for="subsidy-family-count">計入家庭成員人數</label>
+            <input
+              id="subsidy-family-count"
               v-model.number="form.people"
+              aria-describedby="subsidy-family-help"
               type="number"
               min="1"
               step="1"
-              placeholder="含本人" /></label
-          ><label class="full"
-            >家庭全年所得總額（元）<input
+              placeholder="含本人"
+            />
+            <p id="subsidy-family-help" class="field-help">
+              計入本人、配偶、本人或配偶的未成年子女（含胎兒）及受本人或配偶監護之人，不是所有同戶籍者或室友。子女權利義務等細節請依官方定義確認。
+            </p>
+          </div>
+          <div class="field-with-help full">
+            <label for="subsidy-annual-income">家庭全年所得總額（元）</label>
+            <input
+              id="subsidy-annual-income"
               v-model.number="form.annual"
+              aria-describedby="subsidy-income-help"
               type="number"
               min="0"
               placeholder="請填全年所得，非單月薪資"
-          /></label>
+            />
+            <p id="subsidy-income-help" class="field-help">
+              填入上述家庭成員的全年所得合計，採官方查調的所得口徑，含分離課稅所得；不是單月薪資，也不要直接以實領薪資替代。應採計的所得年度請向承辦確認。
+            </p>
+          </div>
         </div>
-        <p class="hint">
-          家庭成員原則包含本人、配偶、本人或配偶的未成年子女（含胎兒）及受本人或配偶監護之人，不是所有同戶籍者或室友。子女權利義務等細節請依官方定義確認。
-        </p>
-        <p class="hint">
-          採官方查調的所得口徑，含分離課稅所得。不要直接以實領薪資替代；應採計的所得年度請向承辦確認。
-        </p>
-        <label class="check-row"
-          ><input v-model="form.expanded" type="checkbox" />符合新婚 2
-          年內或育有未成年子女（含胎兒）家庭定義</label
-        >
-        <p class="hint">不確定婚育定義時，先使用一般門檻，再向承辦確認。</p>
+        <section class="family-condition" aria-label="婚育家庭所得門檻">
+          <label class="check-row"
+            ><input
+              v-model="form.expanded"
+              type="checkbox"
+              aria-describedby="family-condition-help"
+            />符合新婚 2 年內或育有未成年子女（含胎兒）家庭定義</label
+          >
+          <p id="family-condition-help" class="field-help">
+            兩種情況符合其中一種即可勾選，試算會改用婚育家庭的所得門檻。
+          </p>
+          <details class="family-explainer">
+            <summary>我符合哪一種？看白話說明與例子</summary>
+            <div class="family-explainer-body">
+              <article>
+                <h3>① 新婚家庭：看結婚登記日期</h3>
+                <p>
+                  在審查基準日前 2
+                  年內登記結婚。新申請戶以申請日為審查基準日；舊戶則依官方指定日期認定。
+                </p>
+                <p class="scenario">
+                  <strong>例如：</strong>新申請戶在 115 年 9 月申請，114 年 10
+                  月登記結婚且婚姻仍存續，屬於 2 年內的新婚情況，不必同時有小孩。
+                </p>
+              </article>
+              <article>
+                <h3>② 育兒家庭：有未成年子女，也包含胎兒</h3>
+                <p>
+                  你或配偶育有未成年子女（含胎兒），不必同時符合「新婚 2
+                  年內」。未成年子女的權利義務行使或負擔，須符合官方認定。
+                </p>
+                <p class="scenario">
+                  <strong>例如：</strong>已結婚 5 年、育有 3
+                  歲孩子的家庭，可按育兒情況確認；你或配偶目前懷孕，也可按胎兒情況確認並準備證明。
+                </p>
+              </article>
+              <p class="definition-note">
+                離婚後再與原配偶結婚，不屬這裡的新婚家庭。配偶為外國人、無國籍人、陸港澳居民時，另須符合在臺居住及戶籍結婚登記條件。這些例子只說明婚育條件，不代表整體租補資格已通過。
+              </p>
+              <a :href="sources.announcement" target="_blank" rel="noopener noreferrer"
+                >查看官方家庭定義與審查基準日 ↗</a
+              >
+            </div>
+          </details>
+        </section>
       </section>
       <aside>
-        <section class="panel result" aria-live="polite">
+        <section class="panel result income-result" aria-live="polite">
           <img
             class="topic-art"
             :src="eligibilityImage"
@@ -375,24 +425,44 @@ function exportRecovery() {
             height="1254"
             decoding="async"
           />
-          <ClipboardCheck :size="28" />
-          <h2>你的初步結果</h2>
-          <template v-if="income"
-            ><span class="big-number"
-              >{{ income.monthly.toLocaleString('zh-TW', { maximumFractionDigits: 2 }) }}
-              <small>元／人／月</small></span
-            >
-            <p>全年所得 ÷ 12 ÷ 家庭人數</p>
-            <p>門檻：須低於 {{ income.limit.toLocaleString() }} 元</p>
-            <strong>{{
-              income.passes ? '填入的所得低於門檻' : '填入的所得未低於門檻'
-            }}</strong></template
-          >
-          <p v-else>請填妥縣市、有效的非負所得與正整數人數，才會顯示所得結果。</p>
-          <p v-if="personalQuestions.some((q) => form[q.key] !== 'yes')">
-            身分、房屋持有或住宅協助條件仍有未確認項目，請洽承辦釐清。
-          </p>
-          <p>所得結果不是完整資格認定；房屋、租約、租金上限與例外條件仍需查核。</p>
+          <div class="income-result-heading">
+            <ClipboardCheck :size="22" />
+            <h2>你的初步結果</h2>
+          </div>
+          <template v-if="income">
+            <div class="income-metric">
+              <span class="metric-label">平均每人每月所得</span>
+              <strong class="income-value">{{
+                income.monthly.toLocaleString('zh-TW', { maximumFractionDigits: 2 })
+              }}</strong>
+              <span class="metric-unit">元／人／月</span>
+              <p class="metric-formula">全年所得 ÷ 12 ÷ 家庭人數</p>
+            </div>
+            <div class="income-threshold">
+              <div class="threshold-caption">
+                <span>適用所得門檻</span
+                ><span>{{ form.city }} · {{ form.expanded ? '婚育家庭' : '一般家庭' }}</span>
+              </div>
+              <p>
+                須低於 <strong>{{ income.limit.toLocaleString() }}</strong> 元／人／月
+              </p>
+            </div>
+            <div class="income-verdict" :class="income.passes ? 'is-below' : 'is-above'">
+              <span class="verdict-label">所得檢核</span>
+              <strong>{{ income.passes ? '填入的所得低於門檻' : '填入的所得未低於門檻' }}</strong>
+            </div>
+          </template>
+          <div v-else class="income-pending">
+            <strong>等待填寫資料</strong>
+            <p>請填妥縣市、有效的非負所得與正整數人數，才會顯示所得結果。</p>
+          </div>
+          <div class="income-followup">
+            <h3>接下來還要確認</h3>
+            <p v-if="personalQuestions.some((q) => form[q.key] !== 'yes')">
+              身分、房屋持有或住宅協助條件仍有未確認項目，請洽承辦釐清。
+            </p>
+            <p>所得結果不是完整資格認定；房屋、租約、租金上限與例外條件仍需查核。</p>
+          </div>
           <RouterLink class="primary" to="/app/subsidy/housing"
             >下一步：確認房屋 <ArrowRight :size="16" /></RouterLink
           ><a :href="sources.portal" target="_blank" rel="noopener noreferrer"
@@ -900,15 +970,133 @@ a:hover {
 .result.review {
   background: #f9f7ef;
 }
-.big-number {
-  font-size: 28px;
-  font-weight: 700;
-  display: block;
-  margin: 20px 0;
+.income-result .topic-art {
+  max-height: 190px;
+  margin-bottom: 20px;
 }
-.big-number small {
+.income-result-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #413783;
+}
+.income-result-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+.income-metric {
+  padding: 24px 0 20px;
+}
+.metric-label {
+  display: block;
+  color: #59677d;
+  font-size: 14px;
+  font-weight: 600;
+}
+.income-value {
+  display: block;
+  font-size: clamp(34px, 3.4vw, 48px);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+  color: #403584;
+  font-variant-numeric: tabular-nums;
+  margin: 8px 0 4px;
+  overflow-wrap: anywhere;
+}
+.metric-unit {
+  color: #59677d;
   font-size: 13px;
-  font-weight: 400;
+}
+.income-metric .metric-formula {
+  font-size: 12px;
+  color: #69758a;
+  margin: 8px 0 0;
+}
+.income-threshold {
+  background: #fff;
+  border: 1px solid #e4dfef;
+  border-radius: 12px;
+  padding: 15px 16px;
+}
+.threshold-caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: space-between;
+  color: #627088;
+  font-size: 12px;
+}
+.threshold-caption > span:first-child {
+  font-weight: 600;
+  color: #35415a;
+}
+.income-threshold p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #59677d;
+}
+.income-threshold strong {
+  font-size: 28px;
+  font-weight: 750;
+  color: #25324a;
+  font-variant-numeric: tabular-nums;
+}
+.income-verdict {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border-left: 4px solid;
+  margin-top: 14px;
+}
+.income-verdict.is-below {
+  color: #246249;
+  background: #eaf5ef;
+  border-color: #45936d;
+}
+.income-verdict.is-above {
+  color: #8c491e;
+  background: #fff1e5;
+  border-color: #c47a39;
+}
+.verdict-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.income-verdict strong {
+  display: block;
+  font-size: 17px;
+  line-height: 1.5;
+}
+.income-followup {
+  border-top: 1px solid #e2ddec;
+  margin-top: 22px;
+  padding-top: 16px;
+}
+.income-followup h3 {
+  font-size: 14px;
+  margin: 0 0 6px;
+}
+.income-followup p {
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 6px 0;
+}
+.income-pending {
+  padding: 20px 0 0;
+}
+.income-pending p {
+  font-size: 13px;
+}
+.income-result > .primary {
+  display: flex;
+  width: 100%;
+  margin-top: 20px;
+}
+.income-result > a:not(.primary) {
+  font-size: 12px;
+  line-height: 1.6;
 }
 fieldset {
   border: 0;
@@ -983,6 +1171,60 @@ textarea {
 }
 .hint {
   font-size: 13px;
+}
+.field-with-help input[type='number'] {
+  margin-bottom: 6px;
+}
+.field-help {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #657188;
+}
+.family-condition {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e6e9ef;
+}
+.family-condition > .field-help {
+  margin: 8px 0 12px;
+}
+.family-explainer {
+  border: 1px solid #e1ddee;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.family-explainer summary {
+  padding: 12px 16px;
+  background: #f7f5fc;
+  color: #5146a0;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.family-explainer-body {
+  padding: 0 16px 16px;
+  font-size: 13px;
+}
+.family-explainer-body article {
+  padding: 16px 0;
+  border-bottom: 1px solid #e9e6f0;
+}
+.family-explainer-body h3 {
+  font-size: 15px;
+  margin: 0 0 6px;
+}
+.family-explainer-body p {
+  margin: 6px 0;
+}
+.family-explainer-body .scenario {
+  background: #f8f9fc;
+  padding: 10px 12px;
+  border-radius: 6px;
+  margin-top: 10px;
+}
+.family-explainer-body .definition-note {
+  margin: 14px 0 10px;
 }
 .document-row {
   display: flex;
