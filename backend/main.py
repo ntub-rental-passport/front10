@@ -1,3 +1,4 @@
+import logging
 import os
 
 from fastapi import FastAPI
@@ -6,6 +7,28 @@ from sqlalchemy import text
 from database import engine, Base
 from metrics import count_requests
 from routers import admin, auth, contract, landlord_properties, landlord_tenants, tenant_leases # 👈 引入剛才建立的 AI 路由功能
+
+# ---------------------------------------------------------------
+# 應用程式的 log
+# ---------------------------------------------------------------
+# uvicorn 只設定它自己的 logger，不動 root。Python 的 root 預設是
+# WARNING，所以在這之前，程式裡所有 logger.info 都被安靜丟掉 ——
+# 包括「法規檢索取了哪幾塊」「哪個 LLM provider 產生了回應」這些
+# 唯一能看出請求卡在哪一步的訊息。
+#
+# 2026-09-14 實際踩到：合約分析在正式站卡住三分鐘，nginx 記 499，
+# 但容器 log 從頭到尾只有請求結束後那一行，中間完全沒有線索。
+#
+# 用 force=True：uvicorn 可能已經先動過 root handler。
+LOG_LEVEL = (os.getenv("LOG_LEVEL") or "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    force=True,
+)
+# httpx 每一次請求都會印一行。開 INFO 之後它會把上面那些訊息淹掉，
+# 而它講的事情（「我打了一個 https 請求」）我們從別的地方都看得到。
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # 有設定 MySQL 時才建立資料表；Google 登入驗證本身不依賴資料庫。
 if engine is not None:
