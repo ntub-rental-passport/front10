@@ -45,6 +45,7 @@ function normalizeFullWidthDigits(value) {
 // 一律抽不到姓名與統一編號 —— 而那是必填欄位。
 // 2026-09-10 實測：四種常見寫法沒有一種能同時抽到姓名與統編。
 const LABEL_SUFFIX = '(?:\\s*[（(][^）)]{0,20}[）)])?\\s*[：:]\\s*'
+const PARTY_PREFIX = '(?:(?:[（(][一二三四五六七八九十0-9０-９]+[）)]|[0-9０-９]+[.．、]?)\\s*)?'
 
 
 function cleanSource(value) {
@@ -89,10 +90,10 @@ function extractPersonNearHeading(text, role) {
   // 官方範本的當事人標題就是「出租人：」，原本的比對不允許尾隨冒號，
   // 導致緊接其後的「姓名(名稱)：」永遠找不到。
   const headingPattern = new RegExp(
-    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?${escapedRole}(?:\\s*[（(][^）)]*[）)])?\\s*[：:]?\\s*$`,
+    `^${PARTY_PREFIX}${escapedRole}(?:\\s*[（(][^）)]*[）)])?\\s*[：:]?\\s*$`,
   )
   const anyPartyHeadingPattern =
-    /^(?:[0-9０-９]+\s*[.．、]?\s*)?(?:出租人|承租人|連帶保證人|保證人)(?:\s*[（(][^）)]*[）)])?\s*[：:]?\s*$/
+    new RegExp(`^${PARTY_PREFIX}(?:出租人|承租人|連帶保證人|保證人)(?:\\s*[（(][^）)]*[）)])?\\s*[：:]?\\s*$`)
   const namePattern = new RegExp(`^(?:[oO○●•·▪]\\s*)?姓名${LABEL_SUFFIX}(.+)$`)
 
   for (let headingIndex = 0; headingIndex < lines.length; headingIndex += 1) {
@@ -113,12 +114,16 @@ function extractPerson(text, role) {
     extractPersonNearHeading(text, role) ||
     captureFirst(text, [
       new RegExp(`${escapedRole}\\s*[（(][^\\r\\n）)]*[）)]\\s*[：:]\\s*([^\\r\\n]+)`),
-      new RegExp(`${escapedRole}姓名${LABEL_SUFFIX}([^\\r\\n]+)`),
+      new RegExp(`${escapedRole}\\s*(?:[（(][^）)]*[）)]\\s*)?姓名${LABEL_SUFFIX}([^\\r\\n]+)`),
       new RegExp(`${escapedRole}\\s*[：:]\\s*([^\\r\\n，,。]{1,30})`),
     ])
   if (/遮蔽/.test(rawValue)) return candidate('影像遮蔽，請人工輸入', rawValue, 'low')
   const value = normalizePersonName(rawValue)
-  return value ? candidate(value, rawValue, 'medium') : { ...EMPTY_CANDIDATE }
+  const sourceLine = String(text).split(/\r?\n/)
+    .find((line) => line.includes(rawValue) && /姓名|出租人|承租人|代理人/.test(line))
+  return value
+    ? { ...candidate(value, rawValue, 'medium'), sourceValue: sourceLine?.trim() || rawValue }
+    : { ...EMPTY_CANDIDATE }
 }
 
 function partySection(text, role) {
@@ -126,10 +131,10 @@ function partySection(text, role) {
     .split(/\r?\n/)
     .map((line) => cleanSource(line))
   const rolePattern = new RegExp(
-    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?${role}(?:\\s*[（(][^）)]*[）)])?(?:\\s*[：:].*)?$`,
+    `^${PARTY_PREFIX}${role}(?:\\s*[（(][^）)]*[）)])?(?:\\s*姓名)?(?:\\s*[：:].*)?$`,
   )
   const otherRolePattern = new RegExp(
-    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?(?:${role === '出租人' ? '承租人' : '出租人'}|連帶保證人|代理人)(?:\\s*[（(][^）)]*[）)])?(?:\\s*[：:].*)?$`,
+    `^${PARTY_PREFIX}(?:${['出租人', '承租人', '連帶保證人', '代理人'].filter((item) => item !== role).join('|')})(?:\\s*[（(][^）)]*[）)])?(?:\\s*姓名)?(?:\\s*[：:].*)?$`,
   )
   const start = lines.findIndex((line) => rolePattern.test(line))
   if (start < 0) return ''
@@ -149,7 +154,9 @@ function extractPartyLabeledValue(text, role, labels) {
   const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
   const match = section.match(new RegExp(`(?:${labelPattern})${LABEL_SUFFIX}([^\\r\\n]+)`))
   const rawValue = cleanSource(match?.[1])
-  return rawValue ? candidate(rawValue, rawValue, 'medium') : { ...EMPTY_CANDIDATE }
+  return rawValue
+    ? { ...candidate(rawValue, rawValue, 'medium'), sourceValue: match[0] }
+    : { ...EMPTY_CANDIDATE }
 }
 
 function extractPartyDetails(text, role) {
@@ -160,14 +167,21 @@ function extractPartyDetails(text, role) {
     mailingAddress.confidence = 'low'
   }
 
-  return {
-    name: extractPerson(text, role),
-    id: extractPartyLabeledValue(text, role, [
+  const id = extractPartyLabeledValue(text, role, [
       '國民身分證統一編號',
       '身分證明文件編號',
       '身分證字號',
       '統一編號',
-    ]),
+    ])
+  // Keep only the identifier, not a parenthesized explanatory note.
+  const idToken = id.value.match(/^(?:[A-Za-z][0-9]{9}|[0-9]{8})(?=\s|[（(]|$)/)?.[0]
+  if (idToken) {
+    id.value = idToken
+    id.sourceValue = id.sourceValue.slice(0, id.sourceValue.indexOf(idToken) + idToken.length)
+  }
+  return {
+    name: extractPerson(partySection(text, role) || text, role),
+    id,
     registeredAddress,
     mailingAddress,
     phone: extractPartyLabeledValue(text, role, ['聯絡電話', '電話', '手機']),
@@ -359,26 +373,31 @@ function extractParkingDetails(text) {
 }
 
 function extractReviewFields(text) {
+  const labeledDate = text.match(new RegExp(
+    `審閱日期${LABEL_SUFFIX}((?:民國\\s*)?(${DATE_TOKEN})\\s*年\\s*(${DATE_TOKEN})\\s*月\\s*(${DATE_TOKEN})\\s*日)`,
+  ))
   const reviewed = text.match(
     new RegExp(
       `(?:本契約)?於\\s*(?:民國\\s*)?(${DATE_TOKEN})\\s*年\\s*(${DATE_TOKEN})\\s*月\\s*(${DATE_TOKEN})\\s*日[^\\r\\n]{0,40}?攜回審閱`,
     ),
   )
-  const reviewDateValue = reviewed
+  const reviewDateValue = labeledDate
+    ? formatRocDate(labeledDate[2], labeledDate[3], labeledDate[4])
+    : reviewed
     ? formatRocDate(reviewed[1] ?? '', reviewed[2] ?? '', reviewed[3])
     : ''
-  const daysMatch = text.match(
-    new RegExp(`(?:攜回審閱|審閱期間)[^\\r\\n]{0,20}?(${DATE_TOKEN})\\s*日`),
-  )
+  // Require a duration immediately after its label; never skip over a date or 「至少」.
+  const daysMatch = text.match(new RegExp(`審閱日數${LABEL_SUFFIX}(${DATE_TOKEN})\\s*[日天]`))
+    || text.match(new RegExp(`(?:攜回審\\s*閱|審閱期間)\\s*[：:]?\\s*(${DATE_TOKEN})\\s*[日天]`))
   const days = daysMatch?.[1] ? parseChineseInteger(daysMatch[1]) : null
 
   return {
     review_date: reviewDateValue
-      ? candidate(reviewDateValue, reviewed?.[0] ?? '', 'medium')
+      ? { ...candidate(reviewDateValue, '', 'medium'), sourceValue: labeledDate?.[1] ?? reviewed?.[0] ?? '' }
       : { ...EMPTY_CANDIDATE },
     review_days:
       days && days > 0
-        ? candidate(`${days} 日`, daysMatch?.[0] ?? '', days >= 3 ? 'medium' : 'low')
+        ? { ...candidate(`${days} 日`, '', days >= 3 ? 'medium' : 'low'), sourceValue: daysMatch[0] }
         : { ...EMPTY_CANDIDATE },
     landlord_review_signature: extractPresence(
       text,

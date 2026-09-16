@@ -8,75 +8,75 @@ export const CONTRACT_FIELD_GROUPS = [
   },
   {
     id: 'parties',
-    order: 2,
+    order: 9,
     title: '雙方基本資料',
     shortTitle: '雙方資料',
-    description: '出租人與承租人的身分及聯絡資料。',
+    description: '對應「二十三、當事人及其基本資料」：出租人與承租人的身分及聯絡資料。',
   },
   {
     id: 'authorization',
-    order: 3,
+    order: 10,
     title: '代理或轉租資料',
     shortTitle: '代理／轉租',
-    description: '偵測到代理或轉租情境時才列為必填。',
+    description: '當事人資料中的代理或轉租資訊；偵測到適用情境時才列為必填。',
     conditional: true,
   },
   {
     id: 'property',
-    order: 4,
+    order: 2,
     title: '租賃住宅標示',
     shortTitle: '住宅標示',
-    description: '門牌、地號、建號與面積等標的資料。',
+    description: '對應「二、租賃標的」：門牌、地號、建號與面積等資料。',
   },
   {
     id: 'scope',
-    order: 5,
+    order: 3,
     title: '租賃範圍',
     shortTitle: '租賃範圍',
-    description: '全部或部分出租、房間及車位範圍。',
+    description: '對應「二、租賃標的」：全部或部分出租、房間及車位範圍。',
   },
   {
     id: 'term',
-    order: 6,
+    order: 4,
     title: '租賃期間',
     shortTitle: '租賃期間',
     description: '租期起訖日期；交屋時間列為建議確認。',
   },
   {
     id: 'rent',
-    order: 7,
+    order: 5,
     title: '租金與繳納',
     shortTitle: '租金繳納',
     description: '租金、繳納期限與支付方式。',
   },
   {
     id: 'deposit',
-    order: 8,
+    order: 6,
     title: '押金約定',
     shortTitle: '押金',
     description: '確認契約是否載明押金月數及金額。',
   },
   {
     id: 'expenses',
-    order: 9,
+    order: 7,
     title: '相關費用',
     shortTitle: '相關費用',
     description: '管理、水電、瓦斯、網路及其他費用約定。',
   },
   {
     id: 'clauses',
-    order: 10,
+    order: 8,
     title: '其他重要條款',
     shortTitle: '重要條款',
     description: '遺留物處理及訴訟管轄等契約約定。',
   },
-]
+].sort((left, right) => left.order - right.order)
 
 export const CONTRACT_FIELD_DEFINITIONS = [
-  field('review_date', 'review', '審閱日期', ['契約審閱期', '攜回審閱'], 'date', 'required', null, {
+  field('review_date', 'review', '審閱日期', ['審閱日期', '契約審閱期', '攜回審閱'], 'date', 'required', null, {
     placeholder: '例如：民國 114 年 7 月 14 日',
   }),
-  field('review_days', 'review', '審閱日數', ['審閱期間', '審閱'], 'days', 'required', null, {
+  field('review_days', 'review', '審閱日數', ['審閱日數', '審閱期間', '攜回審閱'], 'days', 'required', null, {
     placeholder: '例如：3 日',
   }),
   field('landlord_review_signature', 'review', '出租人審閱簽章', ['出租人簽章'], 'signature'),

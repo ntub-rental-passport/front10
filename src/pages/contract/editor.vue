@@ -917,9 +917,17 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
     const sourceIndex = pageText.indexOf(field.sourceValue)
     if (sourceIndex < 0) continue
 
+    // These sources include their labels to distinguish repeated names/addresses.
+    // Keep the label when the user corrects the value in the document.
+    const labeledSource = field.groupId === 'parties' || field.id === 'review_days'
+    const prefix = labeledSource ? field.sourceValue.match(/^[\s\S]*?[：:]\s*/)?.[0] ?? '' : ''
+    const suffix = labeledSource && /^(?:landlord|tenant)$/.test(field.id)
+      ? field.sourceValue.match(/\s*(?:簽章|簽名|蓋章)[\s\S]*$/)?.[0] ?? ''
+      : ''
+    const replacement = `${prefix}${newValue}${suffix}`
     ocrPages.value[pageIndex] =
-      `${pageText.slice(0, sourceIndex)}${newValue}${pageText.slice(sourceIndex + field.sourceValue.length)}`
-    field.sourceValue = newValue
+      `${pageText.slice(0, sourceIndex)}${replacement}${pageText.slice(sourceIndex + field.sourceValue.length)}`
+    field.sourceValue = replacement
     return true
   }
 
@@ -1458,7 +1466,7 @@ function returnToOcr(): void {
                 </div>
               </details>
             </div>
-            <CardDescription>依現行住宅租賃規範分類，逐組補齊並確認</CardDescription>
+            <CardDescription>依契約章節順序整理關鍵欄位，分類編號不代表契約條號</CardDescription>
           </CardHeader>
 
           <nav class="field-group-nav" aria-label="法規欄位分類">

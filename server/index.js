@@ -322,7 +322,8 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
       updateMetadata: false,
     })
     sourcePageCount = pdfDocument.getPageCount()
-    const pagesToRecognize = Math.min(sourcePageCount, 5)
+    // Vision limits pages per request, not the total pages across requests.
+    const pagesToRecognize = sourcePageCount
     onProgress?.(0.03, `PDF 解析完成，共 ${sourcePageCount} 頁`)
 
     // 每次明確指定一頁，避免 Vision 將整份 PDF 全文放進第一個 response。
@@ -336,7 +337,15 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
         requests: [createFileRequest([pageNumber])],
       })
       googleVisionMs += performance.now() - startedAt
-      const pageResponses = pageResult.responses?.[0]?.responses ?? []
+      const fileResponse = pageResult.responses?.[0]
+      const pageResponses = fileResponse?.responses ?? []
+      const responseError = [fileResponse?.error, ...pageResponses.map((page) => page.error)]
+        .find((error) => error?.code || error?.message)
+      if (responseError || pageResponses.length !== 1) {
+        throw new Error(
+          `PDF 第 ${pageNumber} 頁辨識失敗：${responseError?.message || '未收到完整頁面結果'}，請重新辨識。`,
+        )
+      }
       startedAt = performance.now()
       const normalized = normalizeVisionResponses(pageResponses, {
         sourceFileIndex,
@@ -375,12 +384,6 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
   }
 
   const warnings = []
-  if (mimeType === 'application/pdf') {
-    warnings.push('Vision API 的同步 PDF OCR 單次最多適合處理 5 頁；較長租約建議改成雲端批次流程。')
-    if (sourcePageCount > 5) {
-      warnings.push(`此 PDF 共 ${sourcePageCount} 頁，本次僅辨識前 5 頁。`)
-    }
-  }
 
   const blankPageNumbers = pageTexts
     .map((pageText, index) => (pageText ? null : index + 1))

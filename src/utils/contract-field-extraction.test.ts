@@ -1,6 +1,76 @@
 import { describe, expect, it } from 'vitest'
 
 import { extractContractFieldCandidates } from '@/shared/contract-field-extraction.js'
+import { CONTRACT_FIELD_GROUPS } from '@/shared/contract-field-schema.js'
+import { analyzeContractFields } from '../../server/contract-field-gate.js'
+
+describe('依章節排序而不綁定頁碼', () => {
+  it('將當事人資料排在其他條款之後，保留穩定的群組識別碼', () => {
+    expect(CONTRACT_FIELD_GROUPS.map((group) => group.id)).toEqual([
+      'review', 'property', 'scope', 'term', 'rent', 'deposit', 'expenses', 'clauses', 'parties', 'authorization',
+    ])
+  })
+
+  const parties = `二十三、當事人及其基本資料
+（一）承租人
+承租人（乙方）姓名：林小明
+身分證明文件編號：F987654321（測試字串，非身分核驗資料）
+戶籍地址：新北市板橋區示範路99號8樓
+通訊地址：臺北市大安區想像路一段123巷5弄8號7樓之3
+聯絡電話：0987-111-222
+（二）出租人
+出租人（甲方）姓名：王房東
+身分證明文件編號：A123456789（測試字串，非身分核驗資料）
+戶籍地址：臺北市中正區康康街1號5樓
+通訊地址：臺北市中正區康康街1號5樓
+聯絡電話：0912-000-111`
+
+  it.each([0, 5, 8])('能在索引 %i 的頁面擷取雙方資料並定位來源', (pageIndex) => {
+    const pageTexts = Array.from({ length: 9 }, (_, index) => index === pageIndex ? parties : `第 ${index + 1} 頁其他條款\n匯款戶名：王房東\n房屋門牌地址：臺北市大安區想像路一段123巷5弄8號7樓之3`)
+    const { fieldReviews } = analyzeContractFields({ text: pageTexts.join('\n\n'), pageTexts, visionPages: [] })
+    const expected = {
+      tenant: '林小明', tenant_id: 'F987654321', tenant_phone: '0987-111-222',
+      tenant_registered_address: '新北市板橋區示範路99號8樓',
+      tenant_mailing_address: '臺北市大安區想像路一段123巷5弄8號7樓之3',
+      landlord: '王房東', landlord_id: 'A123456789', landlord_phone: '0912-000-111',
+      landlord_registered_address: '臺北市中正區康康街1號5樓',
+      landlord_mailing_address: '臺北市中正區康康街1號5樓',
+    }
+    for (const [id, value] of Object.entries(expected)) {
+      expect(fieldReviews[id]?.value, id).toBe(value)
+      expect(fieldReviews[id]?.sourcePageIndex, id).toBe(pageIndex)
+      expect(fieldReviews[id]?.sourceStart, id).toBeGreaterThanOrEqual(0)
+    }
+  })
+})
+
+describe('審閱日期與約定日數', () => {
+  it.each(['審閱日期', '審閱日期（交付日）', '審閱日期(交付日)'])('接受 %s 並保留跨行日數來源', (label) => {
+    const text = `${label}：民國115年09月16日。審閱期間：民國115年09月16日至115年09月20日。審閱日數\n：5日，至少三日。`
+    const fields = extractContractFieldCandidates(text)
+    expect(fields.review_date.value).toBe('民國 115 年 9 月 16 日')
+    expect(fields.review_days.value).toBe('5 日')
+    expect(fields.review_days.sourceValue).toBe('審閱日數\n：5日')
+    const { fieldReviews } = analyzeContractFields({ text, pageTexts: [text], visionPages: [] })
+    const review = fieldReviews.review_days
+    expect(text.slice(review.sourceStart, review.sourceEnd)).toBe('審閱日數\n：5日')
+  })
+
+  it.each([
+    '審閱期間：民國115年09月16日至115年09月20日。',
+    '契約審閱期間至少三日。',
+    '審閱日數：____日，至少三日。預定簽約日期：民國115年09月21日。',
+  ])('不將日期或法定下限當作約定日數：%s', (text) => {
+    expect(extractContractFieldCandidates(text).review_days.value).toBe('')
+  })
+
+  it('仍支援範本的攜回審閱敘述與跨行文字', () => {
+    const fields = extractContractFieldCandidates('本契約於民國115年09月16日經承租人攜回審閱五日（契約審閱期間至少三日）。')
+    expect(fields.review_date.value).toBe('民國 115 年 9 月 16 日')
+    expect(fields.review_days.value).toBe('5 日')
+    expect(extractContractFieldCandidates('攜回審\n閱五日').review_days.value).toBe('5 日')
+  })
+})
 
 /**
  * 內政部官方範本的實際寫法。
