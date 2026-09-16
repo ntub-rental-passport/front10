@@ -5,13 +5,9 @@ import { useRouter } from 'vue-router'
 
 // 與 authApi.ts 相同的 API 位址來源：開發模式讀 VITE_API_BASE_URL，正式環境走同源 /api
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
+import { loadContractOcrResult } from '@/src/utils/contract-ocr'
 import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'
-import {
-  CONTRACT_FIELD_DEFINITIONS,
-  CONTRACT_FIELD_GROUPS,
-  detectContractConditions,
-} from '@/shared/contract-field-schema.js'
+import { buildContractAssessments, gateRemoteAssessments, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
 import { Button } from '@/components/ui/button/index'
 import {
   AlertTriangle,
@@ -37,27 +33,8 @@ import {
   X,
 } from 'lucide-vue-next'
 
-type Severity = 'high' | 'medium' | 'low'
-type RiskSource = 'field' | 'rag' | 'ai'
 type RiskTab = 'field' | 'rag' | 'ai'
-
-type RiskItem = {
-  id: string
-  title: string
-  severity: Severity
-  source: RiskSource
-  sourceLabel: string
-  groupId: string | null
-  groupLabel: string
-  fieldIds: string[]
-  pageIndex: number | null
-  focusText: string
-  clause: string
-  description: string
-  advice: string
-  legalBasis?: string[]
-  details?: RiskDetail[]
-}
+type RiskItem = ContractAssessment
 
 type RiskDetail = {
   label: string
@@ -288,151 +265,24 @@ const highlightedSegments = computed(() => {
   })
 })
 
-function parseAmount(value: string | undefined): number {
-  return Number(String(value ?? '').replace(/[^0-9]/g, '')) || 0
-}
-
-function reviewValue(fieldId: string): string {
-  return ocrResult?.fieldReviews?.[fieldId]?.value?.trim() ?? ''
-}
-
-function firstLocatedReview(fieldIds: string[]): ContractFieldReview | null {
-  for (const fieldId of fieldIds) {
-    const review = ocrResult?.fieldReviews?.[fieldId]
-    if (review?.sourcePageIndex !== null && review?.sourcePageIndex !== undefined) return review
-  }
-  return null
-}
-
-function findPageByKeyword(keyword: string): number | null {
-  const index = pages.value.findIndex((page) => page.includes(keyword))
-  return index >= 0 ? index : null
-}
-
-const groupPageKeywords: Record<string, string[]> = {
-  review: ['契約審閱', '審閱'],
-  parties: ['立約雙方', '出租人'],
-  agency: ['代理人', '轉租'],
-  property: ['租賃住宅標示', '租賃住宅地址', '租賃標的'],
-  scope: ['租賃範圍'],
-  term: ['租賃期間'],
-  rent: ['租金約定', '租金'],
-  deposit: ['押金約定', '押金'],
-  fees: ['相關費用', '水費', '電費'],
-  clauses: ['遺留物', '管轄法院'],
-}
-
-function findGroupPage(groupId: string): { pageIndex: number | null; focusText: string } {
-  for (const keyword of groupPageKeywords[groupId] ?? []) {
-    const pageIndex = findPageByKeyword(keyword)
-    if (pageIndex !== null) return { pageIndex, focusText: keyword }
-  }
-  return { pageIndex: null, focusText: '' }
-}
-
-function findClause(pattern: RegExp, focusText: string): LocatedClause | null {
-  for (let pageIndex = 0; pageIndex < pages.value.length; pageIndex += 1) {
-    const compactText = (pages.value[pageIndex] ?? '').replace(/\s+/g, ' ').trim()
-    const match = compactText.match(pattern)
-    if (!match?.[0]) continue
-    return {
-      pageIndex,
-      focusText: compactText.includes(focusText) ? focusText : match[0].slice(0, 12),
-      text: match[0].trim(),
-    }
-  }
-  return null
-}
-
 function buildRisks(): RiskItem[] {
-  const result: RiskItem[] = []
-  const conditions = detectContractConditions(ocrResult?.text ?? '') as Record<string, boolean>
-  const missingByGroup = new Map<string, Array<{ id: string; label: string }>>()
-
-  // 1. 檢查缺少欄位
-  CONTRACT_FIELD_DEFINITIONS.forEach((definition) => {
-    const required =
-      definition.requirement === 'required' ||
-      (definition.requirement === 'conditional' &&
-        Boolean(definition.condition && conditions[definition.condition]))
-    if (!required) return
-
-    const value = reviewValue(definition.id)
-    if (value && value !== '尚未辨識') return
-    const groupFields = missingByGroup.get(definition.groupId) ?? []
-    groupFields.push({ id: definition.id, label: definition.label })
-    missingByGroup.set(definition.groupId, groupFields)
-  })
-
-  missingByGroup.forEach((missingFields, groupId) => {
-    const group = CONTRACT_FIELD_GROUPS.find((item) => item.id === groupId)
-    const groupLocation = findGroupPage(groupId)
-    const details = missingFields.map((field) => {
-      const review = ocrResult?.fieldReviews?.[field.id]
-      return {
-        label: field.label,
-        pageIndex: review?.sourcePageIndex ?? groupLocation.pageIndex,
-        focusText: review?.sourceValue || groupLocation.focusText,
-      }
-    })
-    result.push({
-      id: `missing-${groupId}`,
-      title: `${group?.title ?? '契約資料'}缺少 ${missingFields.length} 項`,
-      severity: 'high',
-      source: 'field',
-      sourceLabel: '關鍵欄位檢核',
-      groupId,
-      groupLabel: group?.title ?? '契約資料',
-      fieldIds: missingFields.map((field) => field.id),
-      pageIndex: details.find((detail) => detail.pageIndex !== null)?.pageIndex ?? null,
-      focusText: details.find((detail) => detail.focusText)?.focusText ?? '',
-      clause: `未確認欄位：${missingFields.map((field) => field.label).join('、')}`,
-      description: '契約缺少必要資訊，可能使租賃範圍、費用或權利義務難以認定。',
-      advice: `請房東協助確認並補充：${missingFields.map((field) => field.label).join('、')}。`,
-      details,
-    })
-  })
-
-  // 2. 檢查押金上限
-  const rent = parseAmount(reviewValue('rent'))
-  const deposit = parseAmount(reviewValue('deposit'))
-  const depositMonths = parseAmount(reviewValue('deposit_months'))
-  if (depositMonths > 2 || (rent > 0 && deposit > rent * 2)) {
-    const review = firstLocatedReview(['deposit_months', 'deposit'])
-    result.push({
-      id: 'deposit-limit',
-      title: '押金約定可能超過法定上限',
-      severity: 'high',
-      source: 'field',
-      sourceLabel: '關鍵欄位檢核',
-      groupId: 'deposit',
-      groupLabel: '押金約定',
-      fieldIds: ['deposit_months', 'deposit'],
-      pageIndex: review?.sourcePageIndex ?? findPageByKeyword('押金'),
-      focusText: review?.sourceValue || '押金',
-      clause: `押金月數：${reviewValue('deposit_months') || '未載明'}；押金金額：${reviewValue('deposit') || '未載明'}`,
-      description: '押金月數或金額可能超過兩個月租金，建議核對租金與押金計算方式。',
-      advice: '建議請房東將押金調整為不超過兩個月租金，並在契約中載明返還條件與期限。',
-    })
-  }
-
-  return result
+  return buildContractAssessments(ocrResult)
 }
-
 
 const risks = ref<RiskItem[]>(buildRisks())
 if (!risks.value.some((risk) => risk.source === 'field')) activeRiskTab.value = 'rag'
 const filteredRisks = computed(() => risks.value.filter((risk) => risk.source === activeRiskTab.value))
-const highRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'high').length)
-const mediumRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'medium').length)
-const lowRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'low').length)
-const displayTotalRisk = useAnimatedNumber(() => risks.value.length)
+const assessmentSummary = computed(() => summarizeAssessments(risks.value))
+const highRiskCount = computed(() => assessmentSummary.value.high)
+const mediumRiskCount = computed(() => assessmentSummary.value.medium)
+const lowRiskCount = computed(() => assessmentSummary.value.low)
+const displayTotalRisk = useAnimatedNumber(() => assessmentSummary.value.total)
 const displayHighRisk = useAnimatedNumber(() => highRiskCount.value)
 const displayMediumRisk = useAnimatedNumber(() => mediumRiskCount.value)
 const displayLowRisk = useAnimatedNumber(() => lowRiskCount.value)
 const riskTabs = computed(() => [
   { id: 'field' as const, label: '關鍵欄位檢查', count: risks.value.filter((risk) => risk.source === 'field').length },
-  { id: 'rag' as const, label: 'RAG 風險分析', count: risks.value.filter((risk) => risk.source === 'rag').length },
+  { id: 'rag' as const, label: 'RAG 候選疑慮', count: risks.value.filter((risk) => risk.source === 'rag').length },
   { id: 'ai' as const, label: 'AI 綜合建議', count: risks.value.filter((risk) => risk.source === 'ai').length },
 ])
 /*
@@ -474,10 +324,13 @@ async function loadBackendRagAndAiAnalysis() {
       return
     }
     const data = await response.json()
+    if (!data || !Array.isArray(data.rag_risks) || !Array.isArray(data.ai_risks)) {
+      throw new Error('分析回應格式不完整')
+    }
 
     // 取得後端真正的 RAG 與 AI 風險，並與本機 field 風險疊加
     const localFieldRisks = buildRisks()
-    risks.value = [...localFieldRisks, ...(data.rag_risks || []), ...(data.ai_risks || [])]
+    risks.value = [...localFieldRisks, ...gateRemoteAssessments(data.rag_risks, 'rag', pages.value), ...gateRemoteAssessments(data.ai_risks, 'ai', pages.value)]
     aiAnalysisState.value = 'ok'
   } catch (error) {
     console.error('後端 API 呼叫失敗，維持本機檢核結果:', error)
@@ -721,6 +574,7 @@ async function exportAnalysisReport(): Promise<void> {
       risks: risks.value,
       fieldValues,
       privacyMode: exportPrivacyMode.value,
+      analysisState: aiAnalysisState.value,
     })
     downloadPdf(report.bytes, report.fileName)
     exportDialogOpen.value = false
@@ -820,17 +674,18 @@ async function exportAnalysisReport(): Promise<void> {
           <span class="analysis-section-index">DIAGNOSIS · 02</span>
           <div class="analysis-total-risk">
             <strong>{{ displayTotalRisk }}</strong>
-            <span>項內容<br />需要留意</span>
+            <span>項規則風險<br />已確認證據</span>
           </div>
           <p v-if="highRiskCount">優先確認 {{ highRiskCount }} 項高風險，再依序檢視其他提醒。</p>
-          <p v-else>目前沒有高風險項目，可依序確認其餘提醒。</p>
+          <p v-else>目前規則未確認高風險；待確認與未完成分析不代表沒有問題。</p>
+          <p>{{ assessmentSummary.pending }} 項待確認，不計入風險數量。</p>
         </div>
-        <span class="analysis-status-pill"><CheckCircle2 :size="15" /> 分析完成</span>
+        <span class="analysis-status-pill" :class="{ 'is-incomplete': aiAnalysisState !== 'ok' }"><CheckCircle2 :size="15" /> 欄位檢查完成／{{ aiAnalysisState === 'ok' ? 'AI 候選分析完成' : aiAnalysisState === 'loading' ? 'AI 分析中' : 'AI 分析未完成' }}</span>
       </div>
       <div class="analysis-stats">
-        <div class="is-high"><span>HIGH · 高風險</span><strong>{{ displayHighRisk }}</strong><small>建議優先處理</small></div>
-        <div class="is-medium"><span>MED · 中風險</span><strong>{{ displayMediumRisk }}</strong><small>簽約前再確認</small></div>
-        <div class="is-low"><span>LOW · 低風險</span><strong>{{ displayLowRisk }}</strong><small>閱讀時留意</small></div>
+        <div class="is-high"><span>HIGH · 高風險</span><strong>{{ displayHighRisk }}</strong><small>{{ aiAnalysisState === 'ok' ? '規則確認項目' : '完整統計尚未完成' }}</small></div>
+        <div class="is-medium"><span>MED · 中風險</span><strong>{{ displayMediumRisk }}</strong><small>{{ aiAnalysisState === 'ok' ? '規則確認項目' : '完整統計尚未完成' }}</small></div>
+        <div class="is-low"><span>LOW · 低風險</span><strong>{{ displayLowRisk }}</strong><small>{{ aiAnalysisState === 'ok' ? '規則確認項目' : '完整統計尚未完成' }}</small></div>
       </div>
     </section>
 
@@ -953,7 +808,7 @@ async function exportAnalysisReport(): Promise<void> {
           <div class="analysis-panel-heading risk-panel-heading">
             <div>
               <span class="analysis-section-index">RISK MAP · 05</span>
-              <h2 id="risk-panel-title"><AlertTriangle :size="19" /> 偵測到的風險項次</h2>
+              <h2 id="risk-panel-title"><AlertTriangle :size="19" /> 規則風險與待確認項目</h2>
               <p>先看摘要，展開後再定位條文或詢問 AI。</p>
             </div>
           </div>
@@ -980,7 +835,7 @@ async function exportAnalysisReport(): Promise<void> {
               :class="{ 'is-active': activeRiskTab === tab.id }"
               @click="activeRiskTab = tab.id"
             >
-              {{ tab.label }} <span>{{ tab.count }}</span>
+              {{ tab.label }} <span>{{ tab.id !== 'field' && aiAnalysisState !== 'ok' ? '尚未完成' : tab.count }}</span>
             </button>
           </div>
 
@@ -989,7 +844,7 @@ async function exportAnalysisReport(): Promise<void> {
               v-for="risk in filteredRisks"
               :key="risk.id"
               class="risk-card"
-              :class="[`is-${risk.severity}`, { 'is-active': activeRiskId === risk.id }]"
+              :class="[`is-${risk.severity || risk.status}`, { 'is-active': activeRiskId === risk.id }]"
             >
               <div class="risk-card-main">
                 <span class="risk-icon">
@@ -999,8 +854,8 @@ async function exportAnalysisReport(): Promise<void> {
                 </span>
                 <span class="risk-card-copy">
                   <span class="risk-card-title-row">
-                    <strong>{{ risk.title }}</strong>
-                    <span class="risk-severity">{{ risk.severity === 'high' ? '高風險' : risk.severity === 'medium' ? '中風險' : '低風險' }}</span>
+                    <strong>{{ risk.priority ? '優先核對 · ' : '' }}{{ risk.title }}</strong>
+                    <span class="risk-severity">{{ risk.status === 'confirmed' ? (risk.severity === 'high' ? '高風險' : risk.severity === 'medium' ? '中風險' : '低風險') : assessmentLabels[risk.status] }}</span>
                   </span>
                   <span class="risk-meta">
                     <span>{{ risk.sourceLabel }}</span>
@@ -1066,7 +921,7 @@ async function exportAnalysisReport(): Promise<void> {
               那是在對使用者宣稱一個我們沒有驗證過的結論。
             -->
             <div
-              v-if="!filteredRisks.length && aiAnalysisState === 'failed' && activeRiskTab !== 'field'"
+              v-if="!filteredRisks.length && aiAnalysisState !== 'ok' && activeRiskTab !== 'field'"
               class="risk-empty-state is-unknown"
             >
               <AlertTriangle :size="22" />
@@ -1076,8 +931,8 @@ async function exportAnalysisReport(): Promise<void> {
 
             <div v-else-if="!filteredRisks.length" class="risk-empty-state">
               <CheckCircle2 :size="22" />
-              <strong>這個分類目前沒有風險</strong>
-              <span>可切換其他分類繼續查看。</span>
+              <strong>這個分類目前沒有待列項目</strong>
+              <span>這不代表完整契約已通過檢查，請核對原文與分析狀態。</span>
             </div>
 
             <div v-else class="risk-list-footer">

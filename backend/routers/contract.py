@@ -87,14 +87,17 @@ def _validate_risks(items, source: str) -> list[dict]:
         cleaned.append({
             "id": _clean_text(raw.get("id"), 64) or f"{source}-{len(cleaned) + 1}",
             "title": title,
-            "severity": severity if severity in VALID_SEVERITIES else "medium",
+            # Model output is a candidate, never a rule-confirmed risk.
+            "severity": None,
+            "status": "recognition_pending" if source == "rag" else "suggestion",
+            "priority": severity == "high",
             "source": source,
             "sourceLabel": "RAG 法規比對" if source == "rag" else "AI 語意分析",
             "groupId": _clean_text(raw.get("groupId"), 64) or None,
             "groupLabel": _clean_text(raw.get("groupLabel"), 100) or None,
             "fieldIds": [_clean_text(f, 64) for f in raw.get("fieldIds", [])[:20]]
                         if isinstance(raw.get("fieldIds"), list) else [],
-            "pageIndex": raw.get("pageIndex") if isinstance(raw.get("pageIndex"), int) else 0,
+            "pageIndex": None,  # The client locates exact original evidence; no guessed page 1.
             "focusText": _clean_text(raw.get("focusText"), 200),
             "clause": _clean_text(raw.get("clause")),
             "description": _clean_text(raw.get("description")),
@@ -186,6 +189,14 @@ async def analyze_contract(req: AnalyzeRequest):
 即使你知道相關法條也不行 —— 未列在下方的法源一律會被系統丟棄。
 找不到對應法源時，legalBasis 請留空陣列。
 
+【證據與適用性】：你提供的是候選疑慮及補充建議，嚴重程度必須由程式規則核實，
+不可將欄位擷取失敗直接視為契約缺漏。逐一確認：實際約定、適用條件、完整原文及附件、
+例外或更正，以及可能影響。未勾選選項、示例、法規說明不是實際約定。
+「不得記載承租人不得申請租金補貼」是保護性規範，不是禁止租補。
+有門牌時，無門牌替代稅籍欄位不適用；無門牌時須確認稅籍編號或位置略圖。
+電費單價缺少當期平均電價時，請要求補充比對資料，不可直接聲稱超收。
+沒有具體原文問題時不要湊低風險；可以回傳兩個空陣列。clause 必須逐字引用原文。
+
 【相關法規 Context】:
 {rag_context}
 
@@ -254,10 +265,16 @@ async def analyze_contract(req: AnalyzeRequest):
             raise LlmUnavailable from error
 
         # 相容 snake_case 與 camelCase：小模型的鍵名不穩定
-        rag_risks = _validate_risks(parsed.get("rag_risks") or parsed.get("ragRisks"), "rag")
-        ai_risks = _validate_risks(parsed.get("ai_risks") or parsed.get("aiRisks"), "ai")
+        if not isinstance(parsed, dict):
+            raise LlmUnavailable
+        raw_rag = parsed.get("rag_risks", parsed.get("ragRisks"))
+        raw_ai = parsed.get("ai_risks", parsed.get("aiRisks"))
+        if not isinstance(raw_rag, list) or not isinstance(raw_ai, list):
+            raise LlmUnavailable
+        rag_risks = _validate_risks(raw_rag, "rag")
+        ai_risks = _validate_risks(raw_ai, "ai")
 
-        if not rag_risks and not ai_risks:
+        if (raw_rag or raw_ai) and not rag_risks and not ai_risks:
             # 模型有回應但沒有任何合格的卡片：可能是格式跑掉，
             # 也可能是注入指令讓它拒答。都不該當成「這份合約沒問題」。
             logger.warning("模型回應中沒有任何通過驗證的風險項目")

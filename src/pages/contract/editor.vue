@@ -542,7 +542,7 @@ const fieldSections = computed<FieldSection[]>(() => {
       id: 'scope-other',
       title: '',
       grouped: false,
-      fieldIds: ['rental_equipment'],
+      fieldIds: ['rental_equipment', 'rental_equipment_details'],
     },
   ]
 
@@ -782,8 +782,8 @@ function validateLegalField(field: ContractField, value = field.value.trim()): s
   if (field.id === 'review_date' && !isValidRocDate(value)) {
     return '審閱日期請填寫完整有效日期，例如「民國 114 年 7 月 14 日」。'
   }
-  if (field.id === 'review_days' && (!/^\d+\s*日$/.test(value) || parseNumericValue(value) < 3)) {
-    return '審閱日數請填寫「3 日」以上的整數日數。'
+  if (field.id === 'review_days' && !/^\d+\s*日$/.test(value)) {
+    return '審閱日數請填寫整數日數，例如「2 日」；是否符合審閱期規範將另行分析。'
   }
   if (/(?:landlord|tenant)_review_signature$/.test(field.id) && !/簽章|簽署|已簽/.test(value)) {
     return '簽章欄位必須確認契約中已載明簽章或已完成簽署。'
@@ -920,7 +920,8 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
     // These sources include their labels to distinguish repeated names/addresses.
     // Keep the label when the user corrects the value in the document.
     const labeledSource = field.groupId === 'parties' || field.groupId === 'term'
-      || ['review_days', 'payment_period'].includes(field.id)
+      || ['review_days', 'payment_period', 'rental_area'].includes(field.id)
+      || /^(?:car|motorcycle)_parking_(?:count|floor|number)$/.test(field.id)
     const prefix = labeledSource ? field.sourceValue.match(/^[\s\S]*?[：:]\s*/)?.[0] ?? '' : ''
     const suffix = labeledSource && /^(?:landlord|tenant)$/.test(field.id)
       ? field.sourceValue.match(/\s*(?:簽章|簽名|蓋章)[\s\S]*$/)?.[0] ?? ''
@@ -1664,7 +1665,7 @@ function returnToOcr(): void {
                   >
                     系統建議值
                   </span>
-                  <span class="text-sm font-semibold text-foreground">
+                  <span class="text-sm font-semibold text-foreground" :style="field.id === 'rental_equipment_details' ? { whiteSpace: 'pre-line' } : undefined">
                     {{ field.value }}
                   </span>
                   <span
@@ -1746,7 +1747,7 @@ function returnToOcr(): void {
               v-if="!activeGroupFields.length"
               class="field-filter-empty field-filter-empty--conditional"
             >
-              目前未在契約中偵測到代理或轉租情境，因此本類別不列入必填完整度。若實際由代理人或二房東簽約，請先在左側補上相關內容後重新辨識。
+              本契約未適用代理或轉租，不需填寫代理人及相關授權資料。若實際由代理人或二房東簽約，請先在左側補上相關內容後重新辨識。
             </p>
             <p v-else-if="!filteredFields.length" class="field-filter-empty">
               目前沒有符合此狀態的欄位

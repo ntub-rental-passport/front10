@@ -1,9 +1,88 @@
 import { describe, expect, it } from 'vitest'
 
 import { extractContractFieldCandidates } from '@/shared/contract-field-extraction.js'
-import { CONTRACT_FIELD_GROUPS } from '@/shared/contract-field-schema.js'
+import { CONTRACT_FIELD_GROUPS, detectContractConditions } from '@/shared/contract-field-schema.js'
 import { analyzeContractFields } from '../../server/contract-field-gate.js'
-import { isValidHandoverTime } from '@/shared/contract-field-validation.js'
+import { isValidHandoverTime, isValidContractFieldFormat } from '@/shared/contract-field-validation.js'
+
+describe('不適用的代理與轉租', () => {
+  const negative = `是否由代理人簽約：否；代理人姓名、證件、地址、電話及授權書：均不適用。
+是否屬轉租\n：否；原出租人同意轉租書及原租約起迄日：均不適用。`
+  it('否定答案優先於關鍵字與制式條文', () => {
+    const text = '承租人經出租人同意轉租者，應提出同意轉租書。\n' + negative
+    const conditions = detectContractConditions(text)
+    expect(conditions.agent).toBe(false)
+    expect(conditions.sublease).toBe(false)
+    const fields = extractContractFieldCandidates(text)
+    for (const id of ['agent_name', 'agent_id', 'authorization_document', 'sublease_consent']) {
+      expect(fields[id].value, id).toBe('')
+    }
+  })
+  it('均不適用不代表已有授權附件', () => {
+    const text = '代理人姓名、證件及授權書：均不適用。原出租人同意轉租書及原租約起迄日：均不適用。'
+    expect(detectContractConditions(text).agent).toBe(false)
+    expect(detectContractConditions(text).sublease).toBe(false)
+  })
+  it('明確適用時仍保留欄位', () => {
+    const text = '是否由代理人簽約：是；已檢附授權書。是否屬轉租：是；已檢附原出租人同意轉租書。'
+    expect(detectContractConditions(text).agent).toBe(true)
+    expect(detectContractConditions(text).sublease).toBe(true)
+    expect(extractContractFieldCandidates(text).authorization_document.value).not.toBe('')
+  })
+})
+
+describe('出租範圍、車位及設備附件', () => {
+  const scope = `二、租賃標的\n（二）租賃範圍
+住宅出租範圍：部分出租。樓層：第7層。房間／室號：第A室。
+實際租賃面積\n：25.00平方公尺（房間21.00平方公尺、衛浴4.00平方公尺）。
+是否包含車位：有。汽車停車位數量：1個。汽車停車位種類：平面式。
+汽車停車位樓層：地下地下 地下 B1 層 層層。汽車\n停車位編號：第20號。
+機車停車位數量：1個。機車停車位樓層：地下B1層。機車停車位編號／位置：第M12號。
+車位使用時間：全日（每日00:00至24:00）。
+（四）租賃附屬設備\n是否有附屬設備：有。設備明細及現況見附件一。`
+  const appendix = '附件一 租賃標的現況確認書\n附屬設備清單與交屋預設狀態\n1. 分離式冷氣1臺，功能正常。\n2. 冰箱1臺。\n交屋電表讀數：A-01。'
+  it.each([scope, scope.replaceAll('：', ':').replaceAll('／', '/')])('擷取正確數值與每個欄位的標籤來源', (text) => {
+    const pageTexts = [text, '', '', '', '', '', '', appendix]
+    const { fieldReviews } = analyzeContractFields({ text: pageTexts.join('\n\n'), pageTexts, visionPages: [] })
+    const expected = {
+      rental_scope: '部分', rental_room: '第 7 樓 A 室', rental_area: '25.00 平方公尺',
+      parking_available: '有', car_parking_count: '1 個', car_parking_type: '平面式',
+      car_parking_floor: 'B1 層', car_parking_number: '第 20 號',
+      motorcycle_parking_count: '1 個', motorcycle_parking_floor: 'B1 層', motorcycle_parking_number: '第 M12 號',
+      parking_usage_time: '全日', rental_equipment: '有',
+    }
+    for (const [id, value] of Object.entries(expected)) {
+      const review = fieldReviews[id]
+      expect(review?.value, id).toBe(value)
+      expect(review?.formatValid, id).toBe(true)
+      expect(review?.sourcePageIndex, id).toBe(0)
+      expect(text.slice(review.sourceStart, review.sourceEnd), id).toBe(review.sourceValue)
+    }
+    expect(fieldReviews.rental_equipment_details.value).toContain('冰箱1臺')
+    expect(fieldReviews.rental_equipment_details.value).not.toContain('電表讀數')
+    expect(fieldReviews.rental_equipment_details.sourcePageIndex).toBe(7)
+    expect(detectContractConditions(text).partial_scope).toBe(true)
+    expect(detectContractConditions(text).has_car_parking).toBe(true)
+    expect(detectContractConditions(text).has_motorcycle_parking).toBe(true)
+  })
+  it.each(['B1 層', '1 層', '地下 B1 層', '地上 1 層'])('接受樓層 %s', (value) => {
+    expect(isValidContractFieldFormat('floor', value)).toBe(true)
+  })
+  it('缺少汽車資料時不挪用機車編號', () => {
+    const fields = extractContractFieldCandidates('汽車停車位數量：1個。\n機車停車位編號／位置：第M12號。')
+    expect(fields.car_parking_number.value).toBe('')
+    expect(fields.motorcycle_parking_number.value).toBe('第 M12 號')
+  })
+  it('只有附件引用時明確要求核對，不捏造設備清單', () => {
+    expect(extractContractFieldCandidates(scope).rental_equipment_details.value).toContain('請核對附件內容')
+  })
+  it('附件標題被 OCR 拆行仍能擷取清單', () => {
+    const text = appendix.replace('附屬設備清單', '附屬設備\n清單')
+    const details = extractContractFieldCandidates(text).rental_equipment_details
+    expect(details.value).toContain('冰箱1臺')
+    expect(text).toContain(details.sourceValue)
+  })
+})
 
 describe('新版契約的租期與租金標籤', () => {
   const lease = `三、租賃期間

@@ -214,7 +214,7 @@ export function isValidContractFieldFormat(format, value, options = []) {
       return isValidTaxId(normalized)
     case 'days': {
       const days = Number(normalized.match(/\d+/)?.[0] ?? 0)
-      return /^\d+\s*日$/.test(normalized) && days >= 3
+      return /^\d+\s*日$/.test(normalized) && days >= 0
     }
     case 'months': {
       const months = Number(normalized.match(/\d+/)?.[0] ?? 0)
@@ -233,7 +233,7 @@ export function isValidContractFieldFormat(format, value, options = []) {
     case 'count':
       return /^\d+\s*個$/.test(normalized)
     case 'floor':
-      return /^(?:地上|地下)\s*(?:第\s*)?B?\d+\s*層$/i.test(normalized)
+      return /^(?:地上|地下)?\s*(?:第\s*)?B?\d+\s*層$/i.test(normalized)
     case 'parking_number':
       return /^(?:第\s*)?[A-Za-z0-9-]+\s*號$/.test(normalized) || /位置示意圖/.test(normalized)
     case 'rental_room':

@@ -1,9 +1,11 @@
 import { PDFDocument } from 'pdf-lib'
+import { assessmentLabels, type AssessmentStatus } from './contract-risk'
 
 export type ContractReportRisk = {
   id: string
   title: string
-  severity: 'high' | 'medium' | 'low'
+  severity: 'high' | 'medium' | 'low' | null
+  status?: AssessmentStatus
   sourceLabel: string
   pageIndex: number | null
   clause: string
@@ -19,6 +21,7 @@ export type ContractReportInput = {
   privacyMode: boolean
   generatedAt?: Date
   reportId?: string
+  analysisState?: 'loading' | 'ok' | 'failed'
 }
 
 export type ContractReportResult = {
@@ -144,7 +147,9 @@ function formatGeneratedAt(date: Date): string {
   }).format(date)
 }
 
-function severityLabel(severity: ContractReportRisk['severity']): string {
+function severityLabel(severity: ContractReportRisk['severity'], status?: AssessmentStatus): string {
+  if (status && status !== 'confirmed') return assessmentLabels[status]
+  if (!severity) return '辨識待確認'
   return severity === 'high' ? '高風險' : severity === 'medium' ? '中風險' : '低風險'
 }
 
@@ -269,19 +274,24 @@ export async function generateContractReportPdf(
   drawRule()
 
   const counts = {
-    high: input.risks.filter((risk) => risk.severity === 'high').length,
-    medium: input.risks.filter((risk) => risk.severity === 'medium').length,
-    low: input.risks.filter((risk) => risk.severity === 'low').length,
+    high: input.risks.filter((risk) => risk.status === 'confirmed' && risk.severity === 'high').length,
+    medium: input.risks.filter((risk) => risk.status === 'confirmed' && risk.severity === 'medium').length,
+    low: input.risks.filter((risk) => risk.status === 'confirmed' && risk.severity === 'low').length,
   }
   drawText('診斷摘要', { size: 38, color: '#12101a', weight: 800, gap: 18 })
   drawText(
-    `共 ${input.risks.length} 項提醒｜高風險 ${counts.high}｜中風險 ${counts.medium}｜低風險 ${counts.low}`,
+    `共 ${input.risks.length} 項檢核結果｜規則確認：高 ${counts.high}／中 ${counts.medium}／低 ${counts.low}；待確認與不適用不計入風險`,
     { size: 30, weight: 700, gap: 18 },
+  )
+  drawText(
+    input.analysisState === 'ok' ? '欄位檢查完成／AI 候選分析完成；模型建議未直接納入風險統計。'
+      : '欄位檢查完成／AI 分析尚未完成；完整風險統計尚未完成。',
+    { size: 27, color: '#795618', gap: 18 },
   )
   drawText(
     counts.high
       ? `建議先處理 ${counts.high} 項高風險內容，再依序確認其他提醒。`
-      : '目前沒有高風險項目，仍建議逐項核對契約原文。',
+      : '目前規則未確認高風險，不代表整份契約沒有問題；請核對原文及待確認項目。',
     { size: 27, color: '#5f5a70', gap: 38 },
   )
 
@@ -289,11 +299,11 @@ export async function generateContractReportPdf(
     ensureSpace(310)
     drawText(`${index + 1}. ${protect(risk.title)}`, {
       size: 34,
-      color: risk.severity === 'high' ? '#c92a2a' : risk.severity === 'medium' ? '#a44b0a' : '#087f5b',
+      color: risk.severity === 'high' ? '#c92a2a' : risk.severity === 'medium' ? '#a44b0a' : risk.severity === 'low' ? '#087f5b' : '#55516e',
       weight: 800,
       gap: 8,
     })
-    drawText(`${severityLabel(risk.severity)}｜${protect(risk.sourceLabel)}${risk.pageIndex === null ? '' : `｜契約第 ${risk.pageIndex + 1} 頁`}`, {
+    drawText(`${severityLabel(risk.severity, risk.status)}｜${protect(risk.sourceLabel)}${risk.pageIndex === null ? '' : `｜契約第 ${risk.pageIndex + 1} 頁`}`, {
       size: 23,
       color: '#6f6980',
       weight: 700,

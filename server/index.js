@@ -760,6 +760,14 @@ app.use((error, _req, res, next) => {
   return res.status(400).json({ error: '上傳資料格式不正確，請重新選擇檔案。' })
 })
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`OCR API listening on http://localhost:${port}`)
+})
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`[OCR] 連接埠 ${port} 已被占用。請停止重複的 dev:api 或 dev:all，再重新啟動；執行 dev:all 時不需另外執行 dev:api。`)
+  } else {
+    console.error('[OCR] API 啟動失敗:', error)
+  }
+  process.exit(1)
 })

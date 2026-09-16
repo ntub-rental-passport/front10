@@ -1,3 +1,5 @@
+import { getPropertyIdentification } from './contract-applicability.js'
+
 export const CONTRACT_FIELD_GROUPS = [
   {
     id: 'review',
@@ -150,9 +152,9 @@ export const CONTRACT_FIELD_DEFINITIONS = [
   field(
     'tax_id',
     'property',
-    '房屋稅籍編號',
+    '房屋稅籍編號／位置略圖',
     ['房屋稅籍編號', '稅籍編號'],
-    'tax_id',
+    'text',
     'conditional',
     'no_door_number',
   ),
@@ -230,7 +232,7 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     options: ['平面式', '機械式'],
   }),
   field('car_parking_floor', 'scope', '汽車停車位樓層', ['汽車停車位', '地上', '地下'], 'floor', 'conditional', 'has_car_parking', {
-    placeholder: '例如：地下 B1 層',
+    placeholder: '例如：B1 層或 1 層（地上／地下可省略）',
   }),
   field('car_parking_number', 'scope', '汽車停車位編號', ['汽車停車位', '編號'], 'parking_number', 'conditional', 'has_car_parking', {
     placeholder: '例如：第 20 號',
@@ -239,7 +241,7 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     placeholder: '例如：1 個',
   }),
   field('motorcycle_parking_floor', 'scope', '機車停車位樓層', ['機車停車位', '地上', '地下'], 'floor', 'conditional', 'has_motorcycle_parking', {
-    placeholder: '例如：地下 B1 層',
+    placeholder: '例如：B1 層或 1 層（地上／地下可省略）',
   }),
   field('motorcycle_parking_number', 'scope', '機車停車位編號／位置', ['機車停車位', '編號', '位置示意圖'], 'parking_number', 'conditional', 'has_motorcycle_parking', {
     placeholder: '例如：第 M12 號或附件位置示意圖',
@@ -253,6 +255,7 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     options: ['有', '無'],
   }),
 
+  field('rental_equipment_details', 'scope', '附屬設備明細／附件', ['附屬設備清單', '設備明細', '附件一'], 'text', 'recommended'),
   field('start_date', 'term', '租期起始', ['租期開始', '租期起始', '租賃期間', '租賃期限', '租期自'], 'date'),
   field('end_date', 'term', '租期結束', ['租期結束', '租期屆滿', '租賃期間', '租賃期限', '至民國'], 'date'),
   field(
@@ -355,31 +358,38 @@ function field(
 }
 
 export function detectContractConditions(text) {
-  const source = String(text ?? '')
+  const source = String(text ?? '').replace(/\s+/g, '')
+  const explicitAgent = source.match(/是否(?:由代理人簽約|委託代理人|代理簽約)[：:](是|有|否|無)/)?.[1]
+  const explicitSublease = source.match(/是否(?:屬轉租|轉租)[：:](是|有|否|無)/)?.[1]
+  const property = getPropertyIdentification(text)
   return {
-    agent: /代理人|代理簽約|授權書|授權證明/.test(source),
-    sublease: /二房東|次承租|轉租契約|同意轉租|轉租同意書/.test(source),
+    agent: explicitAgent ? /是|有/.test(explicitAgent)
+      : /代理人|代理簽約|授權書|授權證明/.test(source)
+        && !/代理人[^。；;]{0,70}[：:](?:均)?不適用/.test(source),
+    sublease: explicitSublease ? /是|有/.test(explicitSublease)
+      : /二房東|次承租|轉租契約|同意轉租|轉租同意書/.test(source)
+        && !/(?:轉租書|轉租同意書)[^。；;]{0,40}[：:](?:均)?不適用/.test(source),
     transfer: /轉帳繳付|轉帳支付|匯款|金融機構|銀行帳號/.test(source),
-    door_number: !/無門牌/.test(source),
-    no_door_number: /無門牌|房屋稅籍編號/.test(source),
+    door_number: property.state !== 'no_door',
+    no_door_number: property.state === 'no_door',
     // ⚠️「住宅部分」不可直接當成分租的訊號：官方範本第十二條的標題就是
     // 「租賃住宅部分滅失」，任何照範本寫的合約都會被誤判成分租，
     // 進而把「樓層／房間／室號」「實際租賃面積」變成必填而永遠過不了。
     // 2026-09-10 實測踩到。
     partial_scope:
-      /住宅部分(?!滅失|減失|毀損)|租賃部分|分租|(?:租賃範圍|租賃住宅)[^\r\n]{0,60}(?:房間|第\s*[^\r\n]{0,12}\s*室)/.test(
+      /(?:住宅)?出租範圍[：:]部分|住宅部分(?!滅失|減失|毀損)|租賃部分|分租|(?:租賃範圍|租賃住宅)[^\r\n]{0,60}(?:房間|第\s*[^\r\n]{0,12}\s*室)/.test(
         source,
       ) && !/[■☑✓●◆]\s*全部/.test(source),
     has_parking:
-      /(?:車位[^\r\n]{0,30}?[■☑✓●◆]\s*有)|汽車停車位\s*\d+\s*個|機車停車位\s*\d+\s*個|平面式停車位|機械式停車位/.test(
+      /是否包含車位[：:]有|(?:車位[^\r\n]{0,30}?[■☑✓●◆]\s*有)|汽車停車位(?:數量[：:])?[0-9０-９]+個|機車停車位(?:數量[：:])?[0-9０-９]+個|平面式停車位|機械式停車位/.test(
         source,
       ) && !/(?:車位[^\r\n]{0,20}?[■☑✓●◆]\s*無)/.test(source),
     has_car_parking:
-      /汽車停車位\s*[1-9]\d*\s*個|平面式停車位|機械式停車位/.test(source),
-    has_motorcycle_parking: /機車停車位\s*[1-9]\d*\s*個|機車停車位[^\r\n]{0,60}編號/.test(
+      /汽車停車位(?:數量[：:])?[1-9１-９][0-9０-９]*個|平面式停車位|機械式停車位/.test(source),
+    has_motorcycle_parking: /機車停車位(?:數量[：:])?[1-9１-９][0-9０-９]*個|機車停車位[^\r\n]{0,60}編號/.test(
       source,
     ),
-    has_accessory: /附屬建物(?:用途)?[^\r\n]{0,50}(?:平方公尺|陽台|平台|花台|露台|雨遮)/.test(
+    has_accessory: /附屬建物(?:用途)?[^\r\n]{0,50}(?:平方公尺|陽[台臺]|平台|花台|露台|雨遮)/.test(
       source,
     ),
   }

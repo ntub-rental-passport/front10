@@ -1707,6 +1707,10 @@ textarea:focus-visible {
 .risk-card.is-high::before { background: var(--coral); }
 .risk-card.is-medium::before { background: var(--ochre); }
 .risk-card.is-low::before { background: var(--sage); }
+.risk-card.is-recognition_pending::before,
+.risk-card.is-applicability_pending::before,
+.risk-card.is-not_applicable::before,
+.risk-card.is-suggestion::before { background: #817c99; }
 
 .risk-card:hover {
   transform: translateY(-2px);
@@ -2275,3 +2279,19 @@ textarea:focus-visible {
 .risk-empty-state.is-unknown svg {
   color: #d97706;
 }
+.risk-card.is-recognition_pending,
+.risk-card.is-applicability_pending,
+.risk-card.is-suggestion,
+.risk-card.is-not_applicable {
+  --risk-color: #625c84;
+  border-color: #d5d0e5;
+  background: #fcfbff;
+}
+.risk-card.is-recognition_pending .risk-severity,
+.risk-card.is-applicability_pending .risk-severity,
+.risk-card.is-suggestion .risk-severity,
+.risk-card.is-not_applicable .risk-severity {
+  color: #625c84;
+  background: #efedf6;
+}
+.analysis-status-pill.is-incomplete { color: #795618; background: #fff4dc; border-color: #ead9b6; }
