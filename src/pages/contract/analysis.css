@@ -1939,7 +1939,7 @@ textarea:focus-visible {
    Workspace height + independent scrolling corrections
    ========================================================= */
 .contract-analysis-page {
-  --analysis-workspace-height: clamp(42rem, calc(100dvh - 13rem), 56rem);
+  --analysis-workspace-height: clamp(60rem, 110dvh, 80rem);
 }
 
 .analysis-workspace {
@@ -2209,8 +2209,8 @@ textarea:focus-visible {
   }
 
   .analysis-reader-canvas {
-    height: min(70dvh, 42rem);
-    min-height: 32rem;
+    height: min(85dvh, 56rem);
+    min-height: 40rem;
     overflow-y: auto;
   }
 
@@ -2222,15 +2222,15 @@ textarea:focus-visible {
   }
 
   .risk-panel {
-    height: min(70dvh, 42rem);
-    min-height: 32rem;
+    height: min(85dvh, 56rem);
+    min-height: 40rem;
   }
 }
 
 @media (max-width: 760px) {
   .analysis-reader-canvas {
-    height: min(68dvh, 36rem);
-    min-height: 28rem;
+    height: min(80dvh, 44rem);
+    min-height: 34rem;
   }
 
   .analysis-pdf-page {
@@ -2240,8 +2240,8 @@ textarea:focus-visible {
   }
 
   .risk-panel {
-    height: min(68dvh, 36rem);
-    min-height: 28rem;
+    height: min(80dvh, 44rem);
+    min-height: 34rem;
   }
 }
 
