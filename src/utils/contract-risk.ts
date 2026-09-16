@@ -1,3 +1,4 @@
+import { evaluateClauseRisks, hasTopicCorrection, CLAUSE_RULE_VERSION } from './contract-clause-rules'
 import { CONTRACT_FIELD_DEFINITIONS, CONTRACT_FIELD_GROUPS, detectContractConditions } from '@/shared/contract-field-schema.js'
 import { getPropertyIdentification } from '@/shared/contract-applicability.js'
 import { extractContractFieldCandidates } from '@/shared/contract-field-extraction.js'
@@ -27,7 +28,7 @@ export type ContractAssessment = {
   details?: Array<{ label: string; pageIndex: number | null; focusText: string }>
 }
 
-export const RISK_RULE_VERSION = '2026-09-16.1'
+export const RISK_RULE_VERSION = CLAUSE_RULE_VERSION
 export const LEGAL_REFERENCE = {
   version: '114-04-18',
   url: 'https://www.ey.gov.tw/Page/DFB720D019CCCB0A/478917df-7599-418f-8715-fd2716b623b4',
@@ -138,52 +139,16 @@ export function buildContractAssessments(input: Partial<ContractOcrResult> | nul
       legalBasis: [`住宅租賃定型化契約應記載及不得記載事項（${LEGAL_REFERENCE.version}） ${LEGAL_REFERENCE.url}`],
     }))
   }
-  const rent = amount(reviews.rent?.value || fresh.rent?.value || '')
-  const deposit = amount(reviews.deposit?.value || fresh.deposit?.value || '')
-  const months = amount(reviews.deposit_months?.value || fresh.deposit_months?.value || '')
-  if (months > 2 || (rent > 0 && deposit > rent * 2)) {
-    const trusted = months > 2 ? corroborated('deposit_months') : corroborated('rent') && corroborated('deposit')
-    const source = reviews.deposit_months?.sourceValue || reviews.deposit?.sourceValue || fresh.deposit?.sourceValue || ''
-    if (trusted && !/更正|改為|以.*為準/.test(text)) confirm('deposit-limit', '押金超過兩個月租金', 'high', ['rent', 'deposit', 'deposit_months'], source, '簽約前請釐清並修正押金約定及返還方式。')
-    else addPending('deposit-check', '優先核對：押金可能涉及重大金錢權益', 'recognition_pending', ['rent', 'deposit'], '押金數值、来源或更正關係尚未核實，暫不計入高風險。', true)
-  }
   const days = reviews.review_days?.value || fresh.review_days?.value || ''
   if (/^\d+\s*日$/.test(days) && amount(days) < 3) {
-    if (corroborated('review_days') && !/更正|改為|以.*為準/.test(text)) confirm('review-period', '約定審閱期少於三日', 'high', ['review_days'], reviews.review_days!.sourceValue, '簽約前確認實際交付與審閱時間，修正審閱期約定。')
-    else addPending('review-check', '優先核對：審閱期可能不足', 'recognition_pending', ['review_days'], '日數格式有效，但需要核對原文與來源後才能分級。', true)
+    if (corroborated('review_days') && !hasTopicCorrection(pages, /審閱/)) confirm('review-period', '約定審閱期少於三日', 'high', ['review_days'], reviews.review_days!.sourceValue, '簽約前確認實際交付與審閱時間，修正審閱期約定。')
+    else addPending('review-check', '審閱期可能不足', 'recognition_pending', ['review_days'], '日數格式有效，但需要核對原文與來源後才能分級。', true)
   }
 
-  // Only affirmative, selected contract language can trigger a rule. Protective
-  // regulations and explanations are not contractual prohibitions.
-  // Join pages before interpreting sentences: a protective prefix on the previous
-  // page must not turn into a prohibition on the next one.
-    for (const raw of pages.join('\n').split(/[。；;]/)) {
-      const sentence = compact(raw)
-      if (/不得記載|不得約定|禁止(?:記載|約定)|不得要求|未要求|不要求|無須|未禁止|不(?:得|能)禁止|並非|不是|範例|示例|例如|原約定|更正|改為|以.*為準/.test(sentence)) continue
-      const actual = sentence.includes('□') ? sentence.split(/(?=[□■☑✓])/).filter((part) => /^[■☑✓]/.test(part)).join('；') : sentence
-      const evidence = locate(pages, raw.trim())
-      const pageIndex = evidence?.pageIndex ?? null
-      const addClause = (ruleId: string, title: string, severity: 'high' | 'medium' | 'low', advice: string) => {
-        if (results.some((entry) => entry.ruleId === ruleId)) return
-        if (!evidence || /更正|改為|以.*為準|[「」『』]|如果|假設|若/.test(raw) || /更正|改為|以.*為準/.test(text)) {
-          results.push(item(`check-${ruleId}`, title, 'recognition_pending', { clause: raw.trim(), ...(evidence ?? {}), advice,
-            description: '跨頁來源、引述、適用條件或更正關係需要核對，暫不計入已確認風險。', priority: severity === 'high' }))
-          return
-        }
-        confirm(ruleId, title, severity, [], raw.trim(), advice)
-      }
-      if (/(?:承租人|房客)(?:不得|不可|禁止)申請租(?:金補貼|補)/.test(actual)) addClause('subsidy-ban', '契約限制承租人申請租金補貼', 'high', '簽約前要求釐清並刪除禁止申請租金補貼的約定。')
-      if (/(?:承租人|房客)(?:同意|應|須)放棄審閱(?:期|權)/.test(actual)) addClause('review-waiver', '契約要求放棄審閱', 'high', '簽約前保留審閱時間，修正放棄審閱的約定。')
-      if (/車位(?:費|租金|管理費)[：:]?另計/.test(actual) && !/[0-9０-９]+元|依.*(?:帳單|公告|費率)|計算方式|另附/.test(actual)) {
-        if (!completePages || /車位(?:費|租金|管理費)[^。；;]{0,25}(?:[0-9０-９,，]+元|含.{0,8}租金)|更正|另附|見附件|詳附件/.test(compact(text))) addPending('parking-fee-check', '車位費用計算方式待核對', 'applicability_pending', [], '其他頁面或附件可能已有費用約定，先核對交叉引用。')
-        else addClause('parking-fee-unclear', '車位費另計但未明確約定計算方式', 'medium', '請雙方補充金額、計算方式及繳納時間。')
-      }
-      if (/設備清單.*(?:未記錄|未載明)(?:既有)?(?:刮傷|損傷)/.test(actual)) addClause('equipment-record', '設備既有損傷尚未記錄', 'low', '點交時拍照並共同記錄既有損傷。')
-      if (/電費.*(?:每度|每期每度)[：:]?[0-9０-９.]+元/.test(actual) && !results.some((entry) => entry.id === 'electricity-reference')) {
-        results.push(item('electricity-reference', '電費需比對當期帳單', 'applicability_pending', { pageIndex, clause: raw.trim(), focusText: raw.trim(), description: '僅有每度金額不能確認超收，需比對當期每度平均電價及計費方式。' }))
-      }
-    }
-  return results
+  results.push(...evaluateClauseRisks(pages, reviews, completePages))
+  const order = (entry: ContractAssessment) => entry.severity === 'high' ? 0 : entry.priority ? 1
+    : entry.severity === 'medium' ? 2 : entry.severity === 'low' ? 3 : entry.status === 'not_applicable' ? 5 : 4
+  return results.sort((a, b) => order(a) - order(b))
 }
 
 // Neither an LLM confidence score nor a retrieved statute proves a violation.

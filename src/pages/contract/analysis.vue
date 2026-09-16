@@ -281,7 +281,7 @@ const displayHighRisk = useAnimatedNumber(() => highRiskCount.value)
 const displayMediumRisk = useAnimatedNumber(() => mediumRiskCount.value)
 const displayLowRisk = useAnimatedNumber(() => lowRiskCount.value)
 const riskTabs = computed(() => [
-  { id: 'field' as const, label: '關鍵欄位檢查', count: risks.value.filter((risk) => risk.source === 'field').length },
+  { id: 'field' as const, label: '欄位與條款檢查', count: risks.value.filter((risk) => risk.source === 'field').length },
   { id: 'rag' as const, label: 'RAG 候選疑慮', count: risks.value.filter((risk) => risk.source === 'rag').length },
   { id: 'ai' as const, label: 'AI 綜合建議', count: risks.value.filter((risk) => risk.source === 'ai').length },
 ])
@@ -818,7 +818,7 @@ async function exportAnalysisReport(): Promise<void> {
             <div>
               <strong>AI 風險分析未能完成</strong>
               <span>
-                以下只有「關鍵欄位檢查」的本機檢核結果。
+                以下為本機完成的欄位與契約條款規則檢查，明確風險不需等待 AI 即可顯示。
                 <b>RAG 與 AI 分類為空，並不代表您的合約沒有問題</b>，
                 請稍後重新分析，或先自行對照法規。
               </span>

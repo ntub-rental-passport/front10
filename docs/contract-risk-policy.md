@@ -1,25 +1,36 @@
 # 契約風險判定與驗證
 
-規則版本：`2026-09-16.1`。法規基準：[住宅租賃定型化契約應記載及不得記載事項（114 年 4 月 18 日）](https://www.ey.gov.tw/Page/DFB720D019CCCB0A/478917df-7599-418f-8715-fd2716b623b4)。高中低分級是產品依影響程度設定，並非法規自訂的級別。規則更新時應同時更新版本、案例與依據。
+規則版本：`2026-09-17.1`。法規基準：[住宅租賃定型化契約應記載及不得記載事項（114 年 4 月 18 日）](https://www.ey.gov.tw/Page/DFB720D019CCCB0A/478917df-7599-418f-8715-fd2716b623b4)。高中低分級是產品依影響程度設定，並非法規自訂的級別。規則更新時應同時更新版本、案例與依據。
 
 ## 判斷流程
 
 1. 確認實際約定：排除保護性法規、示例、未勾選項目；引述或條件不明先待確認。
 2. 確認適用條件：有門牌時稅籍替代欄位不適用；無門牌時確認稅籍或已核對的略圖。僅出現「無門牌」標籤不能證明沒有門牌。
-3. 查核原文與頁碼：擷取失敗只能列辨識待確認。附件引用不能代替附件內容核對。跨頁原文尚無完整定位時保留優先核對。
-4. 排除衝突及更正：目前採保守策略，遇更正文字先待確認，不宣稱已完整解析所有更正關係。
+3. 查核原文與頁碼：擷取失敗只能列辨識待確認。附件引用不能代替附件內容核對。跨頁條文保留每一頁的原文片段；押金卡片同時附租金及押金來源。
+4. 排除衝突及更正：僅檢查同主題的更正，或緊接上一句的更正指示。其他條文的「以帳單為準」及地址更正不能排除押金或審閱風險。相關更正保留待確認，不宣稱已自動解析最終效力。
 5. 規則成立才分級：高為重大核心權益；中為實質履約歧義；低為具體且影響有限的存證問題。
 
 ## 已實作規則與狀態
 
 | 規則 | 成立條件 | 結果 |
 | --- | --- | --- |
-| deposit-limit | 核對值與原文擷取一致，押金超過兩個月租金，未發現更正 | 高 |
+| deposit-limit | 有明確押金月數或租金及押金金額原文，超過兩個月；無同主題衝突、更正、款項混合或欄位校對矛盾 | 高 |
 | review-period | 審閱日數格式有效且證據核實，少於三日 | 高 |
 | subsidy-ban | 可定位的明確禁止租補約定，排除說明、否定、引述及條件句 | 高 |
 | review-waiver | 可定位的明確放棄審閱約定，同上 | 高 |
 | parking-fee-unclear | 車位費另計，尚無可識別金額或計算方式；找到附件或其他頁的費用時改待確認 | 中 |
 | equipment-record | 原文明確指出設備既有損傷未記錄 | 低 |
+| household-ban / tax-report-ban / subsidy-ban | 明文禁止戶籍遷入、租金支出申報或租補 | 高 |
+| tax-shift | 房屋稅、地價稅或其增加部分轉由承租人負擔 | 高 |
+| deposit-return-delay | 押金返還約定為搬離點交後多日，而非返還時結算 | 高 |
+| termination-deposit-forfeit | 提前退租一律喪失全部押金作違約金，且已找到超額押金；其餘情境先核對 | 高／待確認 |
+| landlord-termination | 欠租一個月即可立即終止 | 高 |
+| advertisement-disclaimer / contract-return | 廣告僅供參考或要求繳回契約文件 | 高 |
+| electricity-objection / internet-adjustment / contract-copy-ban | 電費排除核對異議、網路費單方調整、禁止保存契約影本或拍照 | 中 |
+| electricity-reference | 按度收費但缺少可核對的當期平均電價 | 適用性待確認 |
+| repair-allocation | 設備故障一律由承租人負擔，仍須核對事先說明、確認範圍及歸責例外 | 優先核對，不計高風險 |
+
+標題含「測試用範例」不會排除全文；只有真正的示例前綴、未勾選選項、保護性規範及「貳、不得記載事項」附錄不當成實際義務。這是可追溯的字句規則，不依文件名称特判。
 
 `recognition_pending`（辨識待確認）、`applicability_pending`（適用性待確認）、`not_applicable`（不適用）和 `suggestion`（補充建議）均不計入高中低統計。可能重大且證據不足時以 `priority` 提示優先核對。日數格式允許 0、1、2 日；合法性由獨立規則處理。
 
@@ -27,7 +38,9 @@ RAG 提供法源，LLM 提供候選疑慮及說明。後端移除模型指定的
 
 ## 測試與指標
 
-執行 `npm test -- src/utils/contract-risk.test.ts src/utils/contract-field-extraction.test.ts src/utils/contract-report.test.ts`；後端執行 `python -m unittest discover -s backend/tests -p test_contract_analysis.py`（`PYTHONPATH=backend`）。
+執行 `npm test -- src/utils/contract-risk.test.ts src/utils/contract-clause-rules.test.ts src/utils/contract-field-extraction.test.ts src/utils/contract-report.test.ts`；後端執行 `python -m unittest discover -s backend/tests -p test_contract_analysis.py`（`PYTHONPATH=backend`）。
+
+正反契約文字固化在 `src/utils/__fixtures__`，不依賴本機 PDF 或 `logs` 才能執行。三頁問題契約測試規則、狀態及來源頁碼；九頁正常契約要求零項已確認規則風險。另有欄位擷取 → 風險分析整合測試，避免未人工按確認時又漏掉明確押金原文。
 
 `evaluateRiskMetrics` 接受每份契約的輸出及人工標註：
 

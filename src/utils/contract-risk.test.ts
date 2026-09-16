@@ -55,7 +55,7 @@ describe('可追溯的數值規則', () => {
     const text = '每月租金：新臺幣18,000元整。押金金額：新臺幣54,000元整。'
     const fields = { rent: review('NT$18,000', '每月租金：新臺幣18,000元整'), deposit: review('NT$54,000', '押金金額：新臺幣54,000元整') }
     expect(assess(text, fields).find((item) => item.ruleId === 'deposit-limit')?.severity).toBe('high')
-    expect(summarizeAssessments(assess(text)).high).toBe(0)
+    expect(summarizeAssessments(assess(text)).high).toBe(1)
     expect(summarizeAssessments(assess(text + '双方更正押金為36,000元。', fields)).high).toBe(0)
     expect(summarizeAssessments(assess(text, { ...fields, deposit: review('NT$54,000', '找不到的原文') })).high).toBe(0)
     expect(summarizeAssessments(assess('每月租金：18,000元。設備買賣價款：54,000元。')).high).toBe(0)
@@ -76,13 +76,13 @@ describe('實際約定、否定及範本', () => {
     const items = assess('封面。\n承租人同意放棄審閱權。', {}, ['封面。', '承租人同意放棄審閱權。'])
     expect(items.find((item) => item.ruleId === 'review-waiver')).toMatchObject({ severity: 'high', pageIndex: 1, focusText: '承租人同意放棄審閱權' })
   })
-  it('跨頁的保護性前綴仍有效，未完整定位的跨頁義務先待確認', () => {
+  it('跨頁的保護性前綴仍有效，實際義務可完整定位兩頁', () => {
     const protectedPages = ['不得記載', '承租人不得申請租金補貼。']
     expect(summarizeAssessments(assess(protectedPages.join('\n'), {}, protectedPages)).high).toBe(0)
     const actualPages = ['承租人不得申請', '租金補貼。']
     const items = assess(actualPages.join('\n'), {}, actualPages)
-    expect(items.find((item) => item.id === 'check-subsidy-ban')?.priority).toBe(true)
-    expect(summarizeAssessments(items).high).toBe(0)
+    expect(items.find((item) => item.ruleId === 'subsidy-ban')?.details?.map((d) => d.pageIndex)).toEqual([0, 1])
+    expect(summarizeAssessments(items).high).toBe(1)
   })
   it('引用、條件與後續更正不直接確認禁止條款', () => {
     for (const text of ['「承租人不得申請租金補貼」為無效約定。', '若承租人同意放棄審閱權，仍應另行確認。', '承租人不得申請租金補貼。雙方更正為可以申請。']) {
@@ -93,13 +93,13 @@ describe('實際約定、否定及範本', () => {
     expect(rules('車位費另計。')).toContain('parking-fee-unclear')
     expect(rules('車位費另計。附件：車位費：300元。')).not.toContain('parking-fee-unclear')
     expect(rules('車位費另計。車位管理費每月300元。')).not.toContain('parking-fee-unclear')
-    expect(buildContractAssessments({ text: '車位費另計。', pageTexts: ['車位費另計。'], pageCount: 9 }).some((item) => item.ruleId === 'parking-fee-unclear')).toBe(false)
+    expect(buildContractAssessments({ text: '車位費另計。', pageTexts: ['車位費另計。'], pageCount: 9 }).find((item) => item.ruleId === 'parking-fee-unclear')?.status).toBe('applicability_pending')
   })
   it('低風險需要具體問題；電價八元仍需比對帳單', () => {
     expect(rules('設備清單未記錄既有刮傷。')).toContain('equipment-record')
     expect(rules('設備清單已記錄數量與現況。')).toEqual([])
     const items = assess('電費每度8元。')
-    expect(items.find((item) => item.id === 'electricity-reference')?.status).toBe('applicability_pending')
+    expect(items.find((item) => item.ruleId === 'electricity-reference')?.status).toBe('applicability_pending')
     expect(summarizeAssessments(items).total).toBe(0)
   })
 })
