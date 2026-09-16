@@ -3,6 +3,67 @@ import { describe, expect, it } from 'vitest'
 import { extractContractFieldCandidates } from '@/shared/contract-field-extraction.js'
 import { CONTRACT_FIELD_GROUPS } from '@/shared/contract-field-schema.js'
 import { analyzeContractFields } from '../../server/contract-field-gate.js'
+import { isValidHandoverTime } from '@/shared/contract-field-validation.js'
+
+describe('新版契約的租期與租金標籤', () => {
+  const lease = `三、租賃期間
+租期開始:民國115年10月01日。租期結束:民國116年09月30日。租期共12個月。交
+屋/可入住時間:民
+國115年10月01日上午10時。
+四、租金約定及支付
+每月租金:新臺幣18,000元整。每期繳納月數:1個月。每期租金:新臺幣18,000元整。
+繳租期限:每月5日
+前(含當日)支付當月租金;首期租金於民國115年10月05日前支付。
+租金支付方式:轉帳繳付。金融機構:想像銀行中山分行。戶名:王房東。帳號:000-
+123456-789(虛構
+帳號,不可匯款)。出租人應提供收款證明。
+五、押金約定及返還`
+
+  it.each([lease, lease.replace(/\n/g, ' '), lease.replaceAll(':', '：').replaceAll('/', '／')])('擷取所有欄位並定位第 2 頁原文', (text) => {
+    const pageTexts = ['審閱日期：民國115年09月16日。預定簽約日期：民國115年09月21日。', text]
+    const { fieldReviews } = analyzeContractFields({ text: pageTexts.join('\n\n'), pageTexts, visionPages: [] })
+    const expected = {
+      start_date: '民國 115 年 10 月 1 日', end_date: '民國 116 年 9 月 30 日',
+      handover_time: '民國115年10月01日上午10時', rent: 'NT$18,000',
+      payment_period: '1 個月', due_day: '每月 5 日前', payment_method: '轉帳',
+      bank_account: '金融機構：想像銀行中山分行；戶名：王房東；帳號：000-123456-789',
+    }
+    for (const [id, value] of Object.entries(expected)) {
+      const review = fieldReviews[id]
+      expect(review?.value, id).toBe(value)
+      expect(review?.formatValid, id).toBe(true)
+      expect(review?.sourcePageIndex, id).toBe(1)
+      expect(review?.sourceStart, id).toBeGreaterThanOrEqual(0)
+      expect(text.slice(review.sourceStart, review.sourceEnd), id).toBe(review.sourceValue)
+    }
+  })
+
+  it('標籤內換行與全形數字仍可定位', () => {
+    const fields = extractContractFieldCandidates('租期開\n始：民 國１１５年１０月０１日。每期繳納月\n數：１個\n月。')
+    expect(fields.start_date.value).toBe('民國 115 年 10 月 1 日')
+    expect(fields.payment_period.value).toBe('1 個月')
+  })
+
+  it('不把審閱、簽約日期、租期總月數或首期租金當成缺漏欄位', () => {
+    const fields = extractContractFieldCandidates('審閱日期：民國115年09月16日。預定簽約日期：民國115年09月21日。租期共12個月。每期租金：18,000元。首期租金於民國115年10月05日前支付。')
+    for (const id of ['start_date', 'end_date', 'handover_time', 'payment_period']) expect(fields[id].value, id).toBe('')
+  })
+
+  it('仍接受原範本的自起至止與每期應繳納', () => {
+    const fields = extractContractFieldCandidates('租賃期間自民國115年10月1日起至民國116年9月30日止。每期應繳納2個月租金。')
+    expect(fields.start_date.value).toBe('民國 115 年 10 月 1 日')
+    expect(fields.end_date.value).toBe('民國 116 年 9 月 30 日')
+    expect(fields.payment_period.value).toBe('2 個月')
+  })
+
+  it('交屋日期含時間可通過驗證，但不接受無效日期或時間', () => {
+    expect(isValidHandoverTime('民國115年10月01日上午10時')).toBe(true)
+    expect(isValidHandoverTime('民國115年10月01日23時30分')).toBe(true)
+    expect(isValidHandoverTime('民國115年02月30日上午10時')).toBe(false)
+    expect(isValidHandoverTime('民國115年10月01日25時')).toBe(false)
+    expect(isValidHandoverTime('民國115年10月01日10時60分')).toBe(false)
+  })
+})
 
 describe('依章節排序而不綁定頁碼', () => {
   it('將當事人資料排在其他條款之後，保留穩定的群組識別碼', () => {

@@ -36,7 +36,7 @@ const MONEY_TOKEN =
 const DATE_TOKEN = '[0-9０-９〇○零一二三四五六七八九十]+'
 
 function normalizeFullWidthDigits(value) {
-  return value.replace(/[０-９]/g, (digit) => String(digit.charCodeAt(0) - 0xfee0))
+  return value.replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
 }
 
 // 內政部官方範本的欄位標籤常在冒號前夾一組括號註記：
@@ -59,6 +59,28 @@ function cleanSource(value) {
 
 function candidate(value, sourceValue, confidence) {
   return { value: cleanSource(value), sourceValue: cleanSource(sourceValue), confidence }
+}
+
+// Match OCR line wraps without losing the exact source span used by highlighting.
+function matchCompact(text, pattern) {
+  const positions = []
+  let compact = ''
+  for (let index = 0; index < text.length; index += 1) {
+    if (/\s/.test(text[index])) continue
+    positions.push(index)
+    compact += text[index]
+  }
+  const match = compact.match(pattern)
+  if (!match) return null
+  const start = positions[match.index]
+  const end = positions[match.index + match[0].length - 1] + 1
+  match[0] = text.slice(start, end)
+  match.index = start
+  return match
+}
+
+function matchedCandidate(value, match, confidence = 'medium') {
+  return { ...candidate(value, '', confidence), sourceValue: match[0] }
 }
 
 function captureFirst(text, patterns) {
@@ -439,20 +461,25 @@ function extractPaymentMethod(text) {
 }
 
 function extractBankAccount(text) {
-  const institution = captureFirst(text, [
-    /金融機構\s*[：:]\s*([^\r\n，,]+)/,
-    /銀行\s*[：:]\s*([^\r\n，,]+)/,
-  ])
-  const holder = captureFirst(text, [/戶名\s*[：:]\s*([^\r\n，,]+)/])
-  const account = captureFirst(text, [/帳號\s*[：:]\s*([0-9０-９-]+)/])
+  const institutionMatch = matchCompact(text, /(?:金融機構|銀行)[：:]([^，,。；;：:（(□■]{1,60}?)(?=戶名|帳號|[，,。；;：:（(□■]|$)/)
+  // Keep related bank fields together instead of borrowing an account elsewhere.
+  if (!institutionMatch) return { ...EMPTY_CANDIDATE }
+  const section = text.slice(institutionMatch.index, institutionMatch.index + 400)
+    .split(/\n\s*(?:第[一二三四五六七八九十]+條|[一二三四五六七八九十]+[、．])/)[0]
+  const holderMatch = matchCompact(section, /戶名[：:]([^，,。；;：:（(□■]{1,40}?)(?=帳號|[，,。；;：:（(□■]|$)/)
+  const accountMatch = matchCompact(section, /帳號[：:]([0-9０-９]+(?:[-－]?[0-9０-９]+)*)/)
+  const institution = institutionMatch[1]
+  const holder = holderMatch?.[1]
+  const account = accountMatch?.[1]
   const parts = [
     institution && `金融機構：${institution}`,
     holder && `戶名：${holder}`,
     account && `帳號：${account}`,
   ].filter(Boolean)
-  return parts.length
-    ? candidate(parts.join('；'), parts.join('；'), 'medium')
-    : { ...EMPTY_CANDIDATE }
+  const sourceEnd = Math.max(institutionMatch[0].length,
+    holderMatch ? holderMatch.index + holderMatch[0].length : 0,
+    accountMatch ? accountMatch.index + accountMatch[0].length : 0)
+  return { ...candidate(parts.join('；'), '', holder && account ? 'medium' : 'low'), sourceValue: section.slice(0, sourceEnd) }
 }
 
 export function parseChineseInteger(rawValue) {
@@ -599,6 +626,12 @@ function formatRocDate(yearText, monthText, dayText) {
 }
 
 function extractDates(text) {
+  const labeledDate = (labels) => {
+    const match = matchCompact(text, new RegExp(`(?:${labels})[：:]((?:民國)?(${DATE_TOKEN})年(${DATE_TOKEN})月(${DATE_TOKEN})日)`))
+    if (!match) return null
+    const value = formatRocDate(match[2], match[3], match[4])
+    return value ? matchedCandidate(value, match) : { ...EMPTY_CANDIDATE }
+  }
   const startMatch = text.match(
     new RegExp(
       `自\\s*(?:民國\\s*)?(${DATE_TOKEN})\\s*年\\s*(${DATE_TOKEN})\\s*月(?:\\s*(${DATE_TOKEN})?\\s*日)?\\s*起`,
@@ -616,13 +649,22 @@ function extractDates(text) {
   const startSource = startMatch?.[0].replace(/^自\s*/, '').replace(/\s*起$/, '') ?? ''
   const endSource = endMatch?.[0].replace(/^至\s*/, '').replace(/\s*止$/, '') ?? ''
   return {
-    startDate: startValue
+    startDate: labeledDate('租期開始|租期起始|租賃開始日期|租賃起始日期') ?? (startValue
       ? candidate(startValue, startSource, startMatch?.[3] ? 'medium' : 'low')
-      : { ...EMPTY_CANDIDATE },
-    endDate: endValue
+      : { ...EMPTY_CANDIDATE }),
+    endDate: labeledDate('租期結束|租期屆滿|租賃結束日期|租賃終止日期') ?? (endValue
       ? candidate(endValue, endSource, endMatch?.[3] ? 'medium' : 'low')
-      : { ...EMPTY_CANDIDATE },
+      : { ...EMPTY_CANDIDATE }),
   }
+}
+
+function extractHandoverTime(text) {
+  const match = matchCompact(text, new RegExp(
+    `(?:交屋[/／]可入住時間|交屋日期|入住日期|可搬入時間|交屋時間|可入住時間)[：:]((?:民國)?${DATE_TOKEN}年${DATE_TOKEN}月${DATE_TOKEN}日(?:(?:上午|下午|中午|晚上|早上)?${DATE_TOKEN}[時點](?:${DATE_TOKEN}分|半)?)?)`,
+  ))
+  return match ? matchedCandidate(match[1], match) : extractLabeledText(text, [
+    /(?:交屋日期|入住日期|可搬入時間)\s*[：:]\s*([^\r\n。；;]+)/,
+  ])
 }
 
 function extractDueDay(text) {
@@ -631,7 +673,7 @@ function extractDueDay(text) {
   const numbered = text.match(/(?:租金\s*)?每月\s*([0-9０-９]{1,2})\s*日\s*前/)
   const day = numbered?.[1] ? parseChineseInteger(numbered[1]) : null
   return day && day <= 31
-    ? candidate(`每月 ${day} 日前`, numbered[0], 'medium')
+    ? matchedCandidate(`每月 ${day} 日前`, numbered)
     : { ...EMPTY_CANDIDATE }
 }
 
@@ -670,8 +712,8 @@ export function extractContractFieldCandidates(text) {
     /(?:押租保證金|押金)[^\r\n]{0,50}?([0-9０-９一二三四五六七八九十兩两]+)\s*個月租金/,
   )
   const depositMonths = depositMonthsMatch?.[1] ? parseChineseInteger(depositMonthsMatch[1]) : null
-  const paymentPeriodMatch = text.match(
-    /每期應繳納\s*([0-9０-９一二三四五六七八九十兩两]+)\s*個月租金/,
+  const paymentPeriodMatch = matchCompact(text,
+    /(?:每期繳納月數[：:]|每期應繳納)([0-9０-９一二三四五六七八九十兩两]+)個月/,
   )
   const paymentPeriod = paymentPeriodMatch?.[1] ? parseChineseInteger(paymentPeriodMatch[1]) : null
   const rentalRoomMatch = text.match(
@@ -738,12 +780,10 @@ export function extractContractFieldCandidates(text) {
     endDate: dates.endDate,
     start_date: dates.startDate,
     end_date: dates.endDate,
-    handover_time: extractLabeledText(text, [
-      /(?:交屋日期|入住日期|可搬入時間)\s*[：:]\s*([^\r\n]+)/,
-    ]),
+    handover_time: extractHandoverTime(text),
     rent: extractMoney(text, ['(?:租金每個月|每月租金|月租金|租金\\s*[：:]?\\s*每月)']),
     payment_period: paymentPeriod
-      ? candidate(`${paymentPeriod} 個月`, paymentPeriodMatch?.[0] ?? '', 'medium')
+      ? matchedCandidate(`${paymentPeriod} 個月`, paymentPeriodMatch)
       : { ...EMPTY_CANDIDATE },
     dueDay: extractDueDay(text),
     due_day: extractDueDay(text),

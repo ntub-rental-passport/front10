@@ -253,19 +253,19 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     options: ['有', '無'],
   }),
 
-  field('start_date', 'term', '租期起始', ['租賃期間', '租賃期限', '租期自'], 'date'),
-  field('end_date', 'term', '租期結束', ['租賃期間', '租賃期限', '至民國'], 'date'),
+  field('start_date', 'term', '租期起始', ['租期開始', '租期起始', '租賃期間', '租賃期限', '租期自'], 'date'),
+  field('end_date', 'term', '租期結束', ['租期結束', '租期屆滿', '租賃期間', '租賃期限', '至民國'], 'date'),
   field(
     'handover_time',
     'term',
     '交屋／可入住時間',
-    ['交屋日期', '入住日期', '可搬入'],
+    ['交屋日期', '入住日期', '可搬入', '交屋', '可入住時間'],
     'handover_time',
     'recommended',
   ),
 
   field('rent', 'rent', '每月租金', ['每月租金', '月租金', '租金每個月'], 'money'),
-  field('payment_period', 'rent', '每期繳納月數', ['每期應繳納', '每期租金'], 'payment_period'),
+  field('payment_period', 'rent', '每期繳納月數', ['每期繳納月數', '每期應繳納', '每期租金'], 'payment_period'),
   field('due_day', 'rent', '繳租期限', ['每月', '租金應於', '繳納'], 'due_day'),
   field('payment_method', 'rent', '租金支付方式', ['租金支付方式', '現金繳付', '轉帳繳付'], 'payment_method'),
   field(

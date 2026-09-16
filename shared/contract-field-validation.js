@@ -182,6 +182,13 @@ export function isValidExpenseAgreement(value) {
 
 export function isValidHandoverTime(value) {
   const normalized = normalizeDigits(value).trim()
+  const dateTime = normalized.match(/^(.+?日)\s*(上午|下午|中午|晚上|早上)?\s*(\d{1,2})\s*[時點](?:\s*(\d{1,2})\s*分|\s*(半))?$/)
+  if (dateTime) {
+    const hour = Number(dateTime[3])
+    const minute = Number(dateTime[4] ?? (dateTime[5] ? 30 : 0))
+    return isValidRocDate(dateTime[1]) && hour >= (dateTime[2] ? 1 : 0)
+      && hour <= (dateTime[2] ? 12 : 23) && minute < 60
+  }
   return isValidRocDate(normalized) || /(?:交屋|入住|搬入).*(?:民國)?\d{2,3}[年/.-]\d{1,2}/.test(normalized)
 }
 

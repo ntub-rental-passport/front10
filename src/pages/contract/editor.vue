@@ -919,7 +919,8 @@ function syncFieldToContract(field: ContractField, newValue: string): boolean {
 
     // These sources include their labels to distinguish repeated names/addresses.
     // Keep the label when the user corrects the value in the document.
-    const labeledSource = field.groupId === 'parties' || field.id === 'review_days'
+    const labeledSource = field.groupId === 'parties' || field.groupId === 'term'
+      || ['review_days', 'payment_period'].includes(field.id)
     const prefix = labeledSource ? field.sourceValue.match(/^[\s\S]*?[：:]\s*/)?.[0] ?? '' : ''
     const suffix = labeledSource && /^(?:landlord|tenant)$/.test(field.id)
       ? field.sourceValue.match(/\s*(?:簽章|簽名|蓋章)[\s\S]*$/)?.[0] ?? ''
