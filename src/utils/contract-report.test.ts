@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { createDeidentifier, createReportId } from './contract-report'
+import { createDeidentifier, createReportId, reportEvidenceLines } from './contract-report'
 
 describe('contract report privacy', () => {
+  it('保留每處原文的來源頁碼且可逐處遮蔽個資', () => {
+    const lines = reportEvidenceLines({ id:'deposit', title:'押金', severity:'high', sourceLabel:'規則', pageIndex:0,
+      clause:'摘要', description:'', advice:'', details:[
+        {label:'租金',pageIndex:0,focusText:'王房東：月租18,000元'},
+        {label:'押金',pageIndex:2,focusText:'押金54,000元'},
+      ] })
+    expect(lines[0]).toContain('契約第 1 頁')
+    expect(lines[1]).toContain('契約第 3 頁')
+    expect(lines[1]).toContain('54,000')
+    expect(createDeidentifier({landlord:'王房東'})(lines[0]!)).not.toContain('王房東')
+  })
   it('replaces known contract fields consistently', () => {
     const deidentify = createDeidentifier({
       landlord: '王房東',

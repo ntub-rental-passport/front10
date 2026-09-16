@@ -46,6 +46,43 @@ describe('兩份使用者測試契約', () => {
 })
 
 describe('局部否定、更正及數值來源', () => {
+  it('電費證據在下一個編號前停止，保留原始定位', () => {
+    for (const separator of ['\n', ' ']) {
+      const text = `3. 電費：每度8元，以出租人公告或帳單為準，承租人不得異議${separator}4. 瓦斯費：依實際帳單金額，由承租人負擔。`
+      const item = assess([text]).find(r => r.ruleId === 'electricity-objection')!
+      expect(item.status).toBe('confirmed')
+      expect(item.clause).not.toContain('瓦斯費')
+      expect(text).toContain(item.focusText)
+    }
+    const item = assess(problem).find(r => r.ruleId === 'electricity-objection')!
+    expect(item.clause).not.toContain('瓦斯費')
+  })
+  it('跨頁續文與小數不被誤當成下一條編號', () => {
+    const item = assess(['3. 電費：每度8.5元，以出租人公告或帳單為準，', '承租人不得異議\n4. 瓦斯費：依帳單支付。']).find(r => r.ruleId === 'electricity-objection')!
+    expect(item.details?.map(d => d.pageIndex)).toEqual([0, 1])
+    expect(item.clause).toContain('8.5')
+    expect(item.clause).not.toContain('瓦斯費')
+  })
+  it('同句的保護性約定不排除另一項禁止租補約定', () => {
+    expect(confirmed(['出租人不得要求提前繳租，但承租人不得申請租金補貼。'])).toContain('subsidy-ban')
+    expect(confirmed(['承租人不得申請租金補貼，但出租人不得要求提前繳租。'])).toContain('subsidy-ban')
+    expect(confirmed(['出租人未要求提前繳租，承租人不得申請租金補貼。'])).toContain('subsidy-ban')
+  })
+  it('先命中引述仍保留後續明確證據與兩頁來源', () => {
+    const item = assess(['「承租人不得申請租金補貼」。', '承租人不得申請租金補貼。']).find(r => r.ruleId === 'subsidy-ban')!
+    expect(item.status).toBe('confirmed')
+    expect(item.details?.map(d => d.pageIndex)).toEqual([0, 1])
+  })
+  it('押金矛盾不能升格為已確認的解約違約金風險', () => {
+    const item = assess(['押金：三個月租金。押金：二個月租金。承租人提前解約喪失全部押金作為違約金。']).find(r => r.ruleId === 'termination-deposit-forfeit')!
+    expect(item.status).toBe('applicability_pending')
+    expect(item.severity).toBeNull()
+  })
+  it('相反約定需合併證據後保留待確認', () => {
+    const item = assess(['承租人不得申請租金補貼。', '承租人可以申請租金補貼。']).find(r => r.ruleId === 'subsidy-ban')!
+    expect(item.status).toBe('recognition_pending')
+    expect(item.details).toHaveLength(2)
+  })
   it('電費以帳單為準、無關地址更正不能屏蔽超额押金', () => {
     const text = '每月租金：新臺幣18,000元。押金：以三個月租金計算，共新臺幣54,000元。電費以出租人帳單為準。地址更正為另一地址。'
     expect(confirmed([text])).toContain('deposit-limit')

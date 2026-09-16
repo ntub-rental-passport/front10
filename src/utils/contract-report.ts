@@ -12,6 +12,13 @@ export type ContractReportRisk = {
   description: string
   advice: string
   legalBasis?: string[]
+  details?: Array<{ label: string; pageIndex: number | null; focusText: string }>
+}
+
+export function reportEvidenceLines(risk: ContractReportRisk): string[] {
+  return risk.details?.length
+    ? risk.details.map((detail, index) => `證據 ${index + 1}｜${detail.pageIndex === null ? '來源未定位' : `契約第 ${detail.pageIndex + 1} 頁`}：${detail.focusText}`)
+    : risk.clause ? [`${risk.pageIndex === null ? '來源未定位' : `契約第 ${risk.pageIndex + 1} 頁`}：${risk.clause}`] : []
 }
 
 export type ContractReportInput = {
@@ -22,6 +29,7 @@ export type ContractReportInput = {
   generatedAt?: Date
   reportId?: string
   analysisState?: 'loading' | 'ok' | 'failed'
+  handlingRecords?: Array<{ title: string; note: string; at: string; outcome: string }>
 }
 
 export type ContractReportResult = {
@@ -309,7 +317,7 @@ export async function generateContractReportPdf(
       weight: 700,
       gap: 12,
     })
-    if (risk.clause) drawText(`契約內容：${protect(risk.clause)}`, { size: 26, gap: 10 })
+    for (const line of reportEvidenceLines(risk)) drawText(protect(line), { size: 26, gap: 10 })
     drawText(`風險說明：${protect(risk.description)}`, { size: 26, gap: 10 })
     drawText(`建議處理：${protect(risk.advice)}`, { size: 26, color: '#4033b4', weight: 700, gap: 10 })
     if (risk.legalBasis?.length) {
@@ -318,6 +326,13 @@ export async function generateContractReportPdf(
     drawRule()
   })
 
+  if (input.handlingRecords?.length) {
+    drawText('處理紀錄', { size: 34, weight: 700, gap: 18 })
+    for (const record of input.handlingRecords) {
+      drawText(protect(`${record.at}｜${record.title}｜${record.outcome}`), { size: 25, gap: 8 })
+      drawText(protect(record.note), { size: 25, gap: 18 })
+    }
+  }
   ensureSpace(250)
   drawText('使用提醒', { size: 36, color: '#12101a', weight: 800, gap: 18 })
   drawText('本報告由 AI 與規則式檢核產生，可能出現誤判或遺漏，應回到契約原文確認。', { size: 25, gap: 10 })

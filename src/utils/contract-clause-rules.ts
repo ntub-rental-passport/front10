@@ -1,8 +1,27 @@
 import type { ContractAssessment } from './contract-risk'
 import type { ContractFieldReview } from './contract-ocr'
 
-export const CLAUSE_RULE_VERSION = '2026-09-17.1'
+export const CLAUSE_RULE_VERSION = '2026-09-17.3'
 const legalUrl = 'https://www.ey.gov.tw/File/43BC094940995CFC?A=C'
+const impacts: Record<string, string> = {
+  'review-waiver': '簽署放棄審閱的聲明，可能妨礙充分閱讀及提出修改。',
+  'subsidy-ban': '這項約定限制申請租金補貼，可能增加居住負擔。',
+  'household-ban': '這項約定限制遷入戶籍，可能影響居住相關權益。',
+  'tax-report-ban': '這項約定限制申報租賃費用支出，可能影響報稅權益。',
+  'tax-shift': '原由出租人負擔的稅費轉由房客支付，可能增加未預期支出。',
+  'deposit-return-delay': '點交後仍延後返還押金，可能使房客長時間無法取回款項。',
+  'electricity-reference': '契約列有固定電價，仍需帳單資料才能確認是否超收。',
+  'electricity-objection': '出租人決定電費且排除異議，可能妨礙核對實際計費。',
+  'internet-adjustment': '網路費可以單方調整，未來每月支出可能無法預期。',
+  'repair-allocation': '設備故障費用全由房客承擔；需先釐清修繕範圍及責任條件。',
+  'termination-deposit-forfeit': '提前退租可能失去全部押金，且金額可能超出適用的違約金限制。',
+  'landlord-termination': '僅欠租一個月就可能被要求立即搬離，影響居住穩定。',
+  'advertisement-disclaimer': '廣告承諾被排除，可能使設備或住宅條件的爭議難以主張。',
+  'contract-return': '繳回契約後，房客可能失去完整的權利義務證明。',
+  'contract-copy-ban': '限制影印或拍照，可能妨礙保存約定及爭議證據。',
+  'parking-fee-unclear': '車位費未列金額或算法，可能發生額外收費爭議。',
+  'equipment-record': '既有損傷未留紀錄，退租時可能難以釐清責任。',
+}
 const normalize = (s: string) => s.normalize('NFKC').replace(/\s/g, '').replace(/臺/g, '台')
 const number = (s: string) => Number(s.replace(/[,，]/g, ''))
 const integers: Record<string, number> = { 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }
@@ -15,8 +34,13 @@ export function contractClauses(pages: string[]) {
   const clauses: Clause[] = []
   const normativeStart = text.search(/貳[、．.\s]*不得記載事項/)
   const normativeEnd = normativeStart < 0 ? -1 : text.slice(normativeStart).search(/(?:\n|^)\s*(?:附件[一二三四五]|參[、．.])/)
-  for (const match of text.matchAll(/[^。；;]+/g)) {
-    const raw = match[0].trim()
+  // Split independent obligations at contrast/actor boundaries, retaining original offsets.
+  const scoped = text.replace(/[，,](?=\s*(?:但|然而|惟))/g, '；')
+    // Replace separators only: keep every original source offset, decimal and amount intact.
+    .replace(/\n(?=[ \t]*(?:\d{1,2}[.．、][ \t]*[^\d\s]|[一二三四五六七八九十]+、))/g, '；')
+    .replace(/[ \t](?=\d{1,2}[.．、][ \t]*(?:電費|瓦斯費|水費|管理費|網路費)[:：])/g, '；')
+  for (const match of scoped.matchAll(/[^。；;]+/g)) {
+    const raw = text.slice(match.index!, match.index! + match[0].length).trim()
     if (!raw) continue
     const start = match.index! + match[0].indexOf(raw)
     clauses.push({ raw, value: normalize(raw), start, end: start + raw.length,
@@ -30,8 +54,10 @@ function actual(clause: Clause) {
   // A document called "測試用範例" is not itself a quoted example clause.
   let value = clause.value
   if (value.includes('□')) value = value.split(/(?=[□■☑✓])/).filter((part) => /^[■☑✓]/.test(part)).join('；')
-  if (/不得(?:記載|約定|要求)|禁止(?:記載|約定)|未要求|不要求|未同意|未禁止|不得禁止|不能禁止|(?:範例|示例|例如)[:：]|並非|不是/.test(value)) return ''
-  return value
+  if (/^(?:範例|示例|例如)[:：]|^(?:不得|禁止)(?:記載|約定)/.test(value)) return ''
+  return value.split(/([,，])/).map(part =>
+    /不得(?:記載|約定|要求)|禁止(?:記載|約定)|未要求|不要求|未同意|未禁止|不得禁止|不能禁止|(?:範例|示例|例如)[:：]|並非|不是/.test(part) ? '' : part
+  ).join('')
 }
 
 export function hasTopicCorrection(pages: string[], topic: RegExp) {
@@ -57,7 +83,6 @@ export function evaluateClauseRisks(pages: string[], reviews: Record<string, Con
   }
   const emit = (ruleId: string, title: string, severity: ContractAssessment['severity'], sources: Clause[], topic: RegExp, basis: string, advice: string,
     status: ContractAssessment['status'] = 'confirmed', description = '') => {
-    if (results.some((r) => r.ruleId === ruleId)) return
     const refs = sources.flatMap((source, index) => evidence(source).map((ref) => ({
       ...ref, label: `證據 ${index + 1} · 第 ${ref.pageIndex + 1} 頁：${normalize(ref.focusText).slice(0, 64)}`,
     })))
@@ -67,8 +92,8 @@ export function evaluateClauseRisks(pages: string[], reviews: Record<string, Con
       title, status, severity: status === 'confirmed' ? severity : null, priority: severity === 'high' && status !== 'confirmed',
       source: 'field', sourceLabel: '契約條款規則', groupId: null, groupLabel: '條款與原文證據', fieldIds: [],
       pageIndex: refs[0]?.pageIndex ?? null, focusText: refs[0]?.focusText ?? '', clause: sources.map((s) => s.raw).join('\n'),
-      details: refs.length > 1 ? refs : undefined,
-      description: uncertain ? '相關條款有引述、更正或例外，請核對後再判定；不計入已確認風險。' : description || '原文符合此項風險規則；分級反映可能影響，不等同法院的法律判決。',
+      details: refs,
+      description: uncertain ? '相關條款有引述、更正或例外，請核對後再判定；不計入已確認風險。' : description || impacts[ruleId] || title,
       advice, legalBasis: [`住宅租賃定型化契約應記載及不得記載事項（114-04-18），${basis}：${legalUrl}`] })
   }
 
@@ -106,6 +131,10 @@ export function evaluateClauseRisks(pages: string[], reviews: Record<string, Con
     emit('deposit-limit', '押金超過兩個月租金', 'high', sources, /押金|押租保證金|月租金|每月租金/, '壹、五',
       '核對押金性質及金額，簽約前修正超額押金。', conflict || reviewConflict ? 'recognition_pending' : 'confirmed',
       `${rent ? `月租 ${rent.value.toLocaleString()} 元，上限 ${ (rent.value * 2).toLocaleString()} 元；` : ''}${Number.isFinite(excessive.value) ? `押金 ${excessive.value.toLocaleString()} 元。` : `押金約定 ${excessive.months} 個月租金。`}`)
+    if (rent && Number.isFinite(excessive.value)) results[results.length - 1]!.metrics = [
+      { label: '月租', value: rent.value }, { label: '押金', value: excessive.value },
+      { label: '超出兩個月部分', value: Math.max(0, excessive.value - rent.value * 2) },
+    ]
   }
 
   for (const clause of clauses) {
@@ -135,7 +164,7 @@ export function evaluateClauseRisks(pages: string[], reviews: Record<string, Con
     if (/(?:冷氣|熱水器|附屬設備)[^。；]{0,100}(?:故障|損壞)[^。；]{0,30}一律由承租人負擔/.test(s))
       add('repair-allocation', '設備故障費用一律轉由承租人負擔', 'high', /修繕|檢修|設備|冷氣|熱水器/, '壹、九及十一', '核對是否事先說明並確認修繕項目、範圍及可歸責事由；不能僅因另有約定就直接判違法。', 'applicability_pending')
     if (/(?:提前退租|提前解約|提前終止)[^。；]{0,140}(?:喪失|沒收|扣除|不退還)(?:全)?部押金[^。；]{0,20}違約金/.test(s))
-      add('termination-deposit-forfeit', '提前退租即以全部押金作為違約金', 'high', /提前|違約金|沒收|喪失/, '壹、十四及十八', '區分任意終止與法定終止事由，核對通知期間及違約金，不得一律沒收全部押金。', excessive ? 'confirmed' : 'applicability_pending')
+      emit('termination-deposit-forfeit', '提前退租即以全部押金作為違約金', 'high', [clause, ...(rent ? [rent.clause] : []), ...(excessive ? [excessive.clause] : [])], /提前|違約金|沒收|喪失/, '壹、十四及十八', '區分任意終止與法定終止事由，核對通知期間及違約金，不得一律沒收全部押金。', results.some(r => r.ruleId === 'deposit-limit' && r.status === 'confirmed') ? 'confirmed' : 'applicability_pending')
     if (/(?:遲付|積欠|欠繳|欠租)[^。；]{0,30}(?:1|一)個月[^。；]{0,100}(?:立即|逕行)終止/.test(s))
       add('landlord-termination', '欠租一個月即可立即終止租約', 'high', /欠租|遲付|積欠|出租人提前/, '壹、十七', '核對欠租總額、催告及書面通知條件；不能以欠租一個月直接要求立即搬離。')
     if (/(?:廣告|簡章|網頁)[^。；]{0,35}(?:一律)?僅供參考/.test(s))
@@ -151,5 +180,29 @@ export function evaluateClauseRisks(pages: string[], reviews: Record<string, Con
     if (/設備清單.*(?:未記錄|未載明)(?:既有)?(?:刮傷|損傷)/.test(s))
       add('equipment-record', '設備既有損傷尚未記錄', 'low', /設備清單|刮傷/, '壹、十五及附件一', '點交時共同記錄既有損傷並拍照。')
   }
-  return results
+  const merged = new Map<string, ContractAssessment>()
+  for (const candidate of results) {
+    const key = candidate.ruleId!
+    const previous = merged.get(key)
+    if (!previous) { merged.set(key, candidate); continue }
+    const primary = previous.status === 'confirmed' ? previous : candidate
+    const refs = [...(previous.details ?? []), ...(candidate.details ?? [])]
+      .filter((ref, index, all) => all.findIndex(other => other.pageIndex === ref.pageIndex && other.focusText === ref.focusText) === index)
+    merged.set(key, { ...primary, details: refs, clause: refs.map(ref => ref.focusText).join('\n') })
+  }
+  const permissions: Record<string, RegExp> = {
+    'subsidy-ban': /(?:承租人|房客)(?:得|可以|可)申請(?:租金補貼|租補)/,
+    'household-ban': /(?:承租人|房客)(?:得|可以|可)遷入戶籍/,
+    'tax-report-ban': /(?:承租人|房客)(?:得|可以|可)申報(?:租金|租賃費用)支出/,
+  }
+  for (const [rule, permission] of Object.entries(permissions)) {
+    const result = merged.get(rule)
+    const contradictory = clauses.filter(clause => permission.test(actual(clause)) && !/[「」『』]|例如|範例/.test(clause.value))
+    if (!result || !contradictory.length) continue
+    result.status = 'recognition_pending'; result.severity = null; result.priority = true
+    result.description = '不同位置對同一權利有相反約定，請核對更正或適用範圍後再判定。'
+    result.details = [...(result.details ?? []), ...contradictory.flatMap(evidence)]
+    result.clause = result.details.map(ref => ref.focusText).join('\n')
+  }
+  return [...merged.values()]
 }

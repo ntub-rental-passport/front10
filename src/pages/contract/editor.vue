@@ -119,7 +119,8 @@ const initialPageTexts = storedOcrResult.value?.pageTexts.length
     ? [storedOcrResult.value.text]
     : []
 const ocrPages = ref<string[]>([...initialPageTexts])
-const currentPageIndex = ref(0)
+const requestedPage = Number(route.query.page)
+const currentPageIndex = ref(Number.isInteger(requestedPage) && requestedPage >= 0 && requestedPage < initialPageTexts.length ? requestedPage : 0)
 const pageCount = computed(() => ocrPages.value.length)
 const currentPageNumber = computed(() => currentPageIndex.value + 1)
 const paginationItems = computed<PaginationItem[]>(() => {

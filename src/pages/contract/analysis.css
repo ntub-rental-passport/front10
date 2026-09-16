@@ -128,7 +128,7 @@
   gap: 0.55rem;
 }
 
-.analysis-stats > div {
+.analysis-stats > button {
   display: grid;
   gap: 0.2rem;
   border-radius: 0.65rem;
@@ -1424,7 +1424,7 @@ textarea:focus-visible {
   gap: 0.7rem;
 }
 
-.analysis-stats > div {
+.analysis-stats > button {
   position: relative;
   min-height: 7.6rem;
   align-content: space-between;
@@ -1434,7 +1434,7 @@ textarea:focus-visible {
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease;
 }
 
-.analysis-stats > div:hover {
+.analysis-stats > button:hover {
   transform: translateY(-3px);
   box-shadow: 0 10px 22px rgb(18 18 18 / 8%);
 }
@@ -1895,7 +1895,7 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .analysis-stats > div {
+  .analysis-stats > button {
     min-height: 6rem;
     grid-template-columns: 1fr auto;
   }
@@ -1926,7 +1926,7 @@ textarea:focus-visible {
   }
 
   .analysis-back-link,
-  .analysis-stats > div,
+  .analysis-stats > button,
   .legal-scope-grid > a,
   .risk-card,
   .risk-tabs button,
@@ -2295,3 +2295,54 @@ textarea:focus-visible {
   background: #efedf6;
 }
 .analysis-status-pill.is-incomplete { color: #795618; background: #fff4dc; border-color: #ead9b6; }
+.risk-metrics { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.risk-metrics > span { flex: 1; min-width: 110px; padding: 10px; background: #f5f3fc; border-radius: 10px; font-size: 12px; }
+.risk-metrics strong { display: block; font-size: 16px; margin-top: 4px; }
+.contract-analysis-page .ai-analysis-alert { padding: 10px 16px; font-size: 12px; }
+.risk-impact, .risk-advice { display: block; margin-top: 10px; font-size: 14px; line-height: 1.65; }
+.risk-advice { color: #4939a5; }
+.contract-analysis-page .risk-detail-list li, .contract-analysis-page .risk-clause { font-weight: 400; line-height: 1.7; }
+.contract-analysis-page .risk-actions { flex-wrap: wrap; gap: 12px; }
+.risk-legal-basis a { overflow-wrap: anywhere; }
+.process-dialog { margin: auto; border: 1px solid #ddd9ef; border-radius: 20px; padding: 24px; width: min(540px, 92vw); max-height: 85dvh; overflow: auto; }
+.process-dialog::backdrop { background: #17142f66; }
+.process-dialog h2 { font-size: 22px; font-weight: 700; }
+.process-dialog label { display: grid; gap: 8px; margin: 16px 0; }
+.process-dialog textarea, .process-dialog select { border: 1px solid #aaa3cb; border-radius: 8px; padding: 10px; width: 100%; }
+.process-dialog textarea { min-height: 110px; }
+.process-dialog p { line-height: 1.65; }
+.history-entry { padding: 20px; }
+.history-entry p { margin: 8px 0; }
+.contract-analysis-page button:focus-visible, .legal-scope-panel summary:focus-visible { outline: 3px solid #6750e8; outline-offset: 3px; }
+
+/* Original overview layout, with a fourth pending-review statistic. */
+/* Heading, optional alert and tabs retain their height; only results scroll. */
+.risk-panel { display: flex; flex-direction: column; }
+.risk-panel > .analysis-panel-heading,
+.risk-panel > .ai-analysis-alert,
+.risk-panel > .risk-tabs { flex: 0 0 auto; }
+.risk-panel > .risk-list { flex: 1 1 0; height: auto; min-height: 0; }
+.risk-panel > .risk-tabs { min-height: 52px; }
+.contract-analysis-page details.ai-analysis-alert { display: block; padding: 12px 16px; }
+.ai-analysis-alert summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 650; list-style: none; }
+.ai-analysis-alert summary::-webkit-details-marker { display: none; }
+.ai-analysis-alert summary span { margin-left: auto; font-size: 12px; white-space: nowrap; }
+.ai-analysis-alert p { margin: 10px 0 0; line-height: 1.7; }
+.ai-analysis-alert[open] { max-height: 180px; overflow-y: auto; }
+.risk-actions .risk-primary-action { border: 1px solid var(--violet); color: var(--violet); border-radius: 8px; padding: 8px 12px; min-height: 36px; }
+.risk-actions .risk-process-action { background: #f1eff8; border: 1px solid #ded9ee; border-radius: 8px; padding: 8px 12px; min-height: 36px; }
+.risk-actions .risk-primary-action:hover, .risk-actions .risk-process-action:hover { background: #e9e4ff; }
+.risk-legal-basis a { display: inline-flex; align-items: center; gap: 5px; width: fit-content; color: var(--violet); font-size: 13px; font-weight: 650; }
+.risk-legal-basis a svg { flex-shrink: 0; }
+.risk-legal-basis small { display: block; flex-basis: 100%; color: var(--ink-soft); font-size: 11px; line-height: 1.6; font-weight: 400; }
+.ai-analysis-alert summary:focus-visible, .risk-legal-basis a:focus-visible, .risk-list:focus-visible { outline: 2px solid var(--violet); outline-offset: -2px; }
+.analysis-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.analysis-stats > button { display: grid; text-align: left; cursor: pointer; font: inherit; }
+.analysis-stats > button[aria-pressed="true"] { border-color: currentColor; }
+.analysis-stats .is-pending { background: #eeebff; color: #5946ba; }
+@media (min-width: 1201px) {
+  .analysis-overview { grid-template-columns: minmax(18rem, 0.75fr) minmax(34rem, 1.25fr); }
+}
+@media (max-width: 760px) {
+  .analysis-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

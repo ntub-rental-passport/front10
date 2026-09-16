@@ -25,6 +25,7 @@ export type ContractAssessment = {
   priority?: boolean
   ruleId?: string
   ruleVersion?: string
+  metrics?: Array<{ label: string; value: number }>
   details?: Array<{ label: string; pageIndex: number | null; focusText: string }>
 }
 

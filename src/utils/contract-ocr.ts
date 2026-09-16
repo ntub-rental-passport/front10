@@ -1,4 +1,5 @@
 export type ContractOcrResult = {
+  reviewSessionId?: string
   engine: string
   fileName: string
   mimeType: string
@@ -435,6 +436,7 @@ export function normalizeContractOcrResult(
 
   return {
     engine: typeof input.engine === 'string' ? input.engine : '',
+    reviewSessionId: typeof input.reviewSessionId === 'string' ? input.reviewSessionId : undefined,
     fileName: typeof input.fileName === 'string' ? input.fileName : '',
     mimeType: typeof input.mimeType === 'string' ? input.mimeType : '',
     size: Number.isFinite(input.size) ? Math.max(0, Number(input.size)) : 0,
