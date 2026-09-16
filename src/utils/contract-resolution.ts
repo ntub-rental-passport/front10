@@ -1,8 +1,9 @@
 import type { ContractAssessment } from './contract-risk'
+import type { EvidenceAttachment } from './contract-evidence'
 
 export type ResolutionRecord = {
   id: string; rule: string; title: string; action: 'correct' | 'not_applicable' | 'discussed' | 'reopen';
-  note: string; at: string; evidence: string
+  note: string; at: string; evidence: string; attachments?: EvidenceAttachment[]
 }
 export const assessmentKey = (risk: ContractAssessment) => risk.ruleId || risk.id
 export const evidenceKey = (risk: ContractAssessment) => JSON.stringify([risk.clause, risk.details, risk.status, risk.ruleVersion])

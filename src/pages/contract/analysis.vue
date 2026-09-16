@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { assessmentKey, evidenceKey, isDismissed, reconcileRecord, type ResolutionRecord } from '@/src/utils/contract-resolution'
+import { EVIDENCE_ACCEPT, formatEvidenceSize, validateEvidenceFiles, saveEvidenceFiles, removeEvidenceFiles, loadEvidenceFile, type EvidenceAttachment } from '@/src/utils/contract-evidence'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -24,6 +25,10 @@ import {
   FileDown,
   FileSearch,
   FileText,
+  Paperclip,
+  UploadCloud,
+  LoaderCircle,
+  Info,
   MessageSquareText,
   Search,
   Scale,
@@ -246,7 +251,7 @@ const risks = ref<RiskItem[]>(buildRisks())
 const historyKey = 'rentmate-review:' + ocrResult?.reviewSessionId
 const records = ref<ResolutionRecord[]>([])
 try {
-  const stored = JSON.parse(sessionStorage.getItem(historyKey) || '[]')
+  const stored = JSON.parse(localStorage.getItem(historyKey) || sessionStorage.getItem(historyKey) || '[]')
   if (Array.isArray(stored)) records.value = stored.filter(record => record && typeof record.rule === 'string' && typeof record.evidence === 'string')
 } catch { /* unavailable storage */ }
 const severityFilter = ref<string | null>(null)
@@ -261,18 +266,90 @@ const processRisk = ref<RiskItem | null>(null)
 const processAction = ref<ResolutionRecord['action']>('discussed')
 const processNote = ref('')
 const processError = ref('')
+const processSaving = ref(false)
+const evidenceInput = ref<HTMLInputElement | null>(null)
+const evidenceDragging = ref(false)
+const evidenceError = ref('')
+const evidenceDownloadError = ref('')
+const processSuccess = ref('')
+type PendingEvidence = EvidenceAttachment & { file: File; preview: string }
+const processAttachments = ref<PendingEvidence[]>([])
+const processOptions = [
+  { value: 'discussed', label: '已與房東確認', description: '保存溝通結果，保留目前檢查項目。' },
+  { value: 'not_applicable', label: '確認不適用', description: '記錄不適用原因，將此項移至處理紀錄。' },
+  { value: 'correct', label: '修正辨識／回報誤判', description: '儲存後返回契約校對，修正原文或欄位。' },
+  { value: 'reopen', label: '恢復檢查', description: '保留歷次紀錄，重新列入檢查。' },
+] as const
+function clearProcessAttachments() {
+  for (const attachment of processAttachments.value) if (attachment.preview) URL.revokeObjectURL(attachment.preview)
+  processAttachments.value = []
+  evidenceDragging.value = false
+  if (evidenceInput.value) evidenceInput.value.value = ''
+}
+function addEvidence(files: File[]) {
+  if (processSaving.value || !files.length) return
+  evidenceError.value = validateEvidenceFiles(processAttachments.value, files)
+  if (evidenceError.value) return
+  processAttachments.value.push(...files.map(file => ({
+    id: crypto.randomUUID(), name: file.name, size: file.size, type: file.type, file,
+    preview: /^image\/(jpeg|png|webp|gif)$/.test(file.type) ? URL.createObjectURL(file) : '',
+  })))
+}
+function selectEvidence(event: Event) {
+  const input = event.target as HTMLInputElement
+  addEvidence(Array.from(input.files || []))
+  input.value = ''
+}
+function dropEvidence(event: DragEvent) {
+  evidenceDragging.value = false
+  addEvidence(Array.from(event.dataTransfer?.files || []))
+}
+function removeEvidence(id: string) {
+  const attachment = processAttachments.value.find(item => item.id === id)
+  if (attachment?.preview) URL.revokeObjectURL(attachment.preview)
+  processAttachments.value = processAttachments.value.filter(item => item.id !== id)
+  evidenceError.value = ''
+}
+async function downloadEvidence(attachment: EvidenceAttachment) {
+  evidenceDownloadError.value = ''
+  try {
+    const blob = await loadEvidenceFile(attachment.id)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url; link.download = attachment.name
+    document.body.appendChild(link); link.click(); link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch {
+    evidenceDownloadError.value = '無法讀取附件，瀏覽器中的附件可能已被清除。請重新加入檔案。'
+  }
+}
+onBeforeUnmount(clearProcessAttachments)
 function openProcess(risk: RiskItem) {
+  clearProcessAttachments()
+  evidenceError.value = ''; processSuccess.value = ''
   processRisk.value = risk; processAction.value = 'discussed'; processNote.value = ''; processError.value = ''
   processDialog.value?.showModal()
 }
-function saveProcess() {
+async function saveProcess() {
   const risk = processRisk.value
-  if (!risk || !processNote.value.trim()) return
+  if (!risk || processSaving.value) return
+  if (!processNote.value.trim()) { processError.value = '請填寫原因與核對依據，再儲存紀錄。'; return }
+  processError.value = ''
+  processSaving.value = true
+  const attachments = processAttachments.value.map(({ id, name, size, type }) => ({ id, name, size, type }))
   const record: ResolutionRecord = { id: crypto.randomUUID(), rule: assessmentKey(risk), title: risk.title,
-    action: processAction.value, note: processNote.value.trim(), at: new Date().toISOString(), evidence: evidenceKey(risk) }
+    action: processAction.value, note: processNote.value.trim(), at: new Date().toISOString(), evidence: evidenceKey(risk), attachments }
   const next = [...records.value, record]
-  try { sessionStorage.setItem(historyKey, JSON.stringify(next)) } catch { processError.value = '紀錄儲存失敗，請釋放瀏覽器儲存空間後重試。'; return }
+  try {
+    await saveEvidenceFiles(processAttachments.value)
+    localStorage.setItem(historyKey, JSON.stringify(next))
+  } catch {
+    await removeEvidenceFiles(attachments.map(item => item.id)).catch(() => {})
+    processError.value = '紀錄或附件儲存失敗，請確認瀏覽器允許儲存資料，或減少附件大小後重試。'
+    return
+  } finally { processSaving.value = false }
   records.value = next
+  processSuccess.value = '處理紀錄已儲存，可在「處理紀錄」查看與下載附件。'
   processDialog.value?.close()
   if (record.action === 'correct') openFieldEditor(risk)
 }
@@ -719,14 +796,50 @@ async function exportAnalysisReport(): Promise<void> {
       </div>
     </section>
 
-    <dialog ref="processDialog" class="process-dialog" aria-labelledby="process-title">
-      <form @submit.prevent="saveProcess">
-        <h2 id="process-title">處理此項</h2><p>{{ processRisk?.title }}</p>
-        <label>處理方式<select v-model="processAction"><option value="correct">修正辨識／回報誤判，返回校對</option><option value="not_applicable">確認不適用</option><option value="discussed">記錄已與房東確認</option><option value="reopen">恢復檢查</option></select></label>
-        <label>原因與核對依據<textarea v-model="processNote" required placeholder="記錄核對過的原文、修正內容或溝通結果" /></label>
-        <p>溝通紀錄不代表風險解除。修正資料後返回此頁，會重新執行規則；不適用判定只對目前證據有效。</p>
-        <p v-if="processError" role="alert">{{ processError }}</p>
-        <div class="risk-actions"><button type="button" @click="processDialog?.close()">取消</button><button type="submit">儲存紀錄</button></div>
+    <dialog ref="processDialog" class="process-dialog" aria-labelledby="process-title" aria-describedby="process-subtitle" @close="clearProcessAttachments" @cancel="processSaving && $event.preventDefault()">
+      <form class="process-form" :aria-busy="processSaving" @submit.prevent="saveProcess">
+        <header class="process-header">
+          <span class="process-header-icon"><ShieldCheck :size="26" /></span>
+          <div><span class="process-eyebrow">REVIEW NOTE · 處理紀錄</span><h2 id="process-title">處理此項</h2><p id="process-subtitle">記下確認結果，讓每一項處理都有依據。</p></div>
+          <button type="button" class="process-close" aria-label="關閉處理視窗" :disabled="processSaving" @click="processDialog?.close()"><X :size="20" /></button>
+        </header>
+        <div class="process-body">
+          <div class="process-context"><span>本次處理項目</span><strong>{{ processRisk?.title }}</strong><span v-if="processRisk?.severity" class="process-severity" :class="`is-${processRisk.severity}`">{{ processRisk.severity === 'high' ? '高風險' : processRisk.severity === 'medium' ? '中風險' : '低風險' }}</span></div>
+          <fieldset class="process-methods" :disabled="processSaving">
+            <legend><span class="process-step">01</span>選擇處理方式</legend>
+            <div class="process-method-grid">
+              <label v-for="option in processOptions" :key="option.value" class="process-method" :class="{ 'is-selected': processAction === option.value }">
+                <input v-model="processAction" type="radio" name="process-action" :value="option.value" />
+                <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
+              </label>
+            </div>
+          </fieldset>
+          <div class="process-note-field">
+            <label for="process-note" class="process-section-label"><span class="process-step">02</span>原因與核對依據 <span class="process-required">必填</span></label>
+            <p id="process-note-hint" class="process-field-hint">說明核對的原文、修正內容，或與房東確認的結果。</p>
+            <textarea id="process-note" v-model="processNote" required maxlength="5000" :disabled="processSaving" aria-describedby="process-note-hint" placeholder="例如：已於 9/17 與房東確認，押金將調整為兩個月租金，並附上對話截圖及修訂後契約。" />
+            <span class="process-character-count">{{ processNote.length.toLocaleString() }} / 5,000</span>
+          </div>
+          <section class="process-evidence" aria-labelledby="process-evidence-title">
+            <h3 id="process-evidence-title" class="process-section-label"><span class="process-step">03</span>佐證附件 <span class="process-optional">選填</span><span class="process-file-count">{{ processAttachments.length }} / 5</span></h3>
+            <input ref="evidenceInput" type="file" multiple :accept="EVIDENCE_ACCEPT" class="process-file-input" tabindex="-1" aria-label="選擇佐證附件" :disabled="processSaving" @change="selectEvidence" />
+            <button type="button" class="process-dropzone" :class="{ 'is-dragging': evidenceDragging }" :disabled="processSaving" aria-describedby="process-file-hint" @click="evidenceInput?.click()" @dragover.prevent="evidenceDragging = true" @dragleave.prevent="evidenceDragging = false" @drop.prevent="dropEvidence">
+              <span class="process-upload-icon"><UploadCloud :size="25" /></span><span><strong>點擊選擇檔案，或拖曳至此</strong><small>對話截圖、修訂契約、收據，都可以作為核對依據</small></span><span class="process-upload-label">選擇檔案</span>
+            </button>
+            <p id="process-file-hint" class="process-field-hint">圖片（JPG、PNG、WebP、GIF）、PDF、Word、Excel、TXT、CSV。單檔上限 10 MB，合計 25 MB。</p>
+            <p v-if="evidenceError" class="process-error" role="alert"><CircleAlert :size="16" />{{ evidenceError }}</p>
+            <ul v-if="processAttachments.length" class="process-attachment-list">
+              <li v-for="attachment in processAttachments" :key="attachment.id">
+                <img v-if="attachment.preview" :src="attachment.preview" :alt="attachment.name + ' 預覽'" /><span v-else class="process-file-icon"><FileText :size="22" /></span>
+                <span class="process-attachment-copy"><strong>{{ attachment.name }}</strong><small>{{ formatEvidenceSize(attachment.size) }} · 待儲存</small></span>
+                <button type="button" :aria-label="`移除 ${attachment.name}`" :disabled="processSaving" @click="removeEvidence(attachment.id)"><X :size="18" /></button>
+              </li>
+            </ul>
+          </section>
+          <div class="process-info"><Info :size="18" /><p>溝通紀錄不代表風險解除。修正資料後會重新檢查；不適用判定只對目前證據有效。</p></div>
+          <p v-if="processError" class="process-error" role="alert"><CircleAlert :size="18" />{{ processError }}</p>
+        </div>
+        <footer class="process-footer"><p><ShieldCheck :size="16" />紀錄與附件保存在此瀏覽器，可於本次契約的處理紀錄查看。</p><div class="process-footer-actions"><button type="button" class="process-cancel" :disabled="processSaving" @click="processDialog?.close()">取消</button><button type="submit" class="process-save" :disabled="processSaving"><LoaderCircle v-if="processSaving" :size="19" class="process-spinner" /><CheckCircle2 v-else :size="19" />{{ processSaving ? '儲存中…' : '儲存紀錄' }}</button></div></footer>
       </form>
     </dialog>
 
@@ -878,10 +991,13 @@ async function exportAnalysisReport(): Promise<void> {
           </div>
 
           <div id="review-results" class="risk-list" role="tabpanel" :aria-labelledby="`review-tab-${activeRiskTab}`" tabindex="0">
+            <p v-if="processSuccess" class="process-success" role="status"><CheckCircle2 :size="18" />{{ processSuccess }}<button v-if="activeRiskTab !== 'history'" type="button" @click="activeRiskTab = 'history'; severityFilter = null">查看紀錄</button></p>
+            <p v-if="evidenceDownloadError" class="process-error" role="alert">{{ evidenceDownloadError }}</p>
             <button v-if="severityFilter && activeRiskTab === 'risk'" @click="severityFilter = null">清除風險等級篩選</button>
             <template v-if="activeRiskTab === 'history'">
               <article v-for="record in [...records].reverse()" :key="record.id" class="risk-card history-entry">
                 <strong>{{ record.title }}</strong><p>{{ reconcileRecord(record, risks) }}</p><p>{{ record.note }}</p><small>{{ new Date(record.at).toLocaleString() }}</small>
+                <div v-if="record.attachments?.length" class="history-attachments"><span><Paperclip :size="15" />佐證附件 · {{ record.attachments.length }}</span><button v-for="attachment in record.attachments" :key="attachment.id" type="button" :aria-label="`下載 ${attachment.name}`" @click="downloadEvidence(attachment)"><FileText :size="18" /><span>{{ attachment.name }}<small>{{ formatEvidenceSize(attachment.size) }}</small></span><FileDown :size="18" /></button></div>
                 <button v-if="risks.find(r => assessmentKey(r) === record.rule)" @click="openProcess(risks.find(r => assessmentKey(r) === record.rule)!)">重新處理此項</button>
               </article>
             </template>
