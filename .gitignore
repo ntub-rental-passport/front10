@@ -60,3 +60,8 @@ backend/uploads/inspection/
 # Python 虛擬環境（桌機代理 desktop/.venv 會有幾百 MB 的 torch）
 .venv/
 venv/
+
+# 部署設定只留本機與 VM，不進版控（76d48c6d 已從 repo 移除）。
+# 補這條規則避免它哪天又被 git add . 加回去。
+docker-compose.yml
+docker-compose.*.yml
