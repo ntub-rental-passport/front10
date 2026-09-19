@@ -11,19 +11,49 @@ from pathlib import Path
 from uuid import uuid4
 
 TZ = timezone(timedelta(hours=8))
-ROOT = Path(__file__).resolve().parents[1]
 logger = logging.getLogger(__name__)
+
+# 路徑：本機從 repo 根目錄跑，容器裡 backend/ 就是 /app
+#
+# 原本寫死 Path(__file__).resolve().parents[1]，那在開發機上剛好是 repo 根，
+# 但容器的 Dockerfile 是 `COPY . .` 從 ./backend 進 /app —— parents[1] 變成
+# 根目錄 `/`，於是去找 /public/data 與 /backend，兩個都不存在。
+# 2026-09-19 正式站實測：排程每 20 秒噴一次
+# `sqlite3.OperationalError: unable to open database file`。
+#
+# 預設值維持原本的 repo 佈局（開發機行為不變），容器由 compose 設環境變數覆寫。
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# ⚠️ 這兩個一定要在**呼叫時**才讀環境變數，不能做成模組層級常數。
+# tests/test_garbage.py 在 setUp() 裡 patch GARBAGE_REMINDER_DB 指向暫存檔，
+# 那時模組早就 import 完了 —— 常數會停在開發機的真實路徑上，
+# 每個測試都去寫同一個檔案，狀態互相污染。
+# 2026-09-19 實際踩到：4 個測試失敗（「送了 2 次」「狀態還是 pending」）。
+
+
+def data_dir() -> Path:
+    """垃圾車站點資料（唯讀）。容器裡由 compose 以唯讀 volume 掛進來。"""
+    return Path(os.getenv('GARBAGE_DATA_DIR') or (_REPO_ROOT / 'public/data'))
+
+
+def reminder_db() -> Path:
+    """提醒佇列的 SQLite。
+
+    容器裡要指向可寫且**跨部署保留**的位置 —— 放在映像裡的話，
+    每次 docker compose up --build 都會把使用者設好的提醒清光。
+    """
+    return Path(os.getenv('GARBAGE_REMINDER_DB') or (_REPO_ROOT / 'backend/garbage-reminders.db'))
 
 
 @lru_cache(maxsize=1)
 def stops():
-    with (ROOT / 'public/data/taipei-garbage.csv').open(encoding='utf-8-sig', newline='') as file:
+    with (data_dir() / 'taipei-garbage.csv').open(encoding='utf-8-sig', newline='') as file:
         result = {}
         for row in csv.DictReader(file):
             key = '|'.join(row[name].strip() for name in ['行政區', '里別', '路線', '車次', '地點', '抵達時間'])
             raw = row['抵達時間'].strip().replace(':', '').zfill(4)
             result[key] = {'address': row['地點'], 'arrival': f'{raw[:2]}:{raw[2:]}'}
-    new_taipei = ROOT / 'public/data/new-taipei-garbage.json'
+    new_taipei = data_dir() / 'new-taipei-garbage.json'
     if new_taipei.exists():
         days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
         for row in json.loads(new_taipei.read_text(encoding='utf-8')):
@@ -40,7 +70,8 @@ def stops():
 
 @contextmanager
 def connect():
-    path = Path(os.getenv('GARBAGE_REMINDER_DB', str(ROOT / 'backend/garbage-reminders.db')))
+    path = reminder_db()
+    path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, timeout=15)
     db.row_factory = sqlite3.Row
     db.execute('''CREATE TABLE IF NOT EXISTS garbage_reminders (
