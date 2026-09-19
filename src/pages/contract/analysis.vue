@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { assessmentKey, evidenceKey, isDismissed, reconcileRecord, type ResolutionRecord } from '@/src/utils/contract-resolution'
+import { EVIDENCE_ACCEPT, formatEvidenceSize, validateEvidenceFiles, saveEvidenceFiles, removeEvidenceFiles, loadEvidenceFile, type EvidenceAttachment } from '@/src/utils/contract-evidence'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 // 與 authApi.ts 相同的 API 位址來源：開發模式讀 VITE_API_BASE_URL，正式環境走同源 /api
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-import { loadContractOcrResult, type ContractFieldReview } from '@/src/utils/contract-ocr'
+import { loadContractOcrResult, saveContractOcrResult } from '@/src/utils/contract-ocr'
 import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'
-import {
-  CONTRACT_FIELD_DEFINITIONS,
-  CONTRACT_FIELD_GROUPS,
-  detectContractConditions,
-} from '@/shared/contract-field-schema.js'
+import { buildContractAssessments, gateRemoteAssessments, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
 import { Button } from '@/components/ui/button/index'
 import {
   AlertTriangle,
@@ -27,6 +25,10 @@ import {
   FileDown,
   FileSearch,
   FileText,
+  Paperclip,
+  UploadCloud,
+  LoaderCircle,
+  Info,
   MessageSquareText,
   Search,
   Scale,
@@ -37,27 +39,8 @@ import {
   X,
 } from 'lucide-vue-next'
 
-type Severity = 'high' | 'medium' | 'low'
-type RiskSource = 'field' | 'rag' | 'ai'
-type RiskTab = 'field' | 'rag' | 'ai'
-
-type RiskItem = {
-  id: string
-  title: string
-  severity: Severity
-  source: RiskSource
-  sourceLabel: string
-  groupId: string | null
-  groupLabel: string
-  fieldIds: string[]
-  pageIndex: number | null
-  focusText: string
-  clause: string
-  description: string
-  advice: string
-  legalBasis?: string[]
-  details?: RiskDetail[]
-}
+type RiskTab = 'risk' | 'pending' | 'history'
+type RiskItem = ContractAssessment
 
 type RiskDetail = {
   label: string
@@ -121,40 +104,12 @@ const legalSourceScopes = [
   },
 ] as const
 
-const prefersReducedMotion =
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-function useAnimatedNumber(source: () => number) {
-  const display = ref(0)
-  let frame = 0
-  watch(
-    source,
-    (target) => {
-      cancelAnimationFrame(frame)
-      if (prefersReducedMotion) {
-        display.value = target
-        return
-      }
-      const start = display.value
-      const delta = target - start
-      const startTime = performance.now()
-      const duration = 640
-      const tick = (now: number) => {
-        const progress = Math.min((now - startTime) / duration, 1)
-        const eased = 1 - Math.pow(1 - progress, 3)
-        display.value = Math.round(start + delta * eased)
-        if (progress < 1) frame = requestAnimationFrame(tick)
-      }
-      frame = requestAnimationFrame(tick)
-    },
-    { immediate: true },
-  )
-  onBeforeUnmount(() => cancelAnimationFrame(frame))
-  return display
-}
-
 const router = useRouter()
 const ocrResult = loadContractOcrResult()
+if (ocrResult && !ocrResult.reviewSessionId) {
+  ocrResult.reviewSessionId = crypto.randomUUID()
+  saveContractOcrResult(ocrResult)
+}
 const pages = ref<string[]>(
   ocrResult?.pageTexts.length
     ? [...ocrResult.pageTexts]
@@ -166,7 +121,7 @@ const currentPageIndex = ref(0)
 const searchQuery = ref('')
 const activeSearchMatchIndex = ref(-1)
 const riskFocusText = ref('')
-const activeRiskTab = ref<RiskTab>('field')
+const activeRiskTab = ref<RiskTab>('risk')
 const activeRiskId = ref<string | null>(null)
 const chatInput = ref('')
 const nextMessageId = ref(3)
@@ -288,152 +243,151 @@ const highlightedSegments = computed(() => {
   })
 })
 
-function parseAmount(value: string | undefined): number {
-  return Number(String(value ?? '').replace(/[^0-9]/g, '')) || 0
-}
-
-function reviewValue(fieldId: string): string {
-  return ocrResult?.fieldReviews?.[fieldId]?.value?.trim() ?? ''
-}
-
-function firstLocatedReview(fieldIds: string[]): ContractFieldReview | null {
-  for (const fieldId of fieldIds) {
-    const review = ocrResult?.fieldReviews?.[fieldId]
-    if (review?.sourcePageIndex !== null && review?.sourcePageIndex !== undefined) return review
-  }
-  return null
-}
-
-function findPageByKeyword(keyword: string): number | null {
-  const index = pages.value.findIndex((page) => page.includes(keyword))
-  return index >= 0 ? index : null
-}
-
-const groupPageKeywords: Record<string, string[]> = {
-  review: ['契約審閱', '審閱'],
-  parties: ['立約雙方', '出租人'],
-  agency: ['代理人', '轉租'],
-  property: ['租賃住宅標示', '租賃住宅地址', '租賃標的'],
-  scope: ['租賃範圍'],
-  term: ['租賃期間'],
-  rent: ['租金約定', '租金'],
-  deposit: ['押金約定', '押金'],
-  fees: ['相關費用', '水費', '電費'],
-  clauses: ['遺留物', '管轄法院'],
-}
-
-function findGroupPage(groupId: string): { pageIndex: number | null; focusText: string } {
-  for (const keyword of groupPageKeywords[groupId] ?? []) {
-    const pageIndex = findPageByKeyword(keyword)
-    if (pageIndex !== null) return { pageIndex, focusText: keyword }
-  }
-  return { pageIndex: null, focusText: '' }
-}
-
-function findClause(pattern: RegExp, focusText: string): LocatedClause | null {
-  for (let pageIndex = 0; pageIndex < pages.value.length; pageIndex += 1) {
-    const compactText = (pages.value[pageIndex] ?? '').replace(/\s+/g, ' ').trim()
-    const match = compactText.match(pattern)
-    if (!match?.[0]) continue
-    return {
-      pageIndex,
-      focusText: compactText.includes(focusText) ? focusText : match[0].slice(0, 12),
-      text: match[0].trim(),
-    }
-  }
-  return null
-}
-
 function buildRisks(): RiskItem[] {
-  const result: RiskItem[] = []
-  const conditions = detectContractConditions(ocrResult?.text ?? '') as Record<string, boolean>
-  const missingByGroup = new Map<string, Array<{ id: string; label: string }>>()
-
-  // 1. 檢查缺少欄位
-  CONTRACT_FIELD_DEFINITIONS.forEach((definition) => {
-    const required =
-      definition.requirement === 'required' ||
-      (definition.requirement === 'conditional' &&
-        Boolean(definition.condition && conditions[definition.condition]))
-    if (!required) return
-
-    const value = reviewValue(definition.id)
-    if (value && value !== '尚未辨識') return
-    const groupFields = missingByGroup.get(definition.groupId) ?? []
-    groupFields.push({ id: definition.id, label: definition.label })
-    missingByGroup.set(definition.groupId, groupFields)
-  })
-
-  missingByGroup.forEach((missingFields, groupId) => {
-    const group = CONTRACT_FIELD_GROUPS.find((item) => item.id === groupId)
-    const groupLocation = findGroupPage(groupId)
-    const details = missingFields.map((field) => {
-      const review = ocrResult?.fieldReviews?.[field.id]
-      return {
-        label: field.label,
-        pageIndex: review?.sourcePageIndex ?? groupLocation.pageIndex,
-        focusText: review?.sourceValue || groupLocation.focusText,
-      }
-    })
-    result.push({
-      id: `missing-${groupId}`,
-      title: `${group?.title ?? '契約資料'}缺少 ${missingFields.length} 項`,
-      severity: 'high',
-      source: 'field',
-      sourceLabel: '關鍵欄位檢核',
-      groupId,
-      groupLabel: group?.title ?? '契約資料',
-      fieldIds: missingFields.map((field) => field.id),
-      pageIndex: details.find((detail) => detail.pageIndex !== null)?.pageIndex ?? null,
-      focusText: details.find((detail) => detail.focusText)?.focusText ?? '',
-      clause: `未確認欄位：${missingFields.map((field) => field.label).join('、')}`,
-      description: '契約缺少必要資訊，可能使租賃範圍、費用或權利義務難以認定。',
-      advice: `請房東協助確認並補充：${missingFields.map((field) => field.label).join('、')}。`,
-      details,
-    })
-  })
-
-  // 2. 檢查押金上限
-  const rent = parseAmount(reviewValue('rent'))
-  const deposit = parseAmount(reviewValue('deposit'))
-  const depositMonths = parseAmount(reviewValue('deposit_months'))
-  if (depositMonths > 2 || (rent > 0 && deposit > rent * 2)) {
-    const review = firstLocatedReview(['deposit_months', 'deposit'])
-    result.push({
-      id: 'deposit-limit',
-      title: '押金約定可能超過法定上限',
-      severity: 'high',
-      source: 'field',
-      sourceLabel: '關鍵欄位檢核',
-      groupId: 'deposit',
-      groupLabel: '押金約定',
-      fieldIds: ['deposit_months', 'deposit'],
-      pageIndex: review?.sourcePageIndex ?? findPageByKeyword('押金'),
-      focusText: review?.sourceValue || '押金',
-      clause: `押金月數：${reviewValue('deposit_months') || '未載明'}；押金金額：${reviewValue('deposit') || '未載明'}`,
-      description: '押金月數或金額可能超過兩個月租金，建議核對租金與押金計算方式。',
-      advice: '建議請房東將押金調整為不超過兩個月租金，並在契約中載明返還條件與期限。',
-    })
-  }
-
-  return result
+  return buildContractAssessments(ocrResult)
 }
-
 
 const risks = ref<RiskItem[]>(buildRisks())
-if (!risks.value.some((risk) => risk.source === 'field')) activeRiskTab.value = 'rag'
-const filteredRisks = computed(() => risks.value.filter((risk) => risk.source === activeRiskTab.value))
-const highRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'high').length)
-const mediumRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'medium').length)
-const lowRiskCount = computed(() => risks.value.filter((risk) => risk.severity === 'low').length)
-const displayTotalRisk = useAnimatedNumber(() => risks.value.length)
-const displayHighRisk = useAnimatedNumber(() => highRiskCount.value)
-const displayMediumRisk = useAnimatedNumber(() => mediumRiskCount.value)
-const displayLowRisk = useAnimatedNumber(() => lowRiskCount.value)
+const historyKey = 'rentmate-review:' + ocrResult?.reviewSessionId
+const records = ref<ResolutionRecord[]>([])
+try {
+  const stored = JSON.parse(localStorage.getItem(historyKey) || sessionStorage.getItem(historyKey) || '[]')
+  if (Array.isArray(stored)) records.value = stored.filter(record => record && typeof record.rule === 'string' && typeof record.evidence === 'string')
+} catch { /* unavailable storage */ }
+const severityFilter = ref<string | null>(null)
+const activeRisks = computed(() => risks.value.filter(risk => !isDismissed(risk, records.value)))
+const filteredRisks = computed(() => activeRisks.value.filter(risk => activeRiskTab.value === 'risk'
+  ? risk.status === 'confirmed' && (!severityFilter.value || risk.severity === severityFilter.value)
+  : activeRiskTab.value === 'pending' ? !['confirmed', 'not_applicable'].includes(risk.status)
+  : risk.status === 'not_applicable'))
+const assessmentSummary = computed(() => summarizeAssessments(activeRisks.value))
+const processDialog = ref<HTMLDialogElement | null>(null)
+const processRisk = ref<RiskItem | null>(null)
+const processAction = ref<ResolutionRecord['action']>('discussed')
+const processNote = ref('')
+const processError = ref('')
+const processSaving = ref(false)
+const evidenceInput = ref<HTMLInputElement | null>(null)
+const evidenceDragging = ref(false)
+const evidenceError = ref('')
+const evidenceDownloadError = ref('')
+const processSuccess = ref('')
+type PendingEvidence = EvidenceAttachment & { file: File; preview: string }
+const processAttachments = ref<PendingEvidence[]>([])
+const processOptions = [
+  { value: 'discussed', label: '已與房東確認', description: '保存溝通結果，保留目前檢查項目。' },
+  { value: 'not_applicable', label: '確認不適用', description: '記錄不適用原因，將此項移至處理紀錄。' },
+  { value: 'correct', label: '修正辨識／回報誤判', description: '儲存後返回契約校對，修正原文或欄位。' },
+  { value: 'reopen', label: '恢復檢查', description: '保留歷次紀錄，重新列入檢查。' },
+] as const
+function clearProcessAttachments() {
+  for (const attachment of processAttachments.value) if (attachment.preview) URL.revokeObjectURL(attachment.preview)
+  processAttachments.value = []
+  evidenceDragging.value = false
+  if (evidenceInput.value) evidenceInput.value.value = ''
+}
+function addEvidence(files: File[]) {
+  if (processSaving.value || !files.length) return
+  evidenceError.value = validateEvidenceFiles(processAttachments.value, files)
+  if (evidenceError.value) return
+  processAttachments.value.push(...files.map(file => ({
+    id: crypto.randomUUID(), name: file.name, size: file.size, type: file.type, file,
+    preview: /^image\/(jpeg|png|webp|gif)$/.test(file.type) ? URL.createObjectURL(file) : '',
+  })))
+}
+function selectEvidence(event: Event) {
+  const input = event.target as HTMLInputElement
+  addEvidence(Array.from(input.files || []))
+  input.value = ''
+}
+function dropEvidence(event: DragEvent) {
+  evidenceDragging.value = false
+  addEvidence(Array.from(event.dataTransfer?.files || []))
+}
+function removeEvidence(id: string) {
+  const attachment = processAttachments.value.find(item => item.id === id)
+  if (attachment?.preview) URL.revokeObjectURL(attachment.preview)
+  processAttachments.value = processAttachments.value.filter(item => item.id !== id)
+  evidenceError.value = ''
+}
+async function downloadEvidence(attachment: EvidenceAttachment) {
+  evidenceDownloadError.value = ''
+  try {
+    const blob = await loadEvidenceFile(attachment.id)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url; link.download = attachment.name
+    document.body.appendChild(link); link.click(); link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch {
+    evidenceDownloadError.value = '無法讀取附件，瀏覽器中的附件可能已被清除。請重新加入檔案。'
+  }
+}
+onBeforeUnmount(clearProcessAttachments)
+function openProcess(risk: RiskItem) {
+  clearProcessAttachments()
+  evidenceError.value = ''; processSuccess.value = ''
+  processRisk.value = risk; processAction.value = 'discussed'; processNote.value = ''; processError.value = ''
+  processDialog.value?.showModal()
+}
+async function saveProcess() {
+  const risk = processRisk.value
+  if (!risk || processSaving.value) return
+  if (!processNote.value.trim()) { processError.value = '請填寫原因與核對依據，再儲存紀錄。'; return }
+  processError.value = ''
+  processSaving.value = true
+  const attachments = processAttachments.value.map(({ id, name, size, type }) => ({ id, name, size, type }))
+  const record: ResolutionRecord = { id: crypto.randomUUID(), rule: assessmentKey(risk), title: risk.title,
+    action: processAction.value, note: processNote.value.trim(), at: new Date().toISOString(), evidence: evidenceKey(risk), attachments }
+  const next = [...records.value, record]
+  try {
+    await saveEvidenceFiles(processAttachments.value)
+    localStorage.setItem(historyKey, JSON.stringify(next))
+  } catch {
+    await removeEvidenceFiles(attachments.map(item => item.id)).catch(() => {})
+    processError.value = '紀錄或附件儲存失敗，請確認瀏覽器允許儲存資料，或減少附件大小後重試。'
+    return
+  } finally { processSaving.value = false }
+  records.value = next
+  processSuccess.value = '處理紀錄已儲存，可在「處理紀錄」查看與下載附件。'
+  processDialog.value?.close()
+  if (record.action === 'correct') openFieldEditor(risk)
+}
+function filterSeverity(severity: string) { severityFilter.value = severity; activeRiskTab.value = 'risk' }
+function legalLink(basis: string) { return basis.match(/https?:\/\/[^\s]+/)?.[0] }
+function legalTitle(risk: RiskItem) {
+  const titles: Record<string, string> = {
+    'deposit-limit': '押金約定及返還', 'deposit-return-delay': '押金返還與住宅點交',
+    'review-waiver': '契約審閱期', 'electricity-objection': '費用約定與出租人義務',
+    'electricity-reference': '電費計收', 'internet-adjustment': '租金與費用約定',
+    'termination-deposit-forfeit': '提前終止與違約金',
+  }
+  return titles[risk.ruleId || ''] || '相關契約規範'
+}
+function riskImpact(risk: RiskItem) {
+  const excess = risk.metrics?.find(metric => metric.label === '超出兩個月部分')
+  return risk.ruleId === 'deposit-limit' && risk.status === 'confirmed' && excess
+    ? `押金比兩個月租金上限多出 ${excess.value.toLocaleString()} 元。` : risk.description
+}
+function moveRiskTab(event: KeyboardEvent, id: RiskTab) {
+  const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End']
+  if (!keys.includes(event.key)) return
+  event.preventDefault()
+  const ids = riskTabs.value.map(tab => tab.id)
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1
+    : (ids.indexOf(id) + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length
+  activeRiskTab.value = ids[index]!
+  severityFilter.value = null
+  void nextTick(() => document.getElementById(`review-tab-${activeRiskTab.value}`)?.focus())
+}
+function legalLabel(basis: string) { return basis.replace(/https?:\/\/[^\s]+/g, '').replace(/：$/, '') }
+const highRiskCount = computed(() => assessmentSummary.value.high)
+const mediumRiskCount = computed(() => assessmentSummary.value.medium)
+const lowRiskCount = computed(() => assessmentSummary.value.low)
 const riskTabs = computed(() => [
-  { id: 'field' as const, label: '關鍵欄位檢查', count: risks.value.filter((risk) => risk.source === 'field').length },
-  { id: 'rag' as const, label: 'RAG 風險分析', count: risks.value.filter((risk) => risk.source === 'rag').length },
-  { id: 'ai' as const, label: 'AI 綜合建議', count: risks.value.filter((risk) => risk.source === 'ai').length },
+  { id: 'risk' as const, label: '風險提醒', count: assessmentSummary.value.total },
+  { id: 'pending' as const, label: '待確認', count: activeRisks.value.filter(r => !['confirmed', 'not_applicable'].includes(r.status)).length },
+  { id: 'history' as const, label: '處理紀錄', count: records.value.length + activeRisks.value.filter(r => r.status === 'not_applicable').length },
 ])
 /*
  * AI 分析的狀態必須讓使用者看得到。
@@ -474,10 +428,13 @@ async function loadBackendRagAndAiAnalysis() {
       return
     }
     const data = await response.json()
+    if (!data || !Array.isArray(data.rag_risks) || !Array.isArray(data.ai_risks)) {
+      throw new Error('分析回應格式不完整')
+    }
 
     // 取得後端真正的 RAG 與 AI 風險，並與本機 field 風險疊加
     const localFieldRisks = buildRisks()
-    risks.value = [...localFieldRisks, ...(data.rag_risks || []), ...(data.ai_risks || [])]
+    risks.value = [...localFieldRisks, ...gateRemoteAssessments(data.rag_risks, 'rag', pages.value), ...gateRemoteAssessments(data.ai_risks, 'ai', pages.value)]
     aiAnalysisState.value = 'ok'
   } catch (error) {
     console.error('後端 API 呼叫失敗，維持本機檢核結果:', error)
@@ -564,6 +521,7 @@ function openFieldEditor(risk: RiskItem): void {
     query: {
       group: risk.groupId ?? undefined,
       field: risk.fieldIds[0] ?? undefined,
+      page: risk.pageIndex ?? undefined,
     },
   })
 }
@@ -718,9 +676,11 @@ async function exportAnalysisReport(): Promise<void> {
     )
     const report = await generateContractReportPdf({
       fileName: ocrResult?.fileName || '租屋契約.pdf',
-      risks: risks.value,
+      risks: risks.value.map(risk => isDismissed(risk, records.value) ? { ...risk, status: 'not_applicable' as const, severity: null, description: '使用者確認不適用；原規則證據保留供追溯。' } : risk),
+      handlingRecords: records.value.map(record => ({ ...record, outcome: reconcileRecord(record, risks.value) })),
       fieldValues,
       privacyMode: exportPrivacyMode.value,
+      analysisState: aiAnalysisState.value,
     })
     downloadPdf(report.bytes, report.fileName)
     exportDialogOpen.value = false
@@ -819,20 +779,69 @@ async function exportAnalysisReport(): Promise<void> {
         <div class="analysis-overview-copy">
           <span class="analysis-section-index">DIAGNOSIS · 02</span>
           <div class="analysis-total-risk">
-            <strong>{{ displayTotalRisk }}</strong>
-            <span>項內容<br />需要留意</span>
+            <strong>{{ assessmentSummary.total }}</strong>
+            <span>項規則風險<br />已確認證據</span>
           </div>
           <p v-if="highRiskCount">優先確認 {{ highRiskCount }} 項高風險，再依序檢視其他提醒。</p>
-          <p v-else>目前沒有高風險項目，可依序確認其餘提醒。</p>
+          <p v-else>目前規則未確認高風險；待確認與未完成分析不代表沒有問題。</p>
+          <p>{{ assessmentSummary.pending }} 項待確認，不計入風險數量。</p>
         </div>
-        <span class="analysis-status-pill"><CheckCircle2 :size="15" /> 分析完成</span>
+        <span class="analysis-status-pill" :class="{ 'is-incomplete': aiAnalysisState !== 'ok' }"><CheckCircle2 :size="15" /> 欄位檢查完成／{{ aiAnalysisState === 'ok' ? 'AI 候選分析完成' : aiAnalysisState === 'loading' ? 'AI 分析中' : 'AI 分析未完成' }}</span>
       </div>
       <div class="analysis-stats">
-        <div class="is-high"><span>HIGH · 高風險</span><strong>{{ displayHighRisk }}</strong><small>建議優先處理</small></div>
-        <div class="is-medium"><span>MED · 中風險</span><strong>{{ displayMediumRisk }}</strong><small>簽約前再確認</small></div>
-        <div class="is-low"><span>LOW · 低風險</span><strong>{{ displayLowRisk }}</strong><small>閱讀時留意</small></div>
+        <button type="button" class="is-high" :aria-pressed="activeRiskTab === 'risk' && severityFilter === 'high'" @click="filterSeverity('high')"><span>HIGH · 高風險</span><strong>{{ highRiskCount }}</strong><small>{{ aiAnalysisState === 'ok' ? '規則確認項目' : '完整統計尚未完成' }}</small></button>
+        <button type="button" class="is-medium" :aria-pressed="activeRiskTab === 'risk' && severityFilter === 'medium'" @click="filterSeverity('medium')"><span>MED · 中風險</span><strong>{{ mediumRiskCount }}</strong><small>{{ aiAnalysisState === 'ok' ? '規則確認項目' : '完整統計尚未完成' }}</small></button>
+        <button type="button" class="is-low" :aria-pressed="activeRiskTab === 'risk' && severityFilter === 'low'" @click="filterSeverity('low')"><span>LOW · 低風險</span><strong>{{ lowRiskCount }}</strong><small>{{ aiAnalysisState === 'ok' ? '規則確認項目' : '完整統計尚未完成' }}</small></button>
+        <button type="button" class="is-pending" :aria-pressed="activeRiskTab === 'pending'" @click="activeRiskTab = 'pending'; severityFilter = null"><span>CHECK · 待確認</span><strong>{{ assessmentSummary.pending }}</strong><small>待核對，不計入風險數量</small></button>
       </div>
     </section>
+
+    <dialog ref="processDialog" class="process-dialog" aria-labelledby="process-title" aria-describedby="process-subtitle" @close="clearProcessAttachments" @cancel="processSaving && $event.preventDefault()">
+      <form class="process-form" :aria-busy="processSaving" @submit.prevent="saveProcess">
+        <header class="process-header">
+          <span class="process-header-icon"><ShieldCheck :size="26" /></span>
+          <div><span class="process-eyebrow">REVIEW NOTE · 處理紀錄</span><h2 id="process-title">處理此項</h2><p id="process-subtitle">記下確認結果，讓每一項處理都有依據。</p></div>
+          <button type="button" class="process-close" aria-label="關閉處理視窗" :disabled="processSaving" @click="processDialog?.close()"><X :size="20" /></button>
+        </header>
+        <div class="process-body">
+          <div class="process-context"><span>本次處理項目</span><strong>{{ processRisk?.title }}</strong><span v-if="processRisk?.severity" class="process-severity" :class="`is-${processRisk.severity}`">{{ processRisk.severity === 'high' ? '高風險' : processRisk.severity === 'medium' ? '中風險' : '低風險' }}</span></div>
+          <fieldset class="process-methods" :disabled="processSaving">
+            <legend><span class="process-step">01</span>選擇處理方式</legend>
+            <div class="process-method-grid">
+              <label v-for="option in processOptions" :key="option.value" class="process-method" :class="{ 'is-selected': processAction === option.value }">
+                <input v-model="processAction" type="radio" name="process-action" :value="option.value" />
+                <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
+              </label>
+            </div>
+          </fieldset>
+          <div class="process-note-field">
+            <label for="process-note" class="process-section-label"><span class="process-step">02</span>原因與核對依據 <span class="process-required">必填</span></label>
+            <p id="process-note-hint" class="process-field-hint">說明核對的原文、修正內容，或與房東確認的結果。</p>
+            <textarea id="process-note" v-model="processNote" required maxlength="5000" :disabled="processSaving" aria-describedby="process-note-hint" placeholder="例如：已於 9/17 與房東確認，押金將調整為兩個月租金，並附上對話截圖及修訂後契約。" />
+            <span class="process-character-count">{{ processNote.length.toLocaleString() }} / 5,000</span>
+          </div>
+          <section class="process-evidence" aria-labelledby="process-evidence-title">
+            <h3 id="process-evidence-title" class="process-section-label"><span class="process-step">03</span>佐證附件 <span class="process-optional">選填</span><span class="process-file-count">{{ processAttachments.length }} / 5</span></h3>
+            <input ref="evidenceInput" type="file" multiple :accept="EVIDENCE_ACCEPT" class="process-file-input" tabindex="-1" aria-label="選擇佐證附件" :disabled="processSaving" @change="selectEvidence" />
+            <button type="button" class="process-dropzone" :class="{ 'is-dragging': evidenceDragging }" :disabled="processSaving" aria-describedby="process-file-hint" @click="evidenceInput?.click()" @dragover.prevent="evidenceDragging = true" @dragleave.prevent="evidenceDragging = false" @drop.prevent="dropEvidence">
+              <span class="process-upload-icon"><UploadCloud :size="25" /></span><span><strong>點擊選擇檔案，或拖曳至此</strong><small>對話截圖、修訂契約、收據，都可以作為核對依據</small></span><span class="process-upload-label">選擇檔案</span>
+            </button>
+            <p id="process-file-hint" class="process-field-hint">圖片（JPG、PNG、WebP、GIF）、PDF、Word、Excel、TXT、CSV。單檔上限 10 MB，合計 25 MB。</p>
+            <p v-if="evidenceError" class="process-error" role="alert"><CircleAlert :size="16" />{{ evidenceError }}</p>
+            <ul v-if="processAttachments.length" class="process-attachment-list">
+              <li v-for="attachment in processAttachments" :key="attachment.id">
+                <img v-if="attachment.preview" :src="attachment.preview" :alt="attachment.name + ' 預覽'" /><span v-else class="process-file-icon"><FileText :size="22" /></span>
+                <span class="process-attachment-copy"><strong>{{ attachment.name }}</strong><small>{{ formatEvidenceSize(attachment.size) }} · 待儲存</small></span>
+                <button type="button" :aria-label="`移除 ${attachment.name}`" :disabled="processSaving" @click="removeEvidence(attachment.id)"><X :size="18" /></button>
+              </li>
+            </ul>
+          </section>
+          <div class="process-info"><Info :size="18" /><p>溝通紀錄不代表風險解除。修正資料後會重新檢查；不適用判定只對目前證據有效。</p></div>
+          <p v-if="processError" class="process-error" role="alert"><CircleAlert :size="18" />{{ processError }}</p>
+        </div>
+        <footer class="process-footer"><p><ShieldCheck :size="16" />紀錄與附件保存在此瀏覽器，可於本次契約的處理紀錄查看。</p><div class="process-footer-actions"><button type="button" class="process-cancel" :disabled="processSaving" @click="processDialog?.close()">取消</button><button type="submit" class="process-save" :disabled="processSaving"><LoaderCircle v-if="processSaving" :size="19" class="process-spinner" /><CheckCircle2 v-else :size="19" />{{ processSaving ? '儲存中…' : '儲存紀錄' }}</button></div></footer>
+      </form>
+    </dialog>
 
     <section class="legal-scope-panel" aria-labelledby="legal-scope-title">
       <div class="legal-scope-heading">
@@ -953,43 +962,50 @@ async function exportAnalysisReport(): Promise<void> {
           <div class="analysis-panel-heading risk-panel-heading">
             <div>
               <span class="analysis-section-index">RISK MAP · 05</span>
-              <h2 id="risk-panel-title"><AlertTriangle :size="19" /> 偵測到的風險項次</h2>
+              <h2 id="risk-panel-title"><AlertTriangle :size="19" /> 規則風險與待確認項目</h2>
               <p>先看摘要，展開後再定位條文或詢問 AI。</p>
             </div>
           </div>
 
-          <div v-if="aiAnalysisState === 'failed'" class="ai-analysis-alert" role="alert">
-            <AlertTriangle :size="18" />
-            <div>
-              <strong>AI 風險分析未能完成</strong>
-              <span>
-                以下只有「關鍵欄位檢查」的本機檢核結果。
-                <b>RAG 與 AI 分類為空，並不代表您的合約沒有問題</b>，
-                請稍後重新分析，或先自行對照法規。
-              </span>
-            </div>
-          </div>
+          <details v-if="aiAnalysisState === 'failed'" class="ai-analysis-alert">
+            <summary><AlertTriangle :size="18" aria-hidden="true" />規則檢查已完成，AI 分析尚未完成<span>查看說明</span></summary>
+            <p>以下仍可檢視欄位與契約條款規則檢查結果。AI 分析尚未完成，不代表契約沒有問題；請核對原文，稍後再試。</p>
+          </details>
 
-          <div class="risk-tabs" role="tablist" aria-label="風險來源分類">
+          <div class="risk-tabs" role="tablist" aria-label="檢查工作分類">
             <button
               v-for="tab in riskTabs"
               :key="tab.id"
+              :id="`review-tab-${tab.id}`"
+              aria-controls="review-results"
+              :tabindex="activeRiskTab === tab.id ? 0 : -1"
+              @keydown="moveRiskTab($event, tab.id)"
               type="button"
               role="tab"
               :aria-selected="activeRiskTab === tab.id"
               :class="{ 'is-active': activeRiskTab === tab.id }"
-              @click="activeRiskTab = tab.id"
+              @click="activeRiskTab = tab.id; severityFilter = null"
             >
               {{ tab.label }} <span>{{ tab.count }}</span>
             </button>
           </div>
 
-          <div class="risk-list">
+          <div id="review-results" class="risk-list" role="tabpanel" :aria-labelledby="`review-tab-${activeRiskTab}`" tabindex="0">
+            <p v-if="processSuccess" class="process-success" role="status"><CheckCircle2 :size="18" />{{ processSuccess }}<button v-if="activeRiskTab !== 'history'" type="button" @click="activeRiskTab = 'history'; severityFilter = null">查看紀錄</button></p>
+            <p v-if="evidenceDownloadError" class="process-error" role="alert">{{ evidenceDownloadError }}</p>
+            <button v-if="severityFilter && activeRiskTab === 'risk'" @click="severityFilter = null">清除風險等級篩選</button>
+            <template v-if="activeRiskTab === 'history'">
+              <article v-for="record in [...records].reverse()" :key="record.id" class="risk-card history-entry">
+                <strong>{{ record.title }}</strong><p>{{ reconcileRecord(record, risks) }}</p><p>{{ record.note }}</p><small>{{ new Date(record.at).toLocaleString() }}</small>
+                <div v-if="record.attachments?.length" class="history-attachments"><span><Paperclip :size="15" />佐證附件 · {{ record.attachments.length }}</span><button v-for="attachment in record.attachments" :key="attachment.id" type="button" :aria-label="`下載 ${attachment.name}`" @click="downloadEvidence(attachment)"><FileText :size="18" /><span>{{ attachment.name }}<small>{{ formatEvidenceSize(attachment.size) }}</small></span><FileDown :size="18" /></button></div>
+                <button v-if="risks.find(r => assessmentKey(r) === record.rule)" @click="openProcess(risks.find(r => assessmentKey(r) === record.rule)!)">重新處理此項</button>
+              </article>
+            </template>
             <article
               v-for="risk in filteredRisks"
               :key="risk.id"
               class="risk-card"
-              :class="[`is-${risk.severity}`, { 'is-active': activeRiskId === risk.id }]"
+              :class="[`is-${risk.severity || risk.status}`, { 'is-active': activeRiskId === risk.id }]"
             >
               <div class="risk-card-main">
                 <span class="risk-icon">
@@ -999,52 +1015,36 @@ async function exportAnalysisReport(): Promise<void> {
                 </span>
                 <span class="risk-card-copy">
                   <span class="risk-card-title-row">
-                    <strong>{{ risk.title }}</strong>
-                    <span class="risk-severity">{{ risk.severity === 'high' ? '高風險' : risk.severity === 'medium' ? '中風險' : '低風險' }}</span>
+                    <strong>{{ risk.priority ? '優先核對 · ' : '' }}{{ risk.title }}</strong>
+                    <span class="risk-severity">{{ risk.status === 'confirmed' ? (risk.severity === 'high' ? '高風險' : risk.severity === 'medium' ? '中風險' : '低風險') : assessmentLabels[risk.status] }}</span>
                   </span>
-                  <span class="risk-meta">
-                    <span>{{ risk.sourceLabel }}</span>
-                    <span>{{ risk.groupLabel }}</span>
-                    <button
-                      v-if="risk.pageIndex !== null && !risk.details?.length"
-                      type="button"
-                      class="risk-page-button"
-                      :aria-label="`前往第 ${risk.pageIndex + 1} 頁查看 ${risk.title}`"
-                      @click="focusRisk(risk)"
-                    >
-                      <FileSearch :size="12" /> 第 {{ risk.pageIndex + 1 }} 頁
-                    </button>
-                  </span>
-                  <ul v-if="risk.details?.length && activeRiskId === risk.id" class="risk-detail-list">
-                    <li v-for="detail in risk.details" :key="detail.label">
-                      <span>{{ detail.label }}</span>
-                      <button
-                        v-if="detail.pageIndex !== null"
-                        type="button"
-                        class="risk-page-button"
-                        :aria-label="`前往第 ${detail.pageIndex + 1} 頁查看 ${detail.label}`"
-                        @click="focusRiskDetail(detail)"
-                      >
-                        <FileSearch :size="12" /> 第 {{ detail.pageIndex + 1 }} 頁
-                      </button>
-                      <small v-else>未定位</small>
-                    </li>
-                  </ul>
-                  <span v-else class="risk-clause">{{ risk.clause }}</span>
-                  <span v-show="activeRiskId === risk.id" class="risk-description">{{ risk.description }}</span>
-                  <span v-if="risk.legalBasis?.length && activeRiskId === risk.id" class="risk-legal-basis">
-                    <span v-for="basis in risk.legalBasis" :key="basis">{{ basis }}</span>
-                  </span>
+                  <span class="risk-impact">{{ riskImpact(risk) }}</span>
+                  <span v-if="risk.metrics?.length" class="risk-metrics"><span v-for="metric in risk.metrics" :key="metric.label">{{ metric.label }}<strong>{{ metric.value.toLocaleString() }} 元</strong></span></span>
+                  <span class="risk-advice"><b>建議：</b>{{ risk.advice }}</span>
+                  <template v-if="activeRiskId === risk.id">
+                    <span class="risk-meta"><span>{{ risk.sourceLabel }}</span><span>{{ risk.groupLabel }}</span></span>
+                    <ul v-if="risk.details?.length" class="risk-detail-list">
+                      <li v-for="(detail, index) in risk.details" :key="index">
+                        <span>{{ detail.focusText }}</span>
+                        <button v-if="detail.pageIndex !== null" class="risk-page-button" @click="focusRiskDetail(detail)">第 {{ detail.pageIndex + 1 }} 頁 ↗</button>
+                        <small v-else>來源未定位</small>
+                      </li>
+                    </ul>
+                    <span v-else class="risk-clause">{{ risk.clause }}</span>
+                    <span class="risk-legal-basis"><template v-for="basis in risk.legalBasis" :key="basis"><a v-if="legalLink(basis)" :href="legalLink(basis)" target="_blank" rel="noopener noreferrer">查看依據：{{ legalTitle(risk) }} <ExternalLink :size="13" aria-hidden="true" /></a><small v-if="legalLink(basis)">{{ legalLabel(basis) }}</small><span v-else>{{ basis }}</span></template></span>
+                  </template>
                 </span>
               </div>
               <div class="risk-actions">
+                <button type="button" class="risk-primary-action" @click="focusRisk(risk)">{{ risk.details?.length ? `查看 ${risk.details.length} 處原文` : '查看原文' }}</button>
+                <button type="button" class="risk-process-action" @click="openProcess(risk)">處理此項</button>
                 <button
                   type="button"
                   class="risk-summary-button"
                   :aria-expanded="activeRiskId === risk.id"
                   @click="toggleRiskDetails(risk)"
                 >
-                  {{ activeRiskId === risk.id ? '收合摘要' : '查看摘要' }}
+                  {{ activeRiskId === risk.id ? '收合判斷依據' : '查看判斷依據' }}
                   <ChevronRight :size="14" aria-hidden="true" />
                 </button>
                 <button
@@ -1056,17 +1056,21 @@ async function exportAnalysisReport(): Promise<void> {
                   <ExternalLink :size="14" /> 修改欄位
                 </button>
                 <button type="button" class="risk-chat-button" @click="startNegotiation(risk)">
-                  <MessageSquareText :size="14" /> 詢問法律
+                  <MessageSquareText :size="14" /> 詢問 AI
                 </button>
               </div>
             </article>
 
             <!--
-              分析失敗時不可顯示「沒有風險」加綠色勾勾 ——
-              那是在對使用者宣稱一個我們沒有驗證過的結論。
+              分析失敗時不可顯示綠色勾勾 —— 那是在對使用者宣稱
+              一個我們沒有驗證過的結論。文案寫「不代表已通過檢查」
+              仍不夠，因為圖示本身就在說「沒問題」。
+
+              排除 history：那是處理紀錄，空的只代表還沒處理過任何項目，
+              跟 AI 分析成不成功無關。
             -->
             <div
-              v-if="!filteredRisks.length && aiAnalysisState === 'failed' && activeRiskTab !== 'field'"
+              v-if="!filteredRisks.length && aiAnalysisState === 'failed' && activeRiskTab !== 'history'"
               class="risk-empty-state is-unknown"
             >
               <AlertTriangle :size="22" />
@@ -1074,10 +1078,10 @@ async function exportAnalysisReport(): Promise<void> {
               <span>AI 分析未能完成，因此無法判斷是否有風險。</span>
             </div>
 
-            <div v-else-if="!filteredRisks.length" class="risk-empty-state">
+            <div v-else-if="!filteredRisks.length && !(activeRiskTab === 'history' && records.length)" class="risk-empty-state">
               <CheckCircle2 :size="22" />
-              <strong>這個分類目前沒有風險</strong>
-              <span>可切換其他分類繼續查看。</span>
+              <strong>這個分類目前沒有待列項目</strong>
+              <span>這不代表完整契約已通過檢查，請核對原文與分析狀態。</span>
             </div>
 
             <div v-else class="risk-list-footer">
@@ -1170,6 +1174,8 @@ async function exportAnalysisReport(): Promise<void> {
         </section>
       </div>
     </div>
+
+
   </main>
 </template>
 

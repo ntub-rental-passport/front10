@@ -345,6 +345,8 @@ async function readOcrResponse(response: Response): Promise<Partial<ContractOcrR
 }
 
 async function sendToOcr(files: File[]): Promise<void> {
+  closeFileActionsMenu()
+  isDragOver.value = false
   uploadError.value = ''
   ocrResult.value = null
   copySuccess.value = false
@@ -479,6 +481,10 @@ async function enterContractEditor(): Promise<void> {
 
 function onFileChange(event: Event): void {
   const input = event.target as HTMLInputElement
+  if (isUploading.value) {
+    input.value = ''
+    return
+  }
   const files = Array.from(input.files ?? [])
 
   if (!files.length) return
@@ -492,6 +498,7 @@ function onFileChange(event: Event): void {
 function onDrop(event: DragEvent): void {
   event.preventDefault()
   isDragOver.value = false
+  if (isUploading.value) return
 
   const files = Array.from(event.dataTransfer?.files ?? [])
   if (!files.length) return
@@ -502,6 +509,7 @@ function onDrop(event: DragEvent): void {
 
 function onDragOver(event: DragEvent): void {
   event.preventDefault()
+  if (isUploading.value) return
   isDragOver.value = true
 }
 
@@ -585,7 +593,9 @@ function onDragLeave(): void {
         :class="{
           'upload-dropzone--active': isDragOver,
           'upload-dropzone--selected': selectedFiles.length,
+          'upload-dropzone--scanning': isUploading,
         }"
+        :aria-busy="isUploading"
         :role="selectedFiles.length ? undefined : 'button'"
         :tabindex="selectedFiles.length ? undefined : 0"
         @click="!selectedFiles.length && openFilePicker()"
@@ -596,7 +606,7 @@ function onDragLeave(): void {
         @dragleave="onDragLeave"
       >
         <template v-if="selectedFiles.length">
-          <div class="selected-file-list">
+          <div class="selected-file-list" :inert="isUploading">
             <div
               v-for="(file, index) in selectedFiles"
               :key="`${file.name}-${file.size}-${file.lastModified}`"
@@ -638,6 +648,7 @@ function onDragLeave(): void {
           <details
             ref="fileActionsMenu"
             class="file-actions-menu"
+            :inert="isUploading"
             :class="{ 'file-actions-menu--disabled': isUploading }"
             @click.stop
             @focusout="onFileActionsFocusOut"
@@ -686,6 +697,32 @@ function onDragLeave(): void {
             {{ uploadButtonLabel }}
           </Button>
         </template>
+
+        <Transition name="ocr-scan">
+          <div v-if="isUploading" class="ocr-scan-overlay" aria-hidden="true">
+            <div class="ocr-scan-grid"></div>
+            <div class="ocr-scan-beam"></div>
+            <div class="ocr-scan-particles">
+              <i v-for="particle in 6" :key="particle" :style="{ '--particle': particle }"></i>
+            </div>
+            <div class="ocr-scan-content">
+              <div class="ocr-scan-emblem">
+                <span class="ocr-scan-orbit"></span>
+                <FileSearch />
+              </div>
+              <div class="ocr-scan-copy">
+                <span class="ocr-scan-eyebrow">AI DOCUMENT SCAN</span>
+                <p class="ocr-scan-title">
+                  正在讀取你的契約<span class="ocr-scan-dots"><i></i><i></i><i></i></span>
+                </p>
+                <p class="ocr-scan-detail">{{ uploadStatus }}</p>
+              </div>
+              <span class="ocr-scan-progress">{{ uploadProgress }}<small>%</small></span>
+            </div>
+            <span class="ocr-scan-corner ocr-scan-corner--start"></span>
+            <span class="ocr-scan-corner ocr-scan-corner--end"></span>
+          </div>
+        </Transition>
       </div>
 
       <div

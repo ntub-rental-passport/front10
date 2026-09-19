@@ -36,6 +36,26 @@ const notes = reactive(useNotesState('roommate'))
 
 <template>
   <div class="room-rhythm-page">
+    <section class="mx-4 my-3 rounded-xl border border-slate-200 bg-white p-3 text-sm" aria-label="記事同步">
+      <div class="flex flex-wrap items-center gap-3">
+        <span role="status">{{ notes.isLoading ? '載入記事中…' : notes.isSaving ? '儲存中…' : '記事儲存於帳號，可跨裝置讀取' }}</span>
+        <button type="button" class="underline" :disabled="notes.isLoading || notes.isSaving" @click="notes.reloadNotes">重新整理</button>
+      </div>
+      <p v-if="notes.syncError" role="alert" class="mt-2 text-red-700">{{ notes.syncError }}</p>
+      <p v-if="notes.hasLegacyNotes" class="mt-2 text-slate-600">此瀏覽器仍保留舊版記事，尚未匯入帳號。<button type="button" class="ml-2 underline" @click="notes.exportLegacyNotes">下載舊資料備份</button></p>
+      <label v-if="notes.groups.length" class="mt-3 flex items-center gap-2">
+        協作空間
+        <select :value="notes.householdId" :disabled="notes.isLoading || notes.isSaving" @change="notes.selectGroup(($event.target as HTMLSelectElement).value)" class="rounded border p-1">
+          <option v-for="group in notes.groups" :key="group.id" :value="group.id">{{ group.name }}（{{ group.isOwner ? '建立者' : '室友' }}）</option>
+        </select>
+      </label>
+      <div v-if="notes.pendingInvite" class="mt-3 flex items-center gap-3">
+        <span>收到室友協作邀請，加入後可共同管理任務。</span>
+        <Button :disabled="notes.isLoading || notes.isSaving" @click="notes.acceptInvite">加入協作空間</Button>
+      </div>
+      <p v-else-if="!notes.householdId && !notes.isLoading" class="mt-2 text-slate-600">新增任務或邀請室友時，會建立你的協作空間。</p>
+    </section>
+
     <header class="topbar">
       <div class="mode-switch" aria-label="記事模式切換">
         <button
@@ -205,7 +225,7 @@ const notes = reactive(useNotesState('roommate'))
                 </div>
                 <p>分工角色｜{{ member.role }}</p>
               </div>
-              <button aria-label="移除室友" @click="notes.removeRoommateMember(member.id)">
+              <button aria-label="移除室友" :disabled="!notes.isOwner || notes.isSaving" @click="notes.removeRoommateMember(member.id)">
                 <Trash2 class="h-4 w-4" />
               </button>
             </article>
@@ -239,6 +259,7 @@ const notes = reactive(useNotesState('roommate'))
           <DialogTitle class="text-lg font-bold text-[#111322]">{{ notes.roommateTaskDialogTitle }}</DialogTitle>
           <DialogDescription>{{ notes.roommateTaskDialogDescription }}</DialogDescription>
         </DialogHeader>
+        <p v-if="notes.syncError" role="alert" class="text-sm text-red-700">{{ notes.syncError }}</p>
         <form class="space-y-4" @submit.prevent="notes.saveRoommateTask">
           <div class="space-y-2">
             <Label>任務標題</Label>
@@ -294,7 +315,7 @@ const notes = reactive(useNotesState('roommate'))
             <Button type="button" variant="outline" class="flex-1 rounded-xl" @click="notes.closeRoommateTaskDialog()">
               取消
             </Button>
-            <Button type="submit" class="flex-1 rounded-xl bg-[#4845A5] hover:bg-[#3c398f]">
+            <Button :disabled="notes.isLoading || notes.isSaving" type="submit" class="flex-1 rounded-xl bg-[#4845A5] hover:bg-[#3c398f]">
               {{ notes.roommateTaskSubmitLabel }}
             </Button>
           </div>
@@ -308,6 +329,7 @@ const notes = reactive(useNotesState('roommate'))
           <DialogTitle class="text-lg font-bold text-[#111322]">邀請或新增室友</DialogTitle>
           <DialogDescription>你可以用連結、QR Code 邀請，也可以直接手動加入室友資料。</DialogDescription>
         </DialogHeader>
+        <p v-if="notes.syncError" role="alert" class="text-sm text-red-700">{{ notes.syncError }}</p>
 
         <div class="space-y-4">
           <div class="grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-1.5">
@@ -317,7 +339,7 @@ const notes = reactive(useNotesState('roommate'))
             <button :class="['dialog-tab', { active: notes.memberDialogMode === 'qr' }]" @click="notes.memberDialogMode = 'qr'">
               <QrCode class="h-4 w-4" />QR Code
             </button>
-            <button :class="['dialog-tab', { active: notes.memberDialogMode === 'manual' }]" @click="notes.memberDialogMode = 'manual'">
+            <button :class="['dialog-tab', { active: notes.memberDialogMode === 'manual' }]" :disabled="!notes.isOwner" @click="notes.memberDialogMode = 'manual'">
               <UserPlus class="h-4 w-4" />手動新增
             </button>
           </div>
@@ -354,7 +376,7 @@ const notes = reactive(useNotesState('roommate'))
           </div>
 
           <form v-else class="invite-box space-y-4" @submit.prevent="notes.saveRoommateMember">
-            <p class="text-sm text-[#737789]">直接建立室友資料，方便馬上開始分派任務與標記角色。</p>
+            <p class="text-sm text-[#737789]">手動資料只用於分工；室友需透過邀請連結登入加入，才能查看與操作任務。</p>
             <div class="space-y-2">
               <Label>室友姓名 / 暱稱</Label>
               <Input v-model="notes.roommateMemberForm.name" placeholder="例如：小安" class="rounded-xl bg-white" />
@@ -363,14 +385,14 @@ const notes = reactive(useNotesState('roommate'))
               <Label>分工角色</Label>
               <Input v-model="notes.roommateMemberForm.role" placeholder="例如：採買與清潔" class="rounded-xl bg-white" />
             </div>
-            <Button type="submit" class="w-full rounded-xl bg-[#4845A5] hover:bg-[#3c398f]">
+            <Button :disabled="notes.isLoading || notes.isSaving" type="submit" class="w-full rounded-xl bg-[#4845A5] hover:bg-[#3c398f]">
               建立室友成員
             </Button>
           </form>
 
           <p v-if="notes.copyStatus" class="text-center text-xs text-[#737789]">{{ notes.copyStatus }}</p>
           <div class="flex gap-2 border-t border-slate-100 pt-3">
-            <Button type="button" variant="outline" class="flex-1 rounded-xl" @click="notes.regenerateInviteToken">
+            <Button type="button" variant="outline" class="flex-1 rounded-xl" :disabled="!notes.isOwner || notes.isSaving" @click="notes.regenerateInviteToken">
               重新產生邀請連結
             </Button>
             <Button type="button" variant="outline" class="flex-1 rounded-xl" @click="notes.showMemberDialog = false">

@@ -147,9 +147,9 @@ const pdfTemplateParties = extractContractFieldCandidates(
   ].join('\n'),
 )
 assert.equal(pdfTemplateParties.landlord.value, '王房東')
-assert.equal(pdfTemplateParties.landlord.sourceValue, '王房東')
+assert.equal(pdfTemplateParties.landlord.sourceValue, 'o 姓名：王房東')
 assert.equal(pdfTemplateParties.tenant.value, '林小明')
-assert.equal(pdfTemplateParties.tenant.sourceValue, '林小明')
+assert.equal(pdfTemplateParties.tenant.sourceValue, 'o 姓名：林小明')
 assert.equal(pdfTemplateParties.landlord_id.value, 'A123456789')
 assert.equal(pdfTemplateParties.landlord_registered_address.value, '臺北市中正區康康街 1 號 5 樓')
 assert.equal(pdfTemplateParties.tenant_id.value, 'F987654321')

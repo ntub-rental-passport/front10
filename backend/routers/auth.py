@@ -11,7 +11,7 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, urlsplit, urlunsplit
 
 import requests as http_requests
 from argon2 import PasswordHasher
@@ -475,6 +475,7 @@ def _store_ticket(account: GoogleAccountResponse, role: str, redirect_path: str 
 
 @router.get("/google/start")
 def start_google_oauth(
+    request: Request,
     role: str = Query(default="tenant"),
     redirect_path: str | None = Query(default=None, alias="redirect"),
 ) -> RedirectResponse:
@@ -482,6 +483,21 @@ def start_google_oauth(
     safe_role = _safe_role(role)
     if not client_id or not client_secret:
         return _frontend_login_redirect(google_error="missing_config", role=safe_role)
+
+    # OAuth state cookie 必須與 callback 使用相同主機名稱。
+    # 本機可能從 127.0.0.1 開頁，但 Google 設定的 callback 是 localhost。
+    callback = urlsplit(redirect_uri)
+    loopback_hosts = {"localhost", "127.0.0.1", "::1"}
+    if (
+        request.url.hostname in loopback_hosts
+        and callback.hostname in loopback_hosts
+        and request.url.hostname != callback.hostname
+    ):
+        query = urlencode({"role": safe_role, "redirect": _safe_redirect_path(redirect_path)})
+        return RedirectResponse(
+            url=urlunsplit((callback.scheme, callback.netloc, "/api/auth/google/start", query, "")),
+            status_code=status.HTTP_302_FOUND,
+        )
 
     state_value = _create_signed_state(safe_role, redirect_path, client_secret)
     authorization_query = urlencode(
@@ -622,18 +638,17 @@ def exchange_google_ticket(
     # user 這個變數（合併 main 時留下的），只要真的走到就會 NameError。
     # 之所以很久沒被發現，是因為 Google 的 redirect URI 尚未設定完成，
     # 這支端點一直到不了 —— 設定完成後第一次執行就 500。
-    if identity is not None:
+    #
+    # identity 在但 user 不見了 → 401 且請對方聯絡管理者，不是叫他重新註冊：
+    # identity 還在的話重新註冊會撞到唯一鍵，等於叫人去撞牆。
+    # Only a registered identity with the requested role may receive a login cookie.
+    # New Google accounts must finish registration before becoming authenticated.
+    if identity:
         user = db.query(User).filter(User.id == identity.user_id).first()
         if user is None:
-            # identity 存在但 user 不見了：資料不一致，不該當成登入成功
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="帳號資料不存在，請重新註冊。",
-            )
+            raise HTTPException(status_code=401, detail="Google 帳號對應的會員資料不存在，請聯絡管理者。")
         _reject_if_suspended(user)
         _record_login(db, user)
-
-        # Google 登入成功：與一般登入相同，簽發 JWT cookie（角色取本次登入所選身分）
         set_auth_cookie(response, create_cookie_token(user.id, user.email, requested_role))
 
     return GoogleOAuthSessionResponse(

@@ -6,7 +6,10 @@ pymysql
 python-dotenv
 python-multipart
 requests
+pywebpush
 sqlalchemy
 uvicorn[standard]
 PyJWT
 httpx
+openai
+Pillow

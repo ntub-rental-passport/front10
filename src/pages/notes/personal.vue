@@ -33,6 +33,15 @@ const notes = reactive(useNotesState('personal'))
 
 <template>
   <div class="room-rhythm-page">
+    <section class="mx-4 my-3 rounded-xl border border-slate-200 bg-white p-3 text-sm" aria-label="記事同步">
+      <div class="flex flex-wrap items-center gap-3">
+        <span role="status">{{ notes.isLoading ? '載入記事中…' : notes.isSaving ? '儲存中…' : '記事儲存於帳號，可跨裝置讀取' }}</span>
+        <button type="button" class="underline" :disabled="notes.isLoading || notes.isSaving" @click="notes.reloadNotes">重新整理</button>
+      </div>
+      <p v-if="notes.syncError" role="alert" class="mt-2 text-red-700">{{ notes.syncError }}</p>
+      <p v-if="notes.hasLegacyNotes" class="mt-2 text-slate-600">此瀏覽器仍保留舊版記事，尚未匯入帳號。<button type="button" class="ml-2 underline" @click="notes.exportLegacyNotes">下載舊資料備份</button></p>
+    </section>
+
     <header class="topbar">
       <div class="mode-switch" aria-label="記事模式切換">
         <button
@@ -275,6 +284,7 @@ const notes = reactive(useNotesState('personal'))
           <DialogTitle class="text-lg font-bold text-[#111322]">新增個人記事</DialogTitle>
           <DialogDescription>新增日常提醒、租務或生活待辦。</DialogDescription>
         </DialogHeader>
+        <p v-if="notes.syncError" role="alert" class="text-sm text-red-700">{{ notes.syncError }}</p>
         <form class="space-y-4" @submit.prevent="notes.savePersonalNote">
           <div class="space-y-2">
             <Label>標題</Label>
@@ -304,7 +314,7 @@ const notes = reactive(useNotesState('personal'))
           </div>
           <div class="flex gap-3 pt-2">
             <Button type="button" variant="outline" class="flex-1 rounded-xl" @click="notes.showPersonalDialog = false; notes.resetPersonalForm()">取消</Button>
-            <Button type="submit" class="flex-1 rounded-xl bg-[#4845A5] hover:bg-[#3c398f]">儲存記事</Button>
+            <Button :disabled="notes.isLoading || notes.isSaving" type="submit" class="flex-1 rounded-xl bg-[#4845A5] hover:bg-[#3c398f]">儲存記事</Button>
           </div>
         </form>
       </DialogContent>

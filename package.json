@@ -23,6 +23,7 @@
     "test:address-resolver": "node scripts/verify-taiwan-address-resolver.js",
     "test:ollama-fields": "node scripts/verify-ollama-contract.js",
     "test:vision-annotation": "node scripts/verify-vision-annotation.js",
+    "test:pdf-ocr": "node scripts/verify-pdf-ocr.js",
     "test:vision-crops": "node scripts/verify-vision-field-crops.js",
     "format": "prettier --write --experimental-cli src/ components/ lib/ server/"
   },

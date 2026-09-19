@@ -1,4 +1,5 @@
 import { resolveTaiwanAddress } from './taiwan-address-resolver.js'
+import { detectContractConditions } from './contract-field-schema.js'
 
 const EMPTY_CANDIDATE = { value: '', sourceValue: '', confidence: 'low' }
 
@@ -36,7 +37,7 @@ const MONEY_TOKEN =
 const DATE_TOKEN = '[0-9０-９〇○零一二三四五六七八九十]+'
 
 function normalizeFullWidthDigits(value) {
-  return value.replace(/[０-９]/g, (digit) => String(digit.charCodeAt(0) - 0xfee0))
+  return value.replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
 }
 
 // 內政部官方範本的欄位標籤常在冒號前夾一組括號註記：
@@ -45,6 +46,7 @@ function normalizeFullWidthDigits(value) {
 // 一律抽不到姓名與統一編號 —— 而那是必填欄位。
 // 2026-09-10 實測：四種常見寫法沒有一種能同時抽到姓名與統編。
 const LABEL_SUFFIX = '(?:\\s*[（(][^）)]{0,20}[）)])?\\s*[：:]\\s*'
+const PARTY_PREFIX = '(?:(?:[（(][一二三四五六七八九十0-9０-９]+[）)]|[0-9０-９]+[.．、]?)\\s*)?'
 
 
 function cleanSource(value) {
@@ -58,6 +60,28 @@ function cleanSource(value) {
 
 function candidate(value, sourceValue, confidence) {
   return { value: cleanSource(value), sourceValue: cleanSource(sourceValue), confidence }
+}
+
+// Match OCR line wraps without losing the exact source span used by highlighting.
+function matchCompact(text, pattern) {
+  const positions = []
+  let compact = ''
+  for (let index = 0; index < text.length; index += 1) {
+    if (/\s/.test(text[index])) continue
+    positions.push(index)
+    compact += text[index]
+  }
+  const match = compact.match(pattern)
+  if (!match) return null
+  const start = positions[match.index]
+  const end = positions[match.index + match[0].length - 1] + 1
+  match[0] = text.slice(start, end)
+  match.index = start
+  return match
+}
+
+function matchedCandidate(value, match, confidence = 'medium') {
+  return { ...candidate(value, '', confidence), sourceValue: match[0] }
 }
 
 function captureFirst(text, patterns) {
@@ -89,10 +113,10 @@ function extractPersonNearHeading(text, role) {
   // 官方範本的當事人標題就是「出租人：」，原本的比對不允許尾隨冒號，
   // 導致緊接其後的「姓名(名稱)：」永遠找不到。
   const headingPattern = new RegExp(
-    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?${escapedRole}(?:\\s*[（(][^）)]*[）)])?\\s*[：:]?\\s*$`,
+    `^${PARTY_PREFIX}${escapedRole}(?:\\s*[（(][^）)]*[）)])?\\s*[：:]?\\s*$`,
   )
   const anyPartyHeadingPattern =
-    /^(?:[0-9０-９]+\s*[.．、]?\s*)?(?:出租人|承租人|連帶保證人|保證人)(?:\s*[（(][^）)]*[）)])?\s*[：:]?\s*$/
+    new RegExp(`^${PARTY_PREFIX}(?:出租人|承租人|連帶保證人|保證人)(?:\\s*[（(][^）)]*[）)])?\\s*[：:]?\\s*$`)
   const namePattern = new RegExp(`^(?:[oO○●•·▪]\\s*)?姓名${LABEL_SUFFIX}(.+)$`)
 
   for (let headingIndex = 0; headingIndex < lines.length; headingIndex += 1) {
@@ -113,12 +137,16 @@ function extractPerson(text, role) {
     extractPersonNearHeading(text, role) ||
     captureFirst(text, [
       new RegExp(`${escapedRole}\\s*[（(][^\\r\\n）)]*[）)]\\s*[：:]\\s*([^\\r\\n]+)`),
-      new RegExp(`${escapedRole}姓名${LABEL_SUFFIX}([^\\r\\n]+)`),
+      new RegExp(`${escapedRole}\\s*(?:[（(][^）)]*[）)]\\s*)?姓名${LABEL_SUFFIX}([^\\r\\n]+)`),
       new RegExp(`${escapedRole}\\s*[：:]\\s*([^\\r\\n，,。]{1,30})`),
     ])
   if (/遮蔽/.test(rawValue)) return candidate('影像遮蔽，請人工輸入', rawValue, 'low')
   const value = normalizePersonName(rawValue)
-  return value ? candidate(value, rawValue, 'medium') : { ...EMPTY_CANDIDATE }
+  const sourceLine = String(text).split(/\r?\n/)
+    .find((line) => line.includes(rawValue) && /姓名|出租人|承租人|代理人/.test(line))
+  return value
+    ? { ...candidate(value, rawValue, 'medium'), sourceValue: sourceLine?.trim() || rawValue }
+    : { ...EMPTY_CANDIDATE }
 }
 
 function partySection(text, role) {
@@ -126,10 +154,10 @@ function partySection(text, role) {
     .split(/\r?\n/)
     .map((line) => cleanSource(line))
   const rolePattern = new RegExp(
-    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?${role}(?:\\s*[（(][^）)]*[）)])?(?:\\s*[：:].*)?$`,
+    `^${PARTY_PREFIX}${role}(?:\\s*[（(][^）)]*[）)])?(?:\\s*姓名)?(?:\\s*[：:].*)?$`,
   )
   const otherRolePattern = new RegExp(
-    `^(?:[0-9０-９]+\\s*[.．、]?\\s*)?(?:${role === '出租人' ? '承租人' : '出租人'}|連帶保證人|代理人)(?:\\s*[（(][^）)]*[）)])?(?:\\s*[：:].*)?$`,
+    `^${PARTY_PREFIX}(?:${['出租人', '承租人', '連帶保證人', '代理人'].filter((item) => item !== role).join('|')})(?:\\s*[（(][^）)]*[）)])?(?:\\s*姓名)?(?:\\s*[：:].*)?$`,
   )
   const start = lines.findIndex((line) => rolePattern.test(line))
   if (start < 0) return ''
@@ -149,7 +177,9 @@ function extractPartyLabeledValue(text, role, labels) {
   const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
   const match = section.match(new RegExp(`(?:${labelPattern})${LABEL_SUFFIX}([^\\r\\n]+)`))
   const rawValue = cleanSource(match?.[1])
-  return rawValue ? candidate(rawValue, rawValue, 'medium') : { ...EMPTY_CANDIDATE }
+  return rawValue
+    ? { ...candidate(rawValue, rawValue, 'medium'), sourceValue: match[0] }
+    : { ...EMPTY_CANDIDATE }
 }
 
 function extractPartyDetails(text, role) {
@@ -160,14 +190,21 @@ function extractPartyDetails(text, role) {
     mailingAddress.confidence = 'low'
   }
 
-  return {
-    name: extractPerson(text, role),
-    id: extractPartyLabeledValue(text, role, [
+  const id = extractPartyLabeledValue(text, role, [
       '國民身分證統一編號',
       '身分證明文件編號',
       '身分證字號',
       '統一編號',
-    ]),
+    ])
+  // Keep only the identifier, not a parenthesized explanatory note.
+  const idToken = id.value.match(/^(?:[A-Za-z][0-9]{9}|[0-9]{8})(?=\s|[（(]|$)/)?.[0]
+  if (idToken) {
+    id.value = idToken
+    id.sourceValue = id.sourceValue.slice(0, id.sourceValue.indexOf(idToken) + idToken.length)
+  }
+  return {
+    name: extractPerson(partySection(text, role) || text, role),
+    id,
     registeredAddress,
     mailingAddress,
     phone: extractPartyLabeledValue(text, role, ['聯絡電話', '電話', '手機']),
@@ -253,6 +290,8 @@ function extractExpenseAgreement(text, labels) {
 }
 
 function extractRentalScope(text) {
+  const labeled = matchCompact(text, /(?:住宅出租範圍|出租範圍|租賃範圍)[：:](全部|部分)(?:出租)?/)
+  if (labeled) return matchedCandidate(labeled[1], labeled)
   const line = String(text ?? '')
     .split(/\r?\n/)
     .map((item) => cleanSource(item))
@@ -270,6 +309,10 @@ function extractRentalScope(text) {
 }
 
 function extractBinaryChoice(text, labels) {
+  for (const label of labels) {
+    const match = matchCompact(text, new RegExp(`${label}[：:]([有無])`))
+    if (match) return matchedCandidate(match[1], match)
+  }
   const lines = String(text ?? '')
     .split(/\r?\n/)
     .map((line) => cleanSource(line))
@@ -279,6 +322,39 @@ function extractBinaryChoice(text, labels) {
   if (checked) return candidate(checked, line, 'medium')
   const direct = line.match(/(?:有無|是否)?\s*[：:]?\s*(有|無)(?:\s|$|，|。)/)?.[1]
   return direct ? candidate(direct, line, 'low') : { ...EMPTY_CANDIDATE }
+}
+
+function extractLabeledParkingDetails(text) {
+  const result = {}
+  const patterns = {
+    parking_available: /是否包含車位[：:]([有無])/,
+    car_parking_count: /汽車停車位數量[：:]([0-9０-９]+)個/,
+    motorcycle_parking_count: /機車停車位數量[：:]([0-9０-９]+)個/,
+    car_parking_type: /汽車停車位種類[：:](平面式|機械式)/,
+    car_parking_floor: /汽車停車位樓層[：:](?:(?:地下|地上|第))*([Bb]?[0-9０-９]+)[層樓]+/,
+    motorcycle_parking_floor: /機車停車位樓層[：:](?:(?:地下|地上|第))*([Bb]?[0-9０-９]+)[層樓]+/,
+    car_parking_number: /汽車停車位編號(?:[/／]位置)?[：:]第?([A-Za-z0-9０-９-]+)號/,
+    motorcycle_parking_number: /機車停車位編號(?:[/／]位置)?[：:]第?([A-Za-z0-9０-９-]+)號/,
+    parking_usage_time: /車位使用時間[：:](全日|日間|夜間|其他)/,
+  }
+  for (const [id, pattern] of Object.entries(patterns)) {
+    const match = matchCompact(text, pattern)
+    if (!match) continue
+    let value = normalizeFullWidthDigits(match[1])
+    if (id.endsWith('_count')) value += ' 個'
+    if (id.endsWith('_floor')) value = value.toUpperCase() + ' 層'
+    if (id.endsWith('_number')) value = `第 ${value} 號`
+    result[id] = matchedCandidate(value, match)
+  }
+  return result
+}
+
+function extractEquipmentDetails(text) {
+  // Read the actual inventory, not a generic mention that an appendix exists.
+  const inventory = matchCompact(text, /附屬設備清單(?:與交屋預設狀態)?[：:]?[\s\S]{1,2000}?(?=交屋電表讀數|附件[二三四五]|$)/)
+  if (inventory) return { ...matchedCandidate(inventory[0], inventory, 'low'), value: inventory[0].trim() }
+  const reference = matchCompact(text, /設備明細(?:及現況)?見附件[一二三四五六七八九十0-9]+/)
+  return reference ? matchedCandidate(`${reference[0].replace(/\s/g, '')}（請核對附件內容）`, reference, 'low') : { ...EMPTY_CANDIDATE }
 }
 
 function extractParkingDetails(text) {
@@ -293,7 +369,8 @@ function extractParkingDetails(text) {
   )
   const parkingAvailable = checkedAvailability || directAvailability || (hasParkingDetails ? '有' : '')
 
-  const carContext = text.match(/汽車停車位[\s\S]{0,180}/)?.[0] ?? ''
+  const carContext = (text.match(/汽車停車位種類[及與]編號[\s\S]{0,180}/)?.[0]
+    ?? text.match(/汽車停車位[\s\S]{0,180}/)?.[0] ?? '').split(/機車停車位/)[0]
   const motorcycleLine =
     String(text ?? '')
       .split(/\r?\n/)
@@ -355,30 +432,36 @@ function extractParkingDetails(text) {
       ? candidate('第 ' + normalizeFullWidthDigits(motorcycleNumber) + ' 號', motorcycleNumber, 'medium')
       : { ...EMPTY_CANDIDATE },
     parking_usage_time: usage ? candidate(usage, usageLine, 'medium') : { ...EMPTY_CANDIDATE },
+    ...extractLabeledParkingDetails(text),
   }
 }
 
 function extractReviewFields(text) {
+  const labeledDate = text.match(new RegExp(
+    `審閱日期${LABEL_SUFFIX}((?:民國\\s*)?(${DATE_TOKEN})\\s*年\\s*(${DATE_TOKEN})\\s*月\\s*(${DATE_TOKEN})\\s*日)`,
+  ))
   const reviewed = text.match(
     new RegExp(
       `(?:本契約)?於\\s*(?:民國\\s*)?(${DATE_TOKEN})\\s*年\\s*(${DATE_TOKEN})\\s*月\\s*(${DATE_TOKEN})\\s*日[^\\r\\n]{0,40}?攜回審閱`,
     ),
   )
-  const reviewDateValue = reviewed
+  const reviewDateValue = labeledDate
+    ? formatRocDate(labeledDate[2], labeledDate[3], labeledDate[4])
+    : reviewed
     ? formatRocDate(reviewed[1] ?? '', reviewed[2] ?? '', reviewed[3])
     : ''
-  const daysMatch = text.match(
-    new RegExp(`(?:攜回審閱|審閱期間)[^\\r\\n]{0,20}?(${DATE_TOKEN})\\s*日`),
-  )
+  // Require a duration immediately after its label; never skip over a date or 「至少」.
+  const daysMatch = text.match(new RegExp(`審閱日數${LABEL_SUFFIX}(${DATE_TOKEN})\\s*[日天]`))
+    || text.match(new RegExp(`(?:攜回審\\s*閱|審閱期間)\\s*[：:]?\\s*(${DATE_TOKEN})\\s*[日天]`))
   const days = daysMatch?.[1] ? parseChineseInteger(daysMatch[1]) : null
 
   return {
     review_date: reviewDateValue
-      ? candidate(reviewDateValue, reviewed?.[0] ?? '', 'medium')
+      ? { ...candidate(reviewDateValue, '', 'medium'), sourceValue: labeledDate?.[1] ?? reviewed?.[0] ?? '' }
       : { ...EMPTY_CANDIDATE },
     review_days:
-      days && days > 0
-        ? candidate(`${days} 日`, daysMatch?.[0] ?? '', days >= 3 ? 'medium' : 'low')
+      days !== null && days >= 0
+        ? { ...candidate(`${days} 日`, '', days >= 3 ? 'medium' : 'low'), sourceValue: daysMatch[0] }
         : { ...EMPTY_CANDIDATE },
     landlord_review_signature: extractPresence(
       text,
@@ -420,20 +503,25 @@ function extractPaymentMethod(text) {
 }
 
 function extractBankAccount(text) {
-  const institution = captureFirst(text, [
-    /金融機構\s*[：:]\s*([^\r\n，,]+)/,
-    /銀行\s*[：:]\s*([^\r\n，,]+)/,
-  ])
-  const holder = captureFirst(text, [/戶名\s*[：:]\s*([^\r\n，,]+)/])
-  const account = captureFirst(text, [/帳號\s*[：:]\s*([0-9０-９-]+)/])
+  const institutionMatch = matchCompact(text, /(?:金融機構|銀行)[：:]([^，,。；;：:（(□■]{1,60}?)(?=戶名|帳號|[，,。；;：:（(□■]|$)/)
+  // Keep related bank fields together instead of borrowing an account elsewhere.
+  if (!institutionMatch) return { ...EMPTY_CANDIDATE }
+  const section = text.slice(institutionMatch.index, institutionMatch.index + 400)
+    .split(/\n\s*(?:第[一二三四五六七八九十]+條|[一二三四五六七八九十]+[、．])/)[0]
+  const holderMatch = matchCompact(section, /戶名[：:]([^，,。；;：:（(□■]{1,40}?)(?=帳號|[，,。；;：:（(□■]|$)/)
+  const accountMatch = matchCompact(section, /帳號[：:]([0-9０-９]+(?:[-－]?[0-9０-９]+)*)/)
+  const institution = institutionMatch[1]
+  const holder = holderMatch?.[1]
+  const account = accountMatch?.[1]
   const parts = [
     institution && `金融機構：${institution}`,
     holder && `戶名：${holder}`,
     account && `帳號：${account}`,
   ].filter(Boolean)
-  return parts.length
-    ? candidate(parts.join('；'), parts.join('；'), 'medium')
-    : { ...EMPTY_CANDIDATE }
+  const sourceEnd = Math.max(institutionMatch[0].length,
+    holderMatch ? holderMatch.index + holderMatch[0].length : 0,
+    accountMatch ? accountMatch.index + accountMatch[0].length : 0)
+  return { ...candidate(parts.join('；'), '', holder && account ? 'medium' : 'low'), sourceValue: section.slice(0, sourceEnd) }
 }
 
 export function parseChineseInteger(rawValue) {
@@ -580,6 +668,12 @@ function formatRocDate(yearText, monthText, dayText) {
 }
 
 function extractDates(text) {
+  const labeledDate = (labels) => {
+    const match = matchCompact(text, new RegExp(`(?:${labels})[：:]((?:民國)?(${DATE_TOKEN})年(${DATE_TOKEN})月(${DATE_TOKEN})日)`))
+    if (!match) return null
+    const value = formatRocDate(match[2], match[3], match[4])
+    return value ? matchedCandidate(value, match) : { ...EMPTY_CANDIDATE }
+  }
   const startMatch = text.match(
     new RegExp(
       `自\\s*(?:民國\\s*)?(${DATE_TOKEN})\\s*年\\s*(${DATE_TOKEN})\\s*月(?:\\s*(${DATE_TOKEN})?\\s*日)?\\s*起`,
@@ -597,13 +691,22 @@ function extractDates(text) {
   const startSource = startMatch?.[0].replace(/^自\s*/, '').replace(/\s*起$/, '') ?? ''
   const endSource = endMatch?.[0].replace(/^至\s*/, '').replace(/\s*止$/, '') ?? ''
   return {
-    startDate: startValue
+    startDate: labeledDate('租期開始|租期起始|租賃開始日期|租賃起始日期') ?? (startValue
       ? candidate(startValue, startSource, startMatch?.[3] ? 'medium' : 'low')
-      : { ...EMPTY_CANDIDATE },
-    endDate: endValue
+      : { ...EMPTY_CANDIDATE }),
+    endDate: labeledDate('租期結束|租期屆滿|租賃結束日期|租賃終止日期') ?? (endValue
       ? candidate(endValue, endSource, endMatch?.[3] ? 'medium' : 'low')
-      : { ...EMPTY_CANDIDATE },
+      : { ...EMPTY_CANDIDATE }),
   }
+}
+
+function extractHandoverTime(text) {
+  const match = matchCompact(text, new RegExp(
+    `(?:交屋[/／]可入住時間|交屋日期|入住日期|可搬入時間|交屋時間|可入住時間)[：:]((?:民國)?${DATE_TOKEN}年${DATE_TOKEN}月${DATE_TOKEN}日(?:(?:上午|下午|中午|晚上|早上)?${DATE_TOKEN}[時點](?:${DATE_TOKEN}分|半)?)?)`,
+  ))
+  return match ? matchedCandidate(match[1], match) : extractLabeledText(text, [
+    /(?:交屋日期|入住日期|可搬入時間)\s*[：:]\s*([^\r\n。；;]+)/,
+  ])
 }
 
 function extractDueDay(text) {
@@ -612,7 +715,7 @@ function extractDueDay(text) {
   const numbered = text.match(/(?:租金\s*)?每月\s*([0-9０-９]{1,2})\s*日\s*前/)
   const day = numbered?.[1] ? parseChineseInteger(numbered[1]) : null
   return day && day <= 31
-    ? candidate(`每月 ${day} 日前`, numbered[0], 'medium')
+    ? matchedCandidate(`每月 ${day} 日前`, numbered)
     : { ...EMPTY_CANDIDATE }
 }
 
@@ -641,6 +744,7 @@ function extractPenalty(text) {
 }
 
 export function extractContractFieldCandidates(text) {
+  const conditions = detectContractConditions(text)
   const dates = extractDates(text)
   const review = extractReviewFields(text)
   const landlord = extractPartyDetails(text, '出租人')
@@ -651,17 +755,18 @@ export function extractContractFieldCandidates(text) {
     /(?:押租保證金|押金)[^\r\n]{0,50}?([0-9０-９一二三四五六七八九十兩两]+)\s*個月租金/,
   )
   const depositMonths = depositMonthsMatch?.[1] ? parseChineseInteger(depositMonthsMatch[1]) : null
-  const paymentPeriodMatch = text.match(
-    /每期應繳納\s*([0-9０-９一二三四五六七八九十兩两]+)\s*個月租金/,
+  const paymentPeriodMatch = matchCompact(text,
+    /(?:每期繳納月數[：:]|每期應繳納)([0-9０-９一二三四五六七八九十兩两]+)個月/,
   )
   const paymentPeriod = paymentPeriodMatch?.[1] ? parseChineseInteger(paymentPeriodMatch[1]) : null
+  const labeledRoom = matchCompact(text, /樓層[：:]第?([0-9０-９]+)[層樓][。；;]?(?:房間[/／]室號|房間|室號)[：:]第?([A-Za-z0-9０-９-]+)室/)
   const rentalRoomMatch = text.match(
     /第\s*([0-9０-９一二三四五六七八九十]+)\s*層[^\r\n]{0,40}?(?:第\s*)?([0-9０-９A-Za-z一二三四五六七八九十]*)\s*(房|室)/,
   )
   const parking = extractParkingDetails(text)
   const accessoryPurpose = captureFirst(text, [
     /附屬建物用途\s*[：:]?\s*([^\r\n，,。]{1,30})/,
-    /附屬建物[：:]?\s*(陽台|平台|花台|露台|雨遮)/,
+    /附屬建物[：:]?\s*(陽[台臺]|平台|花台|露台|雨遮)/,
   ])
   const leftoverClause = text.match(
     /(?:十九[、.．]\s*)?遺留物之處理[\s\S]{0,400}?(?:視為拋棄其所有權|請求給付不足之費用)/,
@@ -683,20 +788,20 @@ export function extractContractFieldCandidates(text) {
     tenant_registered_address: tenant.registeredAddress,
     tenant_mailing_address: tenant.mailingAddress,
     tenant_phone: tenant.phone,
-    agent_name: agent.name,
-    agent_id: agent.id,
-    authorization_document: extractPresence(
+    agent_name: conditions.agent ? agent.name : { ...EMPTY_CANDIDATE },
+    agent_id: conditions.agent ? agent.id : { ...EMPTY_CANDIDATE },
+    authorization_document: conditions.agent ? extractPresence(
       text,
       [/授權書/, /授權證明/, /授權代理人/],
       '契約載有授權證明（請核對附件）',
-    ),
-    sublease_consent: extractPresence(
+    ) : { ...EMPTY_CANDIDATE },
+    sublease_consent: conditions.sublease ? extractPresence(
       text,
       [/出租人同意轉租/, /同意轉租書/, /轉租同意書/],
       '契約載有轉租同意（請核對附件）',
-    ),
+    ) : { ...EMPTY_CANDIDATE },
     address: extractAddress(text),
-    tax_id: extractLabeledText(text, [/(?:房屋)?稅籍編號\s*[：:]?\s*([^\r\n。]+)/]),
+    tax_id: extractLabeledText(text, [/(?:房屋)?稅籍編號\s*[：:]\s*([A-Za-z0-9０-９-]{3,40})/, /(位置略圖\s*(?:[：:]|詳|見|如)[^\r\n。；;]+)/]),
     land_number: extractLabeledText(text, [/(?:基地坐落|地號)\s*[：:]?\s*([^\r\n。]*?地號)/]),
     building_number: extractLabeledText(text, [/(?:專有部分)?建號\s*[：:]?\s*([^\r\n，,。]+)/]),
     exclusive_area: extractArea(text, ['專有部分', '主建物面積']),
@@ -708,23 +813,27 @@ export function extractContractFieldCandidates(text) {
       : { ...EMPTY_CANDIDATE },
     accessory_area: extractArea(text, ['附屬建物面積', '附屬建物']),
     rental_scope: extractRentalScope(text),
-    rental_room: rentalRoomMatch?.[0]
+    rental_room: labeledRoom
+      ? matchedCandidate(`第 ${normalizeFullWidthDigits(labeledRoom[1])} 樓 ${normalizeFullWidthDigits(labeledRoom[2])} 室`, labeledRoom)
+      : rentalRoomMatch?.[0]
       ? candidate(rentalRoomMatch[0], rentalRoomMatch[0], 'low')
       : { ...EMPTY_CANDIDATE },
-    rental_area: extractArea(text, ['租賃範圍']),
+    rental_area: (() => {
+      const match = matchCompact(text, /實際租賃面積[：:]([0-9０-９,.，]+)(平方公尺|坪)/)
+      return match ? matchedCandidate(`${normalizeFullWidthDigits(match[1])} ${match[2]}`, match) : extractArea(text, ['租賃範圍'])
+    })(),
     parking_space: extractNearbyLine(text, ['汽車停車位', '機車停車位', '車位編號']),
     ...parking,
-    rental_equipment: extractBinaryChoice(text, ['租賃附屬設備']),
+    rental_equipment: extractBinaryChoice(text, ['是否有附屬設備', '租賃附屬設備']),
+    rental_equipment_details: extractEquipmentDetails(text),
     startDate: dates.startDate,
     endDate: dates.endDate,
     start_date: dates.startDate,
     end_date: dates.endDate,
-    handover_time: extractLabeledText(text, [
-      /(?:交屋日期|入住日期|可搬入時間)\s*[：:]\s*([^\r\n]+)/,
-    ]),
+    handover_time: extractHandoverTime(text),
     rent: extractMoney(text, ['(?:租金每個月|每月租金|月租金|租金\\s*[：:]?\\s*每月)']),
     payment_period: paymentPeriod
-      ? candidate(`${paymentPeriod} 個月`, paymentPeriodMatch?.[0] ?? '', 'medium')
+      ? matchedCandidate(`${paymentPeriod} 個月`, paymentPeriodMatch)
       : { ...EMPTY_CANDIDATE },
     dueDay: extractDueDay(text),
     due_day: extractDueDay(text),

@@ -1,3 +1,5 @@
+import { getPropertyIdentification } from './contract-applicability.js'
+
 export const CONTRACT_FIELD_GROUPS = [
   {
     id: 'review',
@@ -8,75 +10,75 @@ export const CONTRACT_FIELD_GROUPS = [
   },
   {
     id: 'parties',
-    order: 2,
+    order: 9,
     title: '雙方基本資料',
     shortTitle: '雙方資料',
-    description: '出租人與承租人的身分及聯絡資料。',
+    description: '對應「二十三、當事人及其基本資料」：出租人與承租人的身分及聯絡資料。',
   },
   {
     id: 'authorization',
-    order: 3,
+    order: 10,
     title: '代理或轉租資料',
     shortTitle: '代理／轉租',
-    description: '偵測到代理或轉租情境時才列為必填。',
+    description: '當事人資料中的代理或轉租資訊；偵測到適用情境時才列為必填。',
     conditional: true,
   },
   {
     id: 'property',
-    order: 4,
+    order: 2,
     title: '租賃住宅標示',
     shortTitle: '住宅標示',
-    description: '門牌、地號、建號與面積等標的資料。',
+    description: '對應「二、租賃標的」：門牌、地號、建號與面積等資料。',
   },
   {
     id: 'scope',
-    order: 5,
+    order: 3,
     title: '租賃範圍',
     shortTitle: '租賃範圍',
-    description: '全部或部分出租、房間及車位範圍。',
+    description: '對應「二、租賃標的」：全部或部分出租、房間及車位範圍。',
   },
   {
     id: 'term',
-    order: 6,
+    order: 4,
     title: '租賃期間',
     shortTitle: '租賃期間',
     description: '租期起訖日期；交屋時間列為建議確認。',
   },
   {
     id: 'rent',
-    order: 7,
+    order: 5,
     title: '租金與繳納',
     shortTitle: '租金繳納',
     description: '租金、繳納期限與支付方式。',
   },
   {
     id: 'deposit',
-    order: 8,
+    order: 6,
     title: '押金約定',
     shortTitle: '押金',
     description: '確認契約是否載明押金月數及金額。',
   },
   {
     id: 'expenses',
-    order: 9,
+    order: 7,
     title: '相關費用',
     shortTitle: '相關費用',
     description: '管理、水電、瓦斯、網路及其他費用約定。',
   },
   {
     id: 'clauses',
-    order: 10,
+    order: 8,
     title: '其他重要條款',
     shortTitle: '重要條款',
     description: '遺留物處理及訴訟管轄等契約約定。',
   },
-]
+].sort((left, right) => left.order - right.order)
 
 export const CONTRACT_FIELD_DEFINITIONS = [
-  field('review_date', 'review', '審閱日期', ['契約審閱期', '攜回審閱'], 'date', 'required', null, {
+  field('review_date', 'review', '審閱日期', ['審閱日期', '契約審閱期', '攜回審閱'], 'date', 'required', null, {
     placeholder: '例如：民國 114 年 7 月 14 日',
   }),
-  field('review_days', 'review', '審閱日數', ['審閱期間', '審閱'], 'days', 'required', null, {
+  field('review_days', 'review', '審閱日數', ['審閱日數', '審閱期間', '攜回審閱'], 'days', 'required', null, {
     placeholder: '例如：3 日',
   }),
   field('landlord_review_signature', 'review', '出租人審閱簽章', ['出租人簽章'], 'signature'),
@@ -150,9 +152,9 @@ export const CONTRACT_FIELD_DEFINITIONS = [
   field(
     'tax_id',
     'property',
-    '房屋稅籍編號',
+    '房屋稅籍編號／位置略圖',
     ['房屋稅籍編號', '稅籍編號'],
-    'tax_id',
+    'text',
     'conditional',
     'no_door_number',
   ),
@@ -230,7 +232,7 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     options: ['平面式', '機械式'],
   }),
   field('car_parking_floor', 'scope', '汽車停車位樓層', ['汽車停車位', '地上', '地下'], 'floor', 'conditional', 'has_car_parking', {
-    placeholder: '例如：地下 B1 層',
+    placeholder: '例如：B1 層或 1 層（地上／地下可省略）',
   }),
   field('car_parking_number', 'scope', '汽車停車位編號', ['汽車停車位', '編號'], 'parking_number', 'conditional', 'has_car_parking', {
     placeholder: '例如：第 20 號',
@@ -239,7 +241,7 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     placeholder: '例如：1 個',
   }),
   field('motorcycle_parking_floor', 'scope', '機車停車位樓層', ['機車停車位', '地上', '地下'], 'floor', 'conditional', 'has_motorcycle_parking', {
-    placeholder: '例如：地下 B1 層',
+    placeholder: '例如：B1 層或 1 層（地上／地下可省略）',
   }),
   field('motorcycle_parking_number', 'scope', '機車停車位編號／位置', ['機車停車位', '編號', '位置示意圖'], 'parking_number', 'conditional', 'has_motorcycle_parking', {
     placeholder: '例如：第 M12 號或附件位置示意圖',
@@ -253,19 +255,20 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     options: ['有', '無'],
   }),
 
-  field('start_date', 'term', '租期起始', ['租賃期間', '租賃期限', '租期自'], 'date'),
-  field('end_date', 'term', '租期結束', ['租賃期間', '租賃期限', '至民國'], 'date'),
+  field('rental_equipment_details', 'scope', '附屬設備明細／附件', ['附屬設備清單', '設備明細', '附件一'], 'text', 'recommended'),
+  field('start_date', 'term', '租期起始', ['租期開始', '租期起始', '租賃期間', '租賃期限', '租期自'], 'date'),
+  field('end_date', 'term', '租期結束', ['租期結束', '租期屆滿', '租賃期間', '租賃期限', '至民國'], 'date'),
   field(
     'handover_time',
     'term',
     '交屋／可入住時間',
-    ['交屋日期', '入住日期', '可搬入'],
+    ['交屋日期', '入住日期', '可搬入', '交屋', '可入住時間'],
     'handover_time',
     'recommended',
   ),
 
   field('rent', 'rent', '每月租金', ['每月租金', '月租金', '租金每個月'], 'money'),
-  field('payment_period', 'rent', '每期繳納月數', ['每期應繳納', '每期租金'], 'payment_period'),
+  field('payment_period', 'rent', '每期繳納月數', ['每期繳納月數', '每期應繳納', '每期租金'], 'payment_period'),
   field('due_day', 'rent', '繳租期限', ['每月', '租金應於', '繳納'], 'due_day'),
   field('payment_method', 'rent', '租金支付方式', ['租金支付方式', '現金繳付', '轉帳繳付'], 'payment_method'),
   field(
@@ -355,31 +358,38 @@ function field(
 }
 
 export function detectContractConditions(text) {
-  const source = String(text ?? '')
+  const source = String(text ?? '').replace(/\s+/g, '')
+  const explicitAgent = source.match(/是否(?:由代理人簽約|委託代理人|代理簽約)[：:](是|有|否|無)/)?.[1]
+  const explicitSublease = source.match(/是否(?:屬轉租|轉租)[：:](是|有|否|無)/)?.[1]
+  const property = getPropertyIdentification(text)
   return {
-    agent: /代理人|代理簽約|授權書|授權證明/.test(source),
-    sublease: /二房東|次承租|轉租契約|同意轉租|轉租同意書/.test(source),
+    agent: explicitAgent ? /是|有/.test(explicitAgent)
+      : /代理人|代理簽約|授權書|授權證明/.test(source)
+        && !/代理人[^。；;]{0,70}[：:](?:均)?不適用/.test(source),
+    sublease: explicitSublease ? /是|有/.test(explicitSublease)
+      : /二房東|次承租|轉租契約|同意轉租|轉租同意書/.test(source)
+        && !/(?:轉租書|轉租同意書)[^。；;]{0,40}[：:](?:均)?不適用/.test(source),
     transfer: /轉帳繳付|轉帳支付|匯款|金融機構|銀行帳號/.test(source),
-    door_number: !/無門牌/.test(source),
-    no_door_number: /無門牌|房屋稅籍編號/.test(source),
+    door_number: property.state !== 'no_door',
+    no_door_number: property.state === 'no_door',
     // ⚠️「住宅部分」不可直接當成分租的訊號：官方範本第十二條的標題就是
     // 「租賃住宅部分滅失」，任何照範本寫的合約都會被誤判成分租，
     // 進而把「樓層／房間／室號」「實際租賃面積」變成必填而永遠過不了。
     // 2026-09-10 實測踩到。
     partial_scope:
-      /住宅部分(?!滅失|減失|毀損)|租賃部分|分租|(?:租賃範圍|租賃住宅)[^\r\n]{0,60}(?:房間|第\s*[^\r\n]{0,12}\s*室)/.test(
+      /(?:住宅)?出租範圍[：:]部分|住宅部分(?!滅失|減失|毀損)|租賃部分|分租|(?:租賃範圍|租賃住宅)[^\r\n]{0,60}(?:房間|第\s*[^\r\n]{0,12}\s*室)/.test(
         source,
       ) && !/[■☑✓●◆]\s*全部/.test(source),
     has_parking:
-      /(?:車位[^\r\n]{0,30}?[■☑✓●◆]\s*有)|汽車停車位\s*\d+\s*個|機車停車位\s*\d+\s*個|平面式停車位|機械式停車位/.test(
+      /是否包含車位[：:]有|(?:車位[^\r\n]{0,30}?[■☑✓●◆]\s*有)|汽車停車位(?:數量[：:])?[0-9０-９]+個|機車停車位(?:數量[：:])?[0-9０-９]+個|平面式停車位|機械式停車位/.test(
         source,
       ) && !/(?:車位[^\r\n]{0,20}?[■☑✓●◆]\s*無)/.test(source),
     has_car_parking:
-      /汽車停車位\s*[1-9]\d*\s*個|平面式停車位|機械式停車位/.test(source),
-    has_motorcycle_parking: /機車停車位\s*[1-9]\d*\s*個|機車停車位[^\r\n]{0,60}編號/.test(
+      /汽車停車位(?:數量[：:])?[1-9１-９][0-9０-９]*個|平面式停車位|機械式停車位/.test(source),
+    has_motorcycle_parking: /機車停車位(?:數量[：:])?[1-9１-９][0-9０-９]*個|機車停車位[^\r\n]{0,60}編號/.test(
       source,
     ),
-    has_accessory: /附屬建物(?:用途)?[^\r\n]{0,50}(?:平方公尺|陽台|平台|花台|露台|雨遮)/.test(
+    has_accessory: /附屬建物(?:用途)?[^\r\n]{0,50}(?:平方公尺|陽[台臺]|平台|花台|露台|雨遮)/.test(
       source,
     ),
   }

@@ -1,9 +1,0 @@
-{
-  "type": "service_account",
-  "project_id": "fake-test-project",
-  "private_key_id": "0000000000000000000000000000000000000000",
-  "private_key": "-----BEGIN PRIVATE KEY-----\nFAKEKEYFORTESTINGONLY\n-----END PRIVATE KEY-----\n",
-  "client_email": "fake@fake-test-project.iam.gserviceaccount.com",
-  "client_id": "000000000000000000000",
-  "token_uri": "https://oauth2.googleapis.com/token"
-}

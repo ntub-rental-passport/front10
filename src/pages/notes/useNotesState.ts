@@ -1,5 +1,6 @@
-import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { createPersonalNote, deletePersonalNote, listPersonalNotes, updatePersonalNote, listHouseholds, createHousehold, joinHousehold, notesRequest, groupPath, type Household } from '@/src/services/notesApi'
 
 export type MainTab = 'personal' | 'roommate'
 type PersonalTag = '租務' | '提醒' | '維護' | '採買'
@@ -38,119 +39,14 @@ interface RoommateTask {
   creatorId: string
 }
 
-const PERSONAL_STORAGE_KEY = 'rentmate-notes-personal-v3-room-rhythm'
-const ROOMMATE_STORAGE_KEY = 'rentmate-notes-roommate-v3-room-rhythm'
-const ROOMMATE_MEMBER_STORAGE_KEY = 'rentmate-notes-members-v3-room-rhythm'
-const INVITE_TOKEN_STORAGE_KEY = 'rentmate-notes-invite-token-v3-room-rhythm'
 const daysOfWeek = ['日', '一', '二', '三', '四', '五', '六']
-const accentRotation: Accent[] = ['indigo', 'emerald', 'amber', 'rose']
 
 export function useNotesState(mode: MainTab) {
   const router = useRouter()
+  const route = useRoute()
   const browserNow = new Date()
   const todayKey = toDateKey(browserNow)
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://rentmate.app'
-
-  const personalSeed: PersonalNote[] = [
-    {
-      id: 'p-1',
-      title: '冷氣濾網清洗',
-      content: '客廳冷氣濾網積塵，影響效率，記得清洗並晾乾。',
-      date: todayKey,
-      time: '09:30',
-      tag: '維護',
-      done: false,
-    },
-    {
-      id: 'p-2',
-      title: '垃圾車提醒',
-      content: '社區垃圾車明天早上 08:30，記得提早拿下樓。',
-      date: shiftDate(todayKey, 1),
-      time: '08:30',
-      tag: '提醒',
-      done: false,
-    },
-    {
-      id: 'p-3',
-      title: '六月房租轉帳',
-      content: '記得在 6/1 前完成房租轉帳，避免逾期。',
-      date: shiftDate(todayKey, 4),
-      time: '10:00',
-      tag: '租務',
-      done: false,
-    },
-    {
-      id: 'p-4',
-      title: '採買清潔用品',
-      content: '補充洗衣精、衛生紙、垃圾袋。',
-      date: shiftDate(todayKey, 4),
-      time: '15:00',
-      tag: '採買',
-      done: false,
-    },
-    {
-      id: 'p-5',
-      title: '租約到期日確認',
-      content: '已確認租約到期日為 09:30。',
-      date: shiftDate(todayKey, -7),
-      time: '09:30',
-      tag: '租務',
-      done: true,
-    },
-  ]
-
-  const roommateMemberSeed: RoommateMember[] = [
-    { id: 'm-1', name: '你', role: '房務統整', accent: 'indigo' },
-    { id: 'm-2', name: '小安', role: '採買與清潔', accent: 'emerald' },
-    { id: 'm-3', name: '阿哲', role: '帳務分攤', accent: 'amber' },
-  ]
-
-  const roommateTaskSeed: RoommateTask[] = [
-    {
-      id: 'r-1',
-      title: '公共區域拖地',
-      content: '客廳、廚房、玄關都要處理。',
-      date: todayKey,
-      time: '18:00',
-      tag: '清潔',
-      done: false,
-      assigneeId: 'm-2',
-      creatorId: 'm-1',
-    },
-    {
-      id: 'r-2',
-      title: '補牛奶與衛生紙',
-      content: '牛奶 x2、衛生紙 x1，買回來放玄關櫃。',
-      date: shiftDate(todayKey, 1),
-      time: '19:30',
-      tag: '採買',
-      done: false,
-      assigneeId: '',
-      creatorId: 'm-1',
-    },
-    {
-      id: 'r-3',
-      title: '水電費分攤確認',
-      content: '四月帳單確認與分攤。',
-      date: shiftDate(todayKey, 2),
-      time: '21:45',
-      tag: '帳務',
-      done: false,
-      assigneeId: 'm-1',
-      creatorId: 'm-1',
-    },
-    {
-      id: 'r-4',
-      title: '垃圾日提醒',
-      content: '週一晚間記得拿到門口。',
-      date: shiftDate(todayKey, -3),
-      time: '20:00',
-      tag: '公共區域',
-      done: true,
-      assigneeId: 'm-2',
-      creatorId: 'm-2',
-    },
-  ]
 
   const personalFilters: { value: PersonalFilter; label: string; count: () => number }[] = [
     { value: 'all', label: '全部', count: () => personalNotes.value.length },
@@ -177,12 +73,110 @@ export function useNotesState(mode: MainTab) {
   const copyStatus = ref('')
   const memberActionStatus = ref('')
 
-  const personalNotes = ref<PersonalNote[]>(readJson(PERSONAL_STORAGE_KEY, personalSeed))
-  const roommateMembers = ref<RoommateMember[]>(
-    readJson(ROOMMATE_MEMBER_STORAGE_KEY, roommateMemberSeed),
-  )
-  const roommateTasks = ref<RoommateTask[]>(readJson(ROOMMATE_STORAGE_KEY, roommateTaskSeed))
-  const inviteToken = ref<string>(readJson(INVITE_TOKEN_STORAGE_KEY, createInviteToken()))
+  const personalNotes = ref<PersonalNote[]>([])
+  const roommateMembers = ref<RoommateMember[]>([])
+  const roommateTasks = ref<RoommateTask[]>([])
+  const groups = ref<Household[]>([])
+  const householdId = ref('')
+  const activeGroup = computed(() => groups.value.find(group => group.id === householdId.value))
+  const inviteToken = computed(() => activeGroup.value?.inviteCode || '')
+  const isOwner = computed(() => activeGroup.value?.isOwner ?? false)
+  const pendingInvite = computed(() => typeof route.query.invite === 'string' ? route.query.invite : '')
+  const syncError = ref('')
+  const isLoading = ref(false)
+  const isSaving = ref(false)
+  const hasLegacyNotes = ref(false)
+
+  function exportLegacyNotes(): void {
+    if (typeof window === 'undefined') return
+    const backup = Object.fromEntries([
+      'rentmate-notes-personal-v3-room-rhythm', 'rentmate-notes-roommate-v3-room-rhythm',
+      'rentmate-notes-members-v3-room-rhythm', 'rentmate-notes-invite-token-v3-room-rhythm',
+    ].map(key => [key, window.localStorage.getItem(key)]))
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'rentmate-legacy-notes.json'
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  async function perform(action: () => Promise<void>): Promise<void> {
+    if (isSaving.value || isLoading.value) return
+    isSaving.value = true
+    syncError.value = ''
+    try { await action() } catch (error) {
+      syncError.value = error instanceof Error ? error.message : '記事同步失敗，請重試。'
+    } finally { isSaving.value = false }
+  }
+
+  async function loadGroup(): Promise<void> {
+    if (!householdId.value) {
+      roommateMembers.value = []
+      roommateTasks.value = []
+      return
+    }
+    const path = groupPath(householdId.value)
+    const [members, tasks] = await Promise.all([
+      notesRequest<RoommateMember[]>(`${path}/members`),
+      notesRequest<RoommateTask[]>(`${path}/tasks`),
+    ])
+    roommateMembers.value = members
+    roommateTasks.value = tasks
+  }
+
+  async function reloadNotes(): Promise<void> {
+    if (isLoading.value || isSaving.value) return
+    isLoading.value = true
+    syncError.value = ''
+    try {
+      const [notes, households] = await Promise.all([listPersonalNotes(), listHouseholds()])
+      personalNotes.value = notes as PersonalNote[]
+      groups.value = households
+      if (!households.some(group => group.id === householdId.value)) householdId.value = households[0]?.id || ''
+      await loadGroup()
+    } catch (error) {
+      syncError.value = error instanceof Error ? error.message : '記事載入失敗，請重試。'
+    } finally { isLoading.value = false }
+  }
+
+  async function ensureGroup(): Promise<string> {
+    if (!householdId.value) {
+      const group = await createHousehold()
+      groups.value.push(group)
+      householdId.value = group.id
+      await loadGroup()
+    }
+    return groupPath(householdId.value)
+  }
+
+  async function acceptInvite(): Promise<void> {
+    await perform(async () => {
+      const group = await joinHousehold(pendingInvite.value)
+      if (!groups.value.some(item => item.id === group.id)) groups.value.push(group)
+      householdId.value = group.id
+      await loadGroup()
+      const query = { ...route.query }
+      delete query.invite
+      await router.replace({ query })
+      memberActionStatus.value = '已加入室友協作空間'
+    })
+  }
+
+  async function selectGroup(id: string): Promise<void> {
+    await perform(async () => {
+      const previous = householdId.value
+      householdId.value = id
+      try { await loadGroup() } catch (error) { householdId.value = previous; throw error }
+    })
+  }
+
+  onMounted(async () => {
+    if (typeof window !== 'undefined') {
+      hasLegacyNotes.value = Boolean(window.localStorage.getItem('rentmate-notes-personal-v3-room-rhythm') || window.localStorage.getItem('rentmate-notes-roommate-v3-room-rhythm'))
+    }
+    await reloadNotes()
+  })
 
   const showPersonalDialog = ref(false)
   const showRoommateTaskDialog = ref(false)
@@ -212,7 +206,7 @@ export function useNotesState(mode: MainTab) {
     role: '新加入室友',
   })
 
-  const inviteLink = computed(() => `${currentOrigin}/app/notes/roommates?invite=${inviteToken.value}`)
+  const inviteLink = computed(() => inviteToken.value ? `${currentOrigin}/app/notes/roommates?invite=${inviteToken.value}` : '')
   const qrCodeUrl = computed(
     () =>
       `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(inviteLink.value)}`,
@@ -352,10 +346,6 @@ export function useNotesState(mode: MainTab) {
     done: activeTab.value === 'personal' ? personalStats.value.done : roommateStats.value.done,
   }))
 
-  watch(personalNotes, value => writeJson(PERSONAL_STORAGE_KEY, value), { deep: true })
-  watch(roommateTasks, value => writeJson(ROOMMATE_STORAGE_KEY, value), { deep: true })
-  watch(roommateMembers, value => writeJson(ROOMMATE_MEMBER_STORAGE_KEY, value), { deep: true })
-  watch(inviteToken, value => writeJson(INVITE_TOKEN_STORAGE_KEY, value))
   watch(selectedDate, (value) => {
     const monthKey = startOfMonth(value)
     if (monthKey !== miniCalendarMonth.value) {
@@ -403,9 +393,12 @@ export function useNotesState(mode: MainTab) {
     showRoommateTaskDialog.value = true
   }
 
-  function openMemberDialog(modeValue: MemberDialogMode = 'link'): void {
-    memberDialogMode.value = modeValue
-    showMemberDialog.value = true
+  async function openMemberDialog(modeValue: MemberDialogMode = 'link'): Promise<void> {
+    await perform(async () => {
+      await ensureGroup()
+      memberDialogMode.value = modeValue
+      showMemberDialog.value = true
+    })
   }
 
   function switchTab(tab: MainTab): void {
@@ -446,115 +439,88 @@ export function useNotesState(mode: MainTab) {
     }
   }
 
-  function savePersonalNote(): void {
+  async function savePersonalNote(): Promise<void> {
     if (!personalForm.value.title.trim()) return
-    personalNotes.value.push({
-      id: createId('personal'),
-      title: personalForm.value.title.trim(),
-      content: personalForm.value.content.trim(),
-      date: personalForm.value.date,
-      time: personalForm.value.time,
-      tag: personalForm.value.tag,
-      done: false,
+    await perform(async () => {
+      const note = await createPersonalNote({ ...personalForm.value })
+      personalNotes.value.push(note as PersonalNote)
+      selectedDate.value = personalForm.value.date
+      showPersonalDialog.value = false
+      resetPersonalForm()
     })
-    selectedDate.value = personalForm.value.date
-    showPersonalDialog.value = false
-    resetPersonalForm()
   }
 
-  function saveRoommateTask(): void {
+  async function saveRoommateTask(): Promise<void> {
     if (!roommateTaskForm.value.title.trim()) return
-
-    const payload = {
-      title: roommateTaskForm.value.title.trim(),
-      content: roommateTaskForm.value.content.trim(),
-      date: roommateTaskForm.value.date,
-      time: roommateTaskForm.value.time,
-      tag: roommateTaskForm.value.tag,
-      assigneeId: roommateTaskForm.value.assigneeId,
-    }
-
-    if (editingRoommateTaskId.value) {
-      roommateTasks.value = roommateTasks.value.map(task =>
-        task.id === editingRoommateTaskId.value
-          ? {
-              ...task,
-              ...payload,
-            }
-          : task,
+    await perform(async () => {
+      const path = await ensureGroup()
+      const id = editingRoommateTaskId.value
+      const task = await notesRequest<RoommateTask>(
+        `${path}/tasks${id ? `/${encodeURIComponent(id)}` : ''}`,
+        id ? 'PATCH' : 'POST', { ...roommateTaskForm.value },
       )
-    } else {
-      roommateTasks.value.push({
-        id: createId('roommate'),
-        ...payload,
-        done: false,
-        creatorId: roommateMembers.value[0]?.id ?? '',
-      })
-    }
-
-    selectedDate.value = roommateTaskForm.value.date
-    closeRoommateTaskDialog()
-  }
-
-  function saveRoommateMember(): void {
-    if (!roommateMemberForm.value.name.trim()) return
-    roommateMembers.value.push({
-      id: createId('member'),
-      name: roommateMemberForm.value.name.trim(),
-      role: roommateMemberForm.value.role.trim() || '室友',
-      accent: accentRotation[roommateMembers.value.length % accentRotation.length],
-    })
-    memberActionStatus.value = `已新增 ${roommateMemberForm.value.name.trim()} 到協作區`
-    showMemberDialog.value = false
-    resetRoommateMemberForm()
-  }
-
-  function togglePersonalDone(id: string): void {
-    const note = personalNotes.value.find(item => item.id === id)
-    if (note) note.done = !note.done
-  }
-
-  function toggleRoommateDone(id: string): void {
-    const task = roommateTasks.value.find(item => item.id === id)
-    if (task) task.done = !task.done
-  }
-
-  function removePersonalNote(id: string): void {
-    personalNotes.value = personalNotes.value.filter(note => note.id !== id)
-  }
-
-  function removeRoommateTask(id: string): void {
-    roommateTasks.value = roommateTasks.value.filter(task => task.id !== id)
-    if (editingRoommateTaskId.value === id) {
+      if (id) roommateTasks.value = roommateTasks.value.map(item => item.id === id ? task : item)
+      else roommateTasks.value.push(task)
+      selectedDate.value = roommateTaskForm.value.date
       closeRoommateTaskDialog()
-    }
+    })
   }
 
-  function removeRoommateMember(id: string): void {
-    if (roommateMembers.value.length <= 1) {
-      memberActionStatus.value = '至少保留一位室友成員，協作區才有可指派對象。'
-      return
-    }
-
-    const fallbackMember = roommateMembers.value.find(member => member.id !== id)
-    if (!fallbackMember) return
-
-    roommateTasks.value = roommateTasks.value.map(task => ({
-      ...task,
-      assigneeId: task.assigneeId === id ? fallbackMember.id : task.assigneeId,
-      creatorId: task.creatorId === id ? fallbackMember.id : task.creatorId,
-    }))
-
-    const removedMember = roommateMembers.value.find(member => member.id === id)
-    roommateMembers.value = roommateMembers.value.filter(member => member.id !== id)
-    memberActionStatus.value = removedMember
-      ? `已移除 ${removedMember.name}，未完成任務已改派給 ${fallbackMember.name}`
-      : '已更新協作成員'
+  async function saveRoommateMember(): Promise<void> {
+    if (!roommateMemberForm.value.name.trim()) return
+    await perform(async () => {
+      const path = await ensureGroup()
+      const member = await notesRequest<RoommateMember>(`${path}/members`, 'POST', { ...roommateMemberForm.value })
+      roommateMembers.value.push(member)
+      memberActionStatus.value = `已新增 ${member.name}；此資料尚未連結帳號，請另傳邀請連結。`
+      showMemberDialog.value = false
+      resetRoommateMemberForm()
+    })
   }
 
-  function regenerateInviteToken(): void {
-    inviteToken.value = createInviteToken()
-    copyStatus.value = '已重新產生邀請連結與 QR Code'
+  async function togglePersonalDone(id: string): Promise<void> {
+    const note = personalNotes.value.find(item => item.id === id)
+    if (!note) return
+    await perform(async () => { Object.assign(note, await updatePersonalNote(id, { done: !note.done })) })
+  }
+
+  async function toggleRoommateDone(id: string): Promise<void> {
+    const task = roommateTasks.value.find(item => item.id === id)
+    if (!task) return
+    await perform(async () => {
+      Object.assign(task, await notesRequest<RoommateTask>(`${groupPath(householdId.value)}/tasks/${encodeURIComponent(id)}`, 'PATCH', { done: !task.done }))
+    })
+  }
+
+  async function removePersonalNote(id: string): Promise<void> {
+    await perform(async () => {
+      await deletePersonalNote(id)
+      personalNotes.value = personalNotes.value.filter(note => note.id !== id)
+    })
+  }
+
+  async function removeRoommateTask(id: string): Promise<void> {
+    await perform(async () => {
+      await notesRequest(`${groupPath(householdId.value)}/tasks/${encodeURIComponent(id)}`, 'DELETE')
+      roommateTasks.value = roommateTasks.value.filter(task => task.id !== id)
+      if (editingRoommateTaskId.value === id) closeRoommateTaskDialog()
+    })
+  }
+
+  async function removeRoommateMember(id: string): Promise<void> {
+    await perform(async () => {
+      await notesRequest(`${groupPath(householdId.value)}/members/${encodeURIComponent(id)}`, 'DELETE')
+      await loadGroup()
+      memberActionStatus.value = '已移除成員，相關任務改為未指派。'
+    })
+  }
+
+  async function regenerateInviteToken(): Promise<void> {
+    await perform(async () => {
+      const group = await notesRequest<Household>(`${await ensureGroup()}/invite`, 'POST')
+      groups.value = groups.value.map(item => item.id === group.id ? group : item)
+      copyStatus.value = '已更新邀請連結，舊連結不再有效'
+    })
   }
 
   async function copyInviteLink(): Promise<void> {
@@ -589,6 +555,7 @@ export function useNotesState(mode: MainTab) {
   }
 
   return {
+    syncError, isLoading, isSaving, reloadNotes, groups, householdId, selectGroup, pendingInvite, acceptInvite, isOwner, hasLegacyNotes, exportLegacyNotes,
     activeTab,
     personalFilters,
     roommateFilters,
@@ -657,42 +624,6 @@ export function useNotesState(mode: MainTab) {
     copyInviteLink,
     shareInviteLink,
   }
-}
-
-function canUseStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
-}
-
-function cloneValue<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
-}
-
-function readJson<T>(key: string, fallback: T): T {
-  if (!canUseStorage()) return cloneValue(fallback)
-  const raw = window.localStorage.getItem(key)
-  if (!raw) return cloneValue(fallback)
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    window.localStorage.removeItem(key)
-    return cloneValue(fallback)
-  }
-}
-
-function writeJson(key: string, value: unknown): void {
-  if (!canUseStorage()) return
-  window.localStorage.setItem(key, JSON.stringify(value))
-}
-
-function createId(prefix: string): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${prefix}-${crypto.randomUUID()}`
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
-}
-
-function createInviteToken(): string {
-  return createId('invite').replaceAll('-', '').slice(0, 18)
 }
 
 function parseDateOnly(value: string): Date {
