@@ -4,6 +4,15 @@ export type { AdminRole }
 
 export interface AdminNavItem {
   label: string
+  /**
+   * 導覽列上的簡短寫法。沒有就用 label。
+   *
+   * 頂部列是一整排膠囊，四個字的「後台總覽」會把它撐開；但抽屜、麵包屑
+   * 這些有空間的地方仍該顯示完整名稱。分成兩個欄位，是為了讓兩邊都從
+   * 這一份資料取值 —— 畫面上寫死簡稱的話，哪天有人改了 label，
+   * 膠囊還是會顯示舊的，而且不會有任何東西報錯。
+   */
+  shortLabel?: string
   path: string
   roles: AdminRole[]
 }
@@ -24,7 +33,7 @@ export const adminNavGroups: AdminNavGroup[] = [
   {
     label: '營運管理',
     items: [
-      { label: '後台總覽', path: '/admin', roles: ['super', 'admin'] },
+      { label: '後台總覽', shortLabel: '總覽', path: '/admin', roles: ['super', 'admin'] },
       // 押金對帳與訂閱容量已整合進使用者管理，一般管理員可檢視，
       // 但改角色與停用帳號在詳情頁另外限超級管理員。
       { label: '使用者管理', path: '/admin/users', roles: ['super', 'admin'] },
