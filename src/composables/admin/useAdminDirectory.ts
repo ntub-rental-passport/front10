@@ -4,7 +4,11 @@ import { adminMaintenanceCollection } from './useAdminMaintenance'
 import { adminDepositCollection } from './useAdminDeposits'
 import { adminPlansCollection, adminSubscriptionCollection } from './useAdminSubscription'
 import { adminSettings } from './useAdminSettings'
-import { fetchAdminAccounts, updateAccountStatus } from '@/src/services/adminUsersApi'
+import {
+  fetchAdminAccounts,
+  updateAccountStatus,
+  type AdminAccount,
+} from '@/src/services/adminUsersApi'
 import {
   adminRoleCounts,
   emptyUserDirectoryFilter,
@@ -36,6 +40,16 @@ import {
 const filter = ref<UserDirectoryFilter>({ ...emptyUserDirectoryFilter })
 
 const realRows = ref<UserDirectoryRow[]>([])
+
+/**
+ * 後端回傳的原始帳號。
+ *
+ * realRows 是轉成「列表一列」之後的形狀，為了跟展示資料併排而丟掉了
+ * providers 與 hasPassword —— 那兩個欄位在列表上沒地方放，但統計
+ * 註冊來源時需要。與其讓 UserDirectoryRow 為了統計而長出用不到的欄位，
+ * 不如把原始資料一起留著。
+ */
+const realAccounts = ref<AdminAccount[]>([])
 const realAccountsLoading = ref(false)
 /** 讀不到真實帳號時的說明。空字串代表沒有問題。 */
 const realAccountsError = ref('')
@@ -50,10 +64,12 @@ async function loadRealAccounts(): Promise<void> {
     // 讀不到就誠實說讀不到，不要用展示資料魚目混珠 ——
     // 管理員會以為畫面上這些就是全部的真實帳號。
     realRows.value = []
+    realAccounts.value = []
     realAccountsError.value =
       '讀不到真實帳號。請確認後端已啟動，且目前登入的是管理員帳號；以下僅為展示資料。'
   } else {
     realRows.value = accounts.map(realAccountToRow)
+    realAccounts.value = accounts
   }
 
   realAccountsLoading.value = false
@@ -131,6 +147,10 @@ export function useAdminDirectory() {
     realRows.value = realRows.value.map((item) =>
       item.realAccountId === updated.id ? realAccountToRow(updated) : item,
     )
+    // 原始帳號也要換掉，否則「停用中」那格 KPI 不會跟著動
+    realAccounts.value = realAccounts.value.map((item) =>
+      item.id === updated.id ? updated : item,
+    )
   }
 
   return {
@@ -142,6 +162,7 @@ export function useAdminDirectory() {
     rowOf,
     planSegments,
     adminCounts,
+    realAccounts,
     realAccountsLoading,
     realAccountsError,
     reloadRealAccounts: loadRealAccounts,
