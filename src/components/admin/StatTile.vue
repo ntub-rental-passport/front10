@@ -30,12 +30,17 @@ const visual = computed(() => resolveStatTileVisual(props.hero, props.to))
 </script>
 
 <template>
+  <!--
+    圓角用 rounded-3xl 對齊相鄰的 Card：rounded-2xl 實測 21.6px、Card 是 26.4px，
+    並排時大小對不上。註解寫在這裡而不是 :class 裡面——template 綁定是會被編譯器
+    攤平的表達式，行註解放進去會把後面的內容一起吃掉。
+  -->
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
     :class="
       cn(
-        'group relative flex flex-col gap-3 rounded-2xl p-5',
+        'group relative flex flex-col gap-3 rounded-3xl p-5',
         visual.containerClass,
         to ? 'transition-shadow hover:shadow-md' : undefined,
       )

@@ -42,8 +42,14 @@ function toTimedAccount(account: RecentLoginLike): TimedAccount | null {
   return { account, lastLoginAt: account.lastLoginAt, atMs }
 }
 
-/** 姓名／email 的首字。暱稱保留原樣（中文沒有大小寫可言），email 首字母強制大寫。 */
-function initialOf(displayName: string | null, email: string): string {
+/**
+ * 姓名／email 的首字。暱稱保留原樣（中文沒有大小寫可言），email 首字母強制大寫。
+ *
+ * 匯出是因為 AdminLayout 的頭像也要同一套規則。先前那裡有一份各自實作的
+ * 複本，靠註解聲明「規則與此處一致」——那種寫法遲早會漂移成兩套規則，
+ * 而且漂移了也不會有任何地方報錯。
+ */
+export function initialOf(displayName: string | null, email: string): string {
   const name = displayName?.trim()
   if (name) return name.slice(0, 1)
   const emailInitial = email.trim().slice(0, 1)

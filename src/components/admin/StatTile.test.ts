@@ -9,10 +9,13 @@ describe('resolveStatTileVisual', () => {
     expect(visual.mutedTextClass).toBe('text-muted-foreground')
   })
 
-  it('hero 用 primary 底色，輔助文字換成半透明的 primary-foreground', () => {
+  it('hero 用 primary 底色，輔助文字用 primary-foreground（深色模式不降透明度）', () => {
     const visual = resolveStatTileVisual(true, undefined)
     expect(visual.containerClass).toBe('bg-primary text-primary-foreground')
-    expect(visual.mutedTextClass).toBe('text-primary-foreground/75')
+    // 深色模式要拿掉透明度：--primary 深色較亮，/75 實測只有 2.89
+    expect(visual.mutedTextClass).toBe(
+      'text-primary-foreground/75 dark:text-primary-foreground',
+    )
   })
 
   it('沒有 to 就不顯示鑽取箭頭', () => {
