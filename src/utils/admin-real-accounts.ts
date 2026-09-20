@@ -16,6 +16,10 @@
  * 顯示一個永遠是 +0% 的趨勢，比不顯示更糟 —— 它看起來像資訊，其實不是。
  */
 
+// 與 admin-overview.ts 共用同一個常數，不要各寫一份（先前兩邊連寫法都不同：
+// 7 * 86400000 vs 7 * 24 * 60 * 60 * 1000）
+import { WEEK_MS } from './time-window'
+
 /** 只取統計用得到的欄位，避免這個檔案綁死在 API 的回傳型別上。 */
 export interface RealAccountLike {
   status: string
@@ -34,7 +38,6 @@ export interface RealAccountStats {
   unverified: number
 }
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 export function realAccountStats(
   accounts: RealAccountLike[],

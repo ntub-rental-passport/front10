@@ -10,6 +10,7 @@ import type { AdminUser } from '@/src/mocks/admin/users'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import { depositMatchOf, type DepositMatch } from './admin-deposit'
 import type { MaintenanceStatus } from './admin-maintenance'
+import { WEEK_MS } from './time-window'
 
 // ── 規模與趨勢：時間序列 ────────────────────────────────────────────────
 
@@ -19,7 +20,7 @@ export interface TrendPoint {
 }
 
 /** 一週的毫秒數 */
-const WEEK_MS = 7 * 86400000
+// WEEK_MS 移到 time-window.ts 共用
 
 /**
  * 近 N 週的每週新增工單。

@@ -210,8 +210,11 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
       四格 KPI 講的是「這個平台實際上有幾個人」，來源是資料庫裡的真實帳號，
       不含下方表格裡的展示資料。刻意不給 trend —— 沒有歷史快照可以比，
       一個永遠是 +0% 的趨勢看起來像資訊，其實不是。
+
+      data-real 的約定見 src/pages/admin/index.vue 最上方：標的是「真實」而非
+      「展示」，沒標的一律視為展示資料。這一頁只有這兩塊是真的。
     -->
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div data-real="true" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <StatTile label="真實帳號" :value="accountStats.total" sublabel="資料庫中實際存在" hero />
       <StatTile label="本週新增" :value="accountStats.newThisWeek" sublabel="近 7 天註冊" />
       <StatTile label="停用中" :value="accountStats.suspended" sublabel="無法登入" />
@@ -220,6 +223,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
     <CategoryBarCard
       v-if="sourceSegments.length"
+      data-real="true"
       title="註冊來源"
       description="真實帳號的登入方式分布。「兩者皆有」是先用密碼註冊後再綁定 Google。"
       :items="sourceSegments"

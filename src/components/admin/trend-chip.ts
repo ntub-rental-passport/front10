@@ -6,7 +6,18 @@ export interface TrendDisplay {
   toneClass: string
 }
 
-const UP_TONE_CLASS = 'text-primary bg-secondary'
+/**
+ * 上升樣式用 secondary-foreground 而不是 primary。
+ *
+ * 淺色模式下這兩個 token 是完全相同的值（都是 oklch(0.45 0.15 280)，
+ * 見 src/index.css），所以淺色外觀零變化。差別在深色模式：
+ * --primary 會變亮到 0.6，踩在同樣變深的 --secondary 上實測對比只有 2.83，
+ * 12px 的文字未達 AA 的 4.5；--secondary-foreground 在深色是 0.9，同底對比 8.53。
+ *
+ * 也就是說 primary 在這裡從來就不是「配 secondary 用的前景色」，
+ * 淺色模式只是碰巧看起來沒事。
+ */
+const UP_TONE_CLASS = 'text-secondary-foreground bg-secondary'
 const DOWN_TONE_CLASS = 'text-destructive bg-destructive/10'
 
 /**

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { Bell, ChevronDown, LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
+import { Bell, ChevronDown, ListChecks, LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar/index'
 import {
   DropdownMenu,
@@ -14,6 +14,9 @@ import {
 import { cn } from '@/lib/utils'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { useAdminNotificationCenter } from '@/src/composables/admin/useAdminNotificationCenter'
+import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
+import QueueDrawer from '@/src/components/admin/QueueDrawer.vue'
+import { initialOf } from '@/src/utils/admin-recent-logins'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
 import { adminRoleLabels } from '@/src/utils/admin-rbac'
 
@@ -22,12 +25,44 @@ const router = useRouter()
 
 const { visibleNavGroups, currentAdminRole } = useAdminRbac()
 const { unreadCount: adminUnread } = useAdminNotificationCenter()
+const { count: queueCount } = useAdminQueue()
 
 const mobileOpen = ref(false)
+const queueOpen = ref(false)
+
+/**
+ * 圖示右上角的計數徽章。待辦與通知共用同一份，兩顆並排時大小位置才會一致。
+ *
+ * 文字色不用 text-destructive-foreground：那個 class 產不出任何 CSS——
+ * src/index.css 的 @theme 區塊註冊了 --color-destructive 卻漏掉
+ * --color-destructive-foreground（其他每一組顏色都有成對註冊）。驗證方式是
+ * 在 build 出來的 CSS 裡找 `.text-destructive-foreground`，零筆。
+ *
+ * 用到它的元素會靜靜地繼承父層文字色。這裡的父層是 text-muted-foreground，
+ * 於是變成灰字壓在橘紅底上：實測淺色 1.70、深色 1.07，等於看不見。
+ *
+ * ⚠️ 不要在 index.css 補那行註冊。補了確實會讓這個徽章變白字，但同時會影響
+ * 全站每一顆 destructive 按鈕與徽章（components/ui/button、badge 都用這個
+ * class），而 --destructive 是 oklch(0.7 0.18 40)，偏亮：白字對比只有 2.70，
+ * 比它們現在意外繼承到的深色文字（6.35）差得多。那行「漏掉的註冊」目前
+ * 有一半是在幫倒忙。要兩邊都對得起來得調暗 --destructive 本身，那是 token
+ * 層級的決定。
+ *
+ * 所以這裡只修這顆徽章，改用深色文字，且兩個模式都明講：--destructive 在
+ * 深淺色是同一個值，文字色不能跟著模式翻轉。實測兩個模式都是 6.35。
+ *
+ * （對比數字都是在瀏覽器裡用 canvas 讓引擎自己做 oklch→sRGB 再算 WCAG 量到的。
+ * 自己手寫 Oklab 轉換很容易漏掉線性 RGB 到 sRGB 的編碼那一步，數字會整片偏掉。）
+ */
+const COUNTER_BADGE_CLASS =
+  'absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center ' +
+  'rounded-full bg-destructive px-1 text-[10px] font-bold ' +
+  'text-foreground dark:text-background'
 
 // 抽屜裡點了項目就關起來，否則導覽完抽屜還蓋在內容上
 watch(() => route.path, () => {
   mobileOpen.value = false
+  queueOpen.value = false
 })
 
 function isActive(path: string): boolean {
@@ -71,12 +106,10 @@ const session = computed(() => getAuthSession())
 
 const displayName = computed(() => session.value?.nickname ?? session.value?.email ?? '管理員')
 
-/** 頭像用暱稱首字；沒有暱稱就退回 email 首字母 */
-const initials = computed(() => {
-  const name = session.value?.nickname
-  if (name) return name.slice(0, 1)
-  return (session.value?.email ?? '?').slice(0, 1).toUpperCase()
-})
+/** 頭像首字。規則與「最近登入」共用同一個 initialOf，不要在這裡另寫一份。 */
+const initials = computed(() =>
+  initialOf(session.value?.nickname ?? null, session.value?.email ?? ''),
+)
 
 async function handleSignOut(): Promise<void> {
   signOut()
@@ -150,16 +183,27 @@ async function handleSignOut(): Promise<void> {
         </nav>
 
         <div class="ml-auto flex items-center gap-2">
+          <!-- 待辦佇列：抽屜而非常駐側欄，理由見 QueueDrawer.vue -->
+          <button
+            type="button"
+            class="relative rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="待辦佇列"
+            :aria-expanded="queueOpen"
+            @click="queueOpen = true"
+          >
+            <ListChecks class="h-5 w-5" />
+            <span v-if="queueCount > 0" :class="COUNTER_BADGE_CLASS">
+              {{ queueCount > 99 ? '99+' : queueCount }}
+            </span>
+          </button>
+
           <RouterLink
             to="/admin/notification-center"
             class="relative rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label="通知中心"
           >
             <Bell class="h-5 w-5" />
-            <span
-              v-if="adminUnread > 0"
-              class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
-            >
+            <span v-if="adminUnread > 0" :class="COUNTER_BADGE_CLASS">
               {{ adminUnread > 99 ? '99+' : adminUnread }}
             </span>
           </RouterLink>
@@ -202,6 +246,12 @@ async function handleSignOut(): Promise<void> {
         </div>
       </div>
     </header>
+
+    <!--
+      待辦抽屜放在 header 外面：header 是 sticky + z-40，會形成堆疊脈絡，
+      fixed 的遮罩與面板若掛在它底下會被關在裡面，蓋不住整頁。
+    -->
+    <QueueDrawer :open="queueOpen" @close="queueOpen = false" />
 
     <!--
       行動裝置抽屜。與 landlord-layout 相同的做法：固定定位 ＋ transform 位移 ＋ 遮罩。

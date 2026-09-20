@@ -29,13 +29,12 @@ import { isMaintenanceActive } from '@/src/utils/maintenance'
 import { maintenanceCategoryLabels, type MaintenanceCategory } from '@/src/utils/admin-maintenance'
 import { depositMatchLabels } from '@/src/utils/admin-deposit'
 import {
-  buildQueueGroups,
   depositMatchDistribution,
   latestChangePercent,
   monthlyUserGrowth,
-  queueTotal,
   weeklyTicketTrend,
 } from '@/src/utils/admin-overview'
+import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
 import { recentLogins } from '@/src/utils/admin-recent-logins'
 import { chartColor } from '@/src/constants/admin-chart'
 import type { AdminUserRole } from '@/src/mocks/admin-seed'
@@ -143,28 +142,12 @@ const usageBars = computed<QuotaProgressItem[]>(() =>
   })),
 )
 
-// ── 待辦與稽核 ────────────────────────────────────────────────────
+// ── 待辦 ──────────────────────────────────────────────────────────
 
-const queueGroups = computed(() =>
-  buildQueueGroups(
-    ticketViews.value.map((ticket) => ({
-      id: ticket.id,
-      address: ticket.address,
-      tenantName: ticket.tenantName,
-      status: ticket.status,
-    })),
-    alerts.value.map((usage) => ({
-      id: `ai-${usage.provider.id}`,
-      label:
-        usage.daysLeft === null
-          ? `${usage.provider.label}（已用 ${usage.percent}%）`
-          : `${usage.provider.label}（預估 ${usage.daysLeft} 天後用盡）`,
-    })),
-    3,
-  ),
-)
-
-const queueCount = computed(() => queueTotal(queueGroups.value))
+// 佇列清單本身已經搬到頂部列的待辦抽屜（QueueDrawer），每一頁都叫得出來。
+// 這裡只還需要總數給主角卡「今日待處理」用——兩邊共用 useAdminQueue，
+// 所以抽屜徽章與主角卡的數字不可能對不起來。
+const { count: queueCount } = useAdminQueue()
 
 // ── 系統健康條（真實資料）──────────────────────────────────────────
 //
@@ -190,6 +173,20 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
 
 <template>
   <div class="space-y-8">
+    <!--
+      ⚠️ 這一頁的資料標記約定：標的是「真實」，不是「展示」。
+
+      後台絕大多數數字目前都是 src/mocks 的種子資料，真的接到後端的只有系統
+      健康條與最近登入兩塊。標少數比標多數可靠：漏標一個展示區塊，預設會把它
+      當成真的（危險）；漏標一個真實區塊，預設會把它當成假的（保守但安全）。
+
+      所以真實資料區塊加 data-real="true"，其餘一律視為展示資料。稽核時：
+
+          grep -rn 'data-real' src/pages/admin/ src/components/admin/
+
+      畫面上刻意不出現「展示」字樣。
+    -->
+
     <!-- 標題列：維護狀態是系統狀態而非待辦數字，做成狀態徽章而不是卡片 -->
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div class="space-y-3">
@@ -210,12 +207,19 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
                 : 'border-border bg-muted/40 text-muted-foreground'
             "
           >
-            <span
-              class="h-1.5 w-1.5 rounded-full"
-              :class="maintenanceActive ? 'bg-destructive' : 'bg-emerald-500'"
-              aria-hidden="true"
-            />
-            {{ maintenanceActive ? '維護中' : '運作正常' }}
+            <!--
+              用 StatusDot 而非自己寫一顆點：原本是寫死的 bg-emerald-500，
+              跟正下方健康條的 ok 燈（bg-primary）在同一個畫面上呈現兩種
+              「正常」的顏色。這裡不給 label——StatusDot 的 label 是 text-sm，
+              這顆徽章是 text-xs。
+
+              文案從「運作正常」改成「服務中」：這個徽章只反映
+              settings.maintenanceMode，它不知道資料庫、API 或 LLM 的狀況。
+              「運作正常」是個它擔不起的全域宣告，而且就掛在一條正在回報
+              「LLM Provider 無法取得」的健康條上方。
+            -->
+            <StatusDot :tone="maintenanceActive ? 'danger' : 'ok'" />
+            {{ maintenanceActive ? '維護中' : '服務中' }}
             <span class="text-muted-foreground">·</span>
             {{ maintenanceDetail }}
           </component>
@@ -237,7 +241,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       讀不到或尚未接上（LLM provider）一律顯示「無法取得」，不放假的綠燈——
       見 src/utils/admin-health-bar.ts。
     -->
-    <Card class="rounded-3xl">
+    <Card data-real="true" class="rounded-3xl">
       <CardContent class="flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
         <p class="shrink-0 text-sm font-medium text-muted-foreground">系統健康</p>
         <div v-for="item in healthBarItems" :key="item.id" class="flex items-center gap-2">
@@ -247,251 +251,201 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       </CardContent>
     </Card>
 
-    <!-- 左右分欄：aside（待辦+稽核） | main（圖表+額度） -->
-    <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.5fr)]">
+    <!--
+      展示資料（無 data-real）。主角卡「今日待處理」用的是 useAdminQueue 的
+      總數，與頂部列待辦抽屜的徽章同一個來源，不會對不起來。沒有加鑽取箭頭
+      ——這個數字橫跨工單與 AI 額度告急兩種待辦，沒有單一個「點進去就是這個
+      數字」的目的地，硬加箭頭反而是誤導。
 
-      <!-- ── 左側 aside ── -->
-      <aside class="space-y-4">
-        <Card class="min-w-0 rounded-3xl">
-          <CardHeader class="flex flex-row items-start justify-between space-y-0">
-            <div class="min-w-0">
-              <CardTitle>待辦佇列</CardTitle>
-              <CardDescription>只列後台做得了事的項目，點進去可直接處理。</CardDescription>
-            </div>
-            <Badge v-if="queueCount > 0" variant="destructive" class="shrink-0">
-              {{ queueCount }} 件
-            </Badge>
-          </CardHeader>
+      三張 KPI 卡的數字、sparkline、trend 都是 src/mocks 種子資料算出來的，
+      不是資料庫裡的真實統計。押金不符沒有 trend／spark——這批種子資料沒有
+      歷史快照可以比較，寧可留白也不假造一個歷史趨勢。
+    -->
+    <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <StatTile label="今日待處理" :value="queueCount" sublabel="待辦佇列目前總數" hero />
+      <StatTile
+        label="使用者總數"
+        :value="users.length"
+        sublabel="平台累計註冊"
+        :trend="userGrowthTrendPercent"
+        :spark="userGrowthSpark"
+        to="/admin/users"
+      />
+      <StatTile
+        label="本週新增工單"
+        :value="weeklyTicketCount"
+        sublabel="近 7 天報修申請"
+        :trend="ticketTrendPercent"
+        :spark="ticketTrendSpark"
+        to="/admin/maintenance-tickets"
+      />
+      <StatTile
+        label="押金不符"
+        :value="depositStats.mismatchedCount"
+        sublabel="待處理的聲明落差"
+        to="/admin/users?alert=deposit-mismatch"
+      />
+    </section>
 
-          <CardContent class="space-y-5">
-            <div v-for="group in queueGroups" :key="group.kind" class="space-y-2">
-              <div class="flex items-baseline justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-sm font-semibold">
-                    {{ group.label }}
-                    <span class="ml-1.5 text-muted-foreground">{{ group.count }} 件</span>
-                  </p>
-                  <p class="truncate text-xs text-muted-foreground">{{ group.hint }}</p>
-                </div>
-                <RouterLink
-                  :to="group.to"
-                  class="shrink-0 whitespace-nowrap text-xs text-primary hover:underline"
-                >
-                  查看全部
-                </RouterLink>
-              </div>
+    <!-- 平台規模與組成 -->
+    <section
+      class="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
+    >
+      <TrendAreaCard
+        title="使用者成長"
+        description="近 12 個月累計人數"
+        :points="userGrowth"
+        :summary="userGrowthSummary"
+        height="h-48"
+        :tension="0.25"
+      />
+      <DonutStatCard
+        title="使用者組成"
+        to="/admin/users"
+        :center-value="users.length"
+        center-label="位使用者"
+        :segments="roleSegments"
+        :note="suspendedNote"
+      />
+      <DonutStatCard
+        title="押金對帳結果"
+        to="/admin/users?alert=deposit-mismatch"
+        :center-value="depositRecords.length"
+        center-label="筆記錄"
+        :segments="depositSegments"
+        :note="`房東聲明總額 NT$${depositStats.declaredTotal.toLocaleString('zh-TW')}`"
+      />
+    </section>
 
-              <RouterLink
-                v-for="item in group.items"
-                :key="item.id"
-                :to="item.to"
-                class="flex min-w-0 items-center gap-2 rounded-xl border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted/50"
-              >
-                <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
-                <ArrowUpRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              </RouterLink>
-
-              <p v-if="group.count > group.items.length" class="text-xs text-muted-foreground">
-                還有 {{ group.count - group.items.length }} 件
-              </p>
-            </div>
-
-            <p v-if="queueGroups.length === 0" class="py-10 text-center text-sm text-muted-foreground">
-              目前沒有待辦事項。
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card class="rounded-3xl">
-          <CardHeader>
-            <CardTitle>最新稽核事件</CardTitle>
-            <CardDescription>最近 5 筆，完整紀錄請到稽核紀錄查詢。</CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-2.5 text-sm">
-            <div
-              v-for="event in events.slice(0, 5)"
-              :key="event.id"
-              class="min-w-0 rounded-xl border bg-muted/20 p-3"
-            >
-              <p class="font-medium">{{ event.detail }}</p>
-              <p class="mt-1 text-xs text-muted-foreground">
-                {{ formatDateTime(event.at) }}｜{{ event.actor }}
-              </p>
-            </div>
-            <p v-if="events.length === 0" class="py-6 text-center text-muted-foreground">
-              尚無稽核事件。
-            </p>
-          </CardContent>
-        </Card>
-
-        <!--
-          最近登入：真實資料，直接用 realAccounts（useAdminDirectory 回傳的原始
-          AdminAccount[]，來自後端 /api/admin/users），依 lastLoginAt 排序取前 5。
-          沒有頭像可用（avatar_url 多半是 null），用姓名／email 首字做文字圓形，
-          不放灰色人像佔位圖——見 src/utils/admin-recent-logins.ts。
-        -->
-        <Card class="rounded-3xl">
-          <CardHeader>
-            <CardTitle>最近登入</CardTitle>
-            <CardDescription>真實帳號依最後登入時間排序，最多 5 筆。</CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-2.5">
-            <div
-              v-for="entry in recentLoginEntries"
-              :key="entry.id"
-              class="flex min-w-0 items-center gap-3 rounded-xl border bg-muted/20 px-3 py-2"
-            >
-              <Avatar size="sm" shape="circle" class="h-9 w-9 shrink-0 bg-primary/10 text-primary">
-                <AvatarFallback class="bg-transparent text-sm font-semibold">
-                  {{ entry.initial }}
-                </AvatarFallback>
-              </Avatar>
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium">{{ entry.name }}</p>
-                <p class="truncate text-xs text-muted-foreground">{{ entry.email }}</p>
-              </div>
-              <p class="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-                {{ formatDateTime(entry.lastLoginAt) }}
-              </p>
-            </div>
-
-            <p v-if="realAccountsLoading" class="py-6 text-center text-sm text-muted-foreground">
-              真實帳號讀取中…
-            </p>
-            <p
-              v-else-if="realAccountsError"
-              class="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
-            >
-              {{ realAccountsError }}
-            </p>
-            <p
-              v-else-if="recentLoginEntries.length === 0"
-              class="py-6 text-center text-sm text-muted-foreground"
-            >
-              尚無登入紀錄。
-            </p>
-          </CardContent>
-        </Card>
-      </aside>
-
-      <!-- ── 右側主內容 ── -->
-      <div class="space-y-6">
-        <!--
-          展示資料：主角卡「今日待處理」沿用左側待辦佇列的既有總數（queueCount，
-          聚合自 useAdminMaintenance／useAdminAiUsage 的展示資料，見 buildQueueGroups）。
-          沒有加鑽取箭頭——這個數字橫跨工單與 AI 額度告急兩種待辦，沒有單一個
-          「點進去就是這個數字」的目的地，硬加箭頭反而是誤導。
-
-          三張 KPI 卡的數字、sparkline、trend 同樣沿用既有的展示資料聚合結果
-          （userGrowth／ticketTrend／depositStats，都是 src/mocks 產生的種子資料
-          算出來的，不是資料庫裡的真實統計）。押金不符沒有 trend／spark——
-          這批種子資料沒有歷史快照可以比較，寧可留白也不假造一個歷史趨勢。
-        -->
-        <section data-demo="true" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatTile label="今日待處理" :value="queueCount" sublabel="待辦佇列目前總數" hero />
-          <StatTile
-            label="使用者總數"
-            :value="users.length"
-            sublabel="平台累計註冊"
-            :trend="userGrowthTrendPercent"
-            :spark="userGrowthSpark"
-            to="/admin/users"
-          />
-          <StatTile
-            label="本週新增工單"
-            :value="weeklyTicketCount"
-            sublabel="近 7 天報修申請"
-            :trend="ticketTrendPercent"
-            :spark="ticketTrendSpark"
-            to="/admin/maintenance-tickets"
-          />
-          <StatTile
-            label="押金不符"
-            :value="depositStats.mismatchedCount"
-            sublabel="待處理的聲明落差"
-            to="/admin/users?alert=deposit-mismatch"
-          />
-        </section>
-
-        <!-- 平台規模與組成 -->
-        <section
-          class="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
-        >
-          <TrendAreaCard
-            title="使用者成長"
-            description="近 12 個月累計人數"
-            :points="userGrowth"
-            :summary="userGrowthSummary"
-            height="h-48"
-            :tension="0.25"
-          />
-          <DonutStatCard
-            title="使用者組成"
-            to="/admin/users"
-            :center-value="users.length"
-            center-label="位使用者"
-            :segments="roleSegments"
-            :note="suspendedNote"
-          />
-          <DonutStatCard
-            title="押金對帳結果"
-            to="/admin/users?alert=deposit-mismatch"
-            :center-value="depositRecords.length"
-            center-label="筆記錄"
-            :segments="depositSegments"
-            :note="`房東聲明總額 NT$${depositStats.declaredTotal.toLocaleString('zh-TW')}`"
-          />
-        </section>
-
-        <!-- 報修案件流動 -->
-        <section class="grid gap-4 lg:grid-cols-3">
-          <CategoryBarCard
-            title="報修分類分布"
-            description="全部工單依問題類型"
-            :items="categoryItems"
-            to="/admin/maintenance-tickets"
-          />
-          <div class="lg:col-span-2">
-            <TrendAreaCard
-              title="報修工單趨勢"
-              description="近 12 週每週新增件數"
-              :points="ticketTrend"
-              :summary="ticketTrendSummary"
-              height="h-72"
-            />
-          </div>
-        </section>
-
-        <!--
-          展示資料：AI 額度一覽的進度環。百分比來自 useAdminAiUsage()
-          （src/mocks/admin/ai-usage.ts 產生的每日用量種子資料，對照系統設定的
-          額度上限算出來），不是真的 API 呼叫量統計。
-        -->
-        <section data-demo="true" class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-          <Card class="flex h-full flex-col rounded-3xl">
-            <CardHeader class="pb-2">
-              <CardTitle class="text-sm font-medium">AI 額度一覽</CardTitle>
-            </CardHeader>
-            <CardContent class="flex flex-1 items-center justify-around gap-2">
-              <AiQuotaRing
-                v-for="usage in usages"
-                :key="usage.provider.id"
-                :label="usage.provider.label"
-                :percent="usage.percent"
-                :unset="usage.unset"
-              />
-            </CardContent>
-          </Card>
-          <QuotaProgressCard
-            title="AI 額度用量"
-            to="/admin/ai-usage"
-            :items="usageBars"
-            :corner-text="alertCount > 0 ? `${alertCount} 項告急` : '額度充足'"
-            :corner-variant="alertCount > 0 ? 'destructive' : 'secondary'"
-          />
-        </section>
+    <!-- 報修案件流動 -->
+    <section class="grid gap-4 lg:grid-cols-3">
+      <CategoryBarCard
+        title="報修分類分布"
+        description="全部工單依問題類型"
+        :items="categoryItems"
+        to="/admin/maintenance-tickets"
+      />
+      <div class="lg:col-span-2">
+        <TrendAreaCard
+          title="報修工單趨勢"
+          description="近 12 週每週新增件數"
+          :points="ticketTrend"
+          :summary="ticketTrendSummary"
+          height="h-72"
+        />
       </div>
+    </section>
 
-    </div>
+    <!--
+      展示資料：AI 額度一覽的進度環。百分比來自 useAdminAiUsage()
+      （src/mocks/admin/ai-usage.ts 產生的每日用量種子資料，對照系統設定的
+      額度上限算出來），不是真的 API 呼叫量統計。
+    -->
+    <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+      <Card class="flex h-full flex-col rounded-3xl">
+        <CardHeader class="pb-2">
+          <CardTitle class="text-sm font-medium">AI 額度一覽</CardTitle>
+        </CardHeader>
+        <CardContent class="flex flex-1 items-center justify-around gap-2">
+          <AiQuotaRing
+            v-for="usage in usages"
+            :key="usage.provider.id"
+            :label="usage.provider.label"
+            :percent="usage.percent"
+            :unset="usage.unset"
+          />
+        </CardContent>
+      </Card>
+      <QuotaProgressCard
+        title="AI 額度用量"
+        to="/admin/ai-usage"
+        :items="usageBars"
+        :corner-text="alertCount > 0 ? `${alertCount} 項告急` : '額度充足'"
+        :corner-variant="alertCount > 0 ? 'destructive' : 'secondary'"
+      />
+    </section>
+
+    <!--
+      底部兩張清單卡：性質一樣（都是時間序的「最近發生什麼」），並排比
+      各自佔一整列緊湊。左邊是真實資料、右邊是展示資料，所以只有左邊有
+      data-real——約定見本頁最上方的說明。
+    -->
+    <section class="grid items-start gap-4 lg:grid-cols-2">
+      <!--
+        最近登入：真實資料，直接用 realAccounts（useAdminDirectory 回傳的原始
+        AdminAccount[]，來自後端 /api/admin/users），依 lastLoginAt 排序取前 5。
+        沒有頭像可用（avatar_url 多半是 null），用姓名／email 首字做文字圓形，
+        不放灰色人像佔位圖——見 src/utils/admin-recent-logins.ts。
+      -->
+      <Card data-real="true" class="rounded-3xl">
+        <CardHeader>
+          <CardTitle>最近登入</CardTitle>
+          <CardDescription>真實帳號依最後登入時間排序，最多 5 筆。</CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-2.5">
+          <div
+            v-for="entry in recentLoginEntries"
+            :key="entry.id"
+            class="flex min-w-0 items-center gap-3 rounded-xl border bg-muted/20 px-3 py-2"
+          >
+            <Avatar size="sm" shape="circle" class="h-9 w-9 shrink-0 bg-primary/10 text-primary">
+              <AvatarFallback class="bg-transparent text-sm font-semibold">
+                {{ entry.initial }}
+              </AvatarFallback>
+            </Avatar>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium">{{ entry.name }}</p>
+              <p class="truncate text-xs text-muted-foreground">{{ entry.email }}</p>
+            </div>
+            <p class="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+              {{ formatDateTime(entry.lastLoginAt) }}
+            </p>
+          </div>
+
+          <p v-if="realAccountsLoading" class="py-6 text-center text-sm text-muted-foreground">
+            真實帳號讀取中…
+          </p>
+          <p
+            v-else-if="realAccountsError"
+            class="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+          >
+            {{ realAccountsError }}
+          </p>
+          <p
+            v-else-if="recentLoginEntries.length === 0"
+            class="py-6 text-center text-sm text-muted-foreground"
+          >
+            尚無登入紀錄。
+          </p>
+        </CardContent>
+      </Card>
+
+      <!--
+        展示資料（無 data-real）：事件來自 createAdminCollection('audit',
+        seedAuditEvents)，是本機種子資料加上這個瀏覽器自己產生的操作紀錄，
+        不是後端的稽核表。
+      -->
+      <Card class="rounded-3xl">
+        <CardHeader>
+          <CardTitle>最新稽核事件</CardTitle>
+          <CardDescription>最近 5 筆，完整紀錄請到稽核紀錄查詢。</CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-2.5 text-sm">
+          <div
+            v-for="event in events.slice(0, 5)"
+            :key="event.id"
+            class="min-w-0 rounded-xl border bg-muted/20 p-3"
+          >
+            <p class="font-medium">{{ event.detail }}</p>
+            <p class="mt-1 text-xs text-muted-foreground">
+              {{ formatDateTime(event.at) }}｜{{ event.actor }}
+            </p>
+          </div>
+          <p v-if="events.length === 0" class="py-6 text-center text-muted-foreground">
+            尚無稽核事件。
+          </p>
+        </CardContent>
+      </Card>
+    </section>
   </div>
 </template>

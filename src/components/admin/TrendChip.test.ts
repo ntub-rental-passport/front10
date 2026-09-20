@@ -15,7 +15,9 @@ describe('resolveTrendDisplay', () => {
     expect(resolveTrendDisplay(12)).toEqual({
       direction: 'up',
       text: '+12%',
-      toneClass: 'text-primary bg-secondary',
+      // 深色模式對比：primary 配 secondary 只有 2.83，secondary-foreground 是 8.53。
+      // 淺色模式兩個 token 值相同，所以這個改動在淺色下外觀不變。
+      toneClass: 'text-secondary-foreground bg-secondary',
     })
   })
 
