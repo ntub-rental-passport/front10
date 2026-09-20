@@ -3,8 +3,9 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar/index'
 import { Badge } from '@/components/ui/badge/index'
+import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
-import { AlertTriangle, ArrowUpRight, ListChecks, Users, Wrench } from 'lucide-vue-next'
+import { AlertTriangle, ArrowUpRight, ListChecks, Megaphone, Send, Users, Wrench } from 'lucide-vue-next'
 import AiQuotaRing from '@/src/components/admin/AiQuotaRing.vue'
 import CategoryBarCard from '@/src/components/admin/CategoryBarCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
@@ -207,6 +208,39 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         <p class="mt-1.5 text-muted-foreground">
           平台目前的規模與案件流動，以及需要你處理的事。
         </p>
+
+        <!--
+          標題列的動作。原本這一頁只能看、不能做任何事 —— 進來之後想做事
+          得先找到導覽列、再點進對應的頁面。
+
+          兩顆都是真的導向存在的路由，而且都過 RBAC：canAccessPath 回 false
+          就整顆不渲染，而不是渲染一顆點了會被擋下來的按鈕。
+        -->
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          <Button
+            v-if="canAccessPath('/admin/notifications')"
+            as-child
+            size="sm"
+            class="rounded-full"
+          >
+            <RouterLink to="/admin/notifications">
+              <Send class="size-4" aria-hidden="true" />
+              發送通知
+            </RouterLink>
+          </Button>
+          <Button
+            v-if="canAccessPath('/admin/content')"
+            as-child
+            size="sm"
+            variant="outline"
+            class="rounded-full"
+          >
+            <RouterLink to="/admin/content">
+              <Megaphone class="size-4" aria-hidden="true" />
+              發布公告
+            </RouterLink>
+          </Button>
+        </div>
       </div>
 
       <div class="grid w-full grid-cols-2 gap-x-2 gap-y-1 sm:w-auto sm:grid-cols-4">
@@ -221,6 +255,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           label="使用者總數"
           :value="users.length"
           :trend="userGrowthTrendPercent"
+          trend-period="month"
           to="/admin/users"
         />
         <InlineStat
@@ -228,6 +263,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           label="本週新增工單"
           :value="weeklyTicketCount"
           :trend="ticketTrendPercent"
+          trend-period="week"
           to="/admin/maintenance-tickets"
         />
         <InlineStat

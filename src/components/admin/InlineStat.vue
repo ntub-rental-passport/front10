@@ -3,6 +3,7 @@ import { computed, type Component } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import TrendChip from './TrendChip.vue'
+import type { TrendPeriod } from './trend-chip'
 import { formatStatValue } from './inline-stat'
 
 /**
@@ -30,6 +31,11 @@ const props = defineProps<{
   value: string | number
   /** 沒有可比較的歷史資料時不要傳，TrendChip 會自己不渲染 */
   trend?: number
+  /**
+   * 這個趨勢在比什麼期間。有 trend 就應該有 period —— 兩個不同基準的
+   * 百分比並排而不說明期間，讀的人只能假設它們可比。
+   */
+  trendPeriod?: TrendPeriod
   /** 有值才變成連結並顯示 hover 效果 */
   to?: string
   /** 主要指標：icon 底色用 primary，其餘用 muted */
@@ -62,9 +68,9 @@ const display = computed(() => formatStatValue(props.value))
         foreground/70 是 6.53 / 8.79，而且視覺上仍然比數字退一階。
       -->
       <span class="block truncate text-xs text-foreground/70">{{ label }}</span>
-      <span class="flex items-baseline gap-2">
+      <span class="flex flex-wrap items-baseline gap-x-2">
         <span class="text-2xl font-bold leading-tight tracking-tight">{{ display }}</span>
-        <TrendChip v-if="trend" :value="trend" suffix="%" />
+        <TrendChip v-if="trend" :value="trend" suffix="%" :period="trendPeriod" />
       </span>
     </span>
   </component>
