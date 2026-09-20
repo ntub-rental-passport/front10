@@ -190,7 +190,11 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
     -->
 
     <!--
-      標題列：h1 在左、四個 KPI 在右，擠在同一行。
+      標題區分兩層：上面是標題，下面一橫列左邊放動作、右邊放四個 KPI。
+
+      動作與 KPI 併成同一列，是因為按鈕那一排右側本來空著一大片，而 KPI
+      那一排左側也空著 —— 兩排各空一半，不如併成一排。justify-between
+      讓它們各自靠邊，中間的空白隨視窗寬度伸縮。
 
       原本這裡是三個堆疊的橫列（chip 列 → 標題列 → 另一整排 KPI 卡），
       量到第一個數字出現在 329px，而視窗高只有 768px —— 首屏 43% 花在
@@ -202,21 +206,23 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       不會對不起來。押金不符沒有 trend —— 這批種子資料沒有歷史快照可以比，
       寧可留白也不假造一個趨勢。
     -->
-    <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5">
+    <div class="space-y-5">
       <div class="min-w-0">
         <h1 class="text-4xl font-black tracking-tight">後台總覽</h1>
         <p class="mt-1.5 text-muted-foreground">
           平台目前的規模與案件流動，以及需要你處理的事。
         </p>
+      </div>
 
+      <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
         <!--
-          標題列的動作。原本這一頁只能看、不能做任何事 —— 進來之後想做事
-          得先找到導覽列、再點進對應的頁面。
+          這一頁原本只能看、不能做任何事 —— 進來之後想做事得先找到導覽列、
+          再點進對應的頁面。
 
           兩顆都是真的導向存在的路由，而且都過 RBAC：canAccessPath 回 false
           就整顆不渲染，而不是渲染一顆點了會被擋下來的按鈕。
         -->
-        <div class="mt-4 flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <Button
             v-if="canAccessPath('/admin/notifications')"
             as-child
@@ -241,37 +247,37 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
             </RouterLink>
           </Button>
         </div>
-      </div>
 
-      <div class="grid w-full grid-cols-2 gap-x-2 gap-y-1 sm:w-auto sm:grid-cols-4">
-        <InlineStat
-          :icon="ListChecks"
-          label="今日待處理"
-          :value="queueCount"
-          hero
-        />
-        <InlineStat
-          :icon="Users"
-          label="使用者總數"
-          :value="users.length"
-          :trend="userGrowthTrendPercent"
-          trend-period="month"
-          to="/admin/users"
-        />
-        <InlineStat
-          :icon="Wrench"
-          label="本週新增工單"
-          :value="weeklyTicketCount"
-          :trend="ticketTrendPercent"
-          trend-period="week"
-          to="/admin/maintenance-tickets"
-        />
-        <InlineStat
-          :icon="AlertTriangle"
-          label="押金不符"
-          :value="depositStats.mismatchedCount"
-          to="/admin/users?alert=deposit-mismatch"
-        />
+        <div class="grid w-full grid-cols-2 gap-x-2 gap-y-1 sm:w-auto sm:grid-cols-4">
+          <InlineStat
+            :icon="ListChecks"
+            label="今日待處理"
+            :value="queueCount"
+            hero
+          />
+          <InlineStat
+            :icon="Users"
+            label="使用者總數"
+            :value="users.length"
+            :trend="userGrowthTrendPercent"
+            trend-period="month"
+            to="/admin/users"
+          />
+          <InlineStat
+            :icon="Wrench"
+            label="本週新增工單"
+            :value="weeklyTicketCount"
+            :trend="ticketTrendPercent"
+            trend-period="week"
+            to="/admin/maintenance-tickets"
+          />
+          <InlineStat
+            :icon="AlertTriangle"
+            label="押金不符"
+            :value="depositStats.mismatchedCount"
+            to="/admin/users?alert=deposit-mismatch"
+          />
+        </div>
       </div>
     </div>
 
