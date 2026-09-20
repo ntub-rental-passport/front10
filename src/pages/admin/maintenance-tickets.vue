@@ -180,7 +180,7 @@ function clearFilters(): void {
     </Tabs>
 
     <Card class="rounded-3xl">
-      <CardContent class="space-y-4 pt-6">
+      <CardContent class="px-5 pb-5 space-y-4 pt-6">
         <div class="flex flex-wrap items-center gap-3">
           <Select :model-value="categoryFilter" @update:model-value="handleCategoryChange">
             <SelectTrigger class="w-36">

@@ -90,8 +90,8 @@ const filteredRecipients = computed(() => {
 
     <!-- 通知內容 -->
     <Card class="rounded-3xl">
-      <CardHeader><CardTitle>通知內容</CardTitle></CardHeader>
-      <CardContent class="space-y-3">
+      <CardHeader class="p-5"><CardTitle>通知內容</CardTitle></CardHeader>
+      <CardContent class="px-5 pb-5 space-y-3">
         <div>
           <p class="text-xs font-medium text-muted-foreground">標題</p>
           <p class="font-medium">{{ batch.title }}</p>
@@ -109,8 +109,8 @@ const filteredRecipients = computed(() => {
 
     <!-- 發送資訊 -->
     <Card class="rounded-3xl">
-      <CardHeader><CardTitle>發送資訊</CardTitle></CardHeader>
-      <CardContent class="space-y-4">
+      <CardHeader class="p-5"><CardTitle>發送資訊</CardTitle></CardHeader>
+      <CardContent class="px-5 pb-5 space-y-4">
         <div class="grid gap-4 sm:grid-cols-3">
           <div>
             <p class="text-xs font-medium text-muted-foreground">收件人條件</p>
@@ -143,8 +143,8 @@ const filteredRecipients = computed(() => {
 
     <!-- 已讀統計 -->
     <Card class="rounded-3xl">
-      <CardHeader><CardTitle>已讀統計</CardTitle></CardHeader>
-      <CardContent class="space-y-2">
+      <CardHeader class="p-5"><CardTitle>已讀統計</CardTitle></CardHeader>
+      <CardContent class="px-5 pb-5 space-y-2">
         <p class="text-2xl font-black">{{ readCount }} / {{ totalCount }} 已讀</p>
         <Progress :model-value="readPercent" />
       </CardContent>
@@ -152,8 +152,8 @@ const filteredRecipients = computed(() => {
 
     <!-- 收件人清單 -->
     <Card class="rounded-3xl">
-      <CardHeader><CardTitle>收件人清單（{{ totalCount }} 位）</CardTitle></CardHeader>
-      <CardContent class="space-y-3">
+      <CardHeader class="p-5"><CardTitle>收件人清單（{{ totalCount }} 位）</CardTitle></CardHeader>
+      <CardContent class="px-5 pb-5 space-y-3">
         <Input v-model="recipientSearch" placeholder="搜尋 Email 或暱稱" />
         <div class="divide-y rounded-xl border">
           <div

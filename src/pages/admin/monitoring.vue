@@ -117,11 +117,11 @@ function daysLeftText(usage: ProviderUsage): string {
 
     <div class="grid gap-4 md:grid-cols-2">
       <Card v-for="usage in usages" :key="usage.provider.id" class="rounded-3xl">
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardHeader class="p-5 flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle class="text-base">{{ usage.provider.label }}</CardTitle>
           <Badge :variant="levelVariants[usage.level]">{{ quotaLevelLabels[usage.level] }}</Badge>
         </CardHeader>
-        <CardContent class="space-y-4">
+        <CardContent class="px-5 pb-5 space-y-4">
           <p v-if="usage.unset" class="text-2xl font-black text-muted-foreground">未設定額度</p>
           <p v-else class="text-2xl font-black">
             {{ formatNumber(usage.used) }}
@@ -157,23 +157,23 @@ function daysLeftText(usage: ProviderUsage): string {
     </div>
 
     <Card class="rounded-3xl">
-      <CardHeader>
+      <CardHeader class="p-5">
         <CardTitle>近 30 天用量趨勢</CardTitle>
         <CardDescription>顯示各供應商每日用量佔其月額度的百分比，因此兩者可以直接比較消耗速度。</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent class="px-5 pb-5">
         <UsageTrendChart :labels="chartLabels" :series="chartSeries" />
       </CardContent>
     </Card>
 
     <Card class="rounded-3xl">
-      <CardHeader class="flex flex-row items-center justify-between space-y-0">
+      <CardHeader class="p-5 flex flex-row items-center justify-between space-y-0">
         <CardTitle>每日明細</CardTitle>
         <Button variant="outline" size="sm" @click="showAllDays = !showAllDays">
           {{ showAllDays ? '只顯示近 7 天' : '顯示全部 30 天' }}
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent class="px-5 pb-5">
         <Table>
           <TableHeader>
             <TableRow>

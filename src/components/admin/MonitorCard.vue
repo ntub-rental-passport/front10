@@ -28,7 +28,7 @@ const tone = computed(() => {
 
 <template>
   <Card class="h-full rounded-3xl">
-    <CardHeader class="flex flex-row items-start justify-between space-y-0 pb-2">
+    <CardHeader class="p-5 flex flex-row items-start justify-between space-y-0 pb-2">
       <div class="min-w-0">
         <CardTitle class="text-sm font-medium">{{ reading.label }}</CardTitle>
         <p class="mt-1 text-xs text-muted-foreground">{{ reading.description }}</p>
@@ -39,7 +39,7 @@ const tone = computed(() => {
       </span>
     </CardHeader>
 
-    <CardContent>
+    <CardContent class="px-5 pb-5">
       <template v-if="reading.connected">
         <p class="text-3xl font-black leading-none tabular-nums" :class="tone.text">
           {{ reading.value }}

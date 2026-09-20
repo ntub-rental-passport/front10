@@ -182,11 +182,11 @@ function formatMoney(amount: number): string {
           class="rounded-3xl border-primary/30 bg-primary/5"
           :class="batchFilter === 'draft' ? 'ring-2 ring-primary' : ''"
         >
-          <CardHeader class="pb-3">
+          <CardHeader class="p-5 pb-3">
             <CardTitle class="text-sm font-medium">草稿批次</CardTitle>
             <p class="text-xs text-muted-foreground">審核通過的案件會落在這裡</p>
           </CardHeader>
-          <CardContent class="space-y-3">
+          <CardContent class="px-5 pb-5 space-y-3">
             <button
               type="button"
               class="flex w-full items-baseline gap-1.5 text-left"
@@ -265,7 +265,7 @@ function formatMoney(amount: number): string {
       </Tabs>
 
       <Card class="rounded-3xl">
-        <CardContent class="space-y-4 pt-6">
+        <CardContent class="px-5 pb-5 space-y-4 pt-6">
           <div class="flex flex-wrap items-center gap-3">
             <div class="relative min-w-56 flex-1">
               <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

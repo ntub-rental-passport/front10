@@ -157,11 +157,11 @@ function handleChartMove(event: MouseEvent): void {
 
 <template>
   <Card class="h-full rounded-3xl border-border/70 bg-background/90 shadow-sm">
-    <CardHeader class="pb-2">
+    <CardHeader class="p-5 pb-2">
       <CardTitle class="text-sm font-medium">訂閱方案分布</CardTitle>
       <p class="text-xs text-muted-foreground">全部 {{ total }} 位使用者，點方案可篩選</p>
     </CardHeader>
-    <CardContent>
+    <CardContent class="px-5 pb-5">
       <!-- 高度壓到與旁邊的管理員人數卡接近，避免一高一矮看起來沒對齊 -->
       <div class="relative h-48" @click="handleChartClick" @mousemove="handleChartMove">
         <Doughnut ref="chartRef" :data="chartData" :options="chartOptions" :plugins="[labelPlugin]" />

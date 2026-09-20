@@ -96,7 +96,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
 
 <template>
   <Card class="h-full rounded-3xl border-border/70 bg-background/90 shadow-sm">
-    <CardHeader class="flex flex-row items-start justify-between space-y-0 pb-2">
+    <CardHeader class="p-5 flex flex-row items-start justify-between space-y-0 pb-2">
       <div>
         <CardTitle class="text-sm font-medium">{{ title }}</CardTitle>
         <p v-if="description" class="mt-1 text-xs text-muted-foreground">{{ description }}</p>
@@ -108,7 +108,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
         {{ summary }}
       </span>
     </CardHeader>
-    <CardContent>
+    <CardContent class="px-5 pb-5">
       <div :class="['relative', height]">
         <Line :data="chartData" :options="chartOptions" />
       </div>

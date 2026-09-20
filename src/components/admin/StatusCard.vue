@@ -35,7 +35,7 @@ const toneClasses = computed(() =>
         to ? 'transition-shadow hover:shadow-md' : '',
       ]"
     >
-      <CardHeader class="flex flex-row items-start justify-between space-y-0 pb-2">
+      <CardHeader class="p-5 flex flex-row items-start justify-between space-y-0 pb-2">
         <CardTitle class="text-sm font-medium">{{ title }}</CardTitle>
         <span
           v-if="cornerText"
@@ -44,7 +44,7 @@ const toneClasses = computed(() =>
           {{ cornerText }}
         </span>
       </CardHeader>
-      <CardContent class="space-y-3">
+      <CardContent class="px-5 pb-5 space-y-3">
         <div class="flex h-36 flex-col items-center justify-center gap-3">
           <span
             :class="['flex h-14 w-14 items-center justify-center rounded-full', toneClasses.ring]"

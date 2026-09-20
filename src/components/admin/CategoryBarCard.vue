@@ -53,7 +53,7 @@ const total = computed(() => props.items.reduce((sum, item) => sum + item.value,
         to ? 'transition-shadow group-hover:shadow-md' : '',
       ]"
     >
-      <CardHeader class="flex flex-row items-start justify-between space-y-0 pb-2">
+      <CardHeader class="p-5 flex flex-row items-start justify-between space-y-0 pb-2">
         <div>
           <CardTitle class="text-sm font-medium">{{ title }}</CardTitle>
           <p v-if="description" class="mt-1 text-xs text-muted-foreground">{{ description }}</p>
@@ -62,7 +62,7 @@ const total = computed(() => props.items.reduce((sum, item) => sum + item.value,
           共 {{ total }}
         </span>
       </CardHeader>
-      <CardContent class="space-y-3 pt-2">
+      <CardContent class="px-5 pb-5 space-y-3 pt-2">
         <div v-for="row in rows" :key="row.label" class="space-y-1.5">
           <div class="flex items-baseline justify-between text-sm">
             <span class="text-muted-foreground">{{ row.label }}</span>

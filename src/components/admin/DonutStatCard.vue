@@ -58,10 +58,10 @@ const chartOptions = computed<ChartOptions<'doughnut'>>(() => ({
 <template>
   <RouterLink :to="to" class="block">
     <Card class="h-full rounded-3xl border-border/70 bg-background/90 shadow-sm transition-shadow hover:shadow-md">
-      <CardHeader class="pb-2">
+      <CardHeader class="p-5 pb-2">
         <CardTitle class="text-sm font-medium">{{ title }}</CardTitle>
       </CardHeader>
-      <CardContent class="space-y-3">
+      <CardContent class="px-5 pb-5 space-y-3">
         <div class="relative h-36">
           <Doughnut :data="chartData" :options="chartOptions" />
           <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
