@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   buildQueueGroups,
   depositMatchDistribution,
+  latestChangePercent,
   monthlyUserGrowth,
   queueTotal,
   weeklyTicketTrend,
   type QueueTicket,
+  type TrendPoint,
 } from './admin-overview'
 import type { AdminUser } from '@/src/mocks/admin/users'
 import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
@@ -118,6 +120,41 @@ describe('monthlyUserGrowth', () => {
     const users = [user('old', '2020-01-01T00:00:00.000Z')]
     const points = monthlyUserGrowth(users, 6, NOW)
     expect(points[0].value).toBe(1)
+  })
+})
+
+describe('latestChangePercent', () => {
+  function point(value: number, label = 'x'): TrendPoint {
+    return { label, value }
+  }
+
+  it('少於兩個點時回 undefined', () => {
+    expect(latestChangePercent([])).toBeUndefined()
+    expect(latestChangePercent([point(5)])).toBeUndefined()
+  })
+
+  it('前一點是 0 時回 undefined，不算出無限大 %', () => {
+    expect(latestChangePercent([point(0), point(5)])).toBeUndefined()
+  })
+
+  it('前後都是 0 時也回 undefined', () => {
+    expect(latestChangePercent([point(0), point(0)])).toBeUndefined()
+  })
+
+  it('上升時回正整數百分比', () => {
+    expect(latestChangePercent([point(50), point(75)])).toBe(50)
+  })
+
+  it('下降時回負整數百分比', () => {
+    expect(latestChangePercent([point(100), point(80)])).toBe(-20)
+  })
+
+  it('只看最後兩個點，前面的點不影響結果', () => {
+    expect(latestChangePercent([point(1000), point(10), point(20)])).toBe(100)
+  })
+
+  it('四捨五入到整數', () => {
+    expect(latestChangePercent([point(3), point(4)])).toBe(33)
   })
 })
 

@@ -78,6 +78,24 @@ export function monthlyUserGrowth(
   return points
 }
 
+/**
+ * 一段 TrendPoint 序列最後兩個點之間的變化率（%），四捨五入到整數。
+ *
+ * 給後台總覽的 KPI 卡當 trend 用——那些卡的 spark 就是直接畫同一段序列，
+ * trend 取最後兩點剛好對應「這段迷你圖最右邊那一小段在漲還是在跌」。
+ *
+ * 前一點是 0 時回 undefined，不計算：0 → 任意正數在數學上是「無限大 %」，
+ * 顯示出來除了嚇人沒有別的資訊量。呼叫端把 undefined 傳給 TrendChip，
+ * 會被它「沒有意義的趨勢就不顯示」的規則接住（見 trend-chip.ts）。
+ */
+export function latestChangePercent(points: TrendPoint[]): number | undefined {
+  if (points.length < 2) return undefined
+  const previous = points[points.length - 2]!.value
+  const latest = points[points.length - 1]!.value
+  if (previous === 0) return undefined
+  return Math.round(((latest - previous) / previous) * 100)
+}
+
 // ── 規模與趨勢：組成 ────────────────────────────────────────────────────
 
 export interface DepositMatchSummary {

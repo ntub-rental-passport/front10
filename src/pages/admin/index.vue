@@ -1,22 +1,29 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar/index'
 import { Badge } from '@/components/ui/badge/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
 import { ArrowUpRight } from 'lucide-vue-next'
+import AiQuotaRing from '@/src/components/admin/AiQuotaRing.vue'
 import CategoryBarCard from '@/src/components/admin/CategoryBarCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
 import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import QuotaProgressCard, { type QuotaProgressItem } from '@/src/components/admin/QuotaProgressCard.vue'
+import StatTile from '@/src/components/admin/StatTile.vue'
+import StatusDot from '@/src/components/admin/StatusDot.vue'
 import TrendAreaCard from '@/src/components/admin/TrendAreaCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
+import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { activeWindowDays, countActiveUsers } from '@/src/utils/admin-activity'
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { useAdminMaintenance } from '@/src/composables/admin/useAdminMaintenance'
 import { useAdminDeposits } from '@/src/composables/admin/useAdminDeposits'
+import { useSystemHealth } from '@/src/composables/admin/useSystemHealth'
+import { buildHealthBarItems } from '@/src/utils/admin-health-bar'
 import { formatDateTime } from '@/src/utils/admin-format'
 import { isMaintenanceActive } from '@/src/utils/maintenance'
 import { maintenanceCategoryLabels, type MaintenanceCategory } from '@/src/utils/admin-maintenance'
@@ -24,10 +31,12 @@ import { depositMatchLabels } from '@/src/utils/admin-deposit'
 import {
   buildQueueGroups,
   depositMatchDistribution,
+  latestChangePercent,
   monthlyUserGrowth,
   queueTotal,
   weeklyTicketTrend,
 } from '@/src/utils/admin-overview'
+import { recentLogins } from '@/src/utils/admin-recent-logins'
 import { chartColor } from '@/src/constants/admin-chart'
 import type { AdminUserRole } from '@/src/mocks/admin-seed'
 
@@ -38,6 +47,12 @@ const { settings } = useAdminSettings()
 const { canAccessPath } = useAdminRbac()
 const { tickets, ticketViews, stats: maintenanceStats } = useAdminMaintenance()
 const { records: depositRecords, stats: depositStats } = useAdminDeposits()
+
+// ── 真實資料：系統健康條、最近登入 ──────────────────────────────────
+//
+// 這兩個是本頁唯一打真實後端的區塊（其餘都是展示資料，見下方個別區塊的註解）。
+const { realAccounts, realAccountsLoading, realAccountsError } = useAdminDirectory()
+const { dbPool, requests } = useSystemHealth()
 
 // 開關打開不代表此刻生效，排程可能尚未開始或已結束
 const maintenanceActive = computed(() => isMaintenanceActive(settings.value))
@@ -150,6 +165,27 @@ const queueGroups = computed(() =>
 )
 
 const queueCount = computed(() => queueTotal(queueGroups.value))
+
+// ── 系統健康條（真實資料）──────────────────────────────────────────
+//
+// 資料來源 src/services/adminMetricsApi.ts 打的 /api/admin/metrics（dbPool、
+// requests），門檻判斷沿用既有的 src/utils/admin-monitoring.ts。LLM provider
+// 目前沒有對應的後端端點，buildHealthBarItems 會用 pendingMonitor 佔位，
+// 誠實顯示「無法取得」而不是假綠燈——見 admin-health-bar.ts 的說明。
+const healthBarItems = computed(() => buildHealthBarItems(dbPool.value, requests.value))
+
+// ── 最近登入的使用者（真實資料）──────────────────────────────────────
+//
+// 直接用 realAccounts（useAdminDirectory 回傳的原始 AdminAccount[]，來自後端
+// /api/admin/users）。展示資料沒有人真正登入過，不能混進這張卡片。
+const recentLoginEntries = computed(() => recentLogins(realAccounts.value))
+
+// ── KPI 卡的 sparkline／trend（展示資料，沿用既有的 userGrowth／ticketTrend）──
+const userGrowthSpark = computed(() => userGrowth.value.map((point) => point.value))
+const userGrowthTrendPercent = computed(() => latestChangePercent(userGrowth.value))
+const ticketTrendSpark = computed(() => ticketTrend.value.map((point) => point.value))
+const ticketTrendPercent = computed(() => latestChangePercent(ticketTrend.value))
+const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
 </script>
 
 <template>
@@ -194,6 +230,22 @@ const queueCount = computed(() => queueTotal(queueGroups.value))
     </div>
 
     <FeatureOutageBanner />
+
+    <!--
+      系統健康條：真實資料，來自 adminMetricsApi.ts 打的 /api/admin/metrics
+      （dbPool、requests），門檻判斷沿用 src/utils/admin-monitoring.ts。
+      讀不到或尚未接上（LLM provider）一律顯示「無法取得」，不放假的綠燈——
+      見 src/utils/admin-health-bar.ts。
+    -->
+    <Card class="rounded-3xl">
+      <CardContent class="flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
+        <p class="shrink-0 text-sm font-medium text-muted-foreground">系統健康</p>
+        <div v-for="item in healthBarItems" :key="item.id" class="flex items-center gap-2">
+          <span class="text-sm text-muted-foreground">{{ item.name }}</span>
+          <StatusDot :tone="item.tone" :label="item.statusText" />
+        </div>
+      </CardContent>
+    </Card>
 
     <!-- 左右分欄：aside（待辦+稽核） | main（圖表+額度） -->
     <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.5fr)]">
@@ -271,10 +323,96 @@ const queueCount = computed(() => queueTotal(queueGroups.value))
             </p>
           </CardContent>
         </Card>
+
+        <!--
+          最近登入：真實資料，直接用 realAccounts（useAdminDirectory 回傳的原始
+          AdminAccount[]，來自後端 /api/admin/users），依 lastLoginAt 排序取前 5。
+          沒有頭像可用（avatar_url 多半是 null），用姓名／email 首字做文字圓形，
+          不放灰色人像佔位圖——見 src/utils/admin-recent-logins.ts。
+        -->
+        <Card class="rounded-3xl">
+          <CardHeader>
+            <CardTitle>最近登入</CardTitle>
+            <CardDescription>真實帳號依最後登入時間排序，最多 5 筆。</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-2.5">
+            <div
+              v-for="entry in recentLoginEntries"
+              :key="entry.id"
+              class="flex min-w-0 items-center gap-3 rounded-xl border bg-muted/20 px-3 py-2"
+            >
+              <Avatar size="sm" shape="circle" class="h-9 w-9 shrink-0 bg-primary/10 text-primary">
+                <AvatarFallback class="bg-transparent text-sm font-semibold">
+                  {{ entry.initial }}
+                </AvatarFallback>
+              </Avatar>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium">{{ entry.name }}</p>
+                <p class="truncate text-xs text-muted-foreground">{{ entry.email }}</p>
+              </div>
+              <p class="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                {{ formatDateTime(entry.lastLoginAt) }}
+              </p>
+            </div>
+
+            <p v-if="realAccountsLoading" class="py-6 text-center text-sm text-muted-foreground">
+              真實帳號讀取中…
+            </p>
+            <p
+              v-else-if="realAccountsError"
+              class="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+            >
+              {{ realAccountsError }}
+            </p>
+            <p
+              v-else-if="recentLoginEntries.length === 0"
+              class="py-6 text-center text-sm text-muted-foreground"
+            >
+              尚無登入紀錄。
+            </p>
+          </CardContent>
+        </Card>
       </aside>
 
       <!-- ── 右側主內容 ── -->
       <div class="space-y-6">
+        <!--
+          展示資料：主角卡「今日待處理」沿用左側待辦佇列的既有總數（queueCount，
+          聚合自 useAdminMaintenance／useAdminAiUsage 的展示資料，見 buildQueueGroups）。
+          沒有加鑽取箭頭——這個數字橫跨工單與 AI 額度告急兩種待辦，沒有單一個
+          「點進去就是這個數字」的目的地，硬加箭頭反而是誤導。
+
+          三張 KPI 卡的數字、sparkline、trend 同樣沿用既有的展示資料聚合結果
+          （userGrowth／ticketTrend／depositStats，都是 src/mocks 產生的種子資料
+          算出來的，不是資料庫裡的真實統計）。押金不符沒有 trend／spark——
+          這批種子資料沒有歷史快照可以比較，寧可留白也不假造一個歷史趨勢。
+        -->
+        <section data-demo="true" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatTile label="今日待處理" :value="queueCount" sublabel="待辦佇列目前總數" hero />
+          <StatTile
+            label="使用者總數"
+            :value="users.length"
+            sublabel="平台累計註冊"
+            :trend="userGrowthTrendPercent"
+            :spark="userGrowthSpark"
+            to="/admin/users"
+          />
+          <StatTile
+            label="本週新增工單"
+            :value="weeklyTicketCount"
+            sublabel="近 7 天報修申請"
+            :trend="ticketTrendPercent"
+            :spark="ticketTrendSpark"
+            to="/admin/maintenance-tickets"
+          />
+          <StatTile
+            label="押金不符"
+            :value="depositStats.mismatchedCount"
+            sublabel="待處理的聲明落差"
+            to="/admin/users?alert=deposit-mismatch"
+          />
+        </section>
+
         <!-- 平台規模與組成 -->
         <section
           class="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
@@ -324,8 +462,26 @@ const queueCount = computed(() => queueTotal(queueGroups.value))
           </div>
         </section>
 
-        <!-- AI 額度用量 -->
-        <section>
+        <!--
+          展示資料：AI 額度一覽的進度環。百分比來自 useAdminAiUsage()
+          （src/mocks/admin/ai-usage.ts 產生的每日用量種子資料，對照系統設定的
+          額度上限算出來），不是真的 API 呼叫量統計。
+        -->
+        <section data-demo="true" class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <Card class="flex h-full flex-col rounded-3xl">
+            <CardHeader class="pb-2">
+              <CardTitle class="text-sm font-medium">AI 額度一覽</CardTitle>
+            </CardHeader>
+            <CardContent class="flex flex-1 items-center justify-around gap-2">
+              <AiQuotaRing
+                v-for="usage in usages"
+                :key="usage.provider.id"
+                :label="usage.provider.label"
+                :percent="usage.percent"
+                :unset="usage.unset"
+              />
+            </CardContent>
+          </Card>
           <QuotaProgressCard
             title="AI 額度用量"
             to="/admin/ai-usage"
