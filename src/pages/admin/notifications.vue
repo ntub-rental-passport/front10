@@ -40,17 +40,12 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
 <template>
   <div class="space-y-6">
-    <div class="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1 class="text-3xl font-black tracking-tight">通知管理</h1>
-        <p class="mt-1 text-muted-foreground">
-          管理發送給使用者的通知模板，並查詢歷史發送紀錄。
-        </p>
-        <p v-if="sentMessage" class="mt-2 text-sm font-medium text-emerald-600">
-          {{ sentMessage }}
-        </p>
-      </div>
-      <Button @click="sendDialogOpen = true">
+    <!-- 標題移到頂部列（見 src/utils/admin-page-title.ts），這裡只剩動作與提示 -->
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <p v-if="sentMessage" class="text-sm font-medium text-emerald-600">
+        {{ sentMessage }}
+      </p>
+      <Button class="ml-auto" @click="sendDialogOpen = true">
         <Send class="mr-2 h-4 w-4" />
         發送通知
       </Button>

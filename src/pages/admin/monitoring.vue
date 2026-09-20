@@ -86,13 +86,8 @@ function daysLeftText(usage: ProviderUsage): string {
 
 <template>
   <div class="space-y-6">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 class="text-3xl font-black tracking-tight">系統監控</h1>
-        <p class="mt-1 text-muted-foreground">
-          服務健康度與 AI 額度消耗。已接上的項目顯示實測值，尚未接上的明確標示，不以假數字充數。
-        </p>
-      </div>
+    <!-- 標題移到頂部列，這裡只剩動作 -->
+    <div class="flex flex-wrap items-center justify-end gap-4">
       <Button variant="outline" :disabled="checking" @click="check">
         <RefreshCw class="mr-1 h-4 w-4" :class="checking ? 'animate-spin' : ''" />
         {{ checking ? '量測中' : '重新量測' }}
