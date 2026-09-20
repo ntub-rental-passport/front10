@@ -20,14 +20,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { BadgeCheck, RefreshCw, Search, ShieldAlert, X } from 'lucide-vue-next'
+import { ArrowUpRight, BadgeCheck, RefreshCw, Search, ShieldAlert, X } from 'lucide-vue-next'
 import AdminRoleCountCard from '@/src/components/admin/AdminRoleCountCard.vue'
+import CategoryBarCard from '@/src/components/admin/CategoryBarCard.vue'
+import StatTile from '@/src/components/admin/StatTile.vue'
+import StatusDot from '@/src/components/admin/StatusDot.vue'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vue'
 import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
 import { userAlertLabels, type UserAlert } from '@/src/utils/admin-user-directory'
+import { realAccountStats, registrationSources } from '@/src/utils/admin-real-accounts'
 import type {
   PlanDistributionSegment,
   UserDirectoryRow,
@@ -46,6 +50,7 @@ const {
   clearFilter,
   planSegments,
   adminCounts,
+  realAccounts,
   realAccountsLoading,
   realAccountsError,
   reloadRealAccounts,
@@ -82,6 +87,18 @@ watch(
 )
 
 const alertOptions = Object.keys(userAlertLabels) as UserAlert[]
+
+/*
+ * 真實帳號的統計。
+ *
+ * ⚠️ 只數 realAccounts —— 那是資料庫裡真的存在的人。下方表格同時列出
+ * 展示資料（為了呈現訂閱、押金、工單等模組而生成的），把它們算進來
+ * 會讓這四個數字變成沒有意義的混合值，而且看起來仍然很正常。
+ */
+const accountStats = computed(() => realAccountStats(realAccounts.value))
+const sourceSegments = computed(() =>
+  registrationSources(realAccounts.value).map((s) => ({ label: s.label, value: s.count })),
+)
 
 /**
  * 身分欄的文字。
@@ -190,6 +207,25 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
     </p>
 
     <!--
+      四格 KPI 講的是「這個平台實際上有幾個人」，來源是資料庫裡的真實帳號，
+      不含下方表格裡的展示資料。刻意不給 trend —— 沒有歷史快照可以比，
+      一個永遠是 +0% 的趨勢看起來像資訊，其實不是。
+    -->
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <StatTile label="真實帳號" :value="accountStats.total" sublabel="資料庫中實際存在" hero />
+      <StatTile label="本週新增" :value="accountStats.newThisWeek" sublabel="近 7 天註冊" />
+      <StatTile label="停用中" :value="accountStats.suspended" sublabel="無法登入" />
+      <StatTile label="未驗證信箱" :value="accountStats.unverified" sublabel="尚未完成驗證" />
+    </div>
+
+    <CategoryBarCard
+      v-if="sourceSegments.length"
+      title="註冊來源"
+      description="真實帳號的登入方式分布。「兩者皆有」是先用密碼註冊後再綁定 Google。"
+      :items="sourceSegments"
+    />
+
+    <!--
       甜甜圈要留白給外側標籤所以吃比較多寬度；管理員人數只有兩個數字，
       給它等寬只會空一大片。items-start 讓它照內容收高，不被甜甜圈撐平。
     -->
@@ -285,6 +321,8 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
               <TableHead class="whitespace-nowrap">工單待處理</TableHead>
               <TableHead class="whitespace-nowrap">狀態</TableHead>
               <TableHead class="text-right">操作</TableHead>
+              <!-- 鑽取箭頭欄：無標題，純粹是「這一列點得進去」的視覺提示 -->
+              <TableHead class="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -346,12 +384,10 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
               </TableCell>
 
               <TableCell>
-                <Badge
-                  class="whitespace-nowrap"
-                  :variant="row.user.status === 'active' ? 'default' : 'destructive'"
-                >
-                  {{ row.user.status === 'active' ? '正常' : '停用' }}
-                </Badge>
+                <StatusDot
+                  :tone="row.user.status === 'active' ? 'ok' : 'danger'"
+                  :label="row.user.status === 'active' ? '正常' : '停用'"
+                />
               </TableCell>
 
               <TableCell class="text-right" @click.stop>
@@ -368,10 +404,18 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
                   </Button>
                 </AdminRowActions>
               </TableCell>
+
+              <!--
+                這一格沒有 @click.stop：箭頭暗示「點得進去」，
+                點它就該跟點整列一樣打開詳情，不然就是騙人。
+              -->
+              <TableCell class="w-10 text-right text-muted-foreground">
+                <ArrowUpRight :size="16" class="inline" aria-hidden="true" />
+              </TableCell>
             </TableRow>
 
             <TableRow v-if="filteredRows.length === 0">
-              <TableCell colspan="7" class="py-10 text-center text-muted-foreground">
+              <TableCell colspan="8" class="py-10 text-center text-muted-foreground">
                 <p>沒有符合條件的使用者。</p>
                 <Button v-if="filterActive" variant="outline" size="sm" class="mt-3" @click="clearFilter">
                   清除篩選
