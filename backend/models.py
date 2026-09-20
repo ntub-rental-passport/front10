@@ -1,4 +1,4 @@
-import datetime
+﻿import datetime
 from database import Base
 from sqlalchemy import (
     Boolean,
@@ -6,18 +6,10 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
-<<<<<<< HEAD
-    Float,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     ForeignKey,
     Integer,
     String,
     Text,
-<<<<<<< HEAD
-    UniqueConstraint,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 )
 from sqlalchemy.orm import relationship
 
@@ -28,10 +20,6 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String(254), unique=True, nullable=False, index=True)
-<<<<<<< HEAD
-    display_name = Column(String(100), nullable=True)
-    avatar_url = Column(Text, nullable=True)
-=======
     display_name = Column(String(100), nullable=True)  # 使用者名稱/暱稱
 
     # 登入機制：各自獨立，不用 provider 欄位！
@@ -46,7 +34,6 @@ class User(Base):
     role = Column(Enum("tenant", "landlord"), nullable=False, default="tenant")
 
     # 時間紀錄
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     email_verified_at = Column(DateTime, nullable=True)
     created_at = Column(
         DateTime, nullable=False, default=datetime.datetime.utcnow
@@ -65,58 +52,6 @@ class User(Base):
     subsidy_applications = relationship(
         "SubsidyApplication", back_populates="user", cascade="all, delete-orphan"
     )
-<<<<<<< HEAD
-    roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
-    identities = relationship("UserIdentity", back_populates="user", cascade="all, delete-orphan")
-    password_credential = relationship(
-        "UserPasswordCredential",
-        back_populates="user",
-        cascade="all, delete-orphan",
-        uselist=False,
-    )
-    edited_messages = relationship("MessageBoard", back_populates="last_editor")
-    landlord_properties = relationship("LandlordProperty", back_populates="landlord")
-    landlord_tenants = relationship("LandlordTenant", back_populates="landlord")
-
-
-class UserRole(Base):
-    __tablename__ = "user_roles"
-    __table_args__ = (UniqueConstraint("user_id", "role", name="uq_user_role"),)
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    # admin 為內部人員角色，僅能由既有管理員於後台指派，不開放自行註冊
-    role = Column(Enum("tenant", "landlord", "admin"), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-
-    user = relationship("User", back_populates="roles")
-
-
-class UserIdentity(Base):
-    __tablename__ = "user_identities"
-    __table_args__ = (
-        UniqueConstraint("provider", "provider_subject", name="uq_identity_provider_subject"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    provider = Column(Enum("google"), nullable=False)
-    provider_subject = Column(String(255), nullable=False)
-    provider_email = Column(String(254), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-
-    user = relationship("User", back_populates="identities")
-
-
-class UserPasswordCredential(Base):
-    __tablename__ = "user_password_credentials"
-
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    password_hash = Column(String(255), nullable=False)
-    password_changed_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-
-    user = relationship("User", back_populates="password_credential")
-=======
     edited_messages = relationship("MessageBoard", back_populates="last_editor")
     notes = relationship("Note", back_populates="user", cascade="all, delete-orphan")
 
@@ -136,41 +71,10 @@ class Note(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="notes")
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 
 class PendingRegistration(Base):
     __tablename__ = "pending_registrations"
-<<<<<<< HEAD
-    __table_args__ = (
-        UniqueConstraint("email", name="uq_pending_email"),
-        UniqueConstraint("provider", "provider_subject", name="uq_pending_provider_subject"),
-    )
-
-    id = Column(String(36), primary_key=True)
-    email = Column(String(254), nullable=False, index=True)
-    provider = Column(Enum("password", "google"), nullable=False)
-    provider_subject = Column(String(255), nullable=True)
-    display_name = Column(String(100), nullable=True)
-    avatar_url = Column(Text, nullable=True)
-    password_hash = Column(String(255), nullable=True)
-    role = Column(Enum("tenant", "landlord"), nullable=False)
-    invite_code = Column(String(100), nullable=True)
-    verification_code_hash = Column(String(64), nullable=False)
-    expires_at = Column(DateTime, nullable=False, index=True)
-    resend_available_at = Column(DateTime, nullable=False)
-    attempt_count = Column(Integer, nullable=False, default=0)
-    send_count = Column(Integer, nullable=False, default=1)
-    created_at = Column(
-        DateTime, nullable=False, default=datetime.datetime.utcnow
-    )
-    updated_at = Column(
-        DateTime,
-        nullable=False,
-        default=datetime.datetime.utcnow,
-        onupdate=datetime.datetime.utcnow,
-    )
-=======
 
     id = Column(String(36), primary_key=True)  # UUID
     email = Column(String(254), nullable=False, index=True)
@@ -188,7 +92,6 @@ class PendingRegistration(Base):
     created_at = Column(
         DateTime, nullable=False, default=datetime.datetime.utcnow
     )
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 
 # 2. 租屋案件模型
@@ -373,124 +276,6 @@ class SubsidyApplication(Base):
 
 
 # 10. 停水停電快取模型
-<<<<<<< HEAD
-class LandlordProperty(Base):
-    __tablename__ = "landlord_properties"
-    __table_args__ = (UniqueConstraint("landlord_id", "name", name="uq_landlord_property_name"),)
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    landlord_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    address = Column(Text, nullable=True)
-    city = Column(String(50), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-
-    landlord = relationship("User", back_populates="landlord_properties")
-    rooms = relationship("LandlordRoom", back_populates="property", cascade="all, delete-orphan")
-
-
-class LandlordRoom(Base):
-    __tablename__ = "landlord_rooms"
-    __table_args__ = (UniqueConstraint("property_id", "number", name="uq_landlord_room_number"),)
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    property_id = Column(Integer, ForeignKey("landlord_properties.id", ondelete="CASCADE"), nullable=False, index=True)
-    number = Column(String(50), nullable=False)
-    status = Column(Enum("vacant", "occupied", "turnover", "maintenance"), nullable=False, default="vacant")
-    floor = Column(Integer, nullable=True)
-    area = Column(Float, nullable=True)
-    expected_rent = Column(Integer, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-
-    property = relationship("LandlordProperty", back_populates="rooms")
-    leases = relationship("LandlordLease", back_populates="room")
-
-
-class LandlordTenant(Base):
-    __tablename__ = "landlord_tenants"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    landlord_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    phone = Column(String(30), nullable=False)
-    email = Column(String(254), nullable=True)
-    national_id = Column(String(20), nullable=True)
-    birth_date = Column(Date, nullable=True)
-    contact_address = Column(Text, nullable=True)
-    emergency_name = Column(String(100), nullable=True)
-    emergency_phone = Column(String(30), nullable=True)
-    notes = Column(Text, nullable=True)
-    line_user_id = Column(String(255), nullable=True)
-    line_status = Column(Enum("unbound", "invited", "bound", "expired"), nullable=False, default="unbound")
-    line_invited_at = Column(DateTime, nullable=True)
-    line_bound_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-    deleted_at = Column(DateTime, nullable=True)
-
-    landlord = relationship("User", back_populates="landlord_tenants")
-    leases = relationship("LandlordLease", back_populates="tenant")
-    activities = relationship("LandlordTenantActivity", back_populates="tenant", cascade="all, delete-orphan")
-
-
-class LandlordLease(Base):
-    __tablename__ = "landlord_leases"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("landlord_tenants.id", ondelete="RESTRICT"), nullable=False, index=True)
-    property_id = Column(Integer, ForeignKey("landlord_properties.id", ondelete="RESTRICT"), nullable=False, index=True)
-    room_id = Column(Integer, ForeignKey("landlord_rooms.id", ondelete="RESTRICT"), nullable=False, index=True)
-    start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=False)
-    monthly_rent = Column(Integer, nullable=False)
-    deposit_amount = Column(Integer, nullable=False)
-    payment_day = Column(Integer, nullable=False, default=5)
-    payment_frequency = Column(String(30), nullable=False, default="monthly")
-    contract_id = Column(String(100), nullable=True)
-    status = Column(Enum("pending", "active", "ended", "terminated"), nullable=False, default="active")
-    moved_out_at = Column(Date, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-
-    tenant = relationship("LandlordTenant", back_populates="leases")
-    property = relationship("LandlordProperty")
-    room = relationship("LandlordRoom", back_populates="leases")
-    move_out = relationship("LandlordMoveOut", back_populates="lease", uselist=False)
-
-
-class LandlordMoveOut(Base):
-    __tablename__ = "landlord_move_outs"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    lease_id = Column(Integer, ForeignKey("landlord_leases.id", ondelete="RESTRICT"), nullable=False, unique=True)
-    move_out_date = Column(Date, nullable=False)
-    reason = Column(Text, nullable=True)
-    final_rent = Column(Integer, nullable=False, default=0)
-    utility_fee = Column(Integer, nullable=False, default=0)
-    deposit_refund = Column(Integer, nullable=False, default=0)
-    deposit_deduction = Column(Integer, nullable=False, default=0)
-    deduction_reason = Column(Text, nullable=True)
-    inspection_status = Column(String(30), nullable=False, default="pending")
-    notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-
-    lease = relationship("LandlordLease", back_populates="move_out")
-
-
-class LandlordTenantActivity(Base):
-    __tablename__ = "landlord_tenant_activities"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("landlord_tenants.id", ondelete="CASCADE"), nullable=False, index=True)
-    kind = Column(String(50), nullable=False)
-    detail = Column(Text, nullable=False)
-    occurred_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-
-    tenant = relationship("LandlordTenant", back_populates="activities")
-
-
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 class UtilityOutage(Base):
     __tablename__ = "utility_outages"
 
@@ -509,36 +294,3 @@ class UtilityOutage(Base):
     )
 
     rental = relationship("Rental", back_populates="utility_outages")
-<<<<<<< HEAD
-
-
-class PendingAdminLogin(Base):
-    """管理員登入的第二階段驗證（2FA）暫存紀錄。
-
-    管理員登入分兩步：
-      1. 帳密驗證通過後，產生驗證碼寄至該管理員信箱，建立本筆紀錄（尚未登入）
-      2. 輸入正確驗證碼後才簽發憑證，並刪除本筆紀錄
-
-    為何管理員需要 2FA 而一般使用者不需要：管理員可存取全站使用者資料、
-    調整系統設定、關閉功能，帳密一旦外洩的損害遠大於單一使用者帳號。
-    多一道「必須能收到該信箱的信」的驗證，可擋下純粹的帳密外洩。
-
-    驗證碼本身不儲存，只存雜湊（作法與 pending_registrations 一致）。
-    """
-
-    __tablename__ = "pending_admin_logins"
-
-    id = Column(String(36), primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    email = Column(String(254), nullable=False, index=True)
-    verification_code_hash = Column(String(64), nullable=False)
-    expires_at = Column(DateTime, nullable=False, index=True)
-    # 錯誤次數達上限即作廢，防止對六位數驗證碼暴力猜測
-    attempt_count = Column(Integer, nullable=False, default=0)
-    # 記錄發起登入的來源，供稽核與異常登入通知使用
-    request_ip = Column(String(45), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-
-    user = relationship("User")
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

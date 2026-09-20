@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+﻿import { computed } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { adminSettings } from './useAdminSettings'
 import {
@@ -69,10 +69,6 @@ export function useAdminAiUsage() {
           today,
           warnPercent: adminSettings.value.quotaWarnPercent,
           criticalPercent: adminSettings.value.quotaCriticalPercent,
-<<<<<<< HEAD
-          criticalDaysLeft: adminSettings.value.aiQuotaCriticalDays,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
         }),
         unset: quota <= 0,
       }

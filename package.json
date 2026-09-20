@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port=5173 --strictPort --host=0.0.0.0",
     "dev:backend": "python -m uvicorn --app-dir backend main:app --port 8000",
-    "dev:all": "run-p dev dev:backend dev:api",
+    "dev:all": "run-p dev dev:api dev:backend",
     "dev:api": "tsx watch server/index.js",
     "start:api": "node server/index.js",
     "build": "vue-tsc -b && vite build",
@@ -24,7 +24,7 @@
     "test:ollama-fields": "node scripts/verify-ollama-contract.js",
     "test:vision-annotation": "node scripts/verify-vision-annotation.js",
     "test:vision-crops": "node scripts/verify-vision-field-crops.js",
-    "format": "prettier --write --experimental-cli src/ components/ lib/ server/"
+    "format": "prettier --write --expernpm run dev:allimental-cli src/ components/ lib/ server/"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
@@ -36,10 +36,8 @@
     "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.3",
     "lucide-vue-next": "^0.513.0",
     "maplibre-gl": "^5.24.0",
     "motion": "^12.23.24",
@@ -75,8 +73,5 @@
     "vite-plugin-vue-devtools": "^8.1.2",
     "vitest": "^3.2.7",
     "vue-tsc": "^2.2.0"
-  },
-  "overrides": {
-    "qs": "^6.16.0"
   }
 }

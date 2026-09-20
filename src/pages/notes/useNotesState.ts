@@ -1,14 +1,11 @@
-import { computed, ref, watch } from 'vue'
+﻿import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-<<<<<<< HEAD
-=======
 import {
   createPersonalNote,
   deletePersonalNote,
   listPersonalNotes,
   updatePersonalNote,
 } from '@/src/services/notesApi'
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 export type MainTab = 'personal' | 'roommate'
 type PersonalTag = '租務' | '提醒' | '維護' | '採買'
@@ -361,10 +358,6 @@ export function useNotesState(mode: MainTab) {
     done: activeTab.value === 'personal' ? personalStats.value.done : roommateStats.value.done,
   }))
 
-<<<<<<< HEAD
-  watch(personalNotes, value => writeJson(PERSONAL_STORAGE_KEY, value), { deep: true })
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   watch(roommateTasks, value => writeJson(ROOMMATE_STORAGE_KEY, value), { deep: true })
   watch(roommateMembers, value => writeJson(ROOMMATE_MEMBER_STORAGE_KEY, value), { deep: true })
   watch(inviteToken, value => writeJson(INVITE_TOKEN_STORAGE_KEY, value))
@@ -458,28 +451,16 @@ export function useNotesState(mode: MainTab) {
     }
   }
 
-<<<<<<< HEAD
-  function savePersonalNote(): void {
-    if (!personalForm.value.title.trim()) return
-    personalNotes.value.push({
-      id: createId('personal'),
-=======
   async function savePersonalNote(): Promise<void> {
     if (!personalForm.value.title.trim()) return
     const note = await createPersonalNote({
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       title: personalForm.value.title.trim(),
       content: personalForm.value.content.trim(),
       date: personalForm.value.date,
       time: personalForm.value.time,
       tag: personalForm.value.tag,
-<<<<<<< HEAD
-      done: false,
-    })
-=======
     })
     personalNotes.value.push(note as PersonalNote)
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     selectedDate.value = personalForm.value.date
     showPersonalDialog.value = false
     resetPersonalForm()
@@ -532,17 +513,11 @@ export function useNotesState(mode: MainTab) {
     resetRoommateMemberForm()
   }
 
-<<<<<<< HEAD
-  function togglePersonalDone(id: string): void {
-    const note = personalNotes.value.find(item => item.id === id)
-    if (note) note.done = !note.done
-=======
   async function togglePersonalDone(id: string): Promise<void> {
     const note = personalNotes.value.find(item => item.id === id)
     if (!note) return
     const updated = await updatePersonalNote(id, { done: !note.done })
     Object.assign(note, updated)
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   }
 
   function toggleRoommateDone(id: string): void {
@@ -550,12 +525,6 @@ export function useNotesState(mode: MainTab) {
     if (task) task.done = !task.done
   }
 
-<<<<<<< HEAD
-  function removePersonalNote(id: string): void {
-    personalNotes.value = personalNotes.value.filter(note => note.id !== id)
-  }
-
-=======
   async function removePersonalNote(id: string): Promise<void> {
     await deletePersonalNote(id)
     personalNotes.value = personalNotes.value.filter(note => note.id !== id)
@@ -571,7 +540,6 @@ export function useNotesState(mode: MainTab) {
 
   void loadPersonalNotes()
 
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   function removeRoommateTask(id: string): void {
     roommateTasks.value = roommateTasks.value.filter(task => task.id !== id)
     if (editingRoommateTaskId.value === id) {

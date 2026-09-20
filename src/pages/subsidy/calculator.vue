@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-wrap">
 
     <!-- 步驟進度 -->
@@ -342,11 +342,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-<<<<<<< HEAD
-import SectionTabs from '@/src/components/navigation/SectionTabs.vue'
-=======
 import SectionTabs from '@/src/components/section-tabs.vue'
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 const router = useRouter()
 

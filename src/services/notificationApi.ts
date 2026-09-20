@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 通知發送的服務層。後端目前沒有真的寄送 Email／推播的能力，這裡先用
  * localStorage 版本模擬「寫進使用者的收件匣」——效果等同於 sendFromTemplate
  * 原本直接塞資料的那段邏輯，只是搬到這裡集中管理。
@@ -10,26 +10,12 @@
 import { createAdminCollection, newId } from '@/src/composables/admin/useAdminStore'
 import { computeDeliveryStatus, migrateUserNotifications } from '@/src/utils/notif-delivery'
 import { migrateNotifBatches } from '@/src/utils/notif-batch'
-<<<<<<< HEAD
-import { migrateNotifSourceLabel, migrateNotifSourceType } from '@/src/utils/notif-source'
-=======
 import { migrateNotifSourceLabel } from '@/src/utils/notif-source'
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import {
   seedUserNotifications,
   type NotifCategory,
   type NotifChannel,
   type NotifDeliveryStatus,
-<<<<<<< HEAD
-  type NotifSourceType,
-  type UserNotification,
-} from '@/src/mocks/admin/notifications'
-
-function migrateMessages(list: UserNotification[]): UserNotification[] {
-  return migrateNotifSourceType(
-    migrateNotifSourceLabel(migrateNotifBatches(migrateUserNotifications(list))),
-  )
-=======
   type UserNotification,
 } from '@/src/mocks/admin/notifications'
 
@@ -37,7 +23,6 @@ function migrateMessages(list: UserNotification[]): UserNotification[] {
 // 所以串起來跑而不是各自掛一個 collection。
 function migrateMessages(list: UserNotification[]): UserNotification[] {
   return migrateNotifSourceLabel(migrateNotifBatches(migrateUserNotifications(list)))
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 export const notifMessagesCollection = createAdminCollection<UserNotification[]>(
@@ -56,12 +41,6 @@ export interface SendNotificationPayload {
   recipientLabel: string
   /** 這次發送的來源（模板名稱或「一次性撰寫」），只在批次詳情頁顯示 */
   sourceLabel: string
-<<<<<<< HEAD
-  sourceType?: NotifSourceType
-  actionUrl?: string
-  actionLabel?: string
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 export interface SendResult {
@@ -70,20 +49,10 @@ export interface SendResult {
 }
 
 export async function sendNotification(payload: SendNotificationPayload): Promise<SendResult> {
-<<<<<<< HEAD
-  const {
-    emails, title, body, category, channels,
-    recipientLabel, sourceLabel,
-    sourceType = 'admin', actionUrl, actionLabel,
-  } = payload
-  const deliveryStatus = computeDeliveryStatus(channels)
-  const createdAt = new Date().toISOString()
-=======
   const { emails, title, body, category, channels, recipientLabel, sourceLabel } = payload
   const deliveryStatus = computeDeliveryStatus(channels)
   const createdAt = new Date().toISOString()
   // 同一次發送共用一個 batchId，發送紀錄才聚合得回來
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   const batchId = newId('nb')
 
   for (const email of emails) {
@@ -92,12 +61,6 @@ export async function sendNotification(payload: SendNotificationPayload): Promis
       batchId,
       recipientLabel,
       sourceLabel,
-<<<<<<< HEAD
-      sourceType,
-      actionUrl,
-      actionLabel,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       userEmail: email,
       title,
       body,

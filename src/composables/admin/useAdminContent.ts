@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+﻿import { computed } from 'vue'
 import { createAdminCollection, newId } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
 import {
@@ -10,10 +10,6 @@ import { reorderByIndex } from '@/src/utils/reorder'
 import {
   seedAnnouncements,
   seedBanners,
-<<<<<<< HEAD
-  migrateBannerImages,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   type Announcement,
   type Banner,
 } from '@/src/mocks/admin-seed'
@@ -23,11 +19,7 @@ const announcements = createAdminCollection<Announcement[]>(
   seedAnnouncements,
   migrateAnnouncements,
 )
-<<<<<<< HEAD
-const banners = createAdminCollection<Banner[]>('content-banners', seedBanners, migrateBannerImages)
-=======
 const banners = createAdminCollection<Banner[]>('content-banners', seedBanners)
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 function nowIso(): string {
   return new Date().toISOString()

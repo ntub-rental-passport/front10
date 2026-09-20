@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
@@ -31,13 +31,8 @@ import {
   formatDate,
   formatOptionalAmount,
 } from '@/src/utils/rent-format'
-<<<<<<< HEAD
-import AnnouncementBanner from '@/src/components/content/AnnouncementBanner.vue'
-import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
-=======
 import AnnouncementBanner from '@/src/components/AnnouncementBanner.vue'
 import BannerCarousel from '@/src/components/BannerCarousel.vue'
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { useAnnouncementDismissal } from '@/src/composables/useAnnouncementDismissal'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'
@@ -675,11 +670,7 @@ const {
                 <CardDescription>從熱門風險關鍵字快速延伸到對應教學與案例。</CardDescription>
               </div>
               <Button as-child variant="ghost" class="h-auto rounded-full px-0 text-sm font-semibold text-primary hover:bg-transparent hover:text-primary/80">
-<<<<<<< HEAD
-                <RouterLink to="/app/tenant-guide">
-=======
                 <RouterLink to="/app/contract">
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
                   文章總目錄
                   <ChevronRight class="h-4 w-4" />
                 </RouterLink>

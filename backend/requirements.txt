@@ -1,4 +1,4 @@
-fastapi
+﻿fastapi
 argon2-cffi
 google-auth
 google-cloud-vision
@@ -6,12 +6,5 @@ pymysql
 python-dotenv
 python-multipart
 requests
-<<<<<<< HEAD
-pywebpush
 sqlalchemy
 uvicorn[standard]
-PyJWT
-=======
-sqlalchemy
-uvicorn[standard]
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9

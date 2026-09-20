@@ -1,4 +1,4 @@
-import { daysAgo } from './helpers'
+﻿import { daysAgo } from './helpers'
 
 export type AuditActionType =
   | '登入'
@@ -11,10 +11,7 @@ export type AuditActionType =
   | '內容管理'
   | '權限'
   | '通知管理'
-<<<<<<< HEAD
   | '通知中心'
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   | '報修工單'
   | '押金退還'
   | '租金補貼'

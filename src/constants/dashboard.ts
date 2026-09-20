@@ -1,4 +1,4 @@
-import type { AccentKey } from '@/src/mocks/dashboard-seed'
+﻿import type { AccentKey } from '@/src/mocks/dashboard-seed'
 
 type AccentStyleConfig = {
   badgeTextClass: string
@@ -134,18 +134,6 @@ export const featuredArticles: FeaturedArticle[] = [
     to: '/app/contract',
   },
   {
-<<<<<<< HEAD
-    title: '冷氣壞了是房東要修嗎？房東不回應該怎麼辦？',
-    category: '設備修繕',
-    publishedAt: '2026-08-31',
-    to: '/app/contract/air-conditioner-repair',
-  },
-  {
-    title: '租屋電費新制上路！租屋一度電5元合法嗎？房東電費超收怎麼辦？',
-    category: '水電費用 ',
-    publishedAt: '2026-06-01',
-    to: '/app/contract/electricity-fee',
-=======
     title: '冷氣壞了誰修？圖解修繕責任與存證信函寫法',
     category: '設備修繕',
     publishedAt: '2026-03-28',
@@ -156,6 +144,5 @@ export const featuredArticles: FeaturedArticle[] = [
     category: '押金退還',
     publishedAt: '2026-03-15',
     to: '/app/contract',
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   },
 ]

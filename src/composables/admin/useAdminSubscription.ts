@@ -1,10 +1,6 @@
-import { createAdminCollection } from './useAdminStore'
+﻿import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
 import { adminUsersCollection } from './useAdminUsers'
-<<<<<<< HEAD
-import { adminSettings } from './useAdminSettings'
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import {
   seedPlans,
   seedSubscriptions,
@@ -85,11 +81,7 @@ export function useAdminSubscription() {
 
   // 與使用者列表的「訂閱即將到期」警示共用同一份判定，避免兩處規則走鐘
   function isExpiringSoon(subscription: Subscription): boolean {
-<<<<<<< HEAD
-    return isSubscriptionExpiring(subscription, adminSettings.value.subscriptionExpiringSoonDays)
-=======
     return isSubscriptionExpiring(subscription)
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   }
 
   return {

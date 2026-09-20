@@ -1,13 +1,9 @@
-import { computed } from 'vue'
+﻿import { computed } from 'vue'
 import { notifMessagesCollection } from './admin/useAdminNotifications'
 import { createAdminCollection } from './admin/useAdminStore'
 import { useAdminContent } from './admin/useAdminContent'
 import { getAuthSession } from './useAuth'
-<<<<<<< HEAD
-import type { AnnouncementLevel, NotifChannel, NotifSourceType } from '@/src/mocks/admin-seed'
-=======
 import type { AnnouncementLevel, NotifChannel } from '@/src/mocks/admin-seed'
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 /** 公告是廣播內容，本身沒有收件人；已讀狀態改以「email → 已讀公告 id」記錄 */
 const readAnnouncements = createAdminCollection<Record<string, string[]>>(
@@ -28,15 +24,6 @@ export interface InboxItem {
   read: boolean
   /** 僅公告有，用於顯示等級色彩 */
   level?: AnnouncementLevel
-<<<<<<< HEAD
-  /** 通知來源類型，用於來源 badge */
-  sourceType?: NotifSourceType
-  /** 操作連結 */
-  actionUrl?: string
-  /** 操作按鈕文字 */
-  actionLabel?: string
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 }
 
 export function useNotifications() {
@@ -61,10 +48,6 @@ export function useNotifications() {
       createdAt: item.startAt,
       read: readAnnouncementIds.value.includes(item.id),
       level: item.level,
-<<<<<<< HEAD
-      sourceType: 'system' as NotifSourceType,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     })),
   )
 
@@ -82,12 +65,6 @@ export function useNotifications() {
         channels: item.channels,
         createdAt: item.createdAt,
         read: item.read,
-<<<<<<< HEAD
-        sourceType: item.sourceType,
-        actionUrl: item.actionUrl,
-        actionLabel: item.actionLabel,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       }))
   })
 

@@ -1,9 +1,4 @@
-<<<<<<< HEAD
-public/models/*.onnx
-
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
-build/
+﻿build/
 dist/
 dist-ssr/
 coverage/
@@ -21,20 +16,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 *.local
-<<<<<<< HEAD
-# fail2ban 設定檔不含機密，必須進版控（上面的 *.local 規則會誤傷它）
-!deploy/fail2ban/jail.local
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 *.timestamp-*-*.mjs
 
 .env*
 !.env.example
-<<<<<<< HEAD
-# 正式環境前端 build 變數：只有可公開的值（/api 路徑），必須進版控
-!.env.production
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 
 .vscode/*
 !.vscode/extensions.json

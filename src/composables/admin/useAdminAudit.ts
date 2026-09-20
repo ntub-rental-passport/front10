@@ -1,28 +1,4 @@
-<<<<<<< HEAD
-import { computed } from 'vue'
-import { createAdminCollection, newId } from './useAdminStore'
-import { getAuthSession } from '@/src/composables/useAuth'
-import { filterByRetention } from '@/src/utils/admin-audit-retention'
-import {
-  migrateSettings,
-  seedAuditEvents,
-  seedSettings,
-  type AuditActionType,
-  type AuditEvent,
-  type SystemSettings,
-} from '@/src/mocks/admin-seed'
-
-const rawEvents = createAdminCollection<AuditEvent[]>('audit', seedAuditEvents)
-// 用同一個 collection 名稱重新取得設定 ref，而不是 import useAdminSettings ——
-// 那邊的 useAdminSettings() 又會呼叫 useAdminAudit()，兩個檔案互相 import 會形成循環依賴。
-// createAdminCollection 本身有 registry 去重，重複呼叫拿到的是同一份 ref，不會重新 seed。
-const settings = createAdminCollection<SystemSettings>('settings', seedSettings, migrateSettings)
-
-export function useAdminAudit() {
-  function logAction(action: AuditActionType, target: string, detail: string): void {
-    rawEvents.value.unshift({
-=======
-import { createAdminCollection, newId } from './useAdminStore'
+﻿import { createAdminCollection, newId } from './useAdminStore'
 import { getAuthSession } from '@/src/composables/useAuth'
 import {
   seedAuditEvents,
@@ -35,7 +11,6 @@ const events = createAdminCollection<AuditEvent[]>('audit', seedAuditEvents)
 export function useAdminAudit() {
   function logAction(action: AuditActionType, target: string, detail: string): void {
     events.value.unshift({
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
       id: newId('ev'),
       at: new Date().toISOString(),
       actor: getAuthSession()?.email ?? 'admin@rentmate.tw',
@@ -45,11 +20,5 @@ export function useAdminAudit() {
     })
   }
 
-<<<<<<< HEAD
-  // 保留天數是視窗式篩選，不是刪除：原始紀錄仍在 rawEvents 裡，只是超過天數的不顯示
-  const events = computed(() => filterByRetention(rawEvents.value, settings.value.auditRetentionDays))
-
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   return { events, logAction }
 }

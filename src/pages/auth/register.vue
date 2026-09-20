@@ -1,11 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-<<<<<<< HEAD
-import AuthShell from '@/src/components/layouts/AuthLayout.vue'
-=======
 import AuthShell from '@/src/components/auth-layout.vue'
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { Button } from '@/components/ui/button/index'
 import { Checkbox } from '@/components/ui/checkbox/index'
 import { Input } from '@/components/ui/input/index'
@@ -25,18 +21,10 @@ import {
 } from 'lucide-vue-next'
 import {
   getGoogleRegistrationContext,
-<<<<<<< HEAD
-  resolveRoleHome,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
   startGoogleEmailRegistration,
   startEmailRegistration,
 } from '@/src/composables/useAuth'
 import { getGoogleLoginUrl } from '@/src/services/authApi'
-<<<<<<< HEAD
-import { normalizeAuthRedirect } from '@/src/utils/auth-redirect'
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 import {
   authIdentityOptions,
@@ -91,18 +79,9 @@ const loginLink = computed(() => ({
   path: '/login',
   query: {
     role: selectedIdentity.value,
-<<<<<<< HEAD
-    ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
   },
 }))
 
-const redirectTarget = computed(() => normalizeAuthRedirect(route.query.redirect))
-
-=======
-  },
-}))
-
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
 // 密碼最短長度由系統設定決定，改設定後註冊頁的規則與提示都會跟著變
 const passwordMinLength = computed(() => adminSettings.value.passwordMinLength)
 const PASSWORD_MAX_LENGTH = 20
@@ -243,15 +222,7 @@ async function handleRegister(): Promise<void> {
     )
     await router.push({
       path: '/verify-email',
-<<<<<<< HEAD
-      query: {
-        email: pendingRegistration.email,
-        role: selectedIdentity.value,
-        ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
-      },
-=======
       query: { email: pendingRegistration.email, role: selectedIdentity.value },
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     })
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '無法開始註冊，請稍後再試。'
@@ -264,16 +235,7 @@ async function handleGoogleRegister(): Promise<void> {
   if (!validateGoogleRegistration()) return
   if (!googleRegistration.value) {
     submitting.value = true
-<<<<<<< HEAD
-    window.location.assign(
-      getGoogleLoginUrl(
-        selectedOption.value.authRole,
-        redirectTarget.value || resolveRoleHome(selectedOption.value.authRole),
-      ),
-    )
-=======
     window.location.assign(getGoogleLoginUrl(selectedOption.value.authRole, '/register'))
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     return
   }
 
@@ -285,15 +247,7 @@ async function handleGoogleRegister(): Promise<void> {
     )
     await router.push({
       path: '/verify-email',
-<<<<<<< HEAD
-      query: {
-        email: pendingRegistration.email,
-        role: selectedIdentity.value,
-        ...(redirectTarget.value ? { redirect: redirectTarget.value } : {}),
-      },
-=======
       query: { email: pendingRegistration.email, role: selectedIdentity.value },
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     })
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '無法開始 Google 註冊，請稍後再試。'

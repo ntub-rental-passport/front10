@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 import { resolveStaffAccess, staffAccessMessages } from './staff-access'
 import type { AdminUser } from '@/src/mocks/admin/users'
 
@@ -12,10 +12,6 @@ function make(overrides: Partial<AdminUser> = {}): AdminUser {
     status: 'active',
     emailVerified: true,
     registeredAt: '2026-01-01T00:00:00.000Z',
-<<<<<<< HEAD
-    lastLoginAt: null,
-=======
->>>>>>> 0ddfe5350d317c1145c9dc6928afddcd722cf6d9
     ...overrides,
   }
 }
