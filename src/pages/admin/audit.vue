@@ -93,7 +93,7 @@ function exportCsv(): void {
     </div>
 
     <Card class="rounded-3xl">
-      <CardContent class="space-y-4 pt-6">
+      <CardContent class="px-5 pb-5 space-y-4 pt-6">
         <div class="flex flex-wrap items-end gap-3">
           <div class="relative min-w-56 flex-1">
             <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

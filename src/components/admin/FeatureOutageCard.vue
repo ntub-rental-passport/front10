@@ -123,7 +123,7 @@ const rows = computed<RowView[]>(() =>
 
 <template>
   <Card class="rounded-3xl">
-    <CardHeader>
+    <CardHeader class="p-5">
       <CardTitle>功能開關</CardTitle>
       <CardDescription>
         功能發生故障時，在這裡暫停該功能給「所有使用者」使用；這與方案權益
@@ -132,7 +132,7 @@ const rows = computed<RowView[]>(() =>
       </CardDescription>
     </CardHeader>
 
-    <CardContent class="space-y-3">
+    <CardContent class="px-5 pb-5 space-y-3">
       <div
         v-for="row in rows"
         :key="row.key"

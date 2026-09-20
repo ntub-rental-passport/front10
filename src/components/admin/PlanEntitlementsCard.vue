@@ -84,14 +84,14 @@ function confirmSave(): void {
 
 <template>
   <Card class="rounded-3xl">
-    <CardHeader>
+    <CardHeader class="p-5">
       <CardTitle>方案權益</CardTitle>
       <CardDescription>
         各方案能使用哪些功能與各自的額度。留白代表無上限；關閉的功能使用者端會看到升級提示。
       </CardDescription>
     </CardHeader>
 
-    <CardContent class="space-y-4">
+    <CardContent class="px-5 pb-5 space-y-4">
       <div class="flex gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
         <Info class="h-5 w-5 shrink-0 text-amber-600" />
         <div>

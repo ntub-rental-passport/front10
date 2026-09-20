@@ -314,7 +314,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
     <!-- 摘要 -->
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card class="rounded-3xl">
-        <CardContent class="pt-6">
+        <CardContent class="px-5 pb-5 pt-6">
           <p class="text-sm text-muted-foreground">AI 用量</p>
           <p class="text-2xl font-black">
             <template v-if="row.subscription && effectivePlan">
@@ -326,7 +326,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
         </CardContent>
       </Card>
       <Card class="rounded-3xl">
-        <CardContent class="pt-6">
+        <CardContent class="px-5 pb-5 pt-6">
           <p class="text-sm text-muted-foreground">儲存用量</p>
           <p class="text-2xl font-black">
             <template v-if="row.subscription">
@@ -337,7 +337,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
         </CardContent>
       </Card>
       <Card class="rounded-3xl">
-        <CardContent class="pt-6">
+        <CardContent class="px-5 pb-5 pt-6">
           <p class="text-sm text-muted-foreground">押金對帳</p>
           <p
             class="text-2xl font-black"
@@ -351,7 +351,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
         </CardContent>
       </Card>
       <Card class="rounded-3xl">
-        <CardContent class="pt-6">
+        <CardContent class="px-5 pb-5 pt-6">
           <p class="text-sm text-muted-foreground">工單待處理</p>
           <p
             class="text-2xl font-black"
@@ -368,8 +368,8 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
     <!-- 權限與帳號 -->
     <Card class="rounded-3xl">
-      <CardHeader><CardTitle>權限與帳號</CardTitle></CardHeader>
-      <CardContent class="space-y-4">
+      <CardHeader class="p-5"><CardTitle>權限與帳號</CardTitle></CardHeader>
+      <CardContent class="px-5 pb-5 space-y-4">
         <p v-if="!isSuper" class="rounded-xl bg-muted/50 p-3 text-sm text-muted-foreground">
           調整角色與停用帳號僅限超級管理員，以下為唯讀。
         </p>
@@ -425,8 +425,8 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
     <!-- 訂閱與容量 -->
     <Card class="rounded-3xl">
-      <CardHeader><CardTitle>訂閱與容量</CardTitle></CardHeader>
-      <CardContent>
+      <CardHeader class="p-5"><CardTitle>訂閱與容量</CardTitle></CardHeader>
+      <CardContent class="px-5 pb-5">
         <p v-if="!row.subscription" class="text-muted-foreground">此帳號尚未訂閱任何方案。</p>
 
         <div v-else-if="effectivePlan" class="space-y-4">
@@ -515,13 +515,13 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
     <!-- 押金對帳 -->
     <Card class="rounded-3xl">
-      <CardHeader>
+      <CardHeader class="p-5">
         <CardTitle>押金對帳</CardTitle>
         <p class="text-sm text-muted-foreground">
           平台不經手押金，這裡只比對租約雙方各自聲明的金額。
         </p>
       </CardHeader>
-      <CardContent class="space-y-6">
+      <CardContent class="px-5 pb-5 space-y-6">
         <p v-if="row.deposits.length === 0" class="text-muted-foreground">沒有相關的押金記錄。</p>
 
         <div v-for="group in depositGroups" :key="group.side" class="space-y-2">
@@ -566,7 +566,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
     <!-- 點交存證：與押金對帳同一種「兩造各自認定、比對是否一致」的模式 -->
     <Card v-if="handoverGroups.length > 0" class="rounded-3xl">
-      <CardHeader>
+      <CardHeader class="p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>點交存證</CardTitle>
           <Badge v-if="handoverDisputedCount > 0" variant="destructive">
@@ -578,7 +578,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
         </p>
       </CardHeader>
 
-      <CardContent class="space-y-6">
+      <CardContent class="px-5 pb-5 space-y-6">
         <FeatureOutageBanner feature-key="handover" />
 
         <div v-for="group in handoverGroups" :key="group.side" class="space-y-3">
@@ -650,7 +650,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
     <!-- 報修工單 -->
     <Card class="rounded-3xl">
-      <CardHeader>
+      <CardHeader class="p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>報修工單</CardTitle>
           <Button variant="outline" size="sm" @click="goToTickets">
@@ -659,7 +659,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
           </Button>
         </div>
       </CardHeader>
-      <CardContent class="space-y-6">
+      <CardContent class="px-5 pb-5 space-y-6">
         <p v-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
 
         <div v-for="group in ticketGroups" :key="group.side" class="space-y-2">

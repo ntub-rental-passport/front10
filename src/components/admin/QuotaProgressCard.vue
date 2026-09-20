@@ -32,11 +32,11 @@ const barClasses = {
 <template>
   <RouterLink :to="to" class="block">
     <Card class="h-full rounded-3xl border-border/70 bg-background/90 shadow-sm transition-shadow hover:shadow-md">
-      <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader class="p-5 flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle class="text-sm font-medium">{{ title }}</CardTitle>
         <Badge :variant="cornerVariant ?? 'secondary'">{{ cornerText }}</Badge>
       </CardHeader>
-      <CardContent>
+      <CardContent class="px-5 pb-5">
         <div class="flex h-[13.25rem] flex-col justify-center gap-6">
           <div v-for="item in items" :key="item.id" class="space-y-2">
             <div class="flex items-baseline justify-between gap-2">

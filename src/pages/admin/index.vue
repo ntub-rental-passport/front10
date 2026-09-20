@@ -173,7 +173,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
 </script>
 
 <template>
-  <div class="space-y-8">
+  <div class="space-y-6">
     <!--
       ⚠️ 這一頁的資料標記約定：標的是「真實」，不是「展示」。
 
@@ -248,7 +248,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       見 src/utils/admin-health-bar.ts。
     -->
     <Card data-real="true" class="rounded-3xl">
-      <CardContent class="flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
+      <CardContent class="px-5 pb-5 flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
         <p class="shrink-0 text-sm font-medium text-muted-foreground">系統健康</p>
         <div v-for="item in healthBarItems" :key="item.id" class="flex items-center gap-2">
           <span class="text-sm text-muted-foreground">{{ item.name }}</span>
@@ -313,10 +313,10 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
     -->
     <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <Card class="flex h-full flex-col rounded-3xl">
-        <CardHeader class="pb-2">
+        <CardHeader class="p-5 pb-2">
           <CardTitle class="text-sm font-medium">AI 額度一覽</CardTitle>
         </CardHeader>
-        <CardContent class="flex flex-1 items-center justify-around gap-2">
+        <CardContent class="px-5 pb-5 flex flex-1 items-center justify-around gap-2">
           <AiQuotaRing
             v-for="usage in usages"
             :key="usage.provider.id"
@@ -348,11 +348,11 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         不放灰色人像佔位圖——見 src/utils/admin-recent-logins.ts。
       -->
       <Card data-real="true" class="rounded-3xl">
-        <CardHeader>
+        <CardHeader class="p-5">
           <CardTitle>最近登入</CardTitle>
           <CardDescription>真實帳號依最後登入時間排序，最多 5 筆。</CardDescription>
         </CardHeader>
-        <CardContent class="space-y-2.5">
+        <CardContent class="px-5 pb-5 space-y-2.5">
           <div
             v-for="entry in recentLoginEntries"
             :key="entry.id"
@@ -396,11 +396,11 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         不是後端的稽核表。
       -->
       <Card class="rounded-3xl">
-        <CardHeader>
+        <CardHeader class="p-5">
           <CardTitle>最新稽核事件</CardTitle>
           <CardDescription>最近 5 筆，完整紀錄請到稽核紀錄查詢。</CardDescription>
         </CardHeader>
-        <CardContent class="space-y-2.5 text-sm">
+        <CardContent class="px-5 pb-5 space-y-2.5 text-sm">
           <div
             v-for="event in events.slice(0, 5)"
             :key="event.id"

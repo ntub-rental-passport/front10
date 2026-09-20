@@ -20,11 +20,11 @@ const roles: AdminRole[] = ['super', 'admin']
 
 <template>
   <Card class="rounded-3xl border-border/70 bg-background/90 shadow-sm">
-    <CardHeader class="pb-2">
+    <CardHeader class="p-5 pb-2">
       <CardTitle class="text-sm font-medium">管理員人數</CardTitle>
       <p class="text-xs text-muted-foreground">依權限角色區分</p>
     </CardHeader>
-    <CardContent>
+    <CardContent class="px-5 pb-5">
       <!--
         兩筆上下排列。不給固定高度，讓卡片照內容收斂 ——
         先前撐到與甜甜圈等高才是留白的來源，不是排列方向。
