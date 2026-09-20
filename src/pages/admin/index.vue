@@ -248,7 +248,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           :icon="ListChecks"
           label="今日待處理"
           :value="queueCount"
-          accent
+          hero
         />
         <InlineStat
           :icon="Users"

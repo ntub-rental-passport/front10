@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 
 import TrendChip from './TrendChip.vue'
 import type { TrendPeriod } from './trend-chip'
-import { formatStatValue } from './inline-stat'
+import { formatStatValue, resolveInlineStatVisual } from './inline-stat'
 
 /**
  * 標題旁的一行式 KPI。
@@ -38,23 +38,30 @@ const props = defineProps<{
   trendPeriod?: TrendPeriod
   /** 有值才變成連結並顯示 hover 效果 */
   to?: string
-  /** 主要指標：icon 底色用 primary，其餘用 muted */
-  accent?: boolean
+  /**
+   * 主角卡：整塊填滿品牌色。一排只能有一張——兩張以上就等於沒有主角。
+   * 樣式與理由見 inline-stat.ts 的 resolveInlineStatVisual。
+   */
+  hero?: boolean
 }>()
 
 const display = computed(() => formatStatValue(props.value))
+const visual = computed(() => resolveInlineStatVisual(props.hero))
 </script>
 
 <template>
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
-    class="flex min-w-0 items-center gap-3 rounded-2xl px-3 py-2"
-    :class="to ? 'transition-colors hover:bg-muted/60' : undefined"
+    class="flex min-w-0 items-center gap-3 rounded-2xl px-4 py-3"
+    :class="[
+      visual.containerClass,
+      to ? (hero ? 'transition-opacity hover:opacity-90' : 'transition-colors hover:bg-muted/60') : undefined,
+    ]"
   >
     <span
       class="flex size-10 shrink-0 items-center justify-center rounded-xl"
-      :class="accent ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
+      :class="visual.iconClass"
       aria-hidden="true"
     >
       <component :is="icon" class="size-5" />
@@ -67,7 +74,7 @@ const display = computed(() => formatStatValue(props.value))
         12px 文字差一點點不到 AA 的 4.5（在白色卡片上才有 4.87）。
         foreground/70 是 6.53 / 8.79，而且視覺上仍然比數字退一階。
       -->
-      <span class="block truncate text-xs text-foreground/70">{{ label }}</span>
+      <span class="block truncate text-xs" :class="visual.labelClass">{{ label }}</span>
       <span class="flex flex-wrap items-baseline gap-x-2">
         <span class="text-2xl font-bold leading-tight tracking-tight">{{ display }}</span>
         <TrendChip v-if="trend" :value="trend" suffix="%" :period="trendPeriod" />

@@ -9,13 +9,21 @@ describe('resolveStatTileVisual', () => {
     expect(visual.mutedTextClass).toBe('text-muted-foreground')
   })
 
-  it('hero 用 primary 底色，輔助文字用 primary-foreground（深色模式不降透明度）', () => {
+  it('hero 用 primary-surface 當底色，不是 primary', () => {
+    // --primary 深色被調亮到 0.6（它主要當文字色），拿來當填色時白字只有
+    // 3.85 且那是天花板。--primary-surface 是專門調來承載文字的填色。
     const visual = resolveStatTileVisual(true, undefined)
-    expect(visual.containerClass).toBe('bg-primary text-primary-foreground')
-    // 深色模式要拿掉透明度：--primary 深色較亮，/75 實測只有 2.89
-    expect(visual.mutedTextClass).toBe(
-      'text-primary-foreground/75 dark:text-primary-foreground',
+    expect(visual.containerClass).toBe(
+      'bg-primary-surface text-primary-surface-foreground',
     )
+  })
+
+  it('hero 的輔助文字配 surface 的前景色，且不需要 dark: 例外', () => {
+    // surface 本身在深色已經壓暗過，所以 /80 在兩個模式都過 AA（實測 5.14），
+    // 不必再為深色寫一條特例
+    const visual = resolveStatTileVisual(true, undefined)
+    expect(visual.mutedTextClass).toBe('text-primary-surface-foreground/80')
+    expect(visual.mutedTextClass).not.toContain('dark:')
   })
 
   it('沒有 to 就不顯示鑽取箭頭', () => {
@@ -28,7 +36,9 @@ describe('resolveStatTileVisual', () => {
 
   it('hero 與 to 互相獨立，不會互相影響', () => {
     const visual = resolveStatTileVisual(true, '/admin/users')
-    expect(visual.containerClass).toBe('bg-primary text-primary-foreground')
+    expect(visual.containerClass).toBe(
+      'bg-primary-surface text-primary-surface-foreground',
+    )
     expect(visual.showArrow).toBe(true)
   })
 })

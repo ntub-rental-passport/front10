@@ -24,6 +24,8 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-primary-surface: var(--primary-surface);
+    --color-primary-surface-foreground: var(--primary-surface-foreground);
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
     --color-accent-foreground: var(--accent-foreground);
@@ -66,6 +68,26 @@
     /* Blue Iris #5D4B9E */
     --primary: oklch(0.45 0.15 280);
     --primary-foreground: oklch(0.98 0 0);
+    /*
+      「當填色用」的品牌色。專門給整塊填滿品牌色、上面壓淺色文字的區塊
+      （總覽的主角 KPI、使用者管理頁的 StatTile hero）。
+
+      為什麼不能直接用 --primary：深色模式下這兩件事的需求是衝突的。
+      --primary 在深色被調亮到 0.6，因為它主要當「文字色踩在深底上」，
+      不夠亮就讀不到。但同一個值拿來當填色時，白字壓上去只剩 3.85，
+      未達 AA —— 而且那是天花板，文字完全不透明也還是 3.85。
+
+      淺色模式兩者需求一致，所以值相同；深色壓到 0.46，實測：
+        白字 7.04、標籤 /80 是 5.14、區塊對頁面底 2.43（仍清楚是一塊）。
+      對照直接用 --primary 的 0.6：白字 3.85、區塊對底 4.45
+      —— 用一點顯眼度換到真的讀得到。
+
+      ⚠️ --color-primary-surface 與 --color-primary-surface-foreground
+      兩個都要在上面的 @theme 註冊，只註冊一半的下場見
+      --destructive-foreground。
+    */
+    --primary-surface: oklch(0.45 0.15 280);
+    --primary-surface-foreground: oklch(0.98 0 0);
     
     /* Pale Iris #D9D7FF */
     --secondary: oklch(0.9 0.05 280);
@@ -166,6 +188,9 @@
     /* Blue Iris */
     --primary: oklch(0.6 0.15 280);
     --primary-foreground: oklch(0.98 0 0);
+    /* 填色用的品牌色要壓暗，白字才讀得到（理由見淺色區塊的說明） */
+    --primary-surface: oklch(0.46 0.14 280);
+    --primary-surface-foreground: oklch(0.98 0 0);
     
     /* Pale Iris */
     --secondary: oklch(0.35 0.08 280);
