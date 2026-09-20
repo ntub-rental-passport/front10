@@ -24,6 +24,8 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-muted-foreground: var(--muted-foreground);
@@ -79,6 +81,20 @@
     /* Safety Orange #FF8F6B */
     --destructive: oklch(0.7 0.18 40);
     --destructive-foreground: oklch(0.98 0 0);
+    /*
+      狀態色「正常」。原本色票只有 280（紫）、40（橘紅）、80（琥珀）三個色相，
+      沒有綠，所以「正常」只能借用 --primary —— 但紫色在這個系統裡是品牌色，
+      logo、按鈕、圖表線全是紫的。一顆紫色的狀態燈在紫色畫面上不構成訊號。
+
+      深淺色用不同亮度（比照 --primary）：當文字用時淺色 5.62、深色 6.39，都過 AA。
+      --success-foreground 是踩在它上面的文字色，淺色 5.29、深色 7.18。
+
+      ⚠️ --color-success 與 --color-success-foreground 兩個都要在上面的 @theme
+      註冊。只註冊一半的下場見 --destructive-foreground：那個 class 產不出任何
+      CSS，用到的元素會靜靜繼承父層文字色，不會有任何地方報錯。
+    */
+    --success: oklch(0.5 0.14 150);
+    --success-foreground: oklch(0.98 0 0);
     
     --border: oklch(0.9 0.02 280); /* Neutral_20 */
     --input: oklch(0.9 0.02 280);
@@ -148,6 +164,9 @@
     
     --destructive: oklch(0.7 0.18 40);
     --destructive-foreground: oklch(0.98 0 0);
+    /* 深色底要更亮的綠才讀得到；前景跟著翻成深色（亮綠配白字只有 2.38） */
+    --success: oklch(0.7 0.14 150);
+    --success-foreground: oklch(0.2 0.05 280);
     
     --border: oklch(0.35 0.05 280);
     --input: oklch(0.35 0.05 280);

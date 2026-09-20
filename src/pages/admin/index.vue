@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar/index'
 import { Badge } from '@/components/ui/badge/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
-import { ArrowUpRight } from 'lucide-vue-next'
+import { AlertTriangle, ArrowUpRight, ListChecks, Users, Wrench } from 'lucide-vue-next'
 import AiQuotaRing from '@/src/components/admin/AiQuotaRing.vue'
 import CategoryBarCard from '@/src/components/admin/CategoryBarCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
@@ -12,6 +12,7 @@ import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import QuotaProgressCard, { type QuotaProgressItem } from '@/src/components/admin/QuotaProgressCard.vue'
 import StatTile from '@/src/components/admin/StatTile.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
+import InlineStat from '@/src/components/admin/InlineStat.vue'
 import TrendAreaCard from '@/src/components/admin/TrendAreaCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
@@ -187,49 +188,54 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       畫面上刻意不出現「展示」字樣。
     -->
 
-    <!-- 標題列：維護狀態是系統狀態而非待辦數字，做成狀態徽章而不是卡片 -->
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div class="space-y-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge
-            variant="outline"
-            class="rounded-full border-primary/20 bg-primary/5 px-4 py-1.5 text-primary"
-          >
-            Admin Console
-          </Badge>
-          <component
-            :is="canAccessPath('/admin/settings') ? RouterLink : 'span'"
-            :to="canAccessPath('/admin/settings') ? '/admin/settings' : undefined"
-            class="flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs"
-            :class="
-              maintenanceActive
-                ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                : 'border-border bg-muted/40 text-muted-foreground'
-            "
-          >
-            <!--
-              用 StatusDot 而非自己寫一顆點：原本是寫死的 bg-emerald-500，
-              跟正下方健康條的 ok 燈（bg-primary）在同一個畫面上呈現兩種
-              「正常」的顏色。這裡不給 label——StatusDot 的 label 是 text-sm，
-              這顆徽章是 text-xs。
+    <!--
+      標題列：h1 在左、四個 KPI 在右，擠在同一行。
 
-              文案從「運作正常」改成「服務中」：這個徽章只反映
-              settings.maintenanceMode，它不知道資料庫、API 或 LLM 的狀況。
-              「運作正常」是個它擔不起的全域宣告，而且就掛在一條正在回報
-              「LLM Provider 無法取得」的健康條上方。
-            -->
-            <StatusDot :tone="maintenanceActive ? 'danger' : 'ok'" />
-            {{ maintenanceActive ? '維護中' : '服務中' }}
-            <span class="text-muted-foreground">·</span>
-            {{ maintenanceDetail }}
-          </component>
-        </div>
-        <div>
-          <h1 class="text-4xl font-black tracking-tight">後台總覽</h1>
-          <p class="mt-2 text-muted-foreground">
-            平台目前的規模與案件流動，以及需要你處理的事。
-          </p>
-        </div>
+      原本這裡是三個堆疊的橫列（chip 列 → 標題列 → 另一整排 KPI 卡），
+      量到第一個數字出現在 329px，而視窗高只有 768px —— 首屏 43% 花在
+      「這是哪一頁」上面。chip 已經搬到導覽列，KPI 改用 InlineStat
+      （一列約 56px，原本的 StatTile 是 156px）。
+
+      展示資料（無 data-real）：四個數字都是 src/mocks 種子資料算出來的。
+      「今日待處理」與頂部列待辦抽屜的徽章同一個來源（useAdminQueue），
+      不會對不起來。押金不符沒有 trend —— 這批種子資料沒有歷史快照可以比，
+      寧可留白也不假造一個趨勢。
+    -->
+    <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5">
+      <div class="min-w-0">
+        <h1 class="text-4xl font-black tracking-tight">後台總覽</h1>
+        <p class="mt-1.5 text-muted-foreground">
+          平台目前的規模與案件流動，以及需要你處理的事。
+        </p>
+      </div>
+
+      <div class="grid w-full grid-cols-2 gap-x-2 gap-y-1 sm:w-auto sm:grid-cols-4">
+        <InlineStat
+          :icon="ListChecks"
+          label="今日待處理"
+          :value="queueCount"
+          accent
+        />
+        <InlineStat
+          :icon="Users"
+          label="使用者總數"
+          :value="users.length"
+          :trend="userGrowthTrendPercent"
+          to="/admin/users"
+        />
+        <InlineStat
+          :icon="Wrench"
+          label="本週新增工單"
+          :value="weeklyTicketCount"
+          :trend="ticketTrendPercent"
+          to="/admin/maintenance-tickets"
+        />
+        <InlineStat
+          :icon="AlertTriangle"
+          label="押金不符"
+          :value="depositStats.mismatchedCount"
+          to="/admin/users?alert=deposit-mismatch"
+        />
       </div>
     </div>
 
@@ -246,46 +252,10 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         <p class="shrink-0 text-sm font-medium text-muted-foreground">系統健康</p>
         <div v-for="item in healthBarItems" :key="item.id" class="flex items-center gap-2">
           <span class="text-sm text-muted-foreground">{{ item.name }}</span>
-          <StatusDot :tone="item.tone" :label="item.statusText" />
+          <StatusDot :tone="item.tone" :label="item.statusText" emphasize />
         </div>
       </CardContent>
     </Card>
-
-    <!--
-      展示資料（無 data-real）。主角卡「今日待處理」用的是 useAdminQueue 的
-      總數，與頂部列待辦抽屜的徽章同一個來源，不會對不起來。沒有加鑽取箭頭
-      ——這個數字橫跨工單與 AI 額度告急兩種待辦，沒有單一個「點進去就是這個
-      數字」的目的地，硬加箭頭反而是誤導。
-
-      三張 KPI 卡的數字、sparkline、trend 都是 src/mocks 種子資料算出來的，
-      不是資料庫裡的真實統計。押金不符沒有 trend／spark——這批種子資料沒有
-      歷史快照可以比較，寧可留白也不假造一個歷史趨勢。
-    -->
-    <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <StatTile label="今日待處理" :value="queueCount" sublabel="待辦佇列目前總數" hero />
-      <StatTile
-        label="使用者總數"
-        :value="users.length"
-        sublabel="平台累計註冊"
-        :trend="userGrowthTrendPercent"
-        :spark="userGrowthSpark"
-        to="/admin/users"
-      />
-      <StatTile
-        label="本週新增工單"
-        :value="weeklyTicketCount"
-        sublabel="近 7 天報修申請"
-        :trend="ticketTrendPercent"
-        :spark="ticketTrendSpark"
-        to="/admin/maintenance-tickets"
-      />
-      <StatTile
-        label="押金不符"
-        :value="depositStats.mismatchedCount"
-        sublabel="待處理的聲明落差"
-        to="/admin/users?alert=deposit-mismatch"
-      />
-    </section>
 
     <!-- 平台規模與組成 -->
     <section

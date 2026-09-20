@@ -16,6 +16,8 @@ import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { useAdminNotificationCenter } from '@/src/composables/admin/useAdminNotificationCenter'
 import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
 import QueueDrawer from '@/src/components/admin/QueueDrawer.vue'
+import MaintenanceChip from '@/src/components/admin/MaintenanceChip.vue'
+import { Badge } from '@/components/ui/badge/index'
 import { initialOf } from '@/src/utils/admin-recent-logins'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
 import { adminRoleLabels } from '@/src/utils/admin-rbac'
@@ -183,6 +185,28 @@ async function handleSignOut(): Promise<void> {
         </nav>
 
         <div class="ml-auto flex items-center gap-2">
+          <!--
+            這兩顆原本長在總覽頁的標題區。搬上來的理由有兩個：
+            一是它們是全站狀態，只在總覽看得到不合理；二是總覽頁的首屏有 43%
+            被標題區吃掉（量到第一個數字在 329px / 768px），拿掉這一列才放得下
+            標題旁的 KPI。
+
+            lg 以下隱藏：窄螢幕的水平空間要留給導覽本身。
+          -->
+          <!--
+            用 secondary 這組成對的 token：原本是 text-primary 配 bg-primary/5，
+            深色模式下 --primary 變亮而底幾乎透明，實測只有 4.21。
+            secondary 配 secondary-foreground 是 5.79 / 8.53，而且同樣是紫色系。
+          -->
+          <Badge
+            class="hidden rounded-full bg-secondary px-3 py-1 text-secondary-foreground hover:bg-secondary lg:inline-flex"
+          >
+            Admin Console
+          </Badge>
+          <MaintenanceChip />
+
+          <div class="hidden h-5 w-px bg-border lg:block" aria-hidden="true" />
+
           <!-- 待辦佇列：抽屜而非常駐側欄，理由見 QueueDrawer.vue -->
           <button
             type="button"
