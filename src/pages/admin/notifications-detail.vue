@@ -12,6 +12,7 @@ import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { groupIntoBatches } from '@/src/utils/notif-batch'
 import { formatDateTime } from '@/src/utils/admin-format'
 import type { NotifChannel, NotifDeliveryStatus } from '@/src/mocks/admin/notifications'
+import { useRegisterAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +25,13 @@ const batchId = computed(() => String(route.params.batchId ?? ''))
 // 跟列表頁用同一個聚合函式，保證「列表看到的批次」跟「詳情頁打開的批次」是同一份定義，
 // 不會因為兩邊各自寫一套判斷邏輯而兜不起來。
 const batch = computed(() => groupIntoBatches(messages.value).find((item) => item.batchId === batchId.value) ?? null)
+
+// 標題交給頂部列。用路徑當 key，所以離開這一頁之後不會有殘留的舊標題
+// ——即使忘了清理也一樣，見 useAdminPageTitle 的說明。
+useRegisterAdminPageTitle(
+  computed(() => route.path),
+  computed(() => batch.value?.title ?? null),
+)
 
 function backToLog(): void {
   void router.push('/admin/notifications?tab=log')
@@ -83,10 +91,12 @@ const filteredRecipients = computed(() => {
       返回發送紀錄
     </Button>
 
-    <div>
-      <h1 class="text-2xl font-black tracking-tight">{{ batch.title }}</h1>
-      <p class="mt-1 text-muted-foreground">{{ formatDateTime(batch.createdAt) }} 發送</p>
-    </div>
+    <!--
+      標題移到頂部列（麵包屑「通知管理 / 批次名稱」）。批次名稱是資料，
+      所以由下面的 useRegisterAdminPageTitle 回報上去；發送時間留在這裡，
+      它是這一頁的內容不是標題。
+    -->
+    <p class="text-muted-foreground">{{ formatDateTime(batch.createdAt) }} 發送</p>
 
     <!-- 通知內容 -->
     <Card class="rounded-3xl">

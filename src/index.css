@@ -26,6 +26,8 @@
     --color-destructive: var(--destructive);
     --color-primary-surface: var(--primary-surface);
     --color-primary-surface-foreground: var(--primary-surface-foreground);
+    --color-sidebar-surface: var(--sidebar-surface);
+    --color-sidebar-surface-foreground: var(--sidebar-surface-foreground);
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
     --color-accent-foreground: var(--accent-foreground);
@@ -68,6 +70,20 @@
     /* Blue Iris #5D4B9E */
     --primary: oklch(0.45 0.15 280);
     --primary-foreground: oklch(0.98 0 0);
+    /*
+      側欄的底色。深淺色同一個值 —— 側欄是整頁唯一一塊大面積的品牌色，
+      它不該隨主題翻轉，否則深色模式下會變成「深底上再放一塊深底」。
+
+      為什麼不直接用 --primary-surface（0.45）：那個亮度撐不起側欄的文字層級。
+      側欄需要三層文字（選中／未選／分組標題），實測在 0.45 上：
+        選中白字 7.41 ✅、未選 白/70 只有 4.31 ❌、分組標題 白/55 只有 3.28 ❌
+      壓到 0.32 之後三層分別是 12.22 / 6.49 / 4.53，全部過 AA。
+
+      深色模式下側欄對頁面底只有 1.40，靠 border-r 分隔。聽起來低，但現有的
+      卡片對頁面底大約只有 1.2 —— 側欄的分離度其實比卡片更明顯。
+    */
+    --sidebar-surface: oklch(0.32 0.10 280);
+    --sidebar-surface-foreground: oklch(0.98 0 0);
     /*
       「當填色用」的品牌色。專門給整塊填滿品牌色、上面壓淺色文字的區塊
       （總覽的主角 KPI、使用者管理頁的 StatTile hero）。
@@ -188,6 +204,9 @@
     /* Blue Iris */
     --primary: oklch(0.6 0.15 280);
     --primary-foreground: oklch(0.98 0 0);
+    /* 與淺色同值，理由見上方 */
+    --sidebar-surface: oklch(0.32 0.10 280);
+    --sidebar-surface-foreground: oklch(0.98 0 0);
     /* 填色用的品牌色要壓暗，白字才讀得到（理由見淺色區塊的說明） */
     --primary-surface: oklch(0.46 0.14 280);
     --primary-surface-foreground: oklch(0.98 0 0);

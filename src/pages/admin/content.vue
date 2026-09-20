@@ -10,11 +10,6 @@ const TAB_TRIGGER =
 
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-3xl font-black tracking-tight">內容管理</h1>
-      <p class="mt-1 text-muted-foreground">管理平台對外呈現的公告與首頁輪播。</p>
-    </div>
-
     <Tabs default-value="announcements">
       <TabsList class="rounded-full bg-muted/60">
         <TabsTrigger value="announcements" :class="TAB_TRIGGER">公告</TabsTrigger>

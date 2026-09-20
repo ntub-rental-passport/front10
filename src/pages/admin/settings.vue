@@ -92,13 +92,6 @@ function confirmReset(): void {
 
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-3xl font-black tracking-tight">系統設定</h1>
-      <p class="mt-1 text-muted-foreground">
-        調整安全性、稽核與監控門檻等平台設定，以及維護模式與示範資料重置。
-      </p>
-    </div>
-
     <!--
       每張卡統一用左右分欄：左欄（約 1/3）放區塊標題與描述，右欄（約 2/3）放欄位本身。
       欄位下方原本各自一行的說明文字保留在右欄，只是不必再重複區塊層級已經講過的事，可以排得緊湊一點。

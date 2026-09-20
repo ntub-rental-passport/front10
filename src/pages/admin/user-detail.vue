@@ -76,6 +76,7 @@ import {
   isMetered,
   type PlanFeatureKey,
 } from '@/src/utils/admin-entitlements'
+import { useRegisterAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,6 +89,12 @@ const { records: handoverRecords } = useAdminHandover()
 
 const userId = computed(() => String(route.params.id ?? ''))
 const row = computed(() => rowOf(userId.value))
+
+// 必須放在 row 之後：watcher 是 immediate，setup 當下就會讀 row.value
+useRegisterAdminPageTitle(
+  computed(() => route.path),
+  computed(() => row.value?.user.nickname ?? row.value?.user.email ?? null),
+)
 
 // 停用帳號與調整角色屬於高風險操作，維持只有超級管理員能執行
 const isSuper = computed(() => getCurrentAdminRole() === 'super')
@@ -290,10 +297,12 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
       <p v-if="sentMessage" class="text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
 
+      <!--
+        名字移到頂部列（麵包屑「使用者管理 / 名字」），由下面的
+        useRegisterAdminPageTitle 回報上去。兩個 Badge 留在這裡——
+        狀態與角色是這個人的資料，不是頁面標題。
+      -->
       <div class="flex flex-wrap items-center gap-3">
-        <h1 class="text-3xl font-black tracking-tight">
-          {{ row.user.nickname ?? row.user.email }}
-        </h1>
         <Badge :variant="row.user.status === 'active' ? 'default' : 'destructive'">
           {{ row.user.status === 'active' ? '正常' : '停用' }}
         </Badge>

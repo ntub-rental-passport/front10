@@ -190,30 +190,18 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
     -->
 
     <!--
-      標題區分兩層：上面是標題，下面一橫列左邊放動作、右邊放四個 KPI。
+      一橫列：左邊放動作、右邊放四個 KPI。justify-between 讓它們各自靠邊，
+      中間的空白隨視窗寬度伸縮。1280 以上同一列，以下換行。
 
-      動作與 KPI 併成同一列，是因為按鈕那一排右側本來空著一大片，而 KPI
-      那一排左側也空著 —— 兩排各空一半，不如併成一排。justify-between
-      讓它們各自靠邊，中間的空白隨視窗寬度伸縮。
-
-      原本這裡是三個堆疊的橫列（chip 列 → 標題列 → 另一整排 KPI 卡），
-      量到第一個數字出現在 329px，而視窗高只有 768px —— 首屏 43% 花在
-      「這是哪一頁」上面。chip 已經搬到導覽列，KPI 改用 InlineStat
-      （一列約 56px，原本的 StatTile 是 156px）。
+      頁面標題已經移到頂部列（見 src/utils/admin-page-title.ts），所以這一列
+      現在是內容區的第一個東西。
 
       展示資料（無 data-real）：四個數字都是 src/mocks 種子資料算出來的。
       「今日待處理」與頂部列待辦抽屜的徽章同一個來源（useAdminQueue），
       不會對不起來。押金不符沒有 trend —— 這批種子資料沒有歷史快照可以比，
       寧可留白也不假造一個趨勢。
     -->
-    <div class="space-y-5">
-      <div class="min-w-0">
-        <h1 class="text-4xl font-black tracking-tight">後台總覽</h1>
-        <p class="mt-1.5 text-muted-foreground">
-          平台目前的規模與案件流動，以及需要你處理的事。
-        </p>
-      </div>
-
+    <div>
       <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
         <!--
           這一頁原本只能看、不能做任何事 —— 進來之後想做事得先找到導覽列、

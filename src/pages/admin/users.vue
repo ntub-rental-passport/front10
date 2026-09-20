@@ -175,13 +175,12 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-3xl font-black tracking-tight">使用者管理</h1>
-      <p class="mt-1 text-muted-foreground">
-        以使用者為中心檢視訂閱容量、押金對帳與報修工單，點選任一列進入詳情。
-      </p>
-      <p v-if="sentMessage" class="mt-2 text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
-    </div>
+    <!--
+      標題與副標搬到頂部列了（見 src/utils/admin-page-title.ts）。
+      副標裡「點選任一列進入詳情」是操作提示不是說明，沒有跟著刪掉，
+      改放在表格自己的計數列旁邊 —— 那裡才是使用者正要動手的地方。
+    -->
+    <p v-if="sentMessage" class="text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
 
     <!--
       真實帳號與展示資料併在同一張表，真實的排在前面並帶「真實帳號」標記。
@@ -312,6 +311,11 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
           <p class="whitespace-nowrap text-sm text-muted-foreground">
             共 {{ filteredRows.length }} 人
             <span v-if="realAccountsLoading">（真實帳號讀取中…）</span>
+          </p>
+
+          <!-- 從原本的頁面副標搬過來的操作提示 -->
+          <p class="ml-auto whitespace-nowrap text-xs text-muted-foreground">
+            點選任一列進入詳情
           </p>
         </div>
 

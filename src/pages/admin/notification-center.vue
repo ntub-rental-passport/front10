@@ -61,11 +61,8 @@ function submitNote(): void {
 
 <template>
   <div class="space-y-6">
-    <div class="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight">通知中心</h1>
-        <p class="text-muted-foreground">系統告警、使用者訊息與管理員內部備註。</p>
-      </div>
+    <!-- 標題移到頂部列，這裡只剩動作 -->
+    <div class="flex flex-wrap items-center justify-end gap-4">
       <div class="flex items-center gap-2">
         <Badge v-if="unreadCount > 0" variant="destructive">{{ unreadCount }} 則未讀</Badge>
         <Button variant="outline" size="sm" :disabled="unreadCount === 0" @click="markAllRead">

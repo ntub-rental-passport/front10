@@ -136,13 +136,6 @@ function clearFilters(): void {
 
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-3xl font-black tracking-tight">報修工單追蹤</h1>
-      <p class="mt-1 text-muted-foreground">
-        追蹤租客報修進度，掌握逾期與爭議案件，並完整記錄每次狀態變更。
-      </p>
-    </div>
-
     <div
       v-if="userFilter"
       class="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3"

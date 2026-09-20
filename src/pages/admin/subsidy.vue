@@ -159,14 +159,6 @@ function formatMoney(amount: number): string {
 
 <template>
   <div class="space-y-6">
-    <!-- 送件的入口只留左欄草稿批次那一顆，標題列不再重複放一次 -->
-    <div>
-      <h1 class="text-3xl font-black tracking-tight">租金補貼審核</h1>
-      <p class="mt-1 text-muted-foreground">
-        審核通過的案件會落入左側草稿批次，確認後一次送出；送件後的政府端進度僅供查看。
-      </p>
-    </div>
-
     <FeatureOutageBanner feature-key="subsidy" />
 
     <!--
@@ -184,7 +176,14 @@ function formatMoney(amount: number): string {
         >
           <CardHeader class="p-5 pb-3">
             <CardTitle class="text-sm font-medium">草稿批次</CardTitle>
-            <p class="text-xs text-muted-foreground">審核通過的案件會落在這裡</p>
+            <!--
+              原本的頁面副標說「審核通過的案件會落入左側草稿批次，確認後一次
+              送出」。這張卡本來就有半句了，補上「確認後一次送出」就完整 ——
+              不需要再多一行重複的說明。
+            -->
+            <p class="text-xs text-muted-foreground">
+              審核通過的案件會落在這裡，確認後一次送出
+            </p>
           </CardHeader>
           <CardContent class="px-5 pb-5 space-y-3">
             <button

@@ -85,13 +85,6 @@ function exportCsv(): void {
 
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-3xl font-black tracking-tight">稽核紀錄查詢</h1>
-      <p class="mt-1 text-muted-foreground">
-        所有管理操作、系統事件與資料存取紀錄；後台操作會即時寫入。
-      </p>
-    </div>
-
     <Card class="rounded-3xl">
       <CardContent class="px-5 pb-5 space-y-4 pt-6">
         <div class="flex flex-wrap items-end gap-3">
