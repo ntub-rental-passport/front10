@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { Bell, LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
+import { Bell, ChevronDown, LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar/index'
 import {
   DropdownMenu,
@@ -35,6 +35,38 @@ function isActive(path: string): boolean {
   return route.path.startsWith(path)
 }
 
+/**
+ * 「總覽」固定獨立一格，不收進下拉——它是登入後的落地頁，收進下拉要多點一次
+ * 才能回去，見規格三、頂部列。這裡直接從 useAdminRbac() 已經依角色過濾過的
+ * visibleNavGroups 拆，不碰 admin-rbac.ts 的原始資料，RBAC 過濾邏輯只有一份、
+ * 不會漏過濾。理論上兩種角色都看得到 /admin，找不到就不顯示這一格。
+ */
+const overviewItem = computed(() =>
+  visibleNavGroups.value.flatMap((group) => group.items).find((item) => item.path === '/admin'),
+)
+
+// 其餘分組做下拉；已經獨立出去的「總覽」不再重複列在「營運管理」裡
+const dropdownNavGroups = computed(() =>
+  visibleNavGroups.value
+    .map((group) => ({
+      label: group.label,
+      items: group.items.filter((item) => item.path !== '/admin'),
+    }))
+    .filter((group) => group.items.length > 0),
+)
+
+function isGroupActive(group: { items: { path: string }[] }): boolean {
+  return group.items.some((item) => isActive(item.path))
+}
+
+// 膠囊容器裡選中項「白底浮起」，其餘是灰階文字——「總覽」跟三個下拉觸發鈕共用同一套樣式
+function pillClass(active: boolean): string {
+  return cn(
+    'shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors',
+    active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+  )
+}
+
 const session = computed(() => getAuthSession())
 
 const displayName = computed(() => session.value?.nickname ?? session.value?.email ?? '管理員')
@@ -53,7 +85,13 @@ async function handleSignOut(): Promise<void> {
 </script>
 
 <template>
-  <div class="min-h-screen bg-[linear-gradient(180deg,_#f7f8fc,_#f3f5fb)]">
+  <!--
+    外層背景原本是寫死的淺色 hex 漸層，深色模式下沒有對應覆寫，會在
+    header／卡片之間露出一條淺色縫隙，把深色模式的白字標題蓋到看不見
+    （例如 /admin 的「後台總覽」大標題）。改用 --background、--muted 兩個
+    既有 token 組出同方向的漸層，深淺色模式都會自動跟著對。
+  -->
+  <div class="min-h-screen bg-[linear-gradient(180deg,_var(--background),_var(--muted))]">
     <header
       class="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70"
     >
@@ -77,34 +115,38 @@ async function handleSignOut(): Promise<void> {
         </RouterLink>
 
         <!--
-          桌面導覽：群組標題在橫向排不下，改用細分隔線保留群組邊界，
-          讓「稽核紀錄與系統設定是另一類」這件事仍然看得出來。
-
-          刻意不放圖示 —— 橫向排列時文字本身就好掃，七個圖示要多吃約 170px，
-          在 1024px 會把整條 header 擠到溢出。圖示留給直向的抽屜。
+          桌面導覽：膠囊容器裝「總覽」＋三個分組下拉，取代原本 10 個項目攤平
+          （1440px 下佔 830px，跟右側工具列只剩 16px，1280px 筆電會擠在一起）。
+          分組資料沿用 src/utils/admin-rbac.ts 的 adminNavGroups（經
+          useAdminRbac() 做 RBAC 過濾），不自己發明導覽結構。
         -->
-        <nav class="ml-2 hidden items-center gap-0.5 lg:flex">
-          <template v-for="(group, index) in visibleNavGroups" :key="group.label">
-            <span
-              v-if="index > 0"
-              class="mx-2 h-5 w-px shrink-0 bg-border"
-              aria-hidden="true"
-            />
-            <RouterLink
-              v-for="item in group.items"
-              :key="item.path"
-              :to="item.path"
-              :class="cn(
-                // px-2.5 而非 px-3：八個項目時，每項省下的 4px 才夠讓 1024px 不溢出
-                'whitespace-nowrap rounded-xl px-2.5 py-2 text-sm font-medium transition-colors',
-                isActive(item.path)
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )"
+        <nav class="ml-2 hidden items-center gap-1 rounded-full bg-muted p-1 lg:flex">
+          <RouterLink
+            v-if="overviewItem"
+            :to="overviewItem.path"
+            :class="pillClass(isActive(overviewItem.path))"
+          >
+            {{ overviewItem.shortLabel ?? overviewItem.label }}
+          </RouterLink>
+
+          <DropdownMenu v-for="group in dropdownNavGroups" :key="group.label">
+            <DropdownMenuTrigger
+              :class="cn(pillClass(isGroupActive(group)), 'inline-flex items-center gap-1')"
             >
-              {{ item.label }}
-            </RouterLink>
-          </template>
+              {{ group.label }}
+              <ChevronDown class="h-3.5 w-3.5" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" class="min-w-[10rem]">
+              <DropdownMenuItem
+                v-for="item in group.items"
+                :key="item.path"
+                as-child
+                :class="isActive(item.path) ? 'bg-muted font-medium text-foreground' : undefined"
+              >
+                <RouterLink :to="item.path">{{ item.label }}</RouterLink>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </nav>
 
         <div class="ml-auto flex items-center gap-2">
