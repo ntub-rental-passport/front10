@@ -7,11 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/i
 import TemplatesTab from '@/src/components/admin/notifications/TemplatesTab.vue'
 import SentLogTab from '@/src/components/admin/notifications/SentLogTab.vue'
 import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
+import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
 
 // 與內容管理頁同樣的單層分頁樣式，兩個獨立頁面各自維持一致的視覺語言。
-const TAB_TRIGGER =
-  'rounded-full px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm'
-
 const route = useRoute()
 const router = useRouter()
 
@@ -52,9 +50,9 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
     </div>
 
     <Tabs :model-value="activeTab" @update:model-value="handleTabChange">
-      <TabsList class="rounded-full bg-muted/60">
-        <TabsTrigger value="templates" :class="TAB_TRIGGER">通知模板</TabsTrigger>
-        <TabsTrigger value="log" :class="TAB_TRIGGER">發送紀錄</TabsTrigger>
+      <TabsList :class="ADMIN_TAB_LIST">
+        <TabsTrigger value="templates" :class="ADMIN_TAB_TRIGGER">通知模板</TabsTrigger>
+        <TabsTrigger value="log" :class="ADMIN_TAB_TRIGGER">發送紀錄</TabsTrigger>
       </TabsList>
       <TabsContent value="templates" class="mt-4"><TemplatesTab /></TabsContent>
       <TabsContent value="log" class="mt-4"><SentLogTab /></TabsContent>

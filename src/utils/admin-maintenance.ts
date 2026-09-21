@@ -1,3 +1,5 @@
+import type { StatusDotTone } from '@/src/components/admin/status-dot'
+
 /** 報修工單的分類、狀態機與衍生計算。純邏輯，不依賴 Vue。 */
 
 export type MaintenanceCategory = 'leak' | 'appliance' | 'lock' | 'pipe' | 'other'
@@ -153,4 +155,39 @@ export function migrateMaintenanceQueueFlags<
     interventionRequested: ticket.interventionRequested ?? false,
     manuallyQueued: ticket.manuallyQueued ?? false,
   }))
+}
+
+/**
+ * 工單狀態對到狀態圓點的顏色。
+ *
+ * ## 為什麼是四分而不是沿用原本的三分
+ *
+ * 原本的 Badge 只分三段：逾期/爭議是紅、完成/關閉是灰、其餘都同一個主色。
+ * 問題出在那個「其餘」：`租客送出`、`已通報房東`、`房東處理中` 被歸成同一
+ * 件事，但管理員真正想分辨的正是它們之間的差別 ——
+ *
+ *   送出了、通報了，**但房東還沒動**  →  這就是明天的逾期
+ *   房東正在處理                      →  這個不用管
+ *
+ * 所以前兩者給 warn（琥珀），in_progress 給 ok（綠）。代價是畫面上多一種
+ * 顏色，換到的是「哪些案子在等人」一眼看得出來。
+ *
+ * completed 與 closed 給 idle 而不是 ok：它們不是「健康」，是「結束了」。
+ * 用綠色會讓已完成的案子跟正在順利進行的案子看起來一樣，但前者不需要
+ * 任何注意力。
+ */
+export function maintenanceStatusTone(status: MaintenanceStatus): StatusDotTone {
+  switch (status) {
+    case 'overdue':
+    case 'disputed':
+      return 'danger'
+    case 'submitted':
+    case 'notified':
+      return 'warn'
+    case 'in_progress':
+      return 'ok'
+    case 'completed':
+    case 'closed':
+      return 'idle'
+  }
 }

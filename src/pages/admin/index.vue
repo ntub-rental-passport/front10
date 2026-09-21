@@ -176,17 +176,9 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
 <template>
   <div class="space-y-6">
     <!--
-      ⚠️ 這一頁的資料標記約定：標的是「真實」，不是「展示」。
-
-      後台絕大多數數字目前都是 src/mocks 的種子資料，真的接到後端的只有系統
-      健康條與最近登入兩塊。標少數比標多數可靠：漏標一個展示區塊，預設會把它
-      當成真的（危險）；漏標一個真實區塊，預設會把它當成假的（保守但安全）。
-
-      所以真實資料區塊加 data-real="true"，其餘一律視為展示資料。稽核時：
-
-          grep -rn 'data-real' src/pages/admin/ src/components/admin/
-
-      畫面上刻意不出現「展示」字樣。
+      ⚠️ 資料標記約定見 src/utils/admin-data-marking.md。
+      一句話：標的是「真實」不是「展示」—— 真實區塊加 data-real="true"，
+      沒標的一律視為展示資料。
     -->
 
     <!--

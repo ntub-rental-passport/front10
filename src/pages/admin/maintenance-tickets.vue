@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent } from '@/components/ui/card/index'
 import {
@@ -28,7 +27,9 @@ import {
   TableRow,
 } from '@/components/ui/table/index'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
-import { Search, X } from 'lucide-vue-next'
+import { AlertTriangle, ClipboardList, MessageSquareWarning, Search, Wrench, X } from 'lucide-vue-next'
+import InlineStat from '@/src/components/admin/InlineStat.vue'
+import StatusDot from '@/src/components/admin/StatusDot.vue'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import {
   maintenanceQueueTab,
@@ -40,17 +41,27 @@ import { adminUsersCollection } from '@/src/composables/admin/useAdminUsers'
 import {
   maintenanceCategoryLabels,
   maintenanceStatusLabels,
+  maintenanceStatusTone,
   type MaintenanceCategory,
   type MaintenanceStatus,
 } from '@/src/utils/admin-maintenance'
 import { userDisplayName } from '@/src/utils/admin-user-directory'
 import { formatDate, formatDateTime } from '@/src/utils/admin-format'
+import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
 
 const route = useRoute()
 const router = useRouter()
 
-const { ticketViews, statusTab, categoryFilter, keyword, userFilter, filteredTickets, queueCount } =
-  useAdminMaintenance()
+const {
+  ticketViews,
+  statusTab,
+  categoryFilter,
+  keyword,
+  userFilter,
+  filteredTickets,
+  queueCount,
+  stats,
+} = useAdminMaintenance()
 
 const categoryOptions = Object.keys(maintenanceCategoryLabels) as MaintenanceCategory[]
 
@@ -97,12 +108,6 @@ const selectedTicket = computed<MaintenanceTicketView | null>(
   () => ticketViews.value.find((ticket) => ticket.id === selectedId.value) ?? null,
 )
 
-function statusBadgeVariant(status: MaintenanceStatus): 'default' | 'secondary' | 'destructive' {
-  if (status === 'overdue' || status === 'disputed') return 'destructive'
-  if (status === 'completed' || status === 'closed') return 'secondary'
-  return 'default'
-}
-
 function closeDetail(open: boolean): void {
   if (open) return
   selectedId.value = null
@@ -136,6 +141,28 @@ function clearFilters(): void {
 
 <template>
   <div class="space-y-6">
+    <!--
+      展示資料（無 data-real）：stats 來自 seedMaintenanceTickets。
+      約定見 src/utils/admin-data-marking.md。
+
+      這幾個數字本來就算好了，但一直只有總覽頁在用 —— 管理員要看工單概況
+      得先回總覽，而這裡才是他處理工單的地方。
+
+      主角卡是「逾期未回應」而不是「工單總數」：主角的意義是這一頁最該被
+      處理的東西，不是最大的數字。總數放在最後一格當規模參考。
+    -->
+    <div class="grid gap-x-2 gap-y-1 sm:grid-cols-2 lg:grid-cols-4">
+      <InlineStat
+        :icon="AlertTriangle"
+        label="逾期未回應"
+        :value="stats.overdue"
+        hero
+      />
+      <InlineStat :icon="Wrench" label="房東處理中" :value="stats.processing" />
+      <InlineStat :icon="MessageSquareWarning" label="爭議中" :value="stats.disputed" />
+      <InlineStat :icon="ClipboardList" label="工單總數" :value="stats.total" />
+    </div>
+
     <div
       v-if="userFilter"
       class="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3"
@@ -152,20 +179,27 @@ function clearFilters(): void {
     </div>
 
     <Tabs :model-value="statusTab" @update:model-value="handleStatusTabChange">
-      <TabsList class="rounded-full bg-muted/60">
+      <TabsList :class="ADMIN_TAB_LIST">
+        <!--
+          「待處理」不是工單狀態，是跨狀態的聚合（送出＋通報＋逾期＋爭議）。
+          原本只靠一條分隔線跟後面七顆狀態頁籤區隔，但同樣大小、同樣顏色的
+          膠囊排在一起，分隔線攔不住「這是第八種狀態」的直覺。
+
+          所以它更大（py-2、字體加粗）而且用主色：未選時是淡色底＋主色字，
+          選中時整顆填滿主色。後面七顆維持原本的白底浮起，兩者不會混淆。
+        -->
         <TabsTrigger
           :value="maintenanceQueueTab.value"
-          class="rounded-full px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          class="rounded-full bg-primary/10 px-5 py-2 text-sm font-semibold text-primary data-[state=active]:bg-primary-surface data-[state=active]:text-primary-surface-foreground data-[state=active]:shadow-sm"
         >
           {{ maintenanceQueueTab.label }} {{ queueCount }}
         </TabsTrigger>
-        <!-- 待處理不是工單狀態，跟下面的狀態頁籤用分隔線隔開，避免被誤認成第八種狀態 -->
         <div class="mx-2 h-4 w-px bg-border" aria-hidden="true" />
         <TabsTrigger
           v-for="tab in maintenanceStatusTabs"
           :key="tab.value"
           :value="tab.value"
-          class="rounded-full px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          :class="ADMIN_TAB_TRIGGER"
         >
           {{ tab.label }}
         </TabsTrigger>
@@ -222,9 +256,15 @@ function clearFilters(): void {
               <TableCell class="whitespace-nowrap">{{ ticket.landlordName }}</TableCell>
               <TableCell>{{ maintenanceCategoryLabels[ticket.category] }}</TableCell>
               <TableCell>
-                <Badge :variant="statusBadgeVariant(ticket.status)">
-                  {{ maintenanceStatusLabels[ticket.status] }}
-                </Badge>
+                <!--
+                  狀態用圓點不用徽章：圓點＝會變的狀態、徽章＝不會變的分類
+                  （這一列左邊的「問題類型」仍然是徽章）。顏色對應與四分的
+                  理由見 admin-maintenance.ts 的 maintenanceStatusTone。
+                -->
+                <StatusDot
+                  :tone="maintenanceStatusTone(ticket.status)"
+                  :label="maintenanceStatusLabels[ticket.status]"
+                />
               </TableCell>
               <TableCell class="whitespace-nowrap">{{ formatDate(ticket.createdAt) }}</TableCell>
               <TableCell
