@@ -167,6 +167,49 @@ function formatMoney(amount: number): string {
     <div class="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <!-- 批次固定 280px：卡片內容是編號與日期，跟著螢幕變寬只會拉開空白 -->
       <aside class="space-y-3">
+        <!--
+          案件統計放在左欄最上方，草稿批次跟著下移。
+
+          先「這頁有多少案子、幾件要我處理」，再「這批要送出的有幾件」——
+          統計講的是案件、批次卡講的是批次，由廣到窄的順序比較好讀。
+
+          原本放在頁籤列右端（同工單頁），但這一頁的右欄被左欄吃掉 280px，
+          只剩 816px，條列得縮到 9.5rem 才排得進去。搬到左欄之後它有完整的
+          280px 可用，反而更好讀。
+
+          展示資料（無 data-real）：stats 來自 src/mocks 的補貼種子資料。
+          約定見 src/utils/admin-data-marking.md。
+        -->
+        <div class="rounded-3xl border bg-card px-5 py-3">
+          <dl class="divide-y divide-border text-sm">
+            <div class="flex items-baseline justify-between gap-4 py-2">
+              <dt class="text-foreground/70">待審核</dt>
+              <dd>
+                <span
+                  :class="[
+                    'inline-flex min-w-9 justify-center rounded-full px-2 py-0.5 text-base font-bold tabular-nums',
+                    STATUS_CHIP_CLASS.warn,
+                  ]"
+                >
+                  {{ stats.pending }}
+                </span>
+              </dd>
+            </div>
+            <div class="flex items-baseline justify-between gap-4 py-2">
+              <dt class="text-foreground/70">待補件</dt>
+              <dd class="text-base font-bold tabular-nums">{{ stats.needDocs }}</dd>
+            </div>
+            <div class="flex items-baseline justify-between gap-4 py-2">
+              <dt class="text-foreground/70">待送件</dt>
+              <dd class="text-base font-bold tabular-nums">{{ stats.ready }}</dd>
+            </div>
+            <div class="flex items-baseline justify-between gap-4 py-2">
+              <dt class="text-foreground/70">案件總數</dt>
+              <dd class="text-base font-bold tabular-nums">{{ stats.total }}</dd>
+            </div>
+          </dl>
+        </div>
+
         <!-- 草稿批次：審核通過的案件直接落在這裡 -->
         <Card
           class="rounded-3xl border-primary/30 bg-primary/5"
@@ -257,8 +300,7 @@ function formatMoney(amount: number): string {
         展示資料（無 data-real）：stats 來自 src/mocks 的補貼種子資料。
         約定見 src/utils/admin-data-marking.md。
       -->
-      <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
-        <Tabs :model-value="tab" @update:model-value="(value: string) => (tab = value as typeof tab)">
+      <Tabs :model-value="tab" @update:model-value="(value: string) => (tab = value as typeof tab)">
           <TabsList :class="ADMIN_TAB_LIST">
             <!--
               「待我處理」是聚合不是狀態（待審核＋待送件），做得比後面那排大
@@ -280,47 +322,8 @@ function formatMoney(amount: number): string {
             >
               {{ item.label }}
             </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <!--
-          用 <dl>：這就是「名稱／數值」的定義清單，語意對了螢幕閱讀器才唸得出
-          配對關係。「待審核」是這一頁最該動手的數字，用實心 chip 跳出來 ——
-          不能用 text-accent 之類的彩色文字，那些填色用的 token 當文字時對比
-          遠低於 AA（見 status-dot.ts）。
-        -->
-        <!--
-          這一頁的條列比工單頁窄：左邊批次欄吃掉 280px，右欄只剩約 816px，
-          用工單頁的 13rem 會把整組擠到換行。
-        -->
-        <dl class="min-w-[9.5rem] divide-y divide-border text-sm">
-          <div class="flex items-baseline justify-between gap-5 py-1.5">
-            <dt class="text-foreground/70">待審核</dt>
-            <dd>
-              <span
-                :class="[
-                  'inline-flex min-w-9 justify-center rounded-full px-2 py-0.5 text-base font-bold tabular-nums',
-                  STATUS_CHIP_CLASS.warn,
-                ]"
-              >
-                {{ stats.pending }}
-              </span>
-            </dd>
-          </div>
-          <div class="flex items-baseline justify-between gap-5 py-1.5">
-            <dt class="text-foreground/70">待補件</dt>
-            <dd class="text-base font-bold tabular-nums">{{ stats.needDocs }}</dd>
-          </div>
-          <div class="flex items-baseline justify-between gap-5 py-1.5">
-            <dt class="text-foreground/70">待送件</dt>
-            <dd class="text-base font-bold tabular-nums">{{ stats.ready }}</dd>
-          </div>
-          <div class="flex items-baseline justify-between gap-5 py-1.5">
-            <dt class="text-foreground/70">案件總數</dt>
-            <dd class="text-base font-bold tabular-nums">{{ stats.total }}</dd>
-          </div>
-        </dl>
-      </div>
+        </TabsList>
+      </Tabs>
 
       <Card class="rounded-3xl">
         <CardContent class="px-5 pb-5 space-y-4 pt-6">
