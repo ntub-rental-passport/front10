@@ -39,7 +39,7 @@ const levelVariants = {
 const barClasses = {
   ok: 'bg-emerald-500',
   warn: 'bg-amber-500',
-  critical: 'bg-destructive',
+  critical: 'bg-destructive-surface',
 } as const
 
 /**

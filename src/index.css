@@ -24,6 +24,8 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-destructive-surface: var(--destructive-surface);
+    --color-destructive-surface-foreground: var(--destructive-surface-foreground);
     --color-primary-surface: var(--primary-surface);
     --color-primary-surface-foreground: var(--primary-surface-foreground);
     --color-sidebar-surface: var(--sidebar-surface);
@@ -117,7 +119,25 @@
     --accent-foreground: oklch(0.2 0.05 280);
     
     /* Safety Orange #FF8F6B */
-    --destructive: oklch(0.7 0.18 40);
+    /*
+      ⚠️ --destructive 是**文字色**，--destructive-surface 才是填色。
+
+      原本只有一個 token，值是 oklch(0.7 0.18 40)。那個亮度當填色很好，
+      但當文字踩在淺色卡上實測只有 2.86 —— 而全站 text-destructive 有 66 處、
+      bg-destructive 只有 21 處。文字用量是填色的三倍，所以該安全的預設是文字。
+
+      淺色壓到 0.52：白卡 5.98、頁面底 5.45、muted 底 5.17，都有餘裕。
+      深色維持 0.7（本來就已經是 5.65 / 6.35）。
+
+      填色維持 0.7 不動，所以按鈕、徽章、圓點、進度條的外觀完全沒變。
+      配對的前景色是深字，實測 6.35。
+
+      圓點與進度條也要用 surface 而不是 --destructive：同一個畫面上如果
+      圓點是 0.52、chip 是 0.7，會看起來像兩種紅。
+    */
+    --destructive: oklch(0.52 0.18 40);
+    --destructive-surface: oklch(0.7 0.18 40);
+    --destructive-surface-foreground: oklch(0.2 0.05 280);
     --destructive-foreground: oklch(0.98 0 0);
     /*
       狀態色「正常」。原本色票只有 280（紫）、40（橘紅）、80（琥珀）三個色相，
@@ -221,7 +241,10 @@
     --accent: oklch(0.8 0.15 80);
     --accent-foreground: oklch(0.2 0.05 280);
     
+    /* 深色底下 --destructive 當文字本來就夠亮，維持 0.7；填色同值 */
     --destructive: oklch(0.7 0.18 40);
+    --destructive-surface: oklch(0.7 0.18 40);
+    --destructive-surface-foreground: oklch(0.2 0.05 280);
     --destructive-foreground: oklch(0.98 0 0);
     /* 深色底要更亮的綠才讀得到；前景跟著翻成深色（亮綠配白字只有 2.38） */
     --success: oklch(0.7 0.14 150);

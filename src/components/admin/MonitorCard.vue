@@ -19,7 +19,7 @@ const tone = computed(() => {
     case 'degraded':
       return { dot: 'bg-amber-500', text: 'text-amber-600' }
     case 'down':
-      return { dot: 'bg-destructive', text: 'text-destructive' }
+      return { dot: 'bg-destructive-surface', text: 'text-destructive' }
     default:
       return { dot: 'bg-muted-foreground/40', text: 'text-muted-foreground' }
   }

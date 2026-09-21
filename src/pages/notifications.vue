@@ -102,7 +102,7 @@ function unreadAccent(item: InboxItem): string {
             'ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-bold',
             activeTab === tab.value
               ? 'bg-primary-foreground/20 text-primary-foreground'
-              : 'bg-destructive text-destructive-foreground',
+              : 'bg-destructive-surface text-destructive-surface-foreground',
           ]"
         >
           {{ tabCounts[tab.value] }}

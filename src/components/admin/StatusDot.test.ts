@@ -13,8 +13,10 @@ describe('STATUS_DOT_TONE_CLASS', () => {
     expect(STATUS_DOT_TONE_CLASS.warn).toBe('bg-accent')
   })
 
-  it('danger 對到 destructive', () => {
-    expect(STATUS_DOT_TONE_CLASS.danger).toBe('bg-destructive')
+  it('danger 用 destructive-surface 而不是 destructive', () => {
+    // --destructive 是文字色（淺色壓到 0.52 才讀得到），填色要用 surface。
+    // 圓點跟 chip 若一個 0.52 一個 0.7，同一畫面上會看起來像兩種紅。
+    expect(STATUS_DOT_TONE_CLASS.danger).toBe('bg-destructive-surface')
   })
 
   it('idle 對到 muted-foreground', () => {
@@ -40,9 +42,13 @@ describe('STATUS_CHIP_CLASS', () => {
     }
   })
 
-  it('danger 的文字色在兩個模式都明確指定', () => {
-    // --destructive 深淺色是同一個值，所以文字色不能跟著模式翻轉
-    expect(STATUS_CHIP_CLASS.danger).toContain('dark:')
+  it('danger chip 用成對的 surface token，不需要 dark: 例外', () => {
+    // 以前要寫 text-foreground dark:text-background 是因為沒有配對的前景色。
+    // 現在 --destructive-surface-foreground 深淺色同值，一個 class 就夠。
+    expect(STATUS_CHIP_CLASS.danger).toBe(
+      'bg-destructive-surface text-destructive-surface-foreground',
+    )
+    expect(STATUS_CHIP_CLASS.danger).not.toContain('dark:')
   })
 })
 

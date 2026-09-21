@@ -18,7 +18,7 @@ const props = defineProps<{
 
 const toneClasses = computed(() =>
   props.tone === 'alert'
-    ? { dot: 'bg-destructive', text: 'text-destructive', ring: 'bg-destructive/15' }
+    ? { dot: 'bg-destructive-surface', text: 'text-destructive', ring: 'bg-destructive/15' }
     : { dot: 'bg-emerald-500', text: 'text-emerald-600', ring: 'bg-emerald-500/15' },
 )
 </script>
