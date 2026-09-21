@@ -400,7 +400,25 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
               <TableCell class="text-right" @click.stop>
                 <AdminRowActions :actions="[]">
-                  <Button variant="outline" size="sm" @click="openSend(row)">發送通知</Button>
+                  <!--
+                    跟「停用」同一條守衛：只有真實帳號才給操作。
+
+                    這顆按鈕不是死的 —— openSend 走 useAdminNotifications 的
+                    sendOneOff，最後會寫進 notifMessagesCollection 並帶一個
+                    computeDeliveryStatus 算出來的「已送達」狀態。但那整條路徑
+                    都在本機 mock 裡，不會送給任何真人。
+
+                    對展示資料按下去更糟：會產生一筆「已送達給某個不存在的人」
+                    的紀錄，而那筆紀錄看起來跟真的一模一樣。
+                  -->
+                  <Button
+                    v-if="row.realAccountId !== undefined"
+                    variant="outline"
+                    size="sm"
+                    @click="openSend(row)"
+                  >
+                    發送通知
+                  </Button>
                   <Button
                     v-if="row.realAccountId !== undefined"
                     :variant="row.user.status === 'active' ? 'destructive' : 'outline'"

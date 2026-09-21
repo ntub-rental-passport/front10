@@ -283,10 +283,7 @@ async function handleSignOut(): Promise<void> {
             "
             @click="mobileOpen = false"
           >
-            <!--
-              圖示原本寫 item.icon，但 AdminNavItem 沒有 icon 欄位 ——
-              那行一直 render 出空的 <component>，不會報錯也不會有圖示。
-            -->
+            <!-- 與側欄共用同一份圖示對照表，見 nav-icons.ts -->
             <component :is="navIcon(item.path)" class="h-4 w-4 shrink-0" />
             {{ item.label }}
           </RouterLink>
