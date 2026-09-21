@@ -63,6 +63,7 @@ import {
 import {
   maintenanceCategoryLabels,
   maintenanceStatusLabels,
+  maintenanceStatusTone,
   type MaintenanceStatus,
 } from '@/src/utils/admin-maintenance'
 import { formatDate } from '@/src/utils/admin-format'
@@ -77,6 +78,7 @@ import {
   type PlanFeatureKey,
 } from '@/src/utils/admin-entitlements'
 import { useRegisterAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
+import StatusDot from '@/src/components/admin/StatusDot.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -229,12 +231,6 @@ function analysisPercent(subscription: Subscription, plan: SubscriptionPlan): nu
 function matchVariant(deposit: UserDepositView): 'default' | 'secondary' | 'destructive' {
   if (deposit.match === 'mismatched') return 'destructive'
   if (deposit.match === 'pending') return 'secondary'
-  return 'default'
-}
-
-function statusBadgeVariant(status: MaintenanceStatus): 'default' | 'secondary' | 'destructive' {
-  if (status === 'overdue' || status === 'disputed') return 'destructive'
-  if (status === 'completed' || status === 'closed') return 'secondary'
   return 'default'
 }
 
@@ -696,9 +692,11 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
                   {{ maintenanceCategoryLabels[ticket.category] }}
                 </TableCell>
                 <TableCell>
-                  <Badge :variant="statusBadgeVariant(ticket.status)">
-                    {{ maintenanceStatusLabels[ticket.status] }}
-                  </Badge>
+                  <!-- 與工單頁共用同一套顏色對應 -->
+                  <StatusDot
+                    :tone="maintenanceStatusTone(ticket.status)"
+                    :label="maintenanceStatusLabels[ticket.status]"
+                  />
                 </TableCell>
                 <TableCell class="whitespace-nowrap">{{ formatDate(ticket.createdAt) }}</TableCell>
               </TableRow>

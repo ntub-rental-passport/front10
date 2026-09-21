@@ -7,6 +7,7 @@ import {
   isInAdminQueue,
   isStatusDrivenQueueReason,
   maintenanceStatusLabels,
+  maintenanceStatusTone,
   maintenanceTransitions,
   migrateMaintenanceQueueFlags,
   shouldAutoMarkOverdue,
@@ -205,5 +206,45 @@ describe('逾期未回應也要進待處理佇列', () => {
     expect(isStatusDrivenQueueReason('manually_queued')).toBe(false)
     expect(isStatusDrivenQueueReason('intervention_requested')).toBe(false)
     expect(isStatusDrivenQueueReason(null)).toBe(false)
+  })
+})
+
+describe('maintenanceStatusTone', () => {
+  it('逾期與爭議是 danger', () => {
+    expect(maintenanceStatusTone('overdue')).toBe('danger')
+    expect(maintenanceStatusTone('disputed')).toBe('danger')
+  })
+
+  it('送出與已通報是 warn —— 那是在等人動作', () => {
+    // 這兩個狀態就是明天的逾期，跟「已經有人在處理」必須分得出來
+    expect(maintenanceStatusTone('submitted')).toBe('warn')
+    expect(maintenanceStatusTone('notified')).toBe('warn')
+  })
+
+  it('處理中是 ok', () => {
+    expect(maintenanceStatusTone('in_progress')).toBe('ok')
+  })
+
+  it('完成與關閉是 idle，不是 ok', () => {
+    // 它們不是「健康」是「結束了」；給綠色會讓結案的跟進行中的一樣顯眼，
+    // 但結案的不需要任何注意力
+    expect(maintenanceStatusTone('completed')).toBe('idle')
+    expect(maintenanceStatusTone('closed')).toBe('idle')
+  })
+
+  it('每一種狀態都有對應，沒有漏掉的', () => {
+    const tones = Object.keys(maintenanceStatusLabels).map((s) =>
+      maintenanceStatusTone(s as MaintenanceStatus),
+    )
+    expect(tones).toHaveLength(7)
+    expect(tones.every((t) => ['ok', 'warn', 'danger', 'idle'].includes(t))).toBe(true)
+  })
+
+  it('等人動作的狀態比進行中的多 —— 這是刻意的', () => {
+    // 若哪天有人把 submitted/notified 併回 ok，這個測試會擋下來並問為什麼
+    const warns = (['submitted', 'notified', 'in_progress'] as const).filter(
+      (s) => maintenanceStatusTone(s) === 'warn',
+    )
+    expect(warns).toEqual(['submitted', 'notified'])
   })
 })

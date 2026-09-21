@@ -17,14 +17,16 @@ import {
   adminQueueReason,
   adminQueueReasonLabels,
   isInAdminQueue,
+  isStatusDrivenQueueReason,
   maintenanceCategoryLabels,
   maintenanceStatusLabels,
-  isStatusDrivenQueueReason,
+  maintenanceStatusTone,
   maintenanceTransitions,
   type AdminQueueReason,
   type MaintenanceStatus,
 } from '@/src/utils/admin-maintenance'
 import { formatDate, formatDateTime } from '@/src/utils/admin-format'
+import StatusDot from './StatusDot.vue'
 
 const props = defineProps<{ ticket: MaintenanceTicketView }>()
 
@@ -50,12 +52,6 @@ const nextStatuses = computed<MaintenanceStatus[]>(
 // 只有在待處理佇列裡的工單才能推進狀態，日常流程本來就該由租客與房東自己走完
 const inQueue = computed(() => isInAdminQueue(props.ticket))
 const queueReason = computed<AdminQueueReason | null>(() => adminQueueReason(props.ticket))
-
-function statusBadgeVariant(status: MaintenanceStatus): 'default' | 'secondary' | 'destructive' {
-  if (status === 'overdue' || status === 'disputed') return 'destructive'
-  if (status === 'completed' || status === 'closed') return 'secondary'
-  return 'default'
-}
 
 function queueReasonBadgeVariant(reason: AdminQueueReason): 'default' | 'secondary' | 'destructive' {
   // 爭議與逾期是系統判定的異常，要比管理員自己標記的更顯眼
@@ -98,9 +94,11 @@ function handleDequeue(): void {
       </div>
       <div>
         <p class="text-muted-foreground">狀態</p>
-        <Badge :variant="statusBadgeVariant(ticket.status)">
-          {{ maintenanceStatusLabels[ticket.status] }}
-        </Badge>
+        <!-- 與工單表格共用同一套顏色對應，見 maintenanceStatusTone -->
+        <StatusDot
+          :tone="maintenanceStatusTone(ticket.status)"
+          :label="maintenanceStatusLabels[ticket.status]"
+        />
       </div>
       <div>
         <p class="text-muted-foreground">建立日</p>

@@ -39,6 +39,7 @@ import {
   type SubsidyStatus,
 } from '@/src/utils/admin-subsidy'
 import { formatDate } from '@/src/utils/admin-format'
+import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
 
 const route = useRoute()
 
@@ -251,12 +252,12 @@ function formatMoney(amount: number): string {
         </div>
 
       <Tabs :model-value="tab" @update:model-value="(value: string) => (tab = value as typeof tab)">
-        <TabsList class="rounded-full bg-muted/60">
+        <TabsList :class="ADMIN_TAB_LIST">
           <TabsTrigger
             v-for="item in subsidyTabs"
             :key="item.value"
             :value="item.value"
-            class="rounded-full px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            :class="ADMIN_TAB_TRIGGER"
           >
             {{ item.label }}
           </TabsTrigger>
