@@ -33,6 +33,7 @@ import {
 } from '@/src/composables/admin/useAdminSubsidy'
 import {
   SUBSIDY_DOC_KEYS,
+  governmentStepVisual,
   subsidyDocLabels,
   subsidyStatusLabels,
   subsidyStatusTone,
@@ -409,33 +410,40 @@ function formatMoney(amount: number): string {
           </DialogDescription>
         </DialogHeader>
 
-        <div class="space-y-5 text-sm">
-          <div class="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-4">
+        <!--
+          段與段之間用分隔線，段內距拉大 —— 全部用同一個 space-y 的話段內與
+          段間距離相同，眼睛分不出邊界（同工單詳情的處理）。
+          小標降成 text-xs 的弱化標籤，不再與內文同樣粗。
+        -->
+        <div class="divide-y divide-border text-sm [&>section]:py-5 [&>section:last-child]:pb-0">
+          <dl class="grid grid-cols-2 gap-x-4 gap-y-3 rounded-2xl bg-muted/40 p-5">
             <div>
-              <p class="text-muted-foreground">狀態</p>
-              <span class="mt-1 block">
+              <dt class="text-xs text-foreground/70">狀態</dt>
+              <dd class="mt-0.5">
                 <StatusDot
                   :tone="subsidyStatusTone(selected.status)"
                   :label="subsidyStatusLabels[selected.status]"
                 />
-              </span>
+              </dd>
             </div>
             <div>
-              <p class="text-muted-foreground">月租</p>
-              <p class="font-medium">{{ formatMoney(selected.monthlyRent) }}</p>
+              <dt class="text-xs text-foreground/70">月租</dt>
+              <dd class="mt-0.5 font-medium">{{ formatMoney(selected.monthlyRent) }}</dd>
             </div>
             <div>
-              <p class="text-muted-foreground">申請日</p>
-              <p class="font-medium">{{ formatDate(selected.submittedAt) }}</p>
+              <dt class="text-xs text-foreground/70">申請日</dt>
+              <dd class="mt-0.5 font-medium">{{ formatDate(selected.submittedAt) }}</dd>
             </div>
             <div>
-              <p class="text-muted-foreground">送件批次</p>
-              <p class="font-mono font-medium">{{ selected.batchCode ?? '尚未送件' }}</p>
+              <dt class="text-xs text-foreground/70">送件批次</dt>
+              <dd class="mt-0.5 font-mono font-medium">
+                {{ selected.batchCode ?? '尚未送件' }}
+              </dd>
             </div>
-          </div>
+          </dl>
 
-          <div>
-            <p class="mb-2 font-semibold">文件檢核</p>
+          <section>
+            <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">文件檢核</h3>
             <ul class="space-y-1.5">
               <li
                 v-for="doc in selected.documents"
@@ -455,45 +463,64 @@ function formatMoney(amount: number): string {
                 />
               </li>
             </ul>
-          </div>
+          </section>
 
-          <div v-if="selected.reviewNote">
-            <p class="mb-1 font-semibold">審核註記</p>
-            <p class="text-muted-foreground">{{ selected.reviewNote }}</p>
-          </div>
+          <section v-if="selected.reviewNote">
+            <h3 class="mb-1.5 text-xs font-semibold tracking-wide text-foreground/70">審核註記</h3>
+            <p>{{ selected.reviewNote }}</p>
+          </section>
 
           <!-- 第二層：政府端進度，唯讀 -->
-          <div v-if="selected.governmentSteps.length > 0">
-            <p class="mb-2 font-semibold">政府端進度</p>
-            <ol class="space-y-2 border-l border-border pl-4">
-              <li v-for="step in selected.governmentSteps" :key="step.title">
-                <p
-                  :class="
-                    step.status === 'active'
-                      ? 'font-semibold text-primary'
-                      : step.status === 'done'
-                        ? ''
-                        : 'text-muted-foreground'
-                  "
-                >
+          <section v-if="selected.governmentSteps.length > 0">
+            <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">
+              政府端進度
+            </h3>
+            <!--
+              這裡用的是**進度語言**不是狀態語言：已完成／進行中／未開始／失敗。
+
+              不沿用 StatusDot 的 warn／danger —— 那兩個顏色在這個後台的意思是
+              「要你動手」，但這段是政府受理系統回的，管理員一步都動不了
+              （下面那行字自己也這麼說）。詳見 governmentStepVisual。
+
+              原本的三元判斷漏掉 failed，它會落進「其餘 → 灰字」，跟「還沒輪到」
+              長得一模一樣。
+            -->
+            <ol class="space-y-3 border-l-2 border-border pl-5">
+              <li v-for="step in selected.governmentSteps" :key="step.title" class="relative">
+                <span
+                  class="absolute -left-[27px] top-1.5 size-2.5 rounded-full border-2 border-background"
+                  :class="governmentStepVisual(step.status).dotClass"
+                  aria-hidden="true"
+                />
+                <p :class="governmentStepVisual(step.status).textClass">
                   {{ step.title }}
-                  <span v-if="step.date" class="ml-1 text-xs text-muted-foreground">
+                  <span v-if="step.date" class="ml-1 text-xs text-foreground/70">
                     {{ formatDate(step.date) }}
                   </span>
                 </p>
-                <p v-if="step.note" class="text-xs text-muted-foreground">{{ step.note }}</p>
+                <p v-if="step.note" class="text-xs text-foreground/70">{{ step.note }}</p>
               </li>
             </ol>
-            <p class="mt-2 text-xs text-muted-foreground">
+            <p class="mt-3 text-xs text-foreground/70">
               此段由政府受理系統回覆，後台僅同步顯示，無法在此變更。
             </p>
-          </div>
+          </section>
 
-          <!-- 第一層操作：只有還在後台手上的案件才顯示 -->
-          <template v-if="selected.status === 'pending' || selected.status === 'need-docs'">
+          <!--
+            第一層操作：只有還在後台手上的案件才顯示。
+
+            兩個框合成一段「處理這件申請」—— 它們是同一件事的兩個分支
+            （不通過要補件／資格不符退件），分成兩段會讓人以為是兩件無關的事。
+            合起來之後這個 Dialog 的結構是「看資料 → 看進度 → 做決定」三層。
+          -->
+          <section v-if="selected.status === 'pending' || selected.status === 'need-docs'">
+            <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">
+              處理這件申請
+            </h3>
+            <div class="space-y-3">
             <div class="space-y-2 rounded-xl border p-4">
-              <p class="font-semibold">標記缺件</p>
-              <p class="text-xs text-muted-foreground">勾選未通過的文件，說明會一併送給申請人。</p>
+              <p class="font-medium">標記缺件</p>
+              <p class="text-xs text-foreground/70">勾選未通過的文件，說明會一併送給申請人。</p>
               <div class="grid gap-2 sm:grid-cols-2">
                 <label
                   v-for="key in SUBSIDY_DOC_KEYS"
@@ -512,14 +539,24 @@ function formatMoney(amount: number): string {
             </div>
 
             <div class="space-y-2 rounded-xl border p-4">
-              <p class="font-semibold">判定資格不符</p>
-              <p class="text-xs text-muted-foreground">退件是終態，理由必填。</p>
+              <p class="font-medium">判定資格不符</p>
+              <p class="text-xs text-foreground/70">退件是終態，理由必填。</p>
               <Textarea v-model="rejectReason" placeholder="退件理由" />
               <Button variant="destructive" size="sm" @click="handleReject">退件</Button>
             </div>
-          </template>
+            </div>
+          </section>
 
-          <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
+          <!--
+            錯誤訊息用淡紅底方框而不是紅字 —— 與工單詳情一致。同一個後台裡
+            「錯誤訊息長什麼樣」只該有一種答案。
+          -->
+          <p
+            v-if="error"
+            class="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+          >
+            {{ error }}
+          </p>
         </div>
 
         <DialogFooter v-if="selected.status === 'pending' || selected.status === 'need-docs'">

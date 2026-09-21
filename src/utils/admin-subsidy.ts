@@ -1,4 +1,5 @@
 import type { StatusDotTone } from '@/src/components/admin/status-dot'
+import type { GovernmentStep } from '@/src/mocks/admin/subsidy'
 
 /**
  * 租金補貼審核。純邏輯，不依賴 Vue。
@@ -172,4 +173,47 @@ export const SUBSIDY_QUEUE_STATUSES: readonly SubsidyStatus[] = ['pending', 'rea
 
 export function isSubsidyQueue(status: SubsidyStatus): boolean {
   return SUBSIDY_QUEUE_STATUSES.includes(status)
+}
+
+export interface GovernmentStepVisual {
+  /** 時間軸上那個節點的樣式 */
+  dotClass: string
+  /** 步驟標題的樣式 */
+  textClass: string
+}
+
+/**
+ * 政府端進度的步驟樣式。
+ *
+ * ## 為什麼不沿用 StatusDot 的四色
+ *
+ * 這段進度是政府受理系統回來的，畫面上自己就寫著「後台僅同步顯示，無法在
+ * 此變更」。而 warn／danger 在這個後台已經被定義成「**要你動手**」——
+ * 管理員對政府端的步驟一步都動不了，套上那組顏色等於用同樣的訊號講不同的
+ * 意思，整套規則就開始漏水。
+ *
+ * 所以這裡是**進度語言**而不是狀態語言：它表達的是「走到哪了」。
+ *
+ *   已完成  實心灰點         走過了，不用再看
+ *   進行中  實心主色點＋粗體  現在卡在這一步
+ *   未開始  空心點           還沒輪到
+ *   失敗    實心橘紅點＋紅字  這件事沒過
+ *
+ * ## failed 原本跟 pending 長一模一樣
+ *
+ * 原本的三元判斷是「active → 主色、done → 正常、**其餘 → 灰字**」，而
+ * GovernmentStep.status 有四種 —— failed 落進「其餘」，於是「政府端審核
+ * 失敗」看起來就像「還沒輪到」。這不會報錯，只會讓人以為案子還在排隊。
+ */
+export function governmentStepVisual(status: GovernmentStep['status']): GovernmentStepVisual {
+  switch (status) {
+    case 'done':
+      return { dotClass: 'bg-muted-foreground', textClass: '' }
+    case 'active':
+      return { dotClass: 'bg-primary', textClass: 'font-semibold text-primary' }
+    case 'failed':
+      return { dotClass: 'bg-destructive-surface', textClass: 'font-medium text-destructive' }
+    case 'pending':
+      return { dotClass: 'border-2 border-border bg-background', textClass: 'text-muted-foreground' }
+  }
 }
