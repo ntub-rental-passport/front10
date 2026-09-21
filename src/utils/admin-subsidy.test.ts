@@ -4,6 +4,7 @@ import {
   SUBSIDY_DOC_KEYS,
   canTransitionSubsidy,
   documentsComplete,
+  governmentStepVisual,
   isSubsidyQueue,
   missingDocuments,
   missingDocumentsLabel,
@@ -177,5 +178,47 @@ describe('isSubsidyQueue', () => {
   it('「待我處理」剛好是兩種狀態', () => {
     const inQueue = (Object.keys(subsidyStatusLabels) as SubsidyStatus[]).filter(isSubsidyQueue)
     expect(inQueue.sort()).toEqual(['pending', 'ready'])
+  })
+})
+
+describe('governmentStepVisual', () => {
+  it('四種狀態各自不同 —— failed 原本跟 pending 長一樣', () => {
+    // 原本的三元判斷是「active → 主色、done → 正常、其餘 → 灰字」，
+    // 而 status 有四種：failed 落進「其餘」，於是「政府端審核失敗」
+    // 看起來就像「還沒輪到」。不報錯，只是讓人以為案子還在排隊。
+    const all = (['done', 'active', 'pending', 'failed'] as const).map(governmentStepVisual)
+    const dots = all.map((v) => v.dotClass)
+    expect(new Set(dots).size).toBe(4)
+  })
+
+  it('failed 與 pending 一定要分得出來', () => {
+    expect(governmentStepVisual('failed').dotClass).not.toBe(
+      governmentStepVisual('pending').dotClass,
+    )
+    expect(governmentStepVisual('failed').textClass).not.toBe(
+      governmentStepVisual('pending').textClass,
+    )
+  })
+
+  it('未開始是空心點 —— 它還沒發生，不該有實色', () => {
+    expect(governmentStepVisual('pending').dotClass).toContain('border')
+  })
+
+  it('進行中用主色並加粗，那是目前卡住的地方', () => {
+    const v = governmentStepVisual('active')
+    expect(v.dotClass).toContain('bg-primary')
+    expect(v.textClass).toContain('font-semibold')
+  })
+
+  it('不使用 warn／danger 的狀態色語言', () => {
+    // warn／danger 在這個後台的意思是「要你動手」，但政府端的步驟
+    // 管理員一步都動不了。同樣的訊號講不同的意思，規則就開始漏水。
+    const all = (['done', 'active', 'pending', 'failed'] as const).map(governmentStepVisual)
+    expect(all.some((v) => v.dotClass.includes('bg-accent'))).toBe(false)
+  })
+
+  it('失敗用 destructive-surface 當填色，不是把 destructive 當填色', () => {
+    // --destructive 現在是文字色（淺色 0.52），填色要用 surface
+    expect(governmentStepVisual('failed').dotClass).toContain('bg-destructive-surface')
   })
 })
