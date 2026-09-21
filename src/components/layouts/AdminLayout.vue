@@ -65,8 +65,8 @@ const queueOpen = ref(false)
  */
 const COUNTER_BADGE_CLASS =
   'absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center ' +
-  'rounded-full bg-destructive px-1 text-[10px] font-bold ' +
-  'text-foreground dark:text-background'
+  'rounded-full bg-destructive-surface px-1 text-[10px] font-bold ' +
+  'text-destructive-surface-foreground'
 
 // 抽屜裡點了項目就關起來，否則導覽完抽屜還蓋在內容上
 watch(

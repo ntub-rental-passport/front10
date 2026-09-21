@@ -28,7 +28,7 @@ export type StatusDotTone = 'ok' | 'warn' | 'danger' | 'idle'
 export const STATUS_DOT_TONE_CLASS: Record<StatusDotTone, string> = {
   ok: 'bg-success',
   warn: 'bg-accent',
-  danger: 'bg-destructive',
+  danger: 'bg-destructive-surface',
   idle: 'bg-muted-foreground',
 }
 
@@ -36,7 +36,7 @@ export const STATUS_DOT_TONE_CLASS: Record<StatusDotTone, string> = {
 export const STATUS_CHIP_CLASS: Record<StatusDotTone, string> = {
   ok: 'bg-success/10 text-foreground',
   warn: 'bg-accent text-accent-foreground',
-  danger: 'bg-destructive text-foreground dark:text-background',
+  danger: 'bg-destructive-surface text-destructive-surface-foreground',
   idle: 'bg-muted text-muted-foreground',
 }
 
