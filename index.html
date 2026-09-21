@@ -4,6 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RentMate</title>
+    <!--
+      主題啟動。必須在這裡（Vue 掛載之前）而不是在元件裡 —— 等到 Vue 跑起來
+      才加 .dark，使用者會先看到一閃的淺色畫面再變深。
+
+      ⚠️ 'rentmate-theme' 在 src/utils/theme.ts 也有一份（THEME_STORAGE_KEY）。
+      inline script 沒辦法 import，只能各存一份字面值；theme.test.ts 會把這個
+      檔案讀進來比對，改了一邊沒改另一邊會被測試擋下來。
+
+      try/catch 是因為 localStorage 在無痕模式或封鎖第三方儲存時會直接 throw，
+      那不該讓整個頁面連載入都失敗。
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('rentmate-theme');
+          var dark =
+            stored === 'dark' ||
+            (stored !== 'light' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {
+          /* 讀不到就維持淺色，不要因為存取被擋而整頁掛掉 */
+        }
+      })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
     <!-- 引入手機版除錯面板 -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>

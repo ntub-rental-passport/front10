@@ -18,6 +18,7 @@ import AdminSidebar from '@/src/components/admin/AdminSidebar.vue'
 import MaintenanceChip from '@/src/components/admin/MaintenanceChip.vue'
 import QueueDrawer from '@/src/components/admin/QueueDrawer.vue'
 import { navIcon } from '@/src/components/admin/nav-icons'
+import ThemeToggle from '@/src/components/admin/ThemeToggle.vue'
 import { useAdminNotificationCenter } from '@/src/composables/admin/useAdminNotificationCenter'
 import { useAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
@@ -289,6 +290,17 @@ async function handleSignOut(): Promise<void> {
           </RouterLink>
         </div>
       </nav>
+
+      <!--
+        抽屜也要有開關：側欄從 xl 才出現，少了這一顆，1280 以下就完全沒有
+        切換主題的入口。
+      -->
+      <div class="mt-auto shrink-0 border-t px-5 py-4 text-xs">
+        <ThemeToggle
+          class="-ml-2 rounded-lg px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          :tabindex="mobileOpen ? 0 : -1"
+        />
+      </div>
     </aside>
   </div>
 </template>
