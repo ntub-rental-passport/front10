@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/index'
 import { Checkbox } from '@/components/ui/checkbox/index'
@@ -27,19 +26,23 @@ import { Textarea } from '@/components/ui/textarea/index'
 import { CheckCircle2, PackageCheck, Search } from 'lucide-vue-next'
 import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import {
+  subsidyQueueTab,
   subsidyTabs,
-  useAdminSubsidy,
   type SubsidyApplicationView,
+  useAdminSubsidy,
 } from '@/src/composables/admin/useAdminSubsidy'
 import {
   SUBSIDY_DOC_KEYS,
   subsidyDocLabels,
   subsidyStatusLabels,
+  subsidyStatusTone,
   type SubsidyDocKey,
   type SubsidyStatus,
 } from '@/src/utils/admin-subsidy'
 import { formatDate } from '@/src/utils/admin-format'
 import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
+import StatusDot from '@/src/components/admin/StatusDot.vue'
+import { STATUS_CHIP_CLASS } from '@/src/components/admin/status-dot'
 
 const route = useRoute()
 
@@ -49,6 +52,7 @@ const {
   filteredApplications,
   submittable,
   stats,
+  queueCount,
   tab,
   keyword,
   batchFilter,
@@ -87,13 +91,6 @@ watch(selectedId, () => {
   rejectReason.value = ''
   error.value = ''
 })
-
-function statusVariant(status: SubsidyStatus): 'default' | 'secondary' | 'destructive' {
-  if (status === 'rejected') return 'destructive'
-  if (status === 'need-docs') return 'destructive'
-  if (status === 'submitted') return 'secondary'
-  return 'default'
-}
 
 function toggleMissing(key: SubsidyDocKey, checked: boolean): void {
   missingKeys.value = checked
@@ -251,18 +248,79 @@ function formatMoney(amount: number): string {
           <Button variant="outline" size="sm" @click="batchFilter = 'all'">顯示全部批次</Button>
         </div>
 
-      <Tabs :model-value="tab" @update:model-value="(value: string) => (tab = value as typeof tab)">
-        <TabsList :class="ADMIN_TAB_LIST">
-          <TabsTrigger
-            v-for="item in subsidyTabs"
-            :key="item.value"
-            :value="item.value"
-            :class="ADMIN_TAB_TRIGGER"
-          >
-            {{ item.label }}
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <!--
+        左邊頁籤、右邊統計條列，同一條橫帶（同工單頁）。
+
+        統計原本擠在下方搜尋框旁邊的一行灰字，而且六個數字只露出兩個，
+        也沒說為什麼是那兩個。
+
+        展示資料（無 data-real）：stats 來自 src/mocks 的補貼種子資料。
+        約定見 src/utils/admin-data-marking.md。
+      -->
+      <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+        <Tabs :model-value="tab" @update:model-value="(value: string) => (tab = value as typeof tab)">
+          <TabsList :class="ADMIN_TAB_LIST">
+            <!--
+              「待我處理」是聚合不是狀態（待審核＋待送件），做得比後面那排大
+              並且上主色，再加一條分隔線 —— 否則同樣大小的膠囊排在一起，
+              它會被當成第六種狀態。
+            -->
+            <TabsTrigger
+              :value="subsidyQueueTab.value"
+              class="rounded-full bg-primary/10 px-6 py-2.5 text-base font-semibold text-primary data-[state=active]:bg-primary-surface data-[state=active]:text-primary-surface-foreground data-[state=active]:shadow-sm"
+            >
+              {{ subsidyQueueTab.label }} {{ queueCount }}
+            </TabsTrigger>
+            <div class="mx-2 h-4 w-px bg-border" aria-hidden="true" />
+            <TabsTrigger
+              v-for="item in subsidyTabs"
+              :key="item.value"
+              :value="item.value"
+              :class="ADMIN_TAB_TRIGGER"
+            >
+              {{ item.label }}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <!--
+          用 <dl>：這就是「名稱／數值」的定義清單，語意對了螢幕閱讀器才唸得出
+          配對關係。「待審核」是這一頁最該動手的數字，用實心 chip 跳出來 ——
+          不能用 text-accent 之類的彩色文字，那些填色用的 token 當文字時對比
+          遠低於 AA（見 status-dot.ts）。
+        -->
+        <!--
+          這一頁的條列比工單頁窄：左邊批次欄吃掉 280px，右欄只剩約 816px，
+          用工單頁的 13rem 會把整組擠到換行。
+        -->
+        <dl class="min-w-[9.5rem] divide-y divide-border text-sm">
+          <div class="flex items-baseline justify-between gap-5 py-1.5">
+            <dt class="text-foreground/70">待審核</dt>
+            <dd>
+              <span
+                :class="[
+                  'inline-flex min-w-9 justify-center rounded-full px-2 py-0.5 text-base font-bold tabular-nums',
+                  STATUS_CHIP_CLASS.warn,
+                ]"
+              >
+                {{ stats.pending }}
+              </span>
+            </dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-5 py-1.5">
+            <dt class="text-foreground/70">待補件</dt>
+            <dd class="text-base font-bold tabular-nums">{{ stats.needDocs }}</dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-5 py-1.5">
+            <dt class="text-foreground/70">待送件</dt>
+            <dd class="text-base font-bold tabular-nums">{{ stats.ready }}</dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-5 py-1.5">
+            <dt class="text-foreground/70">案件總數</dt>
+            <dd class="text-base font-bold tabular-nums">{{ stats.total }}</dd>
+          </div>
+        </dl>
+      </div>
 
       <Card class="rounded-3xl">
         <CardContent class="px-5 pb-5 space-y-4 pt-6">
@@ -271,8 +329,9 @@ function formatMoney(amount: number): string {
               <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input v-model="keyword" placeholder="搜尋申請編號、申請人或地址" class="pl-9" />
             </div>
-            <p class="whitespace-nowrap text-sm text-muted-foreground">
-              共 {{ filteredApplications.length }} 件・待審 {{ stats.pending }}・待送件 {{ stats.ready }}
+            <!-- 統計移到上方條列了，這裡只留「目前這個篩選有幾筆」 -->
+            <p class="whitespace-nowrap text-sm text-foreground/70">
+              共 {{ filteredApplications.length }} 件
             </p>
           </div>
 
@@ -300,9 +359,16 @@ function formatMoney(amount: number): string {
                 <TableCell class="whitespace-nowrap">{{ item.applicantName }}</TableCell>
                 <TableCell>{{ item.address }}</TableCell>
                 <TableCell>
-                  <Badge :variant="statusVariant(item.status)" class="whitespace-nowrap">
-                    {{ subsidyStatusLabels[item.status] }}
-                  </Badge>
+                  <!--
+                    圓點＝會變的狀態、徽章＝不會變的分類，見 subsidyStatusTone。
+                    whitespace-nowrap 不能少 —— 這一欄很窄，沒有它「待審核」
+                    會被擠成一個字一行。
+                  -->
+                  <StatusDot
+                    class="whitespace-nowrap"
+                    :tone="subsidyStatusTone(item.status)"
+                    :label="subsidyStatusLabels[item.status]"
+                  />
                 </TableCell>
                 <TableCell
                   class="whitespace-nowrap text-sm"
@@ -344,9 +410,12 @@ function formatMoney(amount: number): string {
           <div class="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-4">
             <div>
               <p class="text-muted-foreground">狀態</p>
-              <Badge :variant="statusVariant(selected.status)" class="mt-1">
-                {{ subsidyStatusLabels[selected.status] }}
-              </Badge>
+              <span class="mt-1 block">
+                <StatusDot
+                  :tone="subsidyStatusTone(selected.status)"
+                  :label="subsidyStatusLabels[selected.status]"
+                />
+              </span>
             </div>
             <div>
               <p class="text-muted-foreground">月租</p>
@@ -376,9 +445,11 @@ function formatMoney(amount: number): string {
                     {{ doc.hint }}
                   </span>
                 </span>
-                <Badge :variant="doc.status === 'approved' ? 'secondary' : 'destructive'">
-                  {{ doc.status === 'approved' ? '已通過' : '缺件' }}
-                </Badge>
+                <!-- 文件審核結果也是會變的狀態（補件之後就變已通過），同樣用圓點 -->
+                <StatusDot
+                  :tone="doc.status === 'approved' ? 'ok' : 'warn'"
+                  :label="doc.status === 'approved' ? '已通過' : '缺件'"
+                />
               </li>
             </ul>
           </div>

@@ -13,6 +13,7 @@ import { userDisplayName } from '@/src/utils/admin-user-directory'
 import {
   canTransitionSubsidy,
   documentsComplete,
+  isSubsidyQueue,
   missingDocumentsLabel,
   nextBatchCode,
   subsidyStats,
@@ -33,8 +34,32 @@ export const adminSubsidyBatchCollection = createAdminCollection<SubsidyBatch[]>
 const applications = adminSubsidyCollection
 const batches = adminSubsidyBatchCollection
 
-/** 列表頁的狀態頁籤。第一層四種各自成籤，已送件另外一籤。 */
-export type SubsidyTab = 'all' | 'pending' | 'need-docs' | 'ready' | 'submitted' | 'rejected'
+/**
+ * 列表頁的狀態頁籤。第一層四種各自成籤，已送件另外一籤。
+ *
+ * 'queue' 不是狀態，是「待審核 ＋ 待送件」的聚合 —— 兩者都是管理員該動手的，
+ * 但分散在兩個頁籤，要切換兩次才看得完。
+ */
+export type SubsidyTab =
+  | 'queue'
+  | 'all'
+  | 'pending'
+  | 'need-docs'
+  | 'ready'
+  | 'submitted'
+  | 'rejected'
+
+/**
+ * 「待我處理」單獨拿出來，不放進 subsidyTabs。
+ *
+ * 跟工單頁的 maintenanceQueueTab 同一個作法：它跟後面那排狀態頁籤不是同一
+ * 種東西，畫面上要做得更大、上主色，程式裡也不該混在同一個陣列裡 ——
+ * 否則 v-for 出來的每一顆長得一樣，又會被當成第六種狀態。
+ */
+export const subsidyQueueTab: { value: 'queue'; label: string } = {
+  value: 'queue',
+  label: '待我處理',
+}
 
 export const subsidyTabs: { value: SubsidyTab; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -89,7 +114,11 @@ export function useAdminSubsidy() {
   const filteredApplications = computed(() => {
     const kw = keyword.value.trim().toLowerCase()
     return applicationViews.value
-      .filter((item) => tab.value === 'all' || item.status === tab.value)
+      .filter((item) => {
+        if (tab.value === 'all') return true
+        if (tab.value === 'queue') return isSubsidyQueue(item.status)
+        return item.status === tab.value
+      })
       .filter((item) => {
         if (batchFilter.value === 'all') return true
         if (batchFilter.value === 'draft') return item.status === 'ready'
@@ -108,6 +137,11 @@ export function useAdminSubsidy() {
   })
 
   const stats = computed(() => subsidyStats(applications.value.map((item) => item.status)))
+
+  /** 「待我處理」的件數。頁籤上的數字與篩選結果用同一個定義，不會對不起來。 */
+  const queueCount = computed(
+    () => applications.value.filter((item) => isSubsidyQueue(item.status)).length,
+  )
 
   /** 待送件且文件齊全的案件，才是可以納入批次的對象 */
   const submittable = computed(() =>
@@ -245,6 +279,7 @@ export function useAdminSubsidy() {
     filteredApplications,
     submittable,
     stats,
+    queueCount,
     tab,
     keyword,
     batchFilter,

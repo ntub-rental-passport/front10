@@ -1,3 +1,5 @@
+import type { StatusDotTone } from '@/src/components/admin/status-dot'
+
 /**
  * 租金補貼審核。純邏輯，不依賴 Vue。
  *
@@ -120,4 +122,54 @@ export function subsidyStats(statuses: SubsidyStatus[]): SubsidyStats {
     submitted: count('submitted'),
     rejected: count('rejected'),
   }
+}
+
+/**
+ * 補貼狀態對到狀態圓點的顏色。
+ *
+ * 規則跟工單頁同一套（見 admin-maintenance.ts 的 maintenanceStatusTone）：
+ * **有人在等 = warn**。
+ *
+ *   待審核  等管理員審            → warn
+ *   待補件  等申請人補件          → warn
+ *   待送件  文件齊了，等著成批送出 → ok，流程正常在走
+ *   已送件  送出去了              → idle，管理員這邊結束了
+ *   已退件  終態，但結果是壞的    → danger
+ *
+ * ## 為什麼待補件是 warn 而不是 idle
+ *
+ * 「在等申請人」表面上不是管理員的事，照工單頁的邏輯該給 idle。但補件案
+ * 沒有任何人會來催 —— 它會安安靜靜放到過期。給灰色等於把它藏起來。
+ *
+ * ## 為什麼已退件是 danger 而已關閉（工單）是 idle
+ *
+ * 兩個都是終態，差別在結果：工單關閉代表事情解決了，補貼退件代表這個人
+ * 沒拿到補貼。後者是需要被看見的結果，不該跟「順利完成」同一個灰色。
+ */
+export function subsidyStatusTone(status: SubsidyStatus): StatusDotTone {
+  switch (status) {
+    case 'pending':
+    case 'need-docs':
+      return 'warn'
+    case 'ready':
+      return 'ok'
+    case 'submitted':
+      return 'idle'
+    case 'rejected':
+      return 'danger'
+  }
+}
+
+/**
+ * 「待我處理」涵蓋的狀態：需要管理員動手的那兩種。
+ *
+ * 待審核要人審、待送件要人送，兩件都是管理員的事，但它們分散在兩個頁籤，
+ * 要切換兩次才看得完。聚合成一籤之後「今天我要做什麼」就是一個畫面。
+ *
+ * 待補件不算 —— 那是在等申請人，管理員現在動不了。
+ */
+export const SUBSIDY_QUEUE_STATUSES: readonly SubsidyStatus[] = ['pending', 'ready']
+
+export function isSubsidyQueue(status: SubsidyStatus): boolean {
+  return SUBSIDY_QUEUE_STATUSES.includes(status)
 }

@@ -4,10 +4,13 @@ import {
   SUBSIDY_DOC_KEYS,
   canTransitionSubsidy,
   documentsComplete,
+  isSubsidyQueue,
   missingDocuments,
   missingDocumentsLabel,
   nextBatchCode,
   subsidyStats,
+  subsidyStatusLabels,
+  subsidyStatusTone,
   subsidyTransitions,
   type SubsidyDocument,
   type SubsidyStatus,
@@ -118,5 +121,61 @@ describe('subsidyStats', () => {
 
   it('沒有資料時全部為 0', () => {
     expect(subsidyStats([]).total).toBe(0)
+  })
+})
+
+describe('subsidyStatusTone', () => {
+  it('待審核與待補件是 warn —— 都有人在等', () => {
+    expect(subsidyStatusTone('pending')).toBe('warn')
+    expect(subsidyStatusTone('need-docs')).toBe('warn')
+  })
+
+  it('待補件不是 idle，雖然在等的是申請人', () => {
+    // 照工單頁「等別人 = 不用管」的邏輯該給 idle，但補件案沒有任何人會來催，
+    // 它會安靜地放到過期。給灰色等於把它藏起來。
+    expect(subsidyStatusTone('need-docs')).not.toBe('idle')
+  })
+
+  it('待送件是 ok —— 文件齊了，流程正常在走', () => {
+    expect(subsidyStatusTone('ready')).toBe('ok')
+  })
+
+  it('已送件是 idle', () => {
+    expect(subsidyStatusTone('submitted')).toBe('idle')
+  })
+
+  it('已退件是 danger，不跟已送件同一個灰', () => {
+    // 兩個都是終態，差別在結果：送件代表事情推進了，退件代表這個人沒拿到補貼。
+    expect(subsidyStatusTone('rejected')).toBe('danger')
+    expect(subsidyStatusTone('rejected')).not.toBe(subsidyStatusTone('submitted'))
+  })
+
+  it('五種狀態都有對應', () => {
+    const all = Object.keys(subsidyStatusLabels) as SubsidyStatus[]
+    expect(all).toHaveLength(5)
+    expect(all.every((s) => ['ok', 'warn', 'danger', 'idle'].includes(subsidyStatusTone(s)))).toBe(
+      true,
+    )
+  })
+})
+
+describe('isSubsidyQueue', () => {
+  it('待審核與待送件算在「待我處理」裡', () => {
+    expect(isSubsidyQueue('pending')).toBe(true)
+    expect(isSubsidyQueue('ready')).toBe(true)
+  })
+
+  it('待補件不算 —— 那是在等申請人，管理員現在動不了', () => {
+    expect(isSubsidyQueue('need-docs')).toBe(false)
+  })
+
+  it('已送件與已退件不算', () => {
+    expect(isSubsidyQueue('submitted')).toBe(false)
+    expect(isSubsidyQueue('rejected')).toBe(false)
+  })
+
+  it('「待我處理」剛好是兩種狀態', () => {
+    const inQueue = (Object.keys(subsidyStatusLabels) as SubsidyStatus[]).filter(isSubsidyQueue)
+    expect(inQueue.sort()).toEqual(['pending', 'ready'])
   })
 })
