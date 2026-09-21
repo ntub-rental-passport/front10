@@ -2,6 +2,7 @@ import {
   Activity,
   FileText,
   HandCoins,
+  Megaphone,
   Inbox,
   LayoutDashboard,
   ScrollText,
@@ -28,15 +29,21 @@ import {
  * 「稽核紀錄」用 ScrollText 而不是 History：History 是時鐘箭頭，容易被讀成
  * 「還原 / 復原」，但稽核紀錄是唯讀的。
  *
+ * 「內容管理」用 Megaphone 而不是 FileText：它管的是公告與首頁輪播，
+ * 而總覽的「發布公告」按鈕也是 Megaphone —— 指向同一件事就該長一樣。
+ *
  * 側欄永遠是展開的、標籤一直看得見，所以圖示是掃視的錨點而不是唯一的
  * 辨識依據。認不出來的路徑退回一個中性圖示，不要讓側欄破一個洞。
+ *
+ * ⚠️ 這是唯一一份圖示對照表。useAdminRbac.ts 曾經有第二份（且有 4 個路徑
+ * 跟這裡不一樣），已經移除 —— 兩份對照表遲早會漂移成兩套圖示。
  */
 const ICONS: Record<string, LucideIcon> = {
   '/admin': LayoutDashboard,
   '/admin/users': Users,
   '/admin/maintenance-tickets': Wrench,
   '/admin/subsidy': HandCoins,
-  '/admin/content': FileText,
+  '/admin/content': Megaphone,
   '/admin/notifications': Send,
   '/admin/notification-center': Inbox,
   '/admin/monitoring': Activity,

@@ -147,3 +147,50 @@ describe('errorRateMonitor', () => {
     expect(errorRateMonitor(req({ serverErrors: 200, serverErrorRate: 0.2 })).state).toBe('down')
   })
 })
+
+describe('後端回傳壞掉的數字時', () => {
+  // 這兩個案例不是假想的：後端是獨立的服務，改個欄位名就會長這樣。
+  // 三元運算的門檻判斷跟 NaN 比都是 false，會一路掉到最後一個分支
+  // 靜靜變成 down —— 一個假的紅燈，比沒有燈更糟。
+
+  it('錯誤率不是數字時回 unavailable，不是 down', () => {
+    const reading = errorRateMonitor({
+      windowMinutes: 60,
+      total: 600,
+      clientErrors: 4,
+      serverErrors: 30,
+      errorRate: 0.05,
+      serverErrorRate: undefined as unknown as number,
+    })
+    expect(reading.state).toBe('unavailable')
+    expect(reading.value).toBeNull()
+  })
+
+  it('錯誤率壞掉時不會印出 NaN%', () => {
+    const reading = errorRateMonitor({
+      windowMinutes: 60,
+      total: 600,
+      clientErrors: 4,
+      serverErrors: 30,
+      errorRate: 0.05,
+      serverErrorRate: Number.NaN,
+    })
+    expect(reading.value ?? '').not.toContain('NaN')
+  })
+
+  it('連線池使用率不是數字時回 unavailable', () => {
+    const reading = dbPoolMonitor({
+      configured: true,
+      capacity: 30,
+      inUse: 24,
+      utilization: Number.NaN,
+    })
+    expect(reading.state).toBe('unavailable')
+  })
+
+  it('utilization 沒給仍然當 0（舊版後端是合理的）', () => {
+    // 「沒有這個欄位」跟「這個欄位是垃圾」要分開處理
+    const reading = dbPoolMonitor({ configured: true, capacity: 30, inUse: 0 })
+    expect(reading.state).toBe('ok')
+  })
+})

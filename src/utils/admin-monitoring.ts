@@ -123,6 +123,22 @@ export interface RequestSnapshot {
   serverErrorRate: number
 }
 
+/**
+ * 後端回來的數字是不是真的是數字。
+ *
+ * 這兩個監控項的門檻判斷全是數值比較，而 NaN 跟任何值比都是 false ——
+ * 所以缺欄位、型別不對、或後端改了欄位名的時候，三元運算會一路掉到最後
+ * 一個分支，靜靜地變成 down；錯誤率還會經過 toFixed 印出「NaN%」。
+ *
+ * 那是「假綠燈」的鏡像問題：一個假的紅燈配一串無意義的文字。這條健康條
+ * 的原則是讀不到就說「無法取得」，不是猜一個狀態出來。所以讀不到數字時
+ * 回 unavailable（灰色、不搶注意力），而不是 down（紅色警示）——
+ * 我們不知道它壞了，我們只是讀不到。
+ */
+function isReadableNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
 /** 連線池使用率門檻：超過就代表離「連線耗盡、請求開始排隊」不遠了 */
 export const POOL_OK_RATIO = 0.7
 export const POOL_DEGRADED_RATIO = 0.9
@@ -149,6 +165,18 @@ export function dbPoolMonitor(snapshot: DbPoolSnapshot | null): MonitorReading {
   }
   if (!snapshot.configured) {
     return { ...base, state: 'unavailable' as const, value: null, detail: '後端未設定資料庫連線', connected: false }
+  }
+
+  // utilization 沒給是合理的（舊版後端），當 0 處理；但給了一個不是數字的
+  // 東西就是契約壞了，那要誠實說讀不到
+  if (snapshot.utilization !== undefined && !isReadableNumber(snapshot.utilization)) {
+    return {
+      ...base,
+      state: 'unavailable' as const,
+      value: null,
+      detail: '後端回傳的使用率不是數字',
+      connected: false,
+    }
   }
 
   const ratio = snapshot.utilization ?? 0
@@ -197,6 +225,16 @@ export function errorRateMonitor(snapshot: RequestSnapshot | null): MonitorReadi
   }
 
   const ratio = snapshot.serverErrorRate
+  if (!isReadableNumber(ratio)) {
+    return {
+      ...base,
+      state: 'unavailable' as const,
+      value: null,
+      detail: '後端回傳的錯誤率不是數字',
+      connected: false,
+    }
+  }
+
   const state = ratio < ERROR_OK_RATIO ? 'ok' : ratio < ERROR_DEGRADED_RATIO ? 'degraded' : 'down'
 
   return {
