@@ -30,6 +30,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
 import { AlertTriangle, ClipboardList, MessageSquareWarning, Search, Wrench, X } from 'lucide-vue-next'
 import InlineStat from '@/src/components/admin/InlineStat.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
+import { STATUS_CHIP_CLASS } from '@/src/components/admin/status-dot'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import {
   maintenanceQueueTab,
@@ -141,28 +142,6 @@ function clearFilters(): void {
 
 <template>
   <div class="space-y-6">
-    <!--
-      展示資料（無 data-real）：stats 來自 seedMaintenanceTickets。
-      約定見 src/utils/admin-data-marking.md。
-
-      這幾個數字本來就算好了，但一直只有總覽頁在用 —— 管理員要看工單概況
-      得先回總覽，而這裡才是他處理工單的地方。
-
-      主角卡是「逾期未回應」而不是「工單總數」：主角的意義是這一頁最該被
-      處理的東西，不是最大的數字。總數放在最後一格當規模參考。
-    -->
-    <div class="grid gap-x-2 gap-y-1 sm:grid-cols-2 lg:grid-cols-4">
-      <InlineStat
-        :icon="AlertTriangle"
-        label="逾期未回應"
-        :value="stats.overdue"
-        hero
-      />
-      <InlineStat :icon="Wrench" label="房東處理中" :value="stats.processing" />
-      <InlineStat :icon="MessageSquareWarning" label="爭議中" :value="stats.disputed" />
-      <InlineStat :icon="ClipboardList" label="工單總數" :value="stats.total" />
-    </div>
-
     <div
       v-if="userFilter"
       class="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3"
@@ -178,8 +157,19 @@ function clearFilters(): void {
       </Button>
     </div>
 
-    <Tabs :model-value="statusTab" @update:model-value="handleStatusTabChange">
-      <TabsList :class="ADMIN_TAB_LIST">
+    <!--
+      左邊頁籤、右邊 KPI 直向條列，併成同一條橫帶。
+
+      原本 KPI 是橫跨整列的四張卡，佔掉約 70px 而且左右都很空。改成右側條列
+      之後那塊垂直空間讓給了頁籤 —— 頁籤是這一頁最常點的東西，本來就該比
+      「看一眼就好」的統計數字大。
+
+      展示資料（無 data-real）：stats 來自 seedMaintenanceTickets。
+      約定見 src/utils/admin-data-marking.md。
+    -->
+    <div class="flex flex-wrap items-center justify-between gap-x-10 gap-y-4">
+      <Tabs :model-value="statusTab" @update:model-value="handleStatusTabChange">
+        <TabsList :class="ADMIN_TAB_LIST">
         <!--
           「待處理」不是工單狀態，是跨狀態的聚合（送出＋通報＋逾期＋爭議）。
           原本只靠一條分隔線跟後面七顆狀態頁籤區隔，但同樣大小、同樣顏色的
@@ -190,21 +180,62 @@ function clearFilters(): void {
         -->
         <TabsTrigger
           :value="maintenanceQueueTab.value"
-          class="rounded-full bg-primary/10 px-5 py-2 text-sm font-semibold text-primary data-[state=active]:bg-primary-surface data-[state=active]:text-primary-surface-foreground data-[state=active]:shadow-sm"
+          class="rounded-full bg-primary/10 px-6 py-2.5 text-base font-semibold text-primary data-[state=active]:bg-primary-surface data-[state=active]:text-primary-surface-foreground data-[state=active]:shadow-sm"
         >
           {{ maintenanceQueueTab.label }} {{ queueCount }}
         </TabsTrigger>
         <div class="mx-2 h-4 w-px bg-border" aria-hidden="true" />
-        <TabsTrigger
-          v-for="tab in maintenanceStatusTabs"
-          :key="tab.value"
-          :value="tab.value"
-          :class="ADMIN_TAB_TRIGGER"
-        >
-          {{ tab.label }}
-        </TabsTrigger>
-      </TabsList>
-    </Tabs>
+          <TabsTrigger
+            v-for="tab in maintenanceStatusTabs"
+            :key="tab.value"
+            :value="tab.value"
+            :class="ADMIN_TAB_TRIGGER"
+          >
+            {{ tab.label }}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <!--
+        右側統計條列。用 <dl> 而不是一堆 div：這就是「名稱／數值」的定義
+        清單，語意對了螢幕閱讀器才唸得出配對關係。
+
+        「逾期未回應」是這一頁唯一會叫人現在動手的數字，所以它要跳出來。
+        但**不能把 destructive 拿來當文字色**：--destructive 是
+        oklch(0.7 0.18 40)，偏亮，當文字踩在淺色卡上實測只有 2.61，遠低於
+        AA —— status-dot.ts 的註解早就寫過這件事，這裡差點重蹈覆轍。
+
+        改用實心填色（STATUS_CHIP_CLASS.danger），前景色是跟填色配對設計的，
+        實測兩個模式都是 6.35。其餘三列維持中性，有色才有意義。
+      -->
+      <dl class="min-w-[13rem] divide-y divide-border text-sm">
+        <div class="flex items-baseline justify-between gap-8 py-1.5">
+          <dt class="text-foreground/70">逾期未回應</dt>
+          <dd>
+            <span
+              :class="[
+                'inline-flex min-w-9 justify-center rounded-full px-2 py-0.5 text-base font-bold tabular-nums',
+                STATUS_CHIP_CLASS.danger,
+              ]"
+            >
+              {{ stats.overdue }}
+            </span>
+          </dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-8 py-1.5">
+          <dt class="text-foreground/70">房東處理中</dt>
+          <dd class="text-base font-bold tabular-nums">{{ stats.processing }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-8 py-1.5">
+          <dt class="text-foreground/70">爭議中</dt>
+          <dd class="text-base font-bold tabular-nums">{{ stats.disputed }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-8 py-1.5">
+          <dt class="text-foreground/70">工單總數</dt>
+          <dd class="text-base font-bold tabular-nums">{{ stats.total }}</dd>
+        </div>
+      </dl>
+    </div>
 
     <Card class="rounded-3xl">
       <CardContent class="px-5 pb-5 space-y-4 pt-6">
