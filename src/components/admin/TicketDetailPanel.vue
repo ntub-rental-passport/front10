@@ -26,7 +26,7 @@ import {
 } from '@/src/utils/admin-maintenance'
 import { formatDate, formatDateTime } from '@/src/utils/admin-format'
 import StatusDot from './StatusDot.vue'
-import { STATUS_CHIP_CLASS } from './status-dot'
+import { STATUS_CHIP_CLASS, STATUS_DOT_TONE_CLASS } from './status-dot'
 
 const props = defineProps<{ ticket: MaintenanceTicketView }>()
 
@@ -86,7 +86,15 @@ function handleDequeue(): void {
 </script>
 
 <template>
-  <div class="space-y-5 text-sm">
+  <!--
+    段與段之間用分隔線，並把「段內間距」與「段間間距」拉開差距。原本全部
+    用 space-y-5，兩者是同一個距離 —— 距離相同時眼睛分不出哪裡是邊界，
+    四段會黏成一整片。
+
+    小標改成 text-xs 的弱化標籤（同側欄分組標題的作法）：原本標題與內文
+    都是 font-semibold 同樣大小，標題沒有「我是標籤」的訊號。
+  -->
+  <div class="divide-y divide-border text-sm [&>section]:py-5 [&>section:last-child]:pb-0">
     <!--
       用 <dl> 而不是一堆 div：這就是「名稱／數值」的定義清單，語意對了
       螢幕閱讀器才唸得出配對關係。標籤用 foreground/70 —— muted-foreground
@@ -138,20 +146,26 @@ function handleDequeue(): void {
       </div>
     </dl>
 
-    <div>
-      <p class="mb-1 font-semibold">問題描述</p>
-      <p class="text-muted-foreground">{{ ticket.description }}</p>
-    </div>
+    <section>
+      <h3 class="mb-1.5 text-xs font-semibold tracking-wide text-foreground/70">問題描述</h3>
+      <p>{{ ticket.description }}</p>
+    </section>
 
-    <div>
-      <p class="mb-2 font-semibold">狀態時間軸</p>
+    <section>
+      <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">狀態時間軸</h3>
       <!--
         每一筆的「轉移到哪個狀態」用同一套顏色對應。時間軸本來全是黑字，
         要逐行讀才知道哪一步開始出問題；上了色之後，紅點出現在哪一行
         一眼就看得到。
       -->
-      <ol class="space-y-3 border-l border-border pl-4">
-        <li v-for="(event, index) in ticket.timeline" :key="index">
+      <ol class="space-y-4 border-l-2 border-border pl-5">
+        <li v-for="(event, index) in ticket.timeline" :key="index" class="relative">
+          <!-- 節點壓在線上，讓它看起來是時間軸而不是一個縮排的清單 -->
+          <span
+            class="absolute -left-[27px] top-1.5 size-2.5 rounded-full border-2 border-background"
+            :class="STATUS_DOT_TONE_CLASS[maintenanceStatusTone(event.to)]"
+            aria-hidden="true"
+          />
           <p class="text-xs text-foreground/70">
             {{ formatDateTime(event.at) }} · {{ event.actor }}
           </p>
@@ -168,10 +182,10 @@ function handleDequeue(): void {
           <p v-if="event.note" class="text-foreground/70">備註：{{ event.note }}</p>
         </li>
       </ol>
-    </div>
+    </section>
 
-    <div>
-      <p class="mb-2 font-semibold">狀態推進</p>
+    <section>
+      <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">狀態推進</h3>
       <template v-if="inQueue">
         <p
           v-if="queueReason"
@@ -216,12 +230,12 @@ function handleDequeue(): void {
       >
         {{ error }}
       </p>
-    </div>
+    </section>
 
-    <div>
-      <p class="mb-2 font-semibold">管理員註記</p>
+    <section>
+      <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">管理員註記</h3>
       <Textarea v-model="adminNoteDraft" placeholder="填寫僅供內部檢視的備註" class="mb-2" />
       <Button variant="outline" size="sm" @click="handleSaveNote">儲存管理員註記</Button>
-    </div>
+    </section>
   </div>
 </template>
