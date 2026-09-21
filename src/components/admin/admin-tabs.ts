@@ -12,9 +12,10 @@
  * 而頁籤是 14px 文字，需要 4.5。差一點點，但那是使用者每天要點的東西。
  * 改用 foreground/70：淺色與深色都有餘裕，而且視覺上仍然比選中的那顆退一階。
  */
-export const ADMIN_TAB_LIST = 'rounded-full bg-muted/60'
+/** 容器內距加大，讓整條頁籤列的份量撐得起它的使用頻率 */
+export const ADMIN_TAB_LIST = 'rounded-full bg-muted/60 p-1.5'
 
 export const ADMIN_TAB_TRIGGER =
-  'rounded-full px-4 text-foreground/70 ' +
+  'rounded-full px-5 py-2 text-sm text-foreground/70 ' +
   'data-[state=active]:bg-background data-[state=active]:text-foreground ' +
   'data-[state=active]:shadow-sm'
