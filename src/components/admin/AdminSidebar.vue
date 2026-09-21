@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { ShieldCheck } from 'lucide-vue-next'
 
 import { navIcon } from './nav-icons'
+import ThemeToggle from './ThemeToggle.vue'
 import { useNow } from '@/src/composables/useNow'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { adminRoleLabels } from '@/src/utils/admin-rbac'
@@ -43,8 +44,16 @@ function isActive(path: string): boolean {
 </script>
 
 <template>
+  <!--
+    sticky top-0 + h-screen：側欄不隨頁面捲動。原本它跟著文件流走，捲到
+    長頁面的底部時導覽已經在畫面外，要換頁得先捲回最上面。
+
+    用 sticky 而不是 fixed，是因為 fixed 會脫離版面流，內容區得自己補一個
+    等寬的左邊距 —— 那個數字一旦跟側欄寬度對不上就會破版，而且要在每個
+    斷點各維護一份。sticky 留在 flex 版面裡，寬度只有一個地方定義。
+  -->
   <aside
-    class="hidden w-60 shrink-0 flex-col border-r border-black/10 bg-sidebar-surface text-sidebar-surface-foreground xl:flex"
+    class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-black/10 bg-sidebar-surface text-sidebar-surface-foreground xl:flex"
   >
     <RouterLink
       to="/admin"
@@ -81,12 +90,24 @@ function isActive(path: string): boolean {
       </div>
     </nav>
 
-    <div class="shrink-0 border-t border-white/10 px-5 py-4 text-xs">
-      <p class="font-medium text-sidebar-surface-foreground/70">
-        {{ adminRoleLabels[currentAdminRole] }}
-      </p>
-      <!-- 時間到整分才跳，不是從載入起算每 60 秒（見 clock-tick.ts） -->
-      <p class="mt-0.5 tabular-nums text-sidebar-surface-foreground/55">{{ clock }}</p>
+    <div
+      class="flex shrink-0 items-end justify-between gap-2 border-t border-white/10 px-5 py-4 text-xs"
+    >
+      <div class="min-w-0">
+        <p class="truncate font-medium text-sidebar-surface-foreground/70">
+          {{ adminRoleLabels[currentAdminRole] }}
+        </p>
+        <!-- 時間到整分才跳，不是從載入起算每 60 秒（見 clock-tick.ts） -->
+        <p class="mt-0.5 tabular-nums text-sidebar-surface-foreground/55">{{ clock }}</p>
+      </div>
+
+      <!--
+        深淺色開關。這是全專案第一個能真正切換主題的入口 —— index.css 的
+        .dark 區塊與 24 處 dark: 樣式原本沒有任何地方會觸發。
+      -->
+      <ThemeToggle
+        class="-mr-2 shrink-0 rounded-lg px-2 py-1 text-sidebar-surface-foreground/70 transition-colors hover:bg-sidebar-surface-foreground/10 hover:text-sidebar-surface-foreground"
+      />
     </div>
   </aside>
 </template>
