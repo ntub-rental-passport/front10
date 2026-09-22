@@ -22,7 +22,17 @@ const plans: Plan[] = [
 const selectedPlanInfo = computed(() => plans.find(plan => plan.key === selectedPlan.value))
 const price = (plan: Plan) => billingCycle.value === 'yearly' ? Math.round(plan.monthlyPrice * 0.83) : plan.monthlyPrice
 const cycleLabel = computed(() => billingCycle.value === 'yearly' ? '年繳（每月）' : '月繳')
-const canPay = computed(() => Boolean(cardHolder.value && cardNumber.value.replace(/\s/g, '').length === 16 && expiry.value.length === 5 && cvc.value.length >= 3 && agreed.value))
+const isCardNumberValid = computed(() => cardNumber.value.replace(/\s/g, '').length === 16)
+const isExpiryValid = computed(() => {
+  if (!/^\d{2}\/\d{2}$/.test(expiry.value)) return false
+  const [month, year] = expiry.value.split('/').map(Number)
+  if (month < 1 || month > 12) return false
+  const now = new Date()
+  const expiryDate = new Date(2000 + year, month, 1)
+  return expiryDate > now
+})
+const isCvcValid = computed(() => /^\d{3,4}$/.test(cvc.value))
+const canPay = computed(() => Boolean(cardHolder.value.trim() && isCardNumberValid.value && isExpiryValid.value && isCvcValid.value && agreed.value))
 function choosePlan(plan: Plan) { paymentSuccess.value = null; if (plan.key === 'free') { currentPlan.value = 'free'; selectedPlan.value = null; return }; selectedPlan.value = plan.key }
 function completePayment() { if (selectedPlan.value && canPay.value) { currentPlan.value = selectedPlan.value; paymentSuccess.value = selectedPlan.value; selectedPlan.value = null; cardHolder.value = ''; cardNumber.value = ''; expiry.value = ''; cvc.value = ''; agreed.value = false } }
 function formatCardNumber() { cardNumber.value = cardNumber.value.replace(/\D/g, '').slice(0, 16).replace(/(\d{4})(?=\d)/g, '$1 ') }
@@ -48,4 +58,16 @@ function formatExpiry() { const value = expiry.value.replace(/\D/g, '').slice(0,
 .plan-card { @apply relative overflow-hidden rounded-[1.5rem] border border-[#e2dccf] bg-white/85 p-6 shadow-[0_8px_22px_rgba(66,72,60,.04)]; }.plan-card.featured { @apply border-[#7d9b81] bg-[#fcfdf9] shadow-[0_16px_32px_rgba(76,112,83,.13)]; }.plan-card.current { @apply ring-2 ring-[#bed4c0]; }.popular { @apply absolute right-0 top-0 flex items-center gap-1 rounded-bl-xl bg-[#5b8263] px-3 py-1.5 text-[11px] font-bold text-white; }.plan-card h2 { @apply text-2xl font-black tracking-tight; }.plan-card p { @apply mt-2 min-h-10 text-sm leading-5 text-[#788079]; }.plan-icon { @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#edf1e9] text-[#65736a]; }.plan-icon.plus { @apply bg-[#e4f1e5] text-[#52775a]; }.plan-icon.pro { @apply bg-[#f2eadc] text-[#9a6b2d]; }.price { @apply mt-7 flex items-end gap-1; }.price strong { @apply text-3xl font-black tracking-tight; }.price span { @apply mb-1 text-sm text-[#7d857e]; }.plan-card .yearly-note { @apply mt-1 min-h-5 text-xs text-[#719075]; }.plan-action { @apply mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-[#bcd1be] bg-white py-3 text-sm font-bold text-[#53765a] transition hover:bg-[#edf5ed]; }.plan-action.selected { @apply border-[#5b8263] bg-[#5b8263] text-white; }.plan-card ul { @apply mt-6 space-y-3 border-t border-[#ece7dc] pt-5; }.plan-card li { @apply flex items-center gap-2 text-sm text-[#58645b]; }.plan-card li svg { @apply shrink-0 text-[#5e8965]; }
 .included-card { @apply flex flex-col gap-4 rounded-[1.3rem] border border-[#e2dccf] bg-white/70 p-5 sm:flex-row sm:items-center sm:justify-between; }.included-card>div { @apply flex items-center gap-3; }.included-card>div>svg { @apply h-10 w-10 rounded-xl bg-[#e7f2e8] p-2.5 text-[#567b5d]; }.included-card b,.included-card small { @apply block; }.included-card b { @apply text-sm; }.included-card small { @apply mt-1 text-xs text-[#818881]; }.included-card button { @apply text-sm font-bold text-[#56795d]; }
 .payment-dialog { @apply relative w-full max-w-[490px] rounded-[1.5rem] bg-[#fffdfa] p-6 shadow-2xl sm:p-7; }.close-button { @apply absolute right-4 top-4 rounded-lg p-2 text-[#7c847d] hover:bg-[#f1f1ec]; }.payment-heading { @apply flex items-center gap-3; }.payment-heading>span { @apply grid h-11 w-11 place-items-center rounded-xl bg-[#e5f1e5] text-[#55775c]; }.payment-heading p { @apply text-xs font-bold uppercase tracking-[.14em] text-[#718274]; }.payment-heading h2 { @apply mt-1 text-xl font-black; }.payment-summary { @apply mt-6 flex items-center justify-between rounded-xl bg-[#f3f5ef] px-4 py-3 text-sm text-[#637066]; }.payment-summary strong { @apply text-base text-[#29372e]; }.payment-summary small { @apply text-xs font-normal text-[#7d877e]; }.payment-dialog label { @apply block text-xs font-bold text-[#59655c]; }.payment-dialog input:not([type='checkbox']) { @apply mt-1.5 w-full rounded-xl border border-[#ddd9d0] bg-white px-3 py-2.5 text-sm text-[#29372e] outline-none transition placeholder:text-[#abb0aa] focus:border-[#719176] focus:ring-2 focus:ring-[#dceadc]; }.input-icon { @apply relative; }.input-icon svg { @apply absolute left-3 top-[calc(50%-2px)] h-4 w-4 -translate-y-1/2 text-[#8b948b]; }.input-icon input { @apply pl-9 !important; }.agreement { @apply flex !important items-center gap-2 text-xs font-medium !important text-[#6f776f] !important; }.agreement input { @apply h-4 w-4 accent-[#5b8263]; }.pay-button { @apply w-full rounded-xl bg-[#5b8263] py-3 text-sm font-bold text-white shadow-[0_8px_16px_rgba(76,112,83,.18)] transition hover:bg-[#4f7557] disabled:cursor-not-allowed disabled:bg-[#bdc7bb] disabled:shadow-none; }.payment-note { @apply mt-4 flex items-center justify-center gap-1 text-center text-[11px] text-[#838a83]; }
+
+.subscription-page { @apply pb-8; }
+.plan-card { @apply transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_35px_rgba(66,72,60,.1)]; }
+.plan-card.current { @apply shadow-[0_14px_30px_rgba(76,112,83,.12)]; }
+.payment-dialog { max-height: min(760px, calc(100vh - 2rem)); overflow-y: auto; border: 1px solid rgba(255,255,255,.78); }
+.payment-dialog::before { content: ''; position: absolute; inset: 0 0 auto; height: 5px; border-radius: 1.5rem 1.5rem 0 0; background: linear-gradient(90deg, #55775c, #9dbba1); }
+.payment-summary { border: 1px solid #e1e9df; background: linear-gradient(135deg, #f7faf5, #edf5ed); }
+.payment-dialog input:not([type='checkbox']) { min-height: 46px; }
+.payment-dialog input:not([type='checkbox']):focus { box-shadow: 0 0 0 4px rgba(113,145,118,.13); }
+.pay-button:not(:disabled) { transform: translateZ(0); }
+.pay-button:not(:disabled):active { transform: scale(.985); }
+@media (max-width: 640px) { .payment-dialog { border-radius: 1.25rem; padding: 1.5rem; } .payment-summary { margin-top: 1.25rem; } }
 </style>
