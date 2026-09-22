@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date as Date, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, Field
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/notes", tags=["Notes"])
 class NoteCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(default="", max_length=10_000)
-    date: date
+    date: Date
     time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     tag: str = Field(min_length=1, max_length=30)
 
@@ -21,7 +21,7 @@ class NoteCreate(BaseModel):
 class NoteUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     content: str | None = Field(default=None, max_length=10_000)
-    date: date | None = None
+    date: Date | None = None
     time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     tag: str | None = Field(default=None, min_length=1, max_length=30)
     done: bool | None = None
