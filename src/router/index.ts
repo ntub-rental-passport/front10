@@ -192,7 +192,6 @@ const router = createRouter({
 let sessionSynced = false
 
 router.beforeEach(async (to) => {
-  return true
   // 只在「本機認為已登入」時才對帳；沒登入的話沒有東西可以驗，
   // 每個訪客都打一次 /me 只是浪費請求。
   if (!sessionSynced && getAuthSession()?.isAuthenticated) {
