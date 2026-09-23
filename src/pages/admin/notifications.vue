@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Send } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button/index'
@@ -7,7 +7,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/i
 import TemplatesTab from '@/src/components/admin/notifications/TemplatesTab.vue'
 import SentLogTab from '@/src/components/admin/notifications/SentLogTab.vue'
 import ScheduleTab from '@/src/components/admin/notifications/ScheduleTab.vue'
-import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
 
 // 與內容管理頁同樣的單層分頁樣式，兩個獨立頁面各自維持一致的視覺語言。
@@ -30,17 +29,16 @@ function handleTabChange(value: unknown): void {
 }
 
 /*
- * 頁面層級的「發送通知」：不帶模板開啟對話框，所以裡面才會出現「自由撰寫」切換。
- * 模板列上的發送鈕會鎖定該列的模板，等於在這一頁沒有任何路徑可以發一則
- * 一次性通知——只能繞到使用者管理挑一個人才看得到那個切換鈕。這顆補上那條路徑。
- * 放在頁首而非某個分頁裡，是因為兩個分頁都該看得到它。
+ * 發送改成整頁編輯器（/admin/notifications/compose）。
+ * 原本是一顆按鈕開一個 max-h-[85vh] 的捲動對話框，預覽在摺線以下 ——
+ * 套個有變數的模板就等於盲寫。
+ *
+ * 送完會帶著 ?sent=N 導回來，在這裡回報一次結果。
  */
-const sendDialogOpen = ref(false)
-const sentMessage = ref('')
-
-function onSent(payload: { count: number; recipientNames: string[] }): void {
-  sentMessage.value = `已成功發送給 ${payload.count} 位使用者。`
-}
+const sentMessage = computed(() => {
+  const count = route.query.sent
+  return typeof count === 'string' && count !== '' ? `已成功發送給 ${count} 位使用者。` : ''
+})
 </script>
 
 <template>
@@ -50,7 +48,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
       <p v-if="sentMessage" class="text-sm font-medium text-success">
         {{ sentMessage }}
       </p>
-      <Button class="ml-auto" @click="sendDialogOpen = true">
+      <Button class="ml-auto" @click="router.push('/admin/notifications/compose')">
         <Send class="mr-2 h-4 w-4" />
         發送通知
       </Button>
@@ -67,6 +65,5 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
       <TabsContent value="schedule" class="mt-4"><ScheduleTab /></TabsContent>
     </Tabs>
 
-    <SendNotificationDialog v-model:open="sendDialogOpen" @sent="onSent" />
   </div>
 </template>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import {
@@ -17,7 +18,9 @@ import { Textarea } from '@/components/ui/textarea/index'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select/index'
@@ -31,15 +34,20 @@ import {
 } from '@/components/ui/table/index'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
-import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { useExpandedRows } from '@/src/composables/admin/useExpandedRows'
 import { useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
 import { extractVariables, renderTemplate } from '@/src/utils/notif-template'
 import { groupIntoBatches } from '@/src/utils/notif-batch'
+import {
+  ACTION_LINK_GROUPS,
+  ACTION_LINK_OPTIONS,
+  DEFAULT_ACTION_LABEL,
+} from '@/src/utils/notif-action-link'
 import { sampleValuesFor, templateUsage } from '@/src/utils/notif-stats'
 import { formatDateTime } from '@/src/utils/admin-format'
 import type { NotifCategory, NotifChannel, NotifTemplate } from '@/src/mocks/admin-seed'
 
+const router = useRouter()
 const { templates, messages, saveTemplate, removeTemplate, toggleTemplate } =
   useAdminNotifications()
 const { isExpanded, toggle } = useExpandedRows()
@@ -91,6 +99,9 @@ interface DraftState {
   channels: NotifChannel[]
   title: string
   body: string
+  /** 預設的操作按鈕。套用模板時帶進編輯器，送出前還能改。 */
+  actionUrl: string
+  actionLabel: string
   enabled: boolean
 }
 
@@ -101,11 +112,26 @@ function emptyDraft(): DraftState {
     channels: [],
     title: '',
     body: '',
+    actionUrl: '',
+    actionLabel: '',
     enabled: true,
   }
 }
 
 const draft = ref<DraftState>(emptyDraft())
+
+/** Select 不能用空字串當值（會被當成沒選），所以「不加按鈕」要有一個實際的值。 */
+const NO_ACTION = '__none__'
+
+const draftActionUrl = computed({
+  get: () => (draft.value.actionUrl === '' ? NO_ACTION : draft.value.actionUrl),
+  set: (value: string) => {
+    draft.value.actionUrl = value === NO_ACTION ? '' : value
+    if (draft.value.actionUrl !== '' && draft.value.actionLabel.trim() === '') {
+      draft.value.actionLabel = DEFAULT_ACTION_LABEL
+    }
+  },
+})
 
 function channelOn(channel: NotifChannel): boolean {
   return draft.value.channels.includes(channel)
@@ -134,6 +160,8 @@ function openEdit(item: NotifTemplate): void {
     channels: [...item.channels],
     title: item.title,
     body: item.body,
+    actionUrl: item.actionUrl ?? '',
+    actionLabel: item.actionLabel ?? '',
     enabled: item.enabled,
   }
   dialogOpen.value = true
@@ -147,6 +175,9 @@ function submit(): void {
     channels: draft.value.channels,
     title: draft.value.title,
     body: draft.value.body,
+    // 只填文字沒選頁面的話按鈕不會出現，所以兩個一起清掉，不要留半截資料
+    actionUrl: draft.value.actionUrl || undefined,
+    actionLabel: draft.value.actionUrl ? draft.value.actionLabel || undefined : undefined,
     enabled: draft.value.enabled,
   })
   dialogOpen.value = false
@@ -163,29 +194,19 @@ function confirmDelete(): void {
   deleteTarget.value = null
 }
 
-/* -------------------- 發送 Dialog -------------------- */
-// 實際的發送流程（含二次確認）搬進 SendNotificationDialog，這裡只保留「點哪一列的發送」的狀態。
-
-const sendTarget = ref<NotifTemplate | null>(null)
-const sendDialogOpen = ref(false)
-const sentMessage = ref('')
+/* -------------------- 發送 -------------------- */
+// 發送流程整個搬到 /admin/notifications/compose。這裡只負責把模板帶過去，
+// 編輯器會把內容複製進來 —— 之後改的是「這一次要送的內容」，不是模板本身。
 
 function openSend(item: NotifTemplate): void {
-  sendTarget.value = item
-  sentMessage.value = ''
-  sendDialogOpen.value = true
-}
-
-function onSent(payload: { count: number; recipientNames: string[] }): void {
-  sentMessage.value = `已成功發送給 ${payload.count} 位使用者。`
+  void router.push({ path: '/admin/notifications/compose', query: { template: item.id } })
 }
 </script>
 
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between">
-      <p v-if="sentMessage" class="text-sm font-medium text-success">{{ sentMessage }}</p>
-      <span v-else />
+      <span />
       <Button @click="openCreate">新增模板</Button>
     </div>
 
@@ -367,6 +388,43 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
             <Label for="nt-body">內文</Label>
             <Textarea id="nt-body" v-model="draft.body" rows="4" />
           </div>
+
+          <!--
+            操作按鈕存在模板上：「租約到期提醒」的按鈕永遠是「查看合約」，
+            每次發送重打一次沒有意義，而且遲早會有人打錯。
+            只給白名單不給自由輸入 —— router 末端有 catch-all，
+            打錯的連結不會 404，會無聲無息把租客丟回首頁。
+          -->
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="space-y-2">
+              <Label>操作按鈕連到哪（可不選）</Label>
+              <Select v-model="draftActionUrl">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem :value="NO_ACTION">不加按鈕</SelectItem>
+                  <SelectGroup v-for="group in ACTION_LINK_GROUPS" :key="group">
+                    <SelectLabel>{{ group }}</SelectLabel>
+                    <SelectItem
+                      v-for="option in ACTION_LINK_OPTIONS.filter((o) => o.group === group)"
+                      :key="option.url"
+                      :value="option.url"
+                    >
+                      {{ option.label }}
+                    </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-2">
+              <Label for="nt-action-label">按鈕文字</Label>
+              <Input
+                id="nt-action-label"
+                v-model="draft.actionLabel"
+                :disabled="draft.actionUrl === ''"
+                :placeholder="DEFAULT_ACTION_LABEL"
+              />
+            </div>
+          </div>
           <div class="space-y-2">
             <Label class="mb-0">偵測到的變數</Label>
             <div v-if="draftVariables.length > 0" class="flex flex-wrap gap-1">
@@ -386,8 +444,6 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
       </DialogContent>
     </Dialog>
 
-    <!-- 發送 Dialog：實際流程在 SendNotificationDialog，這裡只負責帶入鎖定的模板 -->
-    <SendNotificationDialog v-model:open="sendDialogOpen" :template="sendTarget" @sent="onSent" />
 
     <!-- 刪除確認 Dialog -->
     <Dialog :open="deleteTarget !== null" @update:open="(o: boolean) => { if (!o) deleteTarget = null }">

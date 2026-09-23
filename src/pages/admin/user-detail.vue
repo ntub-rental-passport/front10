@@ -33,7 +33,6 @@ import {
 import { ArrowLeft, BadgeCheck, ExternalLink, Plus, Send, ShieldAlert } from 'lucide-vue-next'
 import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
-import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import {
   adminRoleLabels,
@@ -259,21 +258,19 @@ function goToTickets(): void {
 }
 
 // ── 發送通知 ────────────────────────────────────────────────────
-
-const sendDialogOpen = ref(false)
-const sentMessage = ref('')
-const presetEmails = computed(() => (row.value ? [row.value.user.email] : []))
+// 發送流程整個搬到 /admin/notifications/compose（整頁編輯器）。
+//
+// 原本刻意留在本頁顯示提示、不導頁，理由是「管理員多半要接著看下一列」。
+// 那個取捨在對話框時代成立；整頁編輯器帶得動預覽、收件人試算與排程，
+// 留一個縮水版的對話框在這裡只會讓兩套組字邏輯繼續漂移。
+// 編輯器送完會導回通知管理，要回到這一頁按瀏覽器上一頁即可。
 
 function openSendDialog(): void {
-  sentMessage.value = ''
-  sendDialogOpen.value = true
-}
-
-// 發完留在原頁顯示提示，不導頁——管理員多半是看完這個人的資料才想到要發通知，
-// 導走反而要重新導航回來。
-function onSent(payload: { count: number; recipientNames: string[] }): void {
-  const name = payload.recipientNames[0] ?? row.value?.user.nickname ?? row.value?.user.email
-  sentMessage.value = name ? `已發送給 ${name}。` : `已成功發送給 ${payload.count} 位使用者。`
+  if (!row.value) return
+  void router.push({
+    path: '/admin/notifications/compose',
+    query: { to: row.value.user.email },
+  })
 }
 </script>
 
@@ -291,7 +288,6 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
         </Button>
       </div>
 
-      <p v-if="sentMessage" class="text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
 
       <!--
         名字移到頂部列（麵包屑「使用者管理 / 名字」），由下面的
@@ -756,7 +752,6 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
       </DialogContent>
     </Dialog>
 
-    <SendNotificationDialog v-model:open="sendDialogOpen" :preset-emails="presetEmails" @sent="onSent" />
   </div>
 
   <div v-else class="space-y-4 py-16 text-center">

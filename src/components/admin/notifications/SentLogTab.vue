@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
+import { Label } from '@/components/ui/label/index'
+import { Switch } from '@/components/ui/switch/index'
 import {
   Table,
   TableBody,
@@ -10,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
+import { useAdminNotifications, TEST_SOURCE_LABEL } from '@/src/composables/admin/useAdminNotifications'
 import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { groupIntoBatches, singleRecipientOf, type NotifBatch } from '@/src/utils/notif-batch'
 import { formatDateTime } from '@/src/utils/admin-format'
@@ -19,6 +21,8 @@ import {
   batchReadStat,
   channelBadgeClass,
   channelBadgeText,
+  excludeTestBatches,
+  isTestBatch,
 } from '@/src/utils/notif-stats'
 
 const router = useRouter()
@@ -27,7 +31,16 @@ const { users } = useAdminUsers()
 
 // 一次發送一列。逐筆展開會讓一次 57 人的群發塞滿整頁，把先前的紀錄推出視野；
 // 想看細節（收件人清單、已讀比例）改進批次詳情頁，這裡的列只負責讓人找到那一次發送。
-const batches = computed(() => groupIntoBatches(messages.value))
+const allBatches = computed(() => groupIntoBatches(messages.value))
+
+// 測試發送預設不顯示，但資料還在 —— 哪天有人問「這封怎麼來的」查得到。
+const showTests = ref(false)
+const testCount = computed(
+  () => allBatches.value.filter((batch) => isTestBatch(batch, TEST_SOURCE_LABEL)).length,
+)
+const batches = computed(() =>
+  showTests.value ? allBatches.value : excludeTestBatches(allBatches.value, TEST_SOURCE_LABEL),
+)
 
 /**
  * 單人批次直接顯示收件人是誰，而不是「1 人 · 指定使用者」——
@@ -47,6 +60,14 @@ function openDetail(batch: NotifBatch): void {
 
 <template>
   <div class="space-y-4">
+    <!-- 有測試發送才出現這一行；平常不要多一個永遠用不到的開關 -->
+    <div v-if="testCount > 0" class="flex items-center justify-end gap-2 text-sm">
+      <Label for="show-tests" class="mb-0 text-foreground/70">
+        顯示測試發送（{{ testCount }} 筆）
+      </Label>
+      <Switch id="show-tests" v-model="showTests" />
+    </div>
+
     <Table>
       <TableHeader>
         <TableRow>

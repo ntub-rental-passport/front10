@@ -18,6 +18,15 @@ export interface NotifTemplate {
   channels: NotifChannel[]
   title: string
   body: string
+  /**
+   * 這個模板預設的操作按鈕。套用模板時帶進編輯器，送出前還可以改。
+   *
+   * 存在模板上是因為「租約到期提醒」的按鈕永遠是「查看合約」——
+   * 每次發送重打一次沒有意義，而且遲早會有人打錯。
+   * 可選欄位，舊資料是 undefined，不需要 migration。
+   */
+  actionUrl?: string
+  actionLabel?: string
   enabled: boolean
   updatedAt: string
 }
@@ -119,8 +128,8 @@ export function seedUserNotifications(): UserNotification[] {
       channels: ['inapp', 'email', 'push'],
       deliveryStatus: { inapp: 'sent', email: 'pending', push: 'pending' },
       sourceType: 'landlord',
-      actionUrl: '/app/billing',
-      actionLabel: '查看帳單',
+      // 租客端沒有帳單頁。原本寫 /app/billing，router 裡不存在，
+      // 點下去會被 catch-all 丟回首頁 —— 寧可沒有按鈕，也不要一顆會騙人的按鈕。
       createdAt: daysAgo(1),
       read: false,
     },
@@ -136,7 +145,7 @@ export function seedUserNotifications(): UserNotification[] {
       channels: ['inapp'],
       deliveryStatus: { inapp: 'sent' },
       sourceType: 'landlord',
-      actionUrl: '/app/maintenance',
+      actionUrl: '/app/repairs',
       actionLabel: '查看工單',
       createdAt: daysAgo(2),
       read: false,
@@ -153,7 +162,7 @@ export function seedUserNotifications(): UserNotification[] {
       channels: ['inapp', 'email'],
       deliveryStatus: { inapp: 'sent', email: 'pending' },
       sourceType: 'admin',
-      actionUrl: '/app/subsidy',
+      actionUrl: '/app/subsidy/upload',
       actionLabel: '前往補件',
       createdAt: daysAgo(3),
       read: false,
@@ -230,7 +239,7 @@ export function seedUserNotifications(): UserNotification[] {
       channels: ['inapp'],
       deliveryStatus: { inapp: 'sent' },
       sourceType: 'system',
-      actionUrl: '/app/contracts',
+      actionUrl: '/app/contract-analysis',
       actionLabel: '查看結果',
       createdAt: daysAgo(25),
       read: true,
