@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
 import {
   Table,
@@ -11,7 +12,6 @@ import {
 } from '@/components/ui/table/index'
 import { CalendarClock, Info, RefreshCw } from 'lucide-vue-next'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
-import ScheduleDialog from '@/src/components/admin/notifications/ScheduleDialog.vue'
 import { useNow } from '@/src/composables/useNow'
 import { formatDateTime } from '@/src/utils/admin-format'
 import {
@@ -34,6 +34,7 @@ import {
  * 後端每 20 秒醒來一次，到時間就真的寄出 Email，不需要有人開著後台。
  */
 
+const router = useRouter()
 const now = useNow()
 
 const items = ref<ScheduledNotif[]>([])
@@ -45,7 +46,6 @@ const loading = ref(true)
  */
 const unavailable = ref(false)
 const actionError = ref('')
-const dialogOpen = ref(false)
 
 let controller: AbortController | undefined
 
@@ -90,10 +90,6 @@ async function onCancel(item: ScheduledNotif): Promise<void> {
   await refresh()
 }
 
-function onCreated(): void {
-  actionError.value = ''
-  void refresh()
-}
 </script>
 
 <template>
@@ -124,7 +120,11 @@ function onCreated(): void {
         <RefreshCw class="mr-2 h-4 w-4" />
         重新整理
       </Button>
-      <Button :disabled="unavailable" @click="dialogOpen = true">
+      <!-- 跟立即發送共用同一個編輯器，只是預設落在「排程」 -->
+      <Button
+        :disabled="unavailable"
+        @click="router.push({ path: '/admin/notifications/compose', query: { when: 'schedule' } })"
+      >
         <CalendarClock class="mr-2 h-4 w-4" />
         排程發送
       </Button>
@@ -206,10 +206,5 @@ function onCreated(): void {
       </TableBody>
     </Table>
 
-    <ScheduleDialog
-      v-model:open="dialogOpen"
-      :email-available="capabilities?.email ?? false"
-      @created="onCreated"
-    />
   </div>
 </template>

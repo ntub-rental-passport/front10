@@ -69,6 +69,12 @@ const router = createRouter({
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
         { path: 'notification-center', component: () => import('@/src/pages/admin/notification-center.vue') },
         { path: 'notifications', component: () => import('@/src/pages/admin/notifications.vue') },
+        // compose 要排在 :batchId 前面。vue-router 的靜態段本來就贏過動態段，
+        // 但別把「批次詳情把 /compose 吃掉」這件事交給排序規則去保證。
+        {
+          path: 'notifications/compose',
+          component: () => import('@/src/pages/admin/notifications-compose.vue'),
+        },
         { path: 'notifications/:batchId', component: () => import('@/src/pages/admin/notifications-detail.vue') },
         { path: 'monitoring', component: () => import('@/src/pages/admin/monitoring.vue') },
         // AI 使用量已擴充為系統監控，保留舊路徑避免既有書籤 404

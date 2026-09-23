@@ -158,3 +158,23 @@ export function channelBadgeText(stat: ChannelStat): string {
   // 混合狀態：把兩個數字都講出來，不要挑一個代表
   return `${name} · 已送 ${stat.sent}／待送 ${stat.pending}`
 }
+
+/* -------------------- 測試發送 -------------------- */
+
+/**
+ * 這一批是不是「先寄給我自己」的測試。
+ *
+ * 測試發送走的是跟正式發送完全一樣的路徑（真的寫進收件匣、真的產生批次），
+ * 這正是它的用途 —— 預覽卡再準也是畫出來的，只有真的送一次才看得到
+ * 租客端實際長怎樣。代價是它會出現在發送紀錄裡。
+ *
+ * 完全不寫進紀錄的話，會有一筆真實存在的通知查無此事；
+ * 放著不管的話紀錄會被測試灌滿。所以標記起來、預設濾掉、給一個開關。
+ */
+export function isTestBatch(batch: NotifBatch, testLabel: string): boolean {
+  return batch.recipients.some((item) => item.sourceLabel === testLabel)
+}
+
+export function excludeTestBatches(batches: NotifBatch[], testLabel: string): NotifBatch[] {
+  return batches.filter((batch) => !isTestBatch(batch, testLabel))
+}

@@ -27,7 +27,6 @@ import StatTile from '@/src/components/admin/StatTile.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vue'
-import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
 import { userAlertLabels, type UserAlert } from '@/src/utils/admin-user-directory'
@@ -154,22 +153,18 @@ function handleFilterChange<K extends keyof typeof filter.value>(
 }
 
 // ── 發送通知 ────────────────────────────────────────────────────
-
-const sendTarget = ref<UserDirectoryRow | null>(null)
-const sendDialogOpen = ref(false)
-const sentMessage = ref('')
-const presetEmails = computed(() => (sendTarget.value ? [sendTarget.value.user.email] : []))
+// 發送流程整個搬到 /admin/notifications/compose（整頁編輯器）。
+//
+// 原本刻意留在本頁顯示提示、不導頁，理由是「管理員多半要接著看下一列」。
+// 那個取捨在對話框時代成立；整頁編輯器帶得動預覽、收件人試算與排程，
+// 留一個縮水版的對話框在這裡只會讓兩套組字邏輯繼續漂移。
+// 編輯器送完會導回通知管理，要回到這一頁按瀏覽器上一頁即可。
 
 function openSend(row: UserDirectoryRow): void {
-  sendTarget.value = row
-  sentMessage.value = ''
-  sendDialogOpen.value = true
-}
-
-// 發完留在原頁顯示提示，不導頁——管理員多半是要接著看下一列，導走反而打斷篩選狀態。
-function onSent(payload: { count: number; recipientNames: string[] }): void {
-  const name = payload.recipientNames[0] ?? sendTarget.value?.user.nickname ?? sendTarget.value?.user.email
-  sentMessage.value = name ? `已發送給 ${name}。` : `已成功發送給 ${payload.count} 位使用者。`
+  void router.push({
+    path: '/admin/notifications/compose',
+    query: { to: row.user.email },
+  })
 }
 </script>
 
@@ -180,7 +175,6 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
       副標裡「點選任一列進入詳情」是操作提示不是說明，沒有跟著刪掉，
       改放在表格自己的計數列旁邊 —— 那裡才是使用者正要動手的地方。
     -->
-    <p v-if="sentMessage" class="text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
 
     <!--
       真實帳號與展示資料併在同一張表，真實的排在前面並帶「真實帳號」標記。
@@ -453,6 +447,5 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
       </CardContent>
     </Card>
 
-    <SendNotificationDialog v-model:open="sendDialogOpen" :preset-emails="presetEmails" @sent="onSent" />
   </div>
 </template>
