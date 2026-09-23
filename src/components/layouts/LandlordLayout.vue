@@ -27,6 +27,7 @@ const navItems = [
   { label: '財務管理', path: '/landlord/finance', icon: ReceiptText },
   { label: '修繕', path: '/landlord/maintenance', icon: Wrench },
   { label: '合約管理', path: '/landlord/contracts', icon: FileText },
+  { label: '方案與訂閱', path: '/landlord/subscription', icon: Sparkles },
   { label: '設定', path: '/landlord/settings', icon: Settings },
 ]
 

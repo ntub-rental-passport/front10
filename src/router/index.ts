@@ -50,6 +50,7 @@ const router = createRouter({
         { path: 'finance', component: () => import('@/src/pages/landlord/finance.vue') },
         { path: 'maintenance', component: () => import('@/src/pages/landlord/maintenance.vue') },
         { path: 'contracts', component: () => import('@/src/pages/landlord/contracts.vue') },
+        { path: 'subscription', component: () => import('@/src/pages/landlord/subscription.vue') },
         { path: 'settings', component: () => import('@/src/pages/landlord/settings.vue') },
         { path: 'settings/:section', component: () => import('@/src/pages/landlord/settings-detail.vue') },
       ],
