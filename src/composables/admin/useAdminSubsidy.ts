@@ -14,6 +14,7 @@ import {
   canTransitionSubsidy,
   documentsComplete,
   isSubsidyQueue,
+  migrateSubsidyApplications,
   missingDocumentsLabel,
   nextBatchCode,
   subsidyStats,
@@ -25,6 +26,9 @@ import {
 export const adminSubsidyCollection = createAdminCollection<SubsidyApplication[]>(
   `subsidy-applications-${ADMIN_DATASET_VERSION}`,
   seedSubsidyApplications,
+  // localStorage 的資料可能被手動編輯或是舊版本存的；governmentSteps 不是
+  // 陣列時詳情頁會直接拋錯、對話框打不開。見 migrateSubsidyApplications。
+  migrateSubsidyApplications,
 )
 export const adminSubsidyBatchCollection = createAdminCollection<SubsidyBatch[]>(
   `subsidy-batches-${ADMIN_DATASET_VERSION}`,

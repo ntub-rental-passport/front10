@@ -1,5 +1,5 @@
 import type { StatusDotTone } from '@/src/components/admin/status-dot'
-import type { GovernmentStep } from '@/src/mocks/admin/subsidy'
+import type { GovernmentStep, SubsidyApplication } from '@/src/mocks/admin/subsidy'
 
 /**
  * 租金補貼審核。純邏輯，不依賴 Vue。
@@ -210,10 +210,49 @@ export function governmentStepVisual(status: GovernmentStep['status']): Governme
     case 'done':
       return { dotClass: 'bg-muted-foreground', textClass: '' }
     case 'active':
-      return { dotClass: 'bg-primary', textClass: 'font-semibold text-primary' }
+      // 文字用 secondary-foreground 而不是 primary：淺色模式下這兩個 token 是
+      // 完全相同的值（見 src/index.css），所以淺色外觀零變化；深色模式
+      // --primary 會被調亮到 0.6，當文字踩在深色對話框上實測只有 4.45，
+      // 而且會比「未開始」（6.71）還淡 —— 層級整個倒過來。
+      // secondary-foreground 在深色是 13.39。（同 TrendChip 的處理。）
+      //
+      // 圓點仍然用 bg-primary：那是填色，不受這個問題影響。
+      return { dotClass: 'bg-primary', textClass: 'font-semibold text-secondary-foreground' }
     case 'failed':
       return { dotClass: 'bg-destructive-surface', textClass: 'font-medium text-destructive' }
     case 'pending':
-      return { dotClass: 'border-2 border-border bg-background', textClass: 'text-muted-foreground' }
+      // 不用 text-muted-foreground：它在這個對話框的底色（rgb 245,244,244，
+      // 不是純白卡）上實測只有 4.44，差 0.06 沒過 AA。
+      //
+      // 也不用 foreground/70（6.53）—— 那會讓「還沒輪到」比「失敗」（5.45）
+      // 更顯眼，層級就反了。/60 落在中間，既過關又仍然是整條時間軸最淡的。
+      return { dotClass: 'border-2 border-border bg-background', textClass: 'text-foreground/60' }
   }
+}
+
+/**
+ * 修正從 localStorage 讀回來的申請資料。
+ *
+ * ## 為什麼需要這個
+ *
+ * governmentSteps 的型別寫的是 GovernmentStep[]（非選填），但型別只管編譯期。
+ * 實際的值來自 localStorage —— 使用者可以手動編輯、可能是舊版本存的、也可能
+ * 被任何腳本寫壞。
+ *
+ * 而詳情頁的 `selected.governmentSteps.length > 0` 沒有守衛：那個欄位一旦不是
+ * 陣列就直接拋 TypeError，整個對話框打不開，畫面只剩一層灰色遮罩 ——
+ * 使用者看到的是「點了沒反應」，不是任何錯誤訊息。
+ *
+ * 這不是假想情境：開發過程中就真的發生過一次（測試資料還原時把它寫成
+ * undefined），而且花了好一陣子才查出原因不在程式碼而在資料。
+ *
+ * 在資料進入應用的邊界修正一次，比在每個使用點加 `?.` 可靠 —— 後者總會漏掉
+ * 一處，而漏掉的那一處就是下次崩潰的地方。
+ */
+export function migrateSubsidyApplications(raw: SubsidyApplication[]): SubsidyApplication[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((item) => ({
+    ...item,
+    governmentSteps: Array.isArray(item?.governmentSteps) ? item.governmentSteps : [],
+  }))
 }
