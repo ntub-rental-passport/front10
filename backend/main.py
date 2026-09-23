@@ -9,8 +9,9 @@ from sqlalchemy import text
 from database import engine, Base
 from metrics import count_requests
 from routers import admin, auth, contract, garbage, landlord_properties, landlord_tenants, inspection, tenant_leases, outage
-from routers import notes, households
+from routers import notes, households, scheduled_notifications
 from garbage_service import dispatch_due
+from scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
 
 # ---------------------------------------------------------------
 # 應用程式的 log
@@ -41,11 +42,18 @@ if engine is not None:
 @asynccontextmanager
 async def lifespan(app):
     async def reminders_loop():
+        # 兩個排程器共用同一個迴圈，但各自 try/except ——
+        # 包在一起的話，垃圾車提醒炸掉會連帶讓後台排程整輪被跳過，
+        # 而它們之間沒有任何關係。
         while True:
             try:
                 await asyncio.to_thread(dispatch_due)
             except Exception:
                 logging.getLogger(__name__).exception('Garbage reminder scheduler failed')
+            try:
+                await asyncio.to_thread(dispatch_scheduled_notifications)
+            except Exception:
+                logging.getLogger(__name__).exception('Scheduled notification dispatcher failed')
             await asyncio.sleep(20)
     task = asyncio.create_task(reminders_loop())
     try:
@@ -86,6 +94,7 @@ app.include_router(inspection.router)
 app.include_router(outage.router)
 app.include_router(notes.router)
 app.include_router(households.router)
+app.include_router(scheduled_notifications.router)
 
 @app.get("/")
 def root():
