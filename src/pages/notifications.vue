@@ -90,7 +90,7 @@ function unreadAccent(item: InboxItem): string {
         :class="[
           'relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
           activeTab === tab.value
-            ? 'bg-primary text-primary-foreground'
+            ? 'bg-primary-surface text-primary-surface-foreground'
             : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
         ]"
         @click="activeTab = tab.value"
@@ -101,7 +101,7 @@ function unreadAccent(item: InboxItem): string {
           :class="[
             'ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-bold',
             activeTab === tab.value
-              ? 'bg-primary-foreground/20 text-primary-foreground'
+              ? 'bg-primary-surface-foreground/20 text-primary-surface-foreground'
               : 'bg-destructive-surface text-destructive-surface-foreground',
           ]"
         >

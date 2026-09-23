@@ -112,7 +112,15 @@
     --secondary-foreground: oklch(0.45 0.15 280);
     
     --muted: oklch(0.95 0.01 280); /* Neutral_10 */
-    --muted-foreground: oklch(0.55 0.03 280); /* Neutral_50 */
+    /*
+      次要文字色。0.55 時實測：對頁面底 4.44、對 --muted 4.21、對白卡 4.87
+      —— 三個裡有兩個沒過 AA 的 4.5，而它是整個後台每一張表格的表頭色，
+      也是所有說明文字的顏色。差 0.06 也是沒過。
+
+      壓到 0.52：對頁面底 5.07、對 --muted 4.81、對白卡 5.56。
+      代價是「次要」的感覺弱一點點，但看不清楚的層級不叫層級。
+    */
+    --muted-foreground: oklch(0.52 0.03 280); /* Neutral_50 */
     
     /* Amber #FEB63D */
     --accent: oklch(0.8 0.15 80);
@@ -236,7 +244,14 @@
     --secondary-foreground: oklch(0.9 0.05 280);
     
     --muted: oklch(0.35 0.05 280);
-    --muted-foreground: oklch(0.7 0.03 280);
+    /*
+      同淺色的理由。0.7 對頁面底有 6.78 看起來很安全，但那不是最糟的情況：
+      踩在 --muted（0.35）上只剩 4.24 —— 而 STATUS_CHIP_CLASS.idle 正是
+      `bg-muted text-muted-foreground`，那顆 chip 一直都是沒過的。
+
+      0.74：對 --muted 4.91、對 --secondary 5.00、對卡 6.99、對底 7.84。
+    */
+    --muted-foreground: oklch(0.74 0.03 280);
     
     --accent: oklch(0.8 0.15 80);
     --accent-foreground: oklch(0.2 0.05 280);
