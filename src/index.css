@@ -229,8 +229,28 @@
     --popover: oklch(0.25 0.05 280);
     --popover-foreground: oklch(0.98 0 0);
     
-    /* Blue Iris */
-    --primary: oklch(0.6 0.15 280);
+    /*
+      Blue Iris。深色模式下這個值**只當文字與細節色**用 —— 填色一律走
+      --primary-surface（見下面）。所以它的唯一任務是「踩在深底上要讀得到」。
+
+      原本 0.6 沒做到：對頁面底 4.45 看起來還行，但那是最寬鬆的情況。
+      實際會踩到的底還有卡片（0.25）與 --muted／--secondary（0.35）：
+        0.60 → 頁面底 4.45、卡 3.96、secondary 2.83、muted 2.78
+      右上角頭像的字（text-primary 踩在 secondary 上）實測只有 3.31。
+
+      0.74 之後：
+        頁面底 7.52、卡 6.70、secondary 4.80、muted 4.71 —— 四種底都過 AA。
+      選 0.74 而不是剛好過關的 0.72（secondary 4.51、muted 4.43）：
+      4.5 邊緣的值這個專案已經被咬過好幾次，留一點餘裕。
+
+      代價是紫變淡，但變淡的面積比想像中小 —— 按鈕、側欄膠囊、徽章都已經
+      改吃 --primary-surface；chart.js 的圖走 --chart-* 那一組，沒有任何
+      一個引用這裡（唯一的例外是 AiQuotaRing，它的進度弧寫死
+      stroke="var(--primary)"，會跟著變亮，對深色底反而更清楚）。
+      所以受影響的只剩連結文字和 bg-primary/10 那類淡底。
+      淡底上的白字實測 14.49 → 13.42，離 4.5 還很遠。
+    */
+    --primary: oklch(0.74 0.15 280);
     --primary-foreground: oklch(0.98 0 0);
     /* 與淺色同值，理由見上方 */
     --sidebar-surface: oklch(0.32 0.10 280);
