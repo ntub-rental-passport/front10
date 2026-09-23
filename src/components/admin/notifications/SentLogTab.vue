@@ -14,7 +14,12 @@ import { useAdminNotifications } from '@/src/composables/admin/useAdminNotificat
 import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { groupIntoBatches, singleRecipientOf, type NotifBatch } from '@/src/utils/notif-batch'
 import { formatDateTime } from '@/src/utils/admin-format'
-import type { NotifChannel, NotifDeliveryStatus } from '@/src/mocks/admin/notifications'
+import {
+  batchChannelStats,
+  batchReadStat,
+  channelBadgeClass,
+  channelBadgeText,
+} from '@/src/utils/notif-stats'
 
 const router = useRouter()
 const { messages } = useAdminNotifications()
@@ -23,24 +28,6 @@ const { users } = useAdminUsers()
 // 一次發送一列。逐筆展開會讓一次 57 人的群發塞滿整頁，把先前的紀錄推出視野；
 // 想看細節（收件人清單、已讀比例）改進批次詳情頁，這裡的列只負責讓人找到那一次發送。
 const batches = computed(() => groupIntoBatches(messages.value))
-
-const channelLabels: Record<NotifChannel, string> = {
-  inapp: '站內',
-  email: 'Email',
-  push: '推播',
-}
-
-// pending 代表後端還沒接、實際上沒寄出去，樣式必須跟真的送達明顯不同，
-// 否則管道標籤等於在說謊。
-function channelClass(status: NotifDeliveryStatus | undefined): string {
-  return status === 'sent'
-    ? 'border-transparent bg-primary/10 text-primary'
-    : 'border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground'
-}
-
-function channelText(channel: NotifChannel, status: NotifDeliveryStatus | undefined): string {
-  return status === 'sent' ? channelLabels[channel] : `${channelLabels[channel]} · 待接通`
-}
 
 /**
  * 單人批次直接顯示收件人是誰，而不是「1 人 · 指定使用者」——
@@ -65,7 +52,8 @@ function openDetail(batch: NotifBatch): void {
         <TableRow>
           <TableHead>通知</TableHead>
           <TableHead class="w-24">人數</TableHead>
-          <TableHead class="w-64">管道</TableHead>
+          <TableHead class="w-28">已讀</TableHead>
+          <TableHead class="w-72">投遞狀態</TableHead>
           <TableHead class="w-48">發送時間</TableHead>
         </TableRow>
       </TableHeader>
@@ -81,15 +69,27 @@ function openDetail(batch: NotifBatch): void {
             <p class="mt-0.5 text-xs text-muted-foreground">{{ recipientSummary(batch) }}</p>
           </TableCell>
           <TableCell>{{ batch.recipients.length }} 人</TableCell>
+
+          <!--
+            已讀是真實資料：UserNotification.read 是真欄位，租客端的 markRead
+            真的會寫入。只有站內算得出來 —— Email 與推播沒有開信追蹤，
+            所以文案寫「站內」而不是籠統的「已讀」。
+          -->
+          <TableCell class="whitespace-nowrap text-sm">
+            <span class="font-medium tabular-nums">{{ batchReadStat(batch).read }}</span>
+            <span class="text-foreground/70"> / {{ batchReadStat(batch).total }}</span>
+            <span class="ml-1 text-xs text-foreground/70">站內</span>
+          </TableCell>
+
           <TableCell>
             <div class="flex flex-wrap gap-1">
               <Badge
-                v-for="ch in batch.channels"
-                :key="ch"
+                v-for="stat in batchChannelStats(batch)"
+                :key="stat.channel"
                 variant="outline"
-                :class="channelClass(batch.recipients[0].deliveryStatus[ch])"
+                :class="channelBadgeClass(stat)"
               >
-                {{ channelText(ch, batch.recipients[0].deliveryStatus[ch]) }}
+                {{ channelBadgeText(stat) }}
               </Badge>
             </div>
           </TableCell>
@@ -99,7 +99,7 @@ function openDetail(batch: NotifBatch): void {
         </TableRow>
 
         <TableRow v-if="batches.length === 0">
-          <TableCell colspan="4" class="py-8 text-center text-muted-foreground">
+          <TableCell colspan="5" class="py-8 text-center text-foreground/70">
             尚無發送紀錄。
           </TableCell>
         </TableRow>

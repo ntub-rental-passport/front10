@@ -40,7 +40,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
   <div class="space-y-6">
     <!-- 標題移到頂部列（見 src/utils/admin-page-title.ts），這裡只剩動作與提示 -->
     <div class="flex flex-wrap items-center justify-between gap-4">
-      <p v-if="sentMessage" class="text-sm font-medium text-emerald-600">
+      <p v-if="sentMessage" class="text-sm font-medium text-success">
         {{ sentMessage }}
       </p>
       <Button class="ml-auto" @click="sendDialogOpen = true">

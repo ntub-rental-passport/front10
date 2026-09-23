@@ -11,7 +11,12 @@ import { useAdminNotifications } from '@/src/composables/admin/useAdminNotificat
 import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { groupIntoBatches } from '@/src/utils/notif-batch'
 import { formatDateTime } from '@/src/utils/admin-format'
-import type { NotifChannel, NotifDeliveryStatus } from '@/src/mocks/admin/notifications'
+import {
+  batchChannelStats,
+  batchReadStat,
+  channelBadgeClass,
+  channelBadgeText,
+} from '@/src/utils/notif-stats'
 import { useRegisterAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 
 const route = useRoute()
@@ -41,22 +46,8 @@ function nicknameOf(email: string): string | null {
   return users.value.find((user) => user.email === email)?.nickname ?? null
 }
 
-const channelLabels: Record<NotifChannel, string> = {
-  inapp: '站內',
-  email: 'Email',
-  push: '推播',
-}
-
-// pending 代表後端還沒接、實際上沒寄出去，樣式必須跟真的送達明顯不同，否則等於謊報已送達。
-function channelClass(status: NotifDeliveryStatus | undefined): string {
-  return status === 'sent'
-    ? 'border-transparent bg-primary/10 text-primary'
-    : 'border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground'
-}
-
-function channelText(channel: NotifChannel, status: NotifDeliveryStatus | undefined): string {
-  return status === 'sent' ? channelLabels[channel] : `${channelLabels[channel]} · 待接通`
-}
+// 管道標籤與發送紀錄共用 notif-stats，兩頁對同一批資料才不會給出不同說法。
+const channelStats = computed(() => (batch.value ? batchChannelStats(batch.value) : []))
 
 // 舊資料的 sourceLabel 是補上去的空字串——不知道當初是不是套模板，
 // 顯示成「一次性撰寫」等於偽造來源，用「—」老實標示「不知道」。
@@ -65,7 +56,7 @@ const sourceLabel = computed(() => {
   return value && value.trim() !== '' ? value : '—'
 })
 
-const readCount = computed(() => batch.value?.recipients.filter((item) => item.read).length ?? 0)
+const readCount = computed(() => (batch.value ? batchReadStat(batch.value).read : 0))
 const totalCount = computed(() => batch.value?.recipients.length ?? 0)
 const readPercent = computed(() => (totalCount.value === 0 ? 0 : Math.round((readCount.value / totalCount.value) * 100)))
 
@@ -139,12 +130,12 @@ const filteredRecipients = computed(() => {
           <p class="mb-1.5 text-xs font-medium text-muted-foreground">管道送達狀態</p>
           <div class="flex flex-wrap gap-1.5">
             <Badge
-              v-for="ch in batch.channels"
-              :key="ch"
+              v-for="stat in channelStats"
+              :key="stat.channel"
               variant="outline"
-              :class="channelClass(batch.recipients[0].deliveryStatus[ch])"
+              :class="channelBadgeClass(stat)"
             >
-              {{ channelText(ch, batch.recipients[0].deliveryStatus[ch]) }}
+              {{ channelBadgeText(stat) }}
             </Badge>
           </div>
         </div>
