@@ -101,7 +101,7 @@ watch(isSidebarPinned, (value) => {
               'flex rounded-md text-sm font-medium transition-all duration-300',
               isSidebarExpanded ? 'items-center gap-3 px-3 py-2' : 'justify-center px-0 py-3',
               isActive(item.path)
-                ? 'bg-primary text-primary-foreground'
+                ? 'bg-primary-surface text-primary-surface-foreground'
                 : isPathUnderMaintenance(item.path)
                   ? 'text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'

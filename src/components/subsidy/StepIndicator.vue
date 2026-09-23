@@ -9,7 +9,7 @@ defineProps<{ currentStep: number; totalSteps: number }>()
         :class="[
           'flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors',
           step === currentStep
-            ? 'bg-primary text-primary-foreground'
+            ? 'bg-primary-surface text-primary-surface-foreground'
             : step < currentStep
             ? 'bg-primary/30 text-primary'
             : 'bg-muted text-muted-foreground'

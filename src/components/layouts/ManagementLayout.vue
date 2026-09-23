@@ -61,7 +61,7 @@ async function handleSignOut(): Promise<void> {
             v-for="item in navItems"
             :key="item.path"
             :to="item.path"
-            :class="cn('flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors', isActive(item.path) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground')"
+            :class="cn('flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors', isActive(item.path) ? 'bg-primary-surface text-primary-surface-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground')"
           >
             <component :is="item.icon" class="h-4 w-4" />{{ item.label }}
           </RouterLink>
