@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button/index'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
 import TemplatesTab from '@/src/components/admin/notifications/TemplatesTab.vue'
 import SentLogTab from '@/src/components/admin/notifications/SentLogTab.vue'
+import ScheduleTab from '@/src/components/admin/notifications/ScheduleTab.vue'
 import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
 
@@ -15,11 +16,17 @@ const router = useRouter()
 
 // 從批次詳情頁按返回會帶著 ?tab=log，回到這頁時要停在發送紀錄分頁，
 // 不然每次看完一筆紀錄都得重新切一次頁籤。其餘情境維持預設的通知模板分頁。
-const activeTab = computed<'templates' | 'log'>(() => (route.query.tab === 'log' ? 'log' : 'templates'))
+type NotifTab = 'templates' | 'log' | 'schedule'
+
+const TAB_QUERY: NotifTab[] = ['log', 'schedule']
+
+const activeTab = computed<NotifTab>(() =>
+  TAB_QUERY.includes(route.query.tab as NotifTab) ? (route.query.tab as NotifTab) : 'templates',
+)
 
 function handleTabChange(value: unknown): void {
-  const tab = value as 'templates' | 'log'
-  void router.replace({ query: tab === 'log' ? { tab: 'log' } : {} })
+  const tab = value as NotifTab
+  void router.replace({ query: TAB_QUERY.includes(tab) ? { tab } : {} })
 }
 
 /*
@@ -53,9 +60,11 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
       <TabsList :class="ADMIN_TAB_LIST">
         <TabsTrigger value="templates" :class="ADMIN_TAB_TRIGGER">通知模板</TabsTrigger>
         <TabsTrigger value="log" :class="ADMIN_TAB_TRIGGER">發送紀錄</TabsTrigger>
+        <TabsTrigger value="schedule" :class="ADMIN_TAB_TRIGGER">排程</TabsTrigger>
       </TabsList>
       <TabsContent value="templates" class="mt-4"><TemplatesTab /></TabsContent>
       <TabsContent value="log" class="mt-4"><SentLogTab /></TabsContent>
+      <TabsContent value="schedule" class="mt-4"><ScheduleTab /></TabsContent>
     </Tabs>
 
     <SendNotificationDialog v-model:open="sendDialogOpen" @sent="onSent" />
