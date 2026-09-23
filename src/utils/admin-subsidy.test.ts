@@ -1,3 +1,4 @@
+import type { SubsidyApplication } from '@/src/mocks/admin/subsidy'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -6,6 +7,7 @@ import {
   documentsComplete,
   governmentStepVisual,
   isSubsidyQueue,
+  migrateSubsidyApplications,
   missingDocuments,
   missingDocumentsLabel,
   nextBatchCode,
@@ -204,10 +206,24 @@ describe('governmentStepVisual', () => {
     expect(governmentStepVisual('pending').dotClass).toContain('border')
   })
 
-  it('進行中用主色並加粗，那是目前卡住的地方', () => {
+  it('未開始的文字仍然是整條時間軸最淡的，但不到看不清楚', () => {
+    // muted-foreground 在這個對話框底色上只有 4.44，差 0.06 沒過 AA；
+    // 但也不能用 /70（6.53），那會比「失敗」（5.45）還顯眼，層級就反了。
+    expect(governmentStepVisual('pending').textClass).toBe('text-foreground/60')
+  })
+
+  it('進行中用主色圓點並加粗，那是目前卡住的地方', () => {
     const v = governmentStepVisual('active')
     expect(v.dotClass).toContain('bg-primary')
     expect(v.textClass).toContain('font-semibold')
+  })
+
+  it('進行中的文字用 secondary-foreground，不是 primary', () => {
+    // 淺色下兩者同值，深色下 --primary 只有 4.45 而且比「未開始」(6.71) 還淡，
+    // 層級會倒過來。secondary-foreground 在深色是 13.39。
+    const v = governmentStepVisual('active')
+    expect(v.textClass).toContain('text-secondary-foreground')
+    expect(v.textClass).not.toContain('dark:')
   })
 
   it('不使用 warn／danger 的狀態色語言', () => {
@@ -220,5 +236,40 @@ describe('governmentStepVisual', () => {
   it('失敗用 destructive-surface 當填色，不是把 destructive 當填色', () => {
     // --destructive 現在是文字色（淺色 0.52），填色要用 surface
     expect(governmentStepVisual('failed').dotClass).toContain('bg-destructive-surface')
+  })
+})
+
+describe('migrateSubsidyApplications', () => {
+  const base = { id: 'sa-1', status: 'submitted' } as unknown as SubsidyApplication
+
+  it('governmentSteps 不是陣列時補成空陣列', () => {
+    // 詳情頁的 selected.governmentSteps.length 沒有守衛，這個欄位一旦不是
+    // 陣列就拋 TypeError、對話框打不開，畫面只剩一層灰遮罩 ——
+    // 使用者看到的是「點了沒反應」，不是錯誤訊息。
+    const out = migrateSubsidyApplications([
+      { ...base, governmentSteps: undefined as never },
+      { ...base, governmentSteps: null as never },
+      { ...base, governmentSteps: 'oops' as never },
+    ])
+    expect(out.every((a) => Array.isArray(a.governmentSteps))).toBe(true)
+  })
+
+  it('正常的資料原封不動', () => {
+    const steps = [{ title: '申請送出', status: 'done' as const, date: null, note: null }]
+    const out = migrateSubsidyApplications([{ ...base, governmentSteps: steps }])
+    expect(out[0]!.governmentSteps).toEqual(steps)
+  })
+
+  it('其餘欄位不會被動到', () => {
+    const out = migrateSubsidyApplications([
+      { ...base, monthlyRent: 12300, governmentSteps: undefined as never },
+    ] as SubsidyApplication[])
+    expect((out[0] as unknown as { monthlyRent: number }).monthlyRent).toBe(12300)
+    expect(out[0]!.id).toBe('sa-1')
+  })
+
+  it('整包不是陣列時回空陣列，不要讓它往下傳', () => {
+    expect(migrateSubsidyApplications(null as never)).toEqual([])
+    expect(migrateSubsidyApplications({} as never)).toEqual([])
   })
 })
