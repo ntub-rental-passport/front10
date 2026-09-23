@@ -34,14 +34,36 @@ import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import SendNotificationDialog from '@/src/components/admin/notifications/SendNotificationDialog.vue'
 import { useExpandedRows } from '@/src/composables/admin/useExpandedRows'
 import { useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
-import { extractVariables } from '@/src/utils/notif-template'
+import { extractVariables, renderTemplate } from '@/src/utils/notif-template'
+import { groupIntoBatches } from '@/src/utils/notif-batch'
+import { sampleValuesFor, templateUsage } from '@/src/utils/notif-stats'
 import { formatDateTime } from '@/src/utils/admin-format'
 import type { NotifCategory, NotifChannel, NotifTemplate } from '@/src/mocks/admin-seed'
 
-const { templates, saveTemplate, removeTemplate, toggleTemplate } = useAdminNotifications()
+const { templates, messages, saveTemplate, removeTemplate, toggleTemplate } =
+  useAdminNotifications()
 const { isExpanded, toggle } = useExpandedRows()
 
 const variablesOf = (item: NotifTemplate) => extractVariables(`${item.title} ${item.body}`)
+
+const batches = computed(() => groupIntoBatches(messages.value))
+
+// 使用紀錄靠 sourceLabel 對回模板名稱 —— 模板改名之後，舊批次會對不上而顯示
+// 「還沒發送過」。這是真實資料的限制，不要用模糊的模糊比對假裝它接得起來。
+const usageOf = (item: NotifTemplate) => templateUsage(item.name, batches.value)
+
+/**
+ * 變數預覽：把 {{姓名}} 這類變數填上範例值，讓管理員在送出前看到真實長度的訊息。
+ * 填進去的是假的示範資料，所以介面上一定要標「範例值」，
+ * 否則管理員會以為那是真的收件者資料。
+ */
+function previewOf(item: NotifTemplate): { title: string; body: string } {
+  const vars = sampleValuesFor(variablesOf(item))
+  return {
+    title: renderTemplate(item.title, vars),
+    body: renderTemplate(item.body, vars),
+  }
+}
 
 const channelLabels: Record<NotifChannel, string> = {
   inapp: '站內',
@@ -162,7 +184,7 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between">
-      <p v-if="sentMessage" class="text-sm font-medium text-emerald-600">{{ sentMessage }}</p>
+      <p v-if="sentMessage" class="text-sm font-medium text-success">{{ sentMessage }}</p>
       <span v-else />
       <Button @click="openCreate">新增模板</Button>
     </div>
@@ -224,15 +246,71 @@ function onSent(payload: { count: number; recipientNames: string[] }): void {
 
           <TableRow v-if="isExpanded(item.id)" class="hover:bg-transparent">
             <TableCell colspan="6" class="bg-muted/30">
-              <p class="mb-1 text-xs font-medium text-muted-foreground">標題</p>
-              <p class="text-sm font-medium">{{ item.title }}</p>
-              <p class="mb-1 mt-3 text-xs font-medium text-muted-foreground">內文</p>
-              <p class="whitespace-pre-wrap text-sm text-muted-foreground">{{ item.body }}</p>
-              <div v-if="variablesOf(item).length > 0" class="mt-3 flex flex-wrap items-center gap-1">
-                <span class="mr-1 text-xs font-medium text-muted-foreground">變數</span>
-                <Badge v-for="name in variablesOf(item)" :key="name" variant="outline">
-                  {{ name }}
-                </Badge>
+              <div class="grid gap-5 lg:grid-cols-[1fr_260px]">
+                <!-- 左：填上範例值之後的樣子 -->
+                <div>
+                  <div class="mb-2 flex flex-wrap items-center gap-2">
+                    <p class="text-xs font-medium text-foreground/70">預覽</p>
+                    <span
+                      v-if="variablesOf(item).length > 0"
+                      class="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] text-foreground/70"
+                    >
+                      變數已填入範例值
+                    </span>
+                  </div>
+                  <div class="rounded-lg border border-border bg-background p-3">
+                    <p class="text-sm font-medium">{{ previewOf(item).title }}</p>
+                    <p class="mt-1 whitespace-pre-wrap text-sm text-foreground/80">
+                      {{ previewOf(item).body }}
+                    </p>
+                  </div>
+
+                  <div
+                    v-if="variablesOf(item).length > 0"
+                    class="mt-2 flex flex-wrap items-center gap-1"
+                  >
+                    <span class="mr-1 text-xs font-medium text-foreground/70">變數</span>
+                    <Badge v-for="name in variablesOf(item)" :key="name" variant="outline">
+                      {{ name }}
+                    </Badge>
+                  </div>
+
+                  <details class="mt-3">
+                    <summary class="cursor-pointer text-xs text-foreground/70">看原始模板</summary>
+                    <p class="mt-2 text-sm font-medium">{{ item.title }}</p>
+                    <p class="whitespace-pre-wrap text-sm text-foreground/70">{{ item.body }}</p>
+                  </details>
+                </div>
+
+                <!-- 右：這個模板實際被用過幾次 -->
+                <div class="rounded-lg border border-border bg-background p-3">
+                  <p class="mb-2 text-xs font-medium text-foreground/70">使用紀錄</p>
+                  <dl v-if="usageOf(item).batchCount > 0" class="space-y-1.5 text-sm">
+                    <div class="flex items-baseline justify-between gap-2">
+                      <dt class="text-foreground/70">已發送</dt>
+                      <dd class="font-medium tabular-nums">{{ usageOf(item).batchCount }} 批</dd>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-2">
+                      <dt class="text-foreground/70">累計對象</dt>
+                      <dd class="font-medium tabular-nums">
+                        {{ usageOf(item).totalRecipients }} 人次
+                      </dd>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-2">
+                      <dt class="text-foreground/70">站內已讀</dt>
+                      <dd class="font-medium tabular-nums">
+                        {{ usageOf(item).read }} / {{ usageOf(item).totalRecipients }}
+                      </dd>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-2 border-t border-border pt-1.5">
+                      <dt class="text-foreground/70">最後發送</dt>
+                      <dd class="text-right text-xs">
+                        {{ usageOf(item).lastSentAt ? formatDateTime(usageOf(item).lastSentAt!) : '—' }}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p v-else class="text-sm text-foreground/70">這個模板還沒發送過。</p>
+                </div>
               </div>
             </TableCell>
           </TableRow>
