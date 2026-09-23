@@ -28,6 +28,18 @@ export function useAdminNotificationCenter() {
     if (target && !target.read) target.read = true
   }
 
+  /**
+   * 標回未讀。
+   *
+   * 原本點開一則就回不去了 —— 想把它留成待辦就不能點開看內容，
+   * 這讓「已讀」變成一個不小心就會踩到的單向操作。
+   * 主流的通知中心（Linear、GitHub）都允許切回未讀。
+   */
+  function markUnread(id: string): void {
+    const target = notifications.value.find((n) => n.id === id)
+    if (target && target.read) target.read = false
+  }
+
   function markAllRead(): void {
     for (const n of notifications.value) {
       if (!n.read) n.read = true
@@ -65,5 +77,5 @@ export function useAdminNotificationCenter() {
     })
   }
 
-  return { items, unreadCount, markRead, markAllRead, sendNote, addAlert }
+  return { items, unreadCount, markRead, markUnread, markAllRead, sendNote, addAlert }
 }
