@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Badge } from '@/components/ui/badge/index'
+import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
 import {
   Dialog,
@@ -13,15 +13,34 @@ import {
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Switch } from '@/components/ui/switch/index'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select/index'
 import { ChevronDown, ChevronUp, GripVertical, ImageOff } from 'lucide-vue-next'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
+import StatusBadge from '@/src/components/admin/StatusBadge.vue'
+import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { isValidImageUrl } from '@/src/utils/banner-url'
+import { resolvePhase } from '@/src/utils/phase'
+import { TENANT_ROUTE_GROUPS, TENANT_ROUTE_OPTIONS, isDeadRoute } from '@/src/utils/tenant-route-link'
+import { formatDate } from '@/src/utils/admin-format'
+import { dateKey } from '@/src/utils/date-key'
 import type { Banner } from '@/src/mocks/admin/content'
 
+const router = useRouter()
 const { banners, saveBanner, removeBanner, moveBanner, reorderBanner } = useAdminContent()
 
 const ordered = computed(() => [...banners.value].sort((a, b) => a.order - b.order))
+
+// 每次渲染都用同一個「現在」判斷所有列的階段，避免逐列各取一次而在跨秒時出現不一致
+const phaseOf = (item: Banner) => resolvePhase(item, new Date())
 
 /*
  * 排序用原生 HTML5 drag and drop，不引入拖曳套件——這裡只有一份短清單，
@@ -57,21 +76,55 @@ interface DraftState {
   imageUrl: string
   linkUrl: string
   published: boolean
+  startAt: string
+  endAt: string
+}
+
+/**
+ * ISO → <input type="date"> 的值。
+ *
+ * ⚠️ 不可以寫成 `iso.slice(0, 10)`。fromDateInput 存進去的是**本地午夜**，
+ * 在 UTC+8 會變成前一天的 16:00Z —— 直接切 ISO 字串會把日期倒退一天，
+ * 而且每次開編輯再存檔就再退一天。
+ *
+ * dateKey() 取的是本地日期部件，來回轉換才會穩定。
+ */
+function toDateInput(iso: string): string {
+  return dateKey(new Date(iso))
+}
+
+function fromDateInput(value: string): string {
+  return new Date(`${value}T00:00:00`).toISOString()
 }
 
 const draft = ref<DraftState>(emptyDraft())
 
 function emptyDraft(): DraftState {
-  return { title: '', imageUrl: '', linkUrl: '', published: true }
+  return {
+    title: '',
+    imageUrl: '',
+    linkUrl: '',
+    published: true,
+    startAt: toDateInput(new Date().toISOString()),
+    endAt: '',
+  }
 }
 
 // 圖片載入失敗時要換成佔位樣式而不是瀏覽器預設的破圖示；
 // 網址改變就重置，否則換了網址但還沒重新載入完成前會誤顯示上一張的失敗狀態。
 const previewFailed = ref(false)
 
-watch(() => draft.value.imageUrl, () => {
-  previewFailed.value = false
-})
+/** 存檔前的圖片檢查狀態，見下面的 probeImage()。 */
+type ImageCheckState = 'idle' | 'checking' | 'failed'
+const imageCheckState = ref<ImageCheckState>('idle')
+
+watch(
+  () => draft.value.imageUrl,
+  () => {
+    previewFailed.value = false
+    imageCheckState.value = 'idle'
+  },
+)
 
 function onPreviewError(): void {
   previewFailed.value = true
@@ -80,6 +133,7 @@ function onPreviewError(): void {
 function openCreate(): void {
   draft.value = emptyDraft()
   previewFailed.value = false
+  imageCheckState.value = 'idle'
   dialogOpen.value = true
 }
 
@@ -90,13 +144,98 @@ function openEdit(item: Banner): void {
     imageUrl: item.imageUrl,
     linkUrl: item.linkUrl,
     published: item.published,
+    startAt: toDateInput(item.startAt),
+    endAt: item.endAt ? toDateInput(item.endAt) : '',
   }
   previewFailed.value = false
+  imageCheckState.value = 'idle'
   dialogOpen.value = true
 }
 
-function submit(): void {
-  saveBanner({ ...draft.value })
+/**
+ * 送出前用**活的** router 再驗一次連結——白名單防得了手打，防不了路由之後
+ * 被改名（見 tenant-route-link.ts 開頭的說明）。
+ *
+ * 這裡沒有直接重用 actionLinkError：那個函式處理的是通知操作按鈕「可以不
+ * 填」的語意（只填文字沒填連結才報錯）。輪播的連結是必填的——整張圖都是
+ * 連結，不存在「這個輪播沒有連結」這種合法狀態，Select 也不給選空值，
+ * 所以只需要驗證「選到的這個網址現在還活著嗎」，用不到那組訊息。
+ */
+const linkIssue = computed<string | null>(() => {
+  const url = draft.value.linkUrl
+  if (url === '') return null
+  const matched = router.resolve(url).matched.map((record) => record.path)
+  if (isDeadRoute(matched)) {
+    return `「${url}」在目前的路由表裡不存在，點下去會被丟回首頁。`
+  }
+  return null
+})
+
+/**
+ * 存檔前用瀏覽器實際載一次圖片，不只驗證網址格式——格式合法的網址仍可能是
+ * 404、伺服器掛了，或圖床把這個 hotlink 擋掉。8 秒逾時也當作失敗，不然
+ * 連不上的網址會讓管理員一直等轉圈；沒回應本身就是個訊號。
+ */
+function probeImage(url: string, timeoutMs = 8000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    let settled = false
+
+    function settle(ok: boolean): void {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      img.onload = null
+      img.onerror = null
+      resolve(ok)
+    }
+
+    const timer = setTimeout(() => settle(false), timeoutMs)
+    img.onload = () => settle(true)
+    img.onerror = () => settle(false)
+    img.src = url
+  })
+}
+
+function buildBannerInput(): Omit<Banner, 'id' | 'updatedAt' | 'order'> & { id?: string } {
+  return {
+    id: draft.value.id,
+    title: draft.value.title,
+    imageUrl: draft.value.imageUrl,
+    linkUrl: draft.value.linkUrl,
+    published: draft.value.published,
+    startAt: fromDateInput(draft.value.startAt),
+    endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
+  }
+}
+
+/**
+ * force 為 true 時跳過圖片檢查，是「仍要儲存」按鈕走的路。
+ *
+ * 為什麼要留這條退路：企業防火牆、圖床的防盜連（hotlink protection）都可能
+ * 讓 probeImage() 從瀏覽器發出的檢查請求被擋下來，誤判成「載入失敗」，
+ * 但圖片其實是好的、租客瀏覽器點開來看得到。前端沒有辦法分辨「真的壞了」
+ * 跟「檢查被擋但圖是好的」，如果沒有這顆按鈕，管理員會被一個假警報卡死、
+ * 完全存不了檔。
+ *
+ * 連結檢查（linkIssue）沒有對應的退路：router.resolve() 問的是這個 app
+ * 自己的路由表，不是外部網路請求，不會有「環境造成誤判」這種狀況——
+ * 驗不過就是真的會把使用者丟回首頁，沒有理由放行。
+ */
+async function submit(force = false): Promise<void> {
+  if (!canSubmit()) return
+
+  if (!force) {
+    imageCheckState.value = 'checking'
+    const ok = await probeImage(draft.value.imageUrl)
+    if (!ok) {
+      imageCheckState.value = 'failed'
+      return
+    }
+  }
+
+  imageCheckState.value = 'idle'
+  saveBanner(buildBannerInput())
   dialogOpen.value = false
 }
 
@@ -105,85 +244,147 @@ function confirmDelete(): void {
   deleteTarget.value = null
 }
 
-const canSubmit = () => draft.value.title.trim() !== '' && draft.value.imageUrl.trim() !== ''
+const canSubmit = () =>
+  draft.value.title.trim() !== '' &&
+  draft.value.imageUrl.trim() !== '' &&
+  draft.value.linkUrl !== '' &&
+  linkIssue.value === null &&
+  imageCheckState.value !== 'checking'
 
 // 只在使用者已經有輸入內容時才提示格式錯誤，避免新增輪播一開對話框就先罵人。
 const showUrlFormatWarning = computed(
   () => draft.value.imageUrl.trim() !== '' && !isValidImageUrl(draft.value.imageUrl),
 )
+
+/* -------------------- 上方即時預覽 -------------------- */
+
+/**
+ * 對話框開著、而且已經有圖片網址時，把正在編輯的草稿疊進預覽清單——這樣
+ * 管理員在按「儲存」之前就能看到效果，包含排期／發布開關是不是真的讓它在
+ * 「現在」出現（BannerCarousel 用 resolvePhase 過濾，不是照單全收，所以
+ * 把發布關掉或排到未來，草稿會從預覽消失——這是對的，不是 bug）。
+ * 沒有圖片網址時草稿只會是一塊破圖，不如維持目前已存檔的清單，不要用半成品
+ * 洗掉本來看得到的預覽。
+ */
+const previewItems = computed<Banner[]>(() => {
+  if (!dialogOpen.value || draft.value.imageUrl.trim() === '') return ordered.value
+
+  const editingId = draft.value.id
+  const existing = editingId ? ordered.value.find((item) => item.id === editingId) : undefined
+  const draftBanner: Banner = {
+    id: editingId ?? '__preview-draft__',
+    title: draft.value.title.trim() || '（尚未輸入標題）',
+    imageUrl: draft.value.imageUrl,
+    linkUrl: draft.value.linkUrl,
+    published: draft.value.published,
+    startAt: draft.value.startAt ? fromDateInput(draft.value.startAt) : new Date().toISOString(),
+    endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
+    order: existing?.order ?? ordered.value.reduce((max, item) => Math.max(max, item.order), -1) + 1,
+    updatedAt: existing?.updatedAt ?? new Date().toISOString(),
+  }
+
+  return editingId
+    ? ordered.value.map((item) => (item.id === editingId ? draftBanner : item))
+    : [...ordered.value, draftBanner]
+})
+
+const hasActivePreview = computed(() =>
+  previewItems.value.some((item) => resolvePhase(item, new Date()) === 'active'),
+)
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex justify-end">
-      <Button @click="openCreate">新增輪播</Button>
-    </div>
+  <div class="space-y-6">
+    <section class="space-y-3">
+      <div>
+        <h2 class="text-sm font-semibold">輪播預覽</h2>
+        <p class="mt-1 text-xs text-muted-foreground">
+          租客工作區與公開首頁現在會看到的樣子。排序、發布狀態、排期都即時反映；
+          正在編輯的草稿（含尚未儲存的變更）也看得到。
+        </p>
+      </div>
+      <BannerCarousel :items="previewItems" />
+      <p
+        v-if="!hasActivePreview"
+        class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
+      >
+        目前沒有生效中的輪播，租客工作區與公開首頁不會顯示輪播區塊。
+      </p>
+    </section>
 
-    <div v-if="ordered.length === 0" class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-      尚無輪播圖。
-    </div>
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold">輪播清單</h2>
+        <Button @click="openCreate">新增輪播</Button>
+      </div>
 
-    <div
-      v-for="(item, index) in ordered"
-      :key="item.id"
-      draggable="true"
-      :class="[
-        'flex items-center gap-4 rounded-2xl border bg-muted/10 p-4 transition-colors',
-        draggingId === item.id && 'opacity-40',
-        dropTargetId === item.id && draggingId !== item.id && 'border-primary bg-primary/5',
-      ]"
-      @dragstart="onDragStart(item.id)"
-      @dragend="onDragEnd"
-      @dragover.prevent="onDragOver(item.id)"
-      @drop.prevent="onDrop(index)"
-    >
-      <GripVertical class="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
-      <img :src="item.imageUrl" :alt="item.title" class="h-16 w-28 shrink-0 rounded-lg object-cover" />
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2">
-          <p class="font-medium">{{ item.title }}</p>
-          <Badge :variant="item.published ? 'default' : 'secondary'">
-            {{ item.published ? '已發布' : '未發布' }}
-          </Badge>
+      <div v-if="ordered.length === 0" class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+        尚無輪播圖。
+      </div>
+
+      <div
+        v-for="(item, index) in ordered"
+        :key="item.id"
+        draggable="true"
+        :class="[
+          'flex items-center gap-4 rounded-2xl border bg-muted/10 p-4 transition-colors',
+          draggingId === item.id && 'opacity-40',
+          dropTargetId === item.id && draggingId !== item.id && 'border-primary bg-primary/5',
+        ]"
+        @dragstart="onDragStart(item.id)"
+        @dragend="onDragEnd"
+        @dragover.prevent="onDragOver(item.id)"
+        @drop.prevent="onDrop(index)"
+      >
+        <GripVertical class="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
+        <img :src="item.imageUrl" :alt="item.title" class="h-16 w-28 shrink-0 rounded-lg object-cover" />
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <p class="font-medium">{{ item.title }}</p>
+            <StatusBadge :phase="phaseOf(item)" />
+          </div>
+          <p class="mt-1 truncate text-sm text-muted-foreground">{{ item.linkUrl }}</p>
+          <p class="mt-0.5 text-xs text-muted-foreground">
+            {{ formatDate(item.startAt) }} ～ {{ item.endAt ? formatDate(item.endAt) : '長期' }}
+          </p>
         </div>
-        <p class="mt-1 truncate text-sm text-muted-foreground">{{ item.linkUrl }}</p>
+        <!--
+          拖曳是主要的排序方式，但它對鍵盤使用者不可用，所以 ▲▼ 保留當替代路徑，
+          並補上 aria-label——原本這兩顆只有圖示，讀螢幕的人完全不知道它們是做什麼的。
+        -->
+        <div class="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="往前移一位"
+            :disabled="index === 0"
+            @click="moveBanner(item.id, 'up')"
+          >
+            <ChevronUp class="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="往後移一位"
+            :disabled="index === ordered.length - 1"
+            @click="moveBanner(item.id, 'down')"
+          >
+            <ChevronDown class="h-4 w-4" />
+          </Button>
+          <AdminRowActions
+            :actions="[{ label: '刪除', danger: true, onSelect: () => (deleteTarget = item) }]"
+          >
+            <Button variant="outline" size="sm" @click="openEdit(item)">編輯</Button>
+          </AdminRowActions>
+        </div>
       </div>
-      <!--
-        拖曳是主要的排序方式，但它對鍵盤使用者不可用，所以 ▲▼ 保留當替代路徑，
-        並補上 aria-label——原本這兩顆只有圖示，讀螢幕的人完全不知道它們是做什麼的。
-      -->
-      <div class="flex shrink-0 items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="往前移一位"
-          :disabled="index === 0"
-          @click="moveBanner(item.id, 'up')"
-        >
-          <ChevronUp class="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="往後移一位"
-          :disabled="index === ordered.length - 1"
-          @click="moveBanner(item.id, 'down')"
-        >
-          <ChevronDown class="h-4 w-4" />
-        </Button>
-        <AdminRowActions
-          :actions="[{ label: '刪除', danger: true, onSelect: () => (deleteTarget = item) }]"
-        >
-          <Button variant="outline" size="sm" @click="openEdit(item)">編輯</Button>
-        </AdminRowActions>
-      </div>
-    </div>
+    </section>
 
     <Dialog v-model:open="dialogOpen">
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{{ draft.id ? '編輯輪播' : '新增輪播' }}</DialogTitle>
-          <DialogDescription>圖片以外部網址提供，右側即時預覽。</DialogDescription>
+          <DialogDescription>圖片以外部網址提供，下方即時預覽。</DialogDescription>
         </DialogHeader>
         <div class="space-y-4">
           <div class="space-y-2">
@@ -213,9 +414,44 @@ const showUrlFormatWarning = computed(
               圖片載入失敗，請確認網址是否正確
             </div>
           </div>
+          <div
+            v-if="imageCheckState === 'failed'"
+            class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
+          >
+            <ImageOff class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p>
+              儲存前的檢查載入不出這張圖片。可能是網址真的錯了，也可能是圖床擋掉了這種自動檢查
+              （例如防盜連或企業防火牆）——如果你能確認圖片沒問題，可以按「仍要儲存」略過這次檢查。
+            </p>
+          </div>
           <div class="space-y-2">
-            <Label for="ban-link">連結網址</Label>
-            <Input id="ban-link" v-model="draft.linkUrl" placeholder="/app/..." />
+            <Label>連結頁面</Label>
+            <Select v-model="draft.linkUrl">
+              <SelectTrigger><SelectValue placeholder="選擇這則輪播要連到哪一頁" /></SelectTrigger>
+              <SelectContent>
+                <SelectGroup v-for="group in TENANT_ROUTE_GROUPS" :key="group">
+                  <SelectLabel>{{ group }}</SelectLabel>
+                  <SelectItem
+                    v-for="option in TENANT_ROUTE_OPTIONS.filter((o) => o.group === group)"
+                    :key="option.url"
+                    :value="option.url"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <p v-if="linkIssue" class="text-xs text-destructive">{{ linkIssue }}</p>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label for="ban-start">開始日</Label>
+              <Input id="ban-start" v-model="draft.startAt" type="date" />
+            </div>
+            <div class="space-y-2">
+              <Label for="ban-end">結束日（可留空＝長期）</Label>
+              <Input id="ban-end" v-model="draft.endAt" type="date" />
+            </div>
           </div>
           <div class="flex items-center justify-between rounded-xl border px-3 py-2">
             <Label class="mb-0">發布</Label>
@@ -224,7 +460,12 @@ const showUrlFormatWarning = computed(
         </div>
         <DialogFooter>
           <Button variant="outline" @click="dialogOpen = false">取消</Button>
-          <Button :disabled="!canSubmit()" @click="submit">儲存</Button>
+          <Button v-if="imageCheckState === 'failed'" variant="outline" @click="submit(true)">
+            仍要儲存
+          </Button>
+          <Button :disabled="!canSubmit()" @click="submit()">
+            {{ imageCheckState === 'checking' ? '確認圖片中…' : '儲存' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

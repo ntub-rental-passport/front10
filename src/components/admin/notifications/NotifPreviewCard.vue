@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { ArrowUpRight } from 'lucide-vue-next'
-import { DEFAULT_ACTION_LABEL } from '@/src/utils/notif-action-link'
+import { DEFAULT_ACTION_LABEL } from '@/src/utils/tenant-route-link'
 import { formatDateTime } from '@/src/utils/admin-format'
 
 /**

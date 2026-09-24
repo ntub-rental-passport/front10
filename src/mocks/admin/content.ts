@@ -25,6 +25,9 @@ export interface Banner {
   linkUrl: string
   order: number
   published: boolean
+  /** 跟公告對齊：published 只是總開關，實際生不生效還要看這組起訖時間。 */
+  startAt: string
+  endAt: string | null
   updatedAt: string
 }
 
@@ -93,10 +96,23 @@ export function migrateBannerImages(list: Banner[]): Banner[] {
   })
 }
 
+/**
+ * 舊資料沒有 startAt／endAt（輪播原本只有 published 一個開關）。
+ * 跟 migrateAnnouncements（src/utils/announcement.ts）同一個模式：
+ * startAt 補成 updatedAt——沿用它原本「從什麼時候開始存在」的意思，
+ * endAt 補 null（長期），這樣 resolvePhase() 補完後判斷出的 active／draft
+ * 結果會跟舊版本「只看 published」完全一樣，不會有舊輪播無故消失或冒出來。
+ */
+export function migrateBannerSchedule(list: Banner[]): Banner[] {
+  return list.map((item) =>
+    item.startAt ? item : { ...item, startAt: item.updatedAt, endAt: null },
+  )
+}
+
 export function seedBanners(): Banner[] {
   return [
-    { id: 'ban-1', title: '租補試算上線', imageUrl: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/subsidy', order: 0, published: true, updatedAt: daysAgo(6) },
-    { id: 'ban-2', title: '契約分析教學', imageUrl: 'https://images.unsplash.com/photo-1554995207-c18c203602cb?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/contract', order: 1, published: true, updatedAt: daysAgo(6) },
-    { id: 'ban-3', title: '點交存證（下架中）', imageUrl: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/handover', order: 2, published: false, updatedAt: daysAgo(6) },
+    { id: 'ban-1', title: '租補試算上線', imageUrl: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/subsidy', order: 0, published: true, startAt: daysAgo(6), endAt: null, updatedAt: daysAgo(6) },
+    { id: 'ban-2', title: '契約分析教學', imageUrl: 'https://images.unsplash.com/photo-1554995207-c18c203602cb?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/contract', order: 1, published: true, startAt: daysAgo(6), endAt: null, updatedAt: daysAgo(6) },
+    { id: 'ban-3', title: '點交存證（下架中）', imageUrl: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200&h=400&fit=crop&crop=center', linkUrl: '/app/handover', order: 2, published: false, startAt: daysAgo(6), endAt: null, updatedAt: daysAgo(6) },
   ]
 }

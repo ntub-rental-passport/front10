@@ -33,10 +33,12 @@ import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import LevelBadge from '@/src/components/admin/LevelBadge.vue'
 import StatusBadge from '@/src/components/admin/StatusBadge.vue'
+import AnnouncementBanner from '@/src/components/content/AnnouncementBanner.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { useExpandedRows } from '@/src/composables/admin/useExpandedRows'
-import { resolveAnnouncementPhase } from '@/src/utils/announcement'
+import { isDashboardAnnouncementLevel, resolveAnnouncementPhase } from '@/src/utils/announcement'
 import { formatDate } from '@/src/utils/admin-format'
+import { dateKey } from '@/src/utils/date-key'
 import type { Announcement, AnnouncementAudience, AnnouncementLevel } from '@/src/mocks/admin/content'
 
 const { announcements, saveAnnouncement, removeAnnouncement } = useAdminContent()
@@ -71,8 +73,17 @@ interface DraftState {
   endAt: string
 }
 
+/**
+ * ISO → <input type="date"> 的值。
+ *
+ * ⚠️ 不可以寫成 `iso.slice(0, 10)`。fromDateInput 存進去的是**本地午夜**，
+ * 在 UTC+8 會變成前一天的 16:00Z —— 直接切 ISO 字串會把日期倒退一天，
+ * 而且每次開編輯再存檔就再退一天。
+ *
+ * dateKey() 取的是本地日期部件，來回轉換才會穩定。
+ */
 function toDateInput(iso: string): string {
-  return iso.slice(0, 10)
+  return dateKey(new Date(iso))
 }
 
 function fromDateInput(value: string): string {
@@ -191,6 +202,42 @@ const canSubmit = () => draft.value.title.trim() !== '' && draft.value.body.trim
               <p class="mt-2 text-xs text-muted-foreground">
                 最後更新 {{ formatDate(item.updatedAt) }}
               </p>
+
+              <div class="mt-4 space-y-2 border-t border-border pt-4">
+                <p class="text-xs font-medium text-muted-foreground">租客會看到的樣子</p>
+
+                <!--
+                  一定要講清楚的事實：儀表板橫幅只放 warning／urgent
+                  （見 isDashboardAnnouncementLevel），info 公告完全不會出現在
+                  這裡，只會進通知中心的列表。後台原本沒有任何地方講這件事，
+                  管理員很容易以為發了公告就會跳出來，發了 info 公告卻沒人看到。
+                -->
+                <p
+                  :class="[
+                    'rounded-lg px-3 py-2 text-xs font-medium',
+                    isDashboardAnnouncementLevel(item.level)
+                      ? 'bg-success/10 text-foreground'
+                      : 'bg-muted text-muted-foreground',
+                  ]"
+                >
+                  <template v-if="isDashboardAnnouncementLevel(item.level)">
+                    會出現在租客儀表板最上方的橫幅——「{{ levelLabels[item.level] }}」等級會跳出來。
+                  </template>
+                  <template v-else>
+                    不會出現在租客儀表板橫幅。只有「注意」與「緊急」等級會跳出來，
+                    「{{ levelLabels[item.level] }}」等級只會進通知中心，租客要自己點進去才看得到。
+                  </template>
+                </p>
+
+                <AnnouncementBanner v-if="isDashboardAnnouncementLevel(item.level)" :announcement="item" />
+                <div
+                  v-else
+                  class="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground"
+                >
+                  <LevelBadge :level="item.level" prefixed />
+                  <span>只會顯示成通知中心裡的一則列表項目，不會有儀表板橫幅那種樣式。</span>
+                </div>
+              </div>
             </TableCell>
           </TableRow>
         </template>

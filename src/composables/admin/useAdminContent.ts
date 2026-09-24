@@ -11,6 +11,7 @@ import {
   seedAnnouncements,
   seedBanners,
   migrateBannerImages,
+  migrateBannerSchedule,
   type Announcement,
   type Banner,
 } from '@/src/mocks/admin-seed'
@@ -20,7 +21,14 @@ const announcements = createAdminCollection<Announcement[]>(
   seedAnnouncements,
   migrateAnnouncements,
 )
-const banners = createAdminCollection<Banner[]>('content-banners', seedBanners, migrateBannerImages)
+
+// 兩支舊資料遷移各自處理一件事（圖片網址／排期欄位），互不相依，
+// 在這裡合成單一 migrate 函式餵給 createAdminCollection——它一次只接受一個。
+function migrateBanners(list: Banner[]): Banner[] {
+  return migrateBannerSchedule(migrateBannerImages(list))
+}
+
+const banners = createAdminCollection<Banner[]>('content-banners', seedBanners, migrateBanners)
 
 function nowIso(): string {
   return new Date().toISOString()

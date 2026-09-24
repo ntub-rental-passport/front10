@@ -39,10 +39,10 @@ import { useAdminNotifications } from '@/src/composables/admin/useAdminNotificat
 import { extractVariables, renderTemplate } from '@/src/utils/notif-template'
 import { groupIntoBatches } from '@/src/utils/notif-batch'
 import {
-  ACTION_LINK_GROUPS,
-  ACTION_LINK_OPTIONS,
+  TENANT_ROUTE_GROUPS,
+  TENANT_ROUTE_OPTIONS,
   DEFAULT_ACTION_LABEL,
-} from '@/src/utils/notif-action-link'
+} from '@/src/utils/tenant-route-link'
 import { sampleValuesFor, templateUsage } from '@/src/utils/notif-stats'
 import { formatDateTime } from '@/src/utils/admin-format'
 import type { NotifCategory, NotifChannel, NotifTemplate } from '@/src/mocks/admin-seed'
@@ -402,10 +402,10 @@ function openSend(item: NotifTemplate): void {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem :value="NO_ACTION">不加按鈕</SelectItem>
-                  <SelectGroup v-for="group in ACTION_LINK_GROUPS" :key="group">
+                  <SelectGroup v-for="group in TENANT_ROUTE_GROUPS" :key="group">
                     <SelectLabel>{{ group }}</SelectLabel>
                     <SelectItem
-                      v-for="option in ACTION_LINK_OPTIONS.filter((o) => o.group === group)"
+                      v-for="option in TENANT_ROUTE_OPTIONS.filter((o) => o.group === group)"
                       :key="option.url"
                       :value="option.url"
                     >

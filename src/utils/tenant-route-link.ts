@@ -1,26 +1,30 @@
 /**
- * 通知的操作按鈕連結。
+ * 租客端頁面的連結白名單，給通知的操作按鈕與首頁輪播共用。
  *
  * ## 為什麼要有這個檔案
  *
- * `actionUrl` 整條管線本來就是通的：notificationApi 收這個欄位，租客端的
- * notifications.vue 也真的會把它 render 成一顆 RouterLink 按鈕。但後台從來
- * 沒有地方可以填它，所以管理員送出的每一則通知都是死路。
- *
- * 而 seed 裡僅有的幾個範例有三個是壞的 —— `/app/maintenance` 與
- * `/app/contracts` 其實是**房東端**的路由，`/app/billing` 整個 router 裡
- * 根本不存在。
+ * 兩條管線都一樣：欄位收得到自由輸入的網址，但從來沒有人在送出前真的確認
+ * 過那個網址活著。通知的 `actionUrl` 是這樣，輪播的 `linkUrl` 也是這樣
+ * （原本是一個 `<Input placeholder="/app/...">`，打錯字沒有任何提示）。
  *
  * 最糟的是 router 末端有 `{ path: '/:pathMatch(.*)*', redirect: '/' }`：
- * 死連結不會出現 404，而是**無聲無息把租客丟回首頁**。他按了「查看詳情」，
- * 看到儀表板，完全不知道發生什麼事，也不會有任何地方報錯。
+ * 死連結不會出現 404，而是**無聲無息把使用者丟回首頁**。通知是這樣，輪播
+ * 更糟——輪播同時出現在未登入的公開首頁，訪客點了會莫名其妙回到首頁，
+ * 完全不知道發生什麼事。
  *
  * 所以這裡做兩件事：給一份真實存在的路由清單當下拉選單（防手打），
- * 以及一個執行時檢查（防路由改名 —— `repairs` 這頁顯然改過名，
- * seed 的 `/app/maintenance` 就是那時候留下來的）。
+ * 以及一個執行時檢查（防路由改名——`repairs` 這頁顯然改過名，
+ * 通知 seed 的 `/app/maintenance` 就是那時候留下來的）。
+ *
+ * 這個檔案原本叫 `notif-action-link.ts`，只服務通知。輪播加入白名單驗證後
+ * 兩邊都要用同一份「哪些頁面可以連」的清單，所以搬來這裡、改了中性一點的
+ * 名字。`actionLinkError` / `actionLinkLabel` / `DEFAULT_ACTION_LABEL` 這幾個
+ * 還是留著「action」這個字——它們描述的是通知操作按鈕特有的語意（可以不填、
+ * 沒填按鈕文字就用預設值），輪播的連結是必填的、沒有對應的按鈕文字欄位，
+ * 用不到這幾個，不需要跟著改名。
  */
 
-export interface ActionLinkOption {
+export interface TenantRouteOption {
   url: string
   label: string
   /** 分組，下拉選單用 */
@@ -28,15 +32,16 @@ export interface ActionLinkOption {
 }
 
 /**
- * 可以放進通知的租客端頁面。
+ * 可以連過去的租客端頁面。
  *
  * 刻意是**白名單**而不是自由輸入。自由輸入的連結第一次就可能打錯，
  * 而且打錯了不會有任何徵兆（見上面的 catch-all）。
  *
- * 只收 /app 底下的租客頁面：通知是發給租客的，指向後台或房東端的路徑
- * 他們根本沒有權限進去（router 的 meta.roles 會把他們擋掉）。
+ * 只收 /app 底下的租客頁面：通知是發給租客的，輪播（含公開首頁的訪客導向
+ * 註冊後）最終也是指向租客工作區，指向後台或房東端的路徑他們根本沒有權限
+ * 進去（router 的 meta.roles 會把他們擋掉）。
  */
-export const ACTION_LINK_OPTIONS: ActionLinkOption[] = [
+export const TENANT_ROUTE_OPTIONS: TenantRouteOption[] = [
   { url: '/app', label: '我的首頁', group: '總覽' },
   { url: '/app/notifications', label: '通知中心', group: '總覽' },
 
@@ -58,13 +63,13 @@ export const ACTION_LINK_OPTIONS: ActionLinkOption[] = [
   { url: '/app/account', label: '帳號設定', group: '其他' },
 ]
 
-export const ACTION_LINK_GROUPS = [...new Set(ACTION_LINK_OPTIONS.map((item) => item.group))]
+export const TENANT_ROUTE_GROUPS = [...new Set(TENANT_ROUTE_OPTIONS.map((item) => item.group))]
 
 /** 沒填按鈕文字時，租客端用的預設值（見 notifications.vue 的 `?? '查看詳情'`）。 */
 export const DEFAULT_ACTION_LABEL = '查看詳情'
 
 export function actionLinkLabel(url: string): string | null {
-  return ACTION_LINK_OPTIONS.find((item) => item.url === url)?.label ?? null
+  return TENANT_ROUTE_OPTIONS.find((item) => item.url === url)?.label ?? null
 }
 
 /**
@@ -84,8 +89,11 @@ export function isDeadRoute(matchedPaths: string[]): boolean {
 }
 
 /**
- * 操作按鈕的驗證結果。回字串而不是 boolean：畫面要講出「為什麼不行」，
+ * 通知操作按鈕的驗證結果。回字串而不是 boolean：畫面要講出「為什麼不行」，
  * 「連結無效」這種話等於要管理員自己猜。
+ *
+ * 只給通知用——輪播的連結是必填欄位、沒有獨立的按鈕文字，驗證邏輯比這裡
+ * 單純（見 BannersTab 自己的 linkIssue），沒有共用的必要。
  */
 export function actionLinkError(
   url: string,
