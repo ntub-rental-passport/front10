@@ -411,14 +411,19 @@ const previewAnnouncement = computed<Announcement>(() => ({
                   讓眼睛跳過；現在它自成一段、預設收合、段落標題就寫著「已過期」，淡化變成
                   重複訊號。代價卻很實在：opacity 會讓字和底一起變淡，深色下這一列的等級
                   膠囊掉到 2.42、說明行 3.59。
+
+                  列本身用 bg-card＋shadow-sm，跟專案的 <Card> 元件同一組：只有細框、
+                  沒有底色的話，卡片是透明的、直接貼在頁面底上，看起來像沒有卡片。
                 -->
                 <button
                   v-for="item in grouped[section.phase]"
                   :key="item.id"
                   type="button"
-                  class="flex w-full flex-col gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+                  class="flex w-full flex-col gap-1 rounded-xl border bg-card px-3 py-2.5 text-left shadow-sm transition"
                   :class="[
-                    isSelected(item) ? 'border-primary bg-primary/5' : 'border-border',
+                    isSelected(item)
+                      ? 'border-primary ring-1 ring-primary'
+                      : 'border-border hover:border-primary/40 hover:shadow-md',
                   ]"
                   @click="selectItem(item)"
                 >
@@ -446,7 +451,7 @@ const previewAnnouncement = computed<Announcement>(() => ({
           選一則公告來預覽與編輯
         </div>
 
-        <div v-else class="space-y-6 rounded-2xl border border-border p-5">
+        <div v-else class="space-y-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
           <!-- 上半部：租客會看到的樣子，即時反映下方還沒存檔的編輯內容 -->
           <section class="space-y-3">
             <h2 class="text-sm font-semibold">租客會看到的樣子</h2>
@@ -455,7 +460,7 @@ const previewAnnouncement = computed<Announcement>(() => ({
             <AnnouncementBanner v-if="showBannerSample" :announcement="previewAnnouncement" />
             <div
               v-else-if="showInboxSample"
-              class="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground"
+              class="flex items-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground"
             >
               <LevelBadge :level="draft.level" prefixed />
               <span>只會顯示成通知中心裡的一則列表項目，不會有儀表板橫幅那種樣式。</span>
