@@ -1,4 +1,6 @@
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { inspectionRequest } from '@/src/services/inspectionApi'
+import { getAuthSession } from '@/src/composables/useAuth'
 
 export type EvidencePhase = 'baseline' | 'checkout'
 
@@ -17,11 +19,14 @@ export interface HandoverEvidence {
   aiLabel?: string
   aiConfidence?: number
   note?: string
+  userNote?: string
+  vlmResult?: Record<string, unknown> | null
 }
 
 export type HandoverDiff = {
-  type: 'unchanged' | 'new_damage' | 'missing' | 'degraded'
+  type: 'unchanged' | 'new_damage' | 'missing' | 'degraded' | 'uncertain'
   confidence: number
+  summary: string
   computedAt: string
 }
 
@@ -36,238 +41,161 @@ export interface HandoverItem {
   createdAt: string
 }
 
-interface HandoverStore {
-  properties: HandoverProperty[]
-  items: HandoverItem[]
-  currentPropertyId: string | null
-}
-
-const STORAGE_KEY = 'rentmate-handover-store'
-const SAMPLE_PROPERTY_ALIAS = '示範租屋處'
-const SAMPLE_PROPERTY_ADDRESS = '台北市中正區示範路 100 號 5 樓'
-const DEFAULT_ITEM_PRESETS: Array<{
-  room: string
-  name: string
-  category: HandoverItem['category']
-}> = [
-  { room: '客廳', name: '冷氣', category: 'appliance' },
-  { room: '臥室', name: '床架', category: 'furniture' },
-  { room: '浴室', name: '熱水器', category: 'appliance' },
-]
-
-function createEmptyStore(): HandoverStore {
-  return {
+export function useHandover() {
+  const store = reactive<{
+    properties: HandoverProperty[]
+    items: HandoverItem[]
+    currentPropertyId: string | null
+  }>({
     properties: [],
     items: [],
     currentPropertyId: null,
-  }
-}
-
-function createTimestamp(): string {
-  return new Date().toISOString()
-}
-
-function createPropertyId() {
-  return `prop-${Date.now()}`
-}
-
-function createItemId() {
-  return `item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function createEvidenceId() {
-  return `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function canUseStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
-}
-
-function normalizeStore(payload: Partial<HandoverStore> | null | undefined): HandoverStore {
-  return {
-    properties: payload?.properties ?? [],
-    items: payload?.items ?? [],
-    currentPropertyId: payload?.currentPropertyId ?? null,
-  }
-}
-
-function loadStore(): HandoverStore {
-  if (!canUseStorage()) return createEmptyStore()
-
-  const raw = window.localStorage.getItem(STORAGE_KEY)
-  if (!raw) return createEmptyStore()
-
-  try {
-    return normalizeStore(JSON.parse(raw) as HandoverStore)
-  } catch {
-    window.localStorage.removeItem(STORAGE_KEY)
-    return createEmptyStore()
-  }
-}
-
-function saveStore(store: HandoverStore) {
-  if (!canUseStorage()) return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
-}
-
-function createSeedData(): Pick<HandoverStore, 'properties' | 'items' | 'currentPropertyId'> {
-  const createdAt = createTimestamp()
-  const propertyId = createPropertyId()
-  const sampleProperty: HandoverProperty = {
-    id: propertyId,
-    alias: SAMPLE_PROPERTY_ALIAS,
-    address: SAMPLE_PROPERTY_ADDRESS,
-    createdAt,
-  }
-
-  const items = DEFAULT_ITEM_PRESETS.map((preset) => ({
-    id: createItemId(),
-    propertyId,
-    room: preset.room,
-    name: preset.name,
-    category: preset.category,
-    evidences: [],
-    createdAt: createTimestamp(),
-  }))
-
-  return {
-    properties: [sampleProperty],
-    items,
-    currentPropertyId: propertyId,
-  }
-}
-
-function ensureSeedData(store: HandoverStore) {
-  if (store.properties.length > 0) return
-
-  const seedData = createSeedData()
-  store.properties = seedData.properties
-  store.items = seedData.items
-  store.currentPropertyId = seedData.currentPropertyId
-}
-
-const store = reactive<HandoverStore>(loadStore())
-ensureSeedData(store)
-
-watch(
-  store,
-  (newStore) => {
-    saveStore(newStore)
-  },
-  { deep: true }
-)
-
-export function useHandover() {
+  })
+  const busy = ref(false)
+  const analyzingItemId = ref<string | null>(null)
+  const error = ref('')
+  const selectionKey = `rentmate-inspection-rental-${getAuthSession()?.userId ?? getAuthSession()?.email}`
   const properties = computed(() => store.properties)
-
   const currentProperty = computed(
-    () => store.properties.find((property) => property.id === store.currentPropertyId) ?? null
+    () => store.properties.find((p) => p.id === store.currentPropertyId) ?? null,
   )
+  const itemsOfCurrentProperty = computed(() => store.items)
 
-  const itemsOfCurrentProperty = computed(() =>
-    store.items.filter((item) => item.propertyId === store.currentPropertyId)
-  )
+  async function perform<T>(operation: () => Promise<T>): Promise<T | undefined> {
+    if (busy.value) return undefined
+    busy.value = true
+    error.value = ''
+    try {
+      return await operation()
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : '點交操作失敗，請重試。'
+    } finally {
+      busy.value = false
+    }
+  }
 
-  function selectProperty(id: string) {
-    if (store.properties.some((property) => property.id === id)) {
+  async function loadItems() {
+    store.items = store.currentPropertyId
+      ? await inspectionRequest<HandoverItem[]>(
+          `/items?rental_id=${encodeURIComponent(store.currentPropertyId)}`,
+        )
+      : []
+  }
+
+  async function reload() {
+    await perform(async () => {
+      store.properties = await inspectionRequest<HandoverProperty[]>('/properties')
+      const previous = store.currentPropertyId ?? sessionStorage.getItem(selectionKey)
+      store.currentPropertyId =
+        store.properties.find((p) => p.id === previous)?.id ?? store.properties[0]?.id ?? null
+      store.items = []
+      await loadItems()
+    })
+  }
+  onMounted(reload)
+
+  async function selectProperty(id: string) {
+    if (!store.properties.some((p) => p.id === id)) return
+    await perform(async () => {
       store.currentPropertyId = id
-    }
+      sessionStorage.setItem(selectionKey, id)
+      store.items = []
+      await loadItems()
+    })
   }
 
-  function addProperty(alias: string, address: string): HandoverProperty {
-    const property: HandoverProperty = {
-      id: createPropertyId(),
-      alias,
-      address,
-      createdAt: createTimestamp(),
-    }
-
-    store.properties.push(property)
-    store.currentPropertyId = property.id
-    return property
+  function replaceItem(item: HandoverItem) {
+    const index = store.items.findIndex((entry) => entry.id === item.id)
+    if (index !== -1) store.items[index] = item
   }
 
-  function removeProperty(id: string) {
-    store.properties = store.properties.filter((property) => property.id !== id)
-    store.items = store.items.filter((item) => item.propertyId !== id)
-
-    if (store.currentPropertyId === id) {
-      store.currentPropertyId = store.properties[0]?.id ?? null
-    }
-  }
-
-  function addItem(payload: {
+  async function addItem(payload: {
     room: string
     name: string
     category?: HandoverItem['category']
-  }): HandoverItem | null {
-    if (!store.currentPropertyId) return null
+  }) {
+    if (!store.currentPropertyId) return
+    return perform(async () => {
+      const item = await inspectionRequest<HandoverItem>('/items', 'POST', {
+        ...payload,
+        rental_id: Number(store.currentPropertyId),
+      })
+      store.items.push(item)
+      return item
+    })
+  }
 
-    const item: HandoverItem = {
-      id: createItemId(),
-      propertyId: store.currentPropertyId,
-      room: payload.room,
-      name: payload.name,
-      category: payload.category ?? 'furniture',
-      evidences: [],
-      createdAt: createTimestamp(),
+  async function removeItem(id: string) {
+    await perform(async () => {
+      await inspectionRequest(`/items/${id}`, 'DELETE')
+      store.items = store.items.filter((item) => item.id !== id)
+    })
+  }
+
+  async function analyze(itemId: string, recordId: string) {
+    analyzingItemId.value = itemId
+    try {
+      const result = await inspectionRequest<{ item: HandoverItem }>('/analyze', 'POST', {
+        item_id: Number(itemId),
+        record_id: Number(recordId),
+      })
+      replaceItem(result.item)
+    } finally {
+      analyzingItemId.value = null
     }
-
-    store.items.push(item)
-    return item
   }
 
-  function removeItem(itemId: string) {
-    store.items = store.items.filter((item) => item.id !== itemId)
-  }
-
-  function addEvidence(
+  async function addEvidence(
     itemId: string,
     phase: EvidencePhase,
-    payload: { url: string; aiLabel?: string; aiConfidence?: number; note?: string }
-  ): HandoverEvidence | null {
-    const item = store.items.find((entry) => entry.id === itemId)
-    if (!item) return null
-
-    const evidence: HandoverEvidence = {
-      id: createEvidenceId(),
-      phase,
-      url: payload.url,
-      capturedAt: createTimestamp(),
-      aiLabel: payload.aiLabel,
-      aiConfidence: payload.aiConfidence,
-      note: payload.note,
-    }
-
-    item.evidences.push(evidence)
-    item.diff = undefined
-    return evidence
+    payload: { url: string; note?: string },
+  ) {
+    await perform(async () => {
+      const item = await inspectionRequest<HandoverItem>(
+        `/items/${itemId}/photos/${phase}`,
+        'PUT',
+        {
+          image_data: payload.url,
+          user_note: payload.note ?? '',
+        },
+      )
+      replaceItem(item)
+      const record = item.evidences.find((e) => e.phase === phase)!
+      await analyze(itemId, record.id)
+    })
   }
 
-  function removeEvidence(itemId: string, evidenceId: string) {
-    const item = store.items.find((entry) => entry.id === itemId)
-    if (!item) return
-
-    item.evidences = item.evidences.filter((evidence) => evidence.id !== evidenceId)
-    item.diff = undefined
+  async function retryAnalysis(itemId: string, recordId: string) {
+    await perform(() => analyze(itemId, recordId))
   }
 
-  function runAutoDiff() {
-    itemsOfCurrentProperty.value.forEach((item) => {
-      const hasBaseline = item.evidences.some((evidence) => evidence.phase === 'baseline')
-      const hasCheckout = item.evidences.some((evidence) => evidence.phase === 'checkout')
+  async function removeEvidence(itemId: string, recordId: string) {
+    await perform(async () =>
+      replaceItem(
+        await inspectionRequest<HandoverItem>(`/items/${itemId}/photos/${recordId}`, 'DELETE'),
+      ),
+    )
+  }
 
-      if (!hasBaseline || !hasCheckout) return
-
-      const random = Math.random()
-      const type: HandoverDiff['type'] =
-        random > 0.7 ? 'new_damage' : random > 0.4 ? 'unchanged' : 'degraded'
-
-      item.diff = {
-        type,
-        confidence: 0.82 + Math.random() * 0.15,
-        computedAt: createTimestamp(),
+  async function runAutoDiff() {
+    return perform(async () => {
+      const candidates = store.items.filter(
+        (item) =>
+          item.evidences.some((e) => e.phase === 'baseline') &&
+          item.evidences.some((e) => e.phase === 'checkout'),
+      )
+      const failed: string[] = []
+      for (const item of candidates) {
+        try {
+          replaceItem(await inspectionRequest<HandoverItem>(`/items/${item.id}/compare`, 'POST'))
+        } catch (cause) {
+          failed.push(
+            `${item.room} / ${item.name}：${cause instanceof Error ? cause.message : '比對失敗'}`,
+          )
+        }
       }
+      if (failed.length) throw new Error(failed.join('；'))
+      return true
     })
   }
 
@@ -275,13 +203,16 @@ export function useHandover() {
     properties,
     currentProperty,
     selectProperty,
-    addProperty,
-    removeProperty,
     itemsOfCurrentProperty,
     addItem,
     removeItem,
     addEvidence,
     removeEvidence,
+    retryAnalysis,
     runAutoDiff,
+    busy,
+    analyzingItemId,
+    error,
+    reload,
   }
 }

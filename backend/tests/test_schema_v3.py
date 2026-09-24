@@ -30,7 +30,7 @@ class SchemaContractTests(unittest.TestCase):
     def test_every_table_column_type_nullability_and_foreign_key_matches_sql(self):
         sql = (Path(__file__).parents[1] / 'database.sql').read_text(encoding='utf-8')
         tables = dict(re.findall(r'CREATE TABLE `([^`]+)`\s*\((.*?)\) ENGINE', sql, re.S))
-        self.assertEqual(len(tables), 28)
+        self.assertEqual(len(tables), 29)
         self.assertEqual(set(tables), set(Base.metadata.tables))
         for name, body in tables.items():
             columns = dict(re.findall(r'^\s*`([^`]+)`\s+([^\n]+)', body, re.M))

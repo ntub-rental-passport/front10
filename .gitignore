@@ -55,3 +55,4 @@ __pycache__/
 .claude/
 
 rentmate-vision-key.json
+backend/uploads/inspection/

@@ -507,4 +507,21 @@ CREATE TABLE `admin_audit_logs` (
   INDEX `idx_audit_actor_time` (`actor_user_id`, `created_at`),
   INDEX `idx_audit_target` (`target_type`, `target_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `inspection_items` (
+  `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `rental_id` INT NOT NULL,
+  `room_name` VARCHAR(100) NOT NULL,
+  `item_name` VARCHAR(100) NOT NULL,
+  `category` VARCHAR(20) NOT NULL DEFAULT 'furniture',
+  `baseline_record_id` INT UNIQUE,
+  `checkout_record_id` INT UNIQUE,
+  `comparison_result` JSON,
+  `version` INT NOT NULL DEFAULT 0,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`baseline_record_id`) REFERENCES `inspection_records`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`checkout_record_id`) REFERENCES `inspection_records`(`id`) ON DELETE SET NULL,
+  INDEX `idx_inspection_items_rental` (`rental_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;

@@ -229,6 +229,23 @@ class ContractAnalysis(Base):
 
     rental = relationship("Rental", back_populates="contract_analysis")
 
+class InspectionItem(Base):
+    __tablename__ = 'inspection_items'
+    __table_args__ = (Index('idx_inspection_items_rental', 'rental_id'),)
+    id = Column(Integer, primary_key=True, nullable=False, autoincrement=True)
+    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='CASCADE'), nullable=False)
+    room_name = Column(String(100), nullable=False)
+    item_name = Column(String(100), nullable=False)
+    category = Column(String(20), nullable=False, default='furniture')
+    baseline_record_id = Column(Integer, ForeignKey('inspection_records.id', ondelete='SET NULL'), nullable=True, unique=True)
+    checkout_record_id = Column(Integer, ForeignKey('inspection_records.id', ondelete='SET NULL'), nullable=True, unique=True)
+    comparison_result = Column(JSON, nullable=True)
+    version = Column(Integer, nullable=False, default=0)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+    baseline = relationship('InspectionRecord', foreign_keys=[baseline_record_id])
+    checkout = relationship('InspectionRecord', foreign_keys=[checkout_record_id])
+
+
 class InspectionRecord(Base):
     __tablename__ = 'inspection_records'
     __table_args__ = (Index('idx_inspection_rental_type', 'rental_id', 'type'),)
