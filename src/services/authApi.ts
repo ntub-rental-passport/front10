@@ -48,7 +48,6 @@ export interface StartRegistrationPayload {
   email?: string
   password?: string
   role: 'tenant' | 'landlord'
-  inviteCode?: string
   googleRegistrationToken?: string
 }
 

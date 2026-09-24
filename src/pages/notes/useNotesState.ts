@@ -203,6 +203,7 @@ export function useNotesState(mode: MainTab) {
 
   const roommateMemberForm = ref({
     name: '',
+    email: '',
     role: '新加入室友',
   })
 
@@ -435,6 +436,7 @@ export function useNotesState(mode: MainTab) {
   function resetRoommateMemberForm(): void {
     roommateMemberForm.value = {
       name: '',
+      email: '',
       role: '新加入室友',
     }
   }
@@ -467,12 +469,12 @@ export function useNotesState(mode: MainTab) {
   }
 
   async function saveRoommateMember(): Promise<void> {
-    if (!roommateMemberForm.value.name.trim()) return
+    if (!roommateMemberForm.value.name.trim() || !roommateMemberForm.value.email.trim()) return
     await perform(async () => {
       const path = await ensureGroup()
       const member = await notesRequest<RoommateMember>(`${path}/members`, 'POST', { ...roommateMemberForm.value })
       roommateMembers.value.push(member)
-      memberActionStatus.value = `已新增 ${member.name}；此資料尚未連結帳號，請另傳邀請連結。`
+      memberActionStatus.value = `已加入 ${member.name}，室友可登入帳號查看協作任務。`
       showMemberDialog.value = false
       resetRoommateMemberForm()
     })

@@ -16,7 +16,6 @@ import {
   LockKeyhole,
   Mail,
   ShieldCheck,
-  Ticket,
   UserRound,
 } from 'lucide-vue-next'
 import {
@@ -55,7 +54,6 @@ const form = ref({
   email: '',
   password: '',
   confirmPassword: '',
-  inviteCode: '',
 })
 const agreeToTerms = ref(false)
 const showPassword = ref(false)
@@ -223,7 +221,6 @@ async function handleRegister(): Promise<void> {
       form.value.email,
       form.value.password,
       selectedOption.value.authRole,
-      form.value.inviteCode,
     )
     await router.push({
       path: '/verify-email',
@@ -257,7 +254,6 @@ async function handleGoogleRegister(): Promise<void> {
   try {
     const pendingRegistration = await startGoogleEmailRegistration(
       googleRegistration.value,
-      form.value.inviteCode,
     )
     await router.push({
       path: '/verify-email',
@@ -424,24 +420,6 @@ async function handleGoogleRegister(): Promise<void> {
           </p>
         </div>
 
-        <div class="auth-field-block">
-          <Label for="register-invite-code" class="auth-field-label">
-            邀請碼 / 共享物件代碼（選填）
-          </Label>
-          <div class="auth-input-wrap">
-            <Ticket class="auth-input-icon" />
-            <Input
-              id="register-invite-code"
-              v-model="form.inviteCode"
-              type="text"
-              placeholder="輸入邀請碼或共享物件代碼（選填）"
-              class="auth-input auth-input--with-leading auth-input--default"
-            />
-          </div>
-          <p class="auth-field-description auth-field-description--compact">
-            租客可使用房東提供的代碼加入指定物件，房東也能透過代碼邀請租客加入同一租屋空間。
-          </p>
-        </div>
 
         <div class="auth-action-group">
           <Button v-if="!googleRegistration" type="submit" size="lg" class="auth-primary-button" :disabled="submitting">

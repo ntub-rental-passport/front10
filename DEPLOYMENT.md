@@ -44,29 +44,11 @@ AUTH_TOKEN_SECRET="<openssl rand -hex 32>"   # Bearer 版
 
 ## 資料庫結構變更
 
-使用者的角色、密碼、第三方身分已由 `users` 表的欄位改為三張關聯表：
+目前以 `backend/database.sql` 的 schema v3（27 張表）為基準。單一角色與密碼存於 `users`；記事與共居採新表名及整數主鍵，敏感欄位加密後存入 VARBINARY。
 
-```
-users.role          → user_roles                 （一個帳號可有多重角色）
-users.password_hash → user_password_credentials
-users.google_sub    → user_identities
-```
+部署前設定 `PII_ENCRYPTION_KEY`，執行 `python backend/schema_check.py` 檢查結構。後端啟動只讀驗證，不會自動建表或遷移。舊庫必須先規劃資料轉換；不要再執行舊的 `migrate_to_user_roles.py`。
 
-既有帳號需執行遷移，否則將無法登入：
-
-```bash
-python backend/migrations/migrate_to_user_roles.py           # 預覽
-python backend/migrations/migrate_to_user_roles.py --apply   # 執行
-```
-
-腳本具冪等性，可重複執行；不會刪除舊欄位。
-
-⚠️ 若資料庫是既有的，`Base.metadata.create_all()` **只會建立缺少的資料表，
-不會為既有資料表新增欄位**。`users` 表若缺 `avatar_url`，需手動補上：
-
-```sql
-ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT NULL AFTER display_name;
-```
+完整欄位對應、金鑰設定與資料轉換注意事項請見 [database-v3-upgrade.md](docs/database-v3-upgrade.md)。
 
 ## 部署
 

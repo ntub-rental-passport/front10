@@ -12,9 +12,10 @@ from routers import admin, auth, contract, garbage, landlord_properties, landlor
 from routers import notes, households
 from garbage_service import dispatch_due
 
-# 有設定 MySQL 時才建立資料表；Google 登入驗證本身不依賴資料庫。
+# 啟動只檢查結構，避免在舊資料庫中自動建立另一套表格。
 if engine is not None:
-    Base.metadata.create_all(bind=engine)
+    from schema_check import require_current_schema
+    require_current_schema(engine)
 
 @asynccontextmanager
 async def lifespan(app):

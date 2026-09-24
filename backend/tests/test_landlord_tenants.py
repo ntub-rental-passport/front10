@@ -1,3 +1,6 @@
+import os
+import base64
+from unittest.mock import patch
 import unittest
 from datetime import date, timedelta
 
@@ -16,16 +19,20 @@ from routers.landlord_tenants import (
     _owned_tenant,
     _resolve_room,
     update_tenant_lease,
+    create_tenant,
 )
 
 
 class LandlordTenantRulesTest(unittest.TestCase):
     def setUp(self):
+        key_env = patch.dict(os.environ, {"PII_ENCRYPTION_KEY": base64.b64encode(b"t" * 32).decode()})
+        key_env.start()
+        self.addCleanup(key_env.stop)
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         self.db = sessionmaker(bind=engine)()
-        self.landlord_a = User(email="a@example.com", email_verified_at=None)
-        self.landlord_b = User(email="b@example.com", email_verified_at=None)
+        self.landlord_a = User(role="landlord", email="a@example.com", email_verified_at=None)
+        self.landlord_b = User(role="landlord", email="b@example.com", email_verified_at=None)
         self.db.add_all([self.landlord_a, self.landlord_b])
         self.db.flush()
         property_item = LandlordProperty(landlord_id=self.landlord_a.id, name="A 棟")
@@ -60,6 +67,12 @@ class LandlordTenantRulesTest(unittest.TestCase):
         self.lease.status = "terminated"
         self.assertFalse(_is_effective(self.lease, today))
         self.assertEqual(_lease_display(self.lease, today), "moved_out")
+
+    def test_duplicate_phone_is_detected_after_encryption(self):
+        self.db.expire_all()
+        with self.assertRaises(HTTPException) as caught:
+            create_tenant(self.tenant_payload(phone='0912345678'), self.db, self.landlord_a)
+        self.assertEqual(caught.exception.status_code, 409)
 
     def test_room_overlap_is_rejected(self):
         today = date.today()

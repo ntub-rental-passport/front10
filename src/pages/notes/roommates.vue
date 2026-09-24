@@ -376,7 +376,11 @@ const notes = reactive(useNotesState('roommate'))
           </div>
 
           <form v-else class="invite-box space-y-4" @submit.prevent="notes.saveRoommateMember">
-            <p class="text-sm text-[#737789]">手動資料只用於分工；室友需透過邀請連結登入加入，才能查看與操作任務。</p>
+            <p class="text-sm text-[#737789]">輸入室友已註冊的租客信箱即可加入協作空間。尚未註冊的室友請使用邀請連結。</p>
+            <div class="space-y-2">
+              <Label>室友帳號信箱</Label>
+              <Input v-model="notes.roommateMemberForm.email" type="email" required maxlength="254" placeholder="roommate@example.com" class="rounded-xl bg-white" />
+            </div>
             <div class="space-y-2">
               <Label>室友姓名 / 暱稱</Label>
               <Input v-model="notes.roommateMemberForm.name" placeholder="例如：小安" class="rounded-xl bg-white" />

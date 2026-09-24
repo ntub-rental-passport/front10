@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import User, UserRole
+from models import User
 from security import create_access_token, get_current_admin, read_access_token
 
 
@@ -38,16 +38,10 @@ class AdminGuardTest(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         self.db = sessionmaker(bind=engine)()
-        self.admin = User(email="admin@example.com")
-        self.tenant = User(email="tenant@example.com")
+        self.admin = User(role="admin", email="admin@example.com")
+        self.tenant = User(role="tenant", email="tenant@example.com")
         self.db.add_all([self.admin, self.tenant])
         self.db.commit()
-        self.db.add_all(
-            [
-                UserRole(user_id=self.admin.id, role="admin"),
-                UserRole(user_id=self.tenant.id, role="tenant"),
-            ]
-        )
         self.db.commit()
 
     def tearDown(self):
@@ -86,7 +80,7 @@ class AdminGuardTest(unittest.TestCase):
 
     def test_revoked_admin_loses_access_immediately(self):
         token = self._token(self.admin.id, "admin")
-        self.db.query(UserRole).filter(UserRole.user_id == self.admin.id).delete()
+        self.admin.role = "tenant"
         self.db.commit()
         with self.assertRaises(HTTPException) as ctx:
             self._call(token)

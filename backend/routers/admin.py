@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from database import engine, get_db
 from metrics import request_counter
-from models import PendingAdminLogin, User, UserRole
+from models import PendingAdminLogin, User
 from security import get_current_admin
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
@@ -106,10 +106,10 @@ def _row(user: User) -> AdminUserRow:
         email=user.email,
         displayName=user.display_name,
         avatarUrl=user.avatar_url,
-        roles=sorted(r.role for r in user.roles),
+        roles=[user.role],
         status=user.status or "active",
         emailVerified=user.email_verified_at is not None,
-        hasPassword=user.password_credential is not None,
+        hasPassword=bool(user.password_hash),
         providers=sorted({i.provider for i in user.identities}),
         createdAt=_iso(user.created_at),
         lastLoginAt=_iso(user.last_login_at),
@@ -123,16 +123,14 @@ def list_users(
 ) -> list[AdminUserRow]:
     """列出所有真實帳號。僅限管理員。
 
-    用 selectinload 一次把 roles / identities / password_credential 撈齊：
+    用 selectinload 一次把 identities 撈齊：
     否則每一列都會各發一次查詢（N+1），帳號一多就會把資料庫拖垮 ——
     後台頁面一開就打爆自己的資料庫，等於給了攻擊者一個免費的 DoS 開關。
     """
     users = (
         db.query(User)
         .options(
-            selectinload(User.roles),
             selectinload(User.identities),
-            selectinload(User.password_credential),
         )
         .order_by(User.id)
         .all()
@@ -164,9 +162,7 @@ def update_user_status(
     user = (
         db.query(User)
         .options(
-            selectinload(User.roles),
             selectinload(User.identities),
-            selectinload(User.password_credential),
         )
         .filter(User.id == user_id)
         .first()
@@ -178,13 +174,12 @@ def update_user_status(
         if user.id == admin.id:
             raise HTTPException(status_code=400, detail="不能停用自己的帳號。")
 
-        is_admin = any(r.role == "admin" for r in user.roles)
+        is_admin = user.role == "admin"
         if is_admin:
             remaining = (
                 db.query(User)
-                .join(UserRole, UserRole.user_id == User.id)
                 .filter(
-                    UserRole.role == "admin",
+                    User.role == "admin",
                     User.status == "active",
                     User.id != user.id,
                 )

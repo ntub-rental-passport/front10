@@ -1,3 +1,6 @@
+import os
+import base64
+from unittest.mock import patch
 import unittest
 from datetime import date, timedelta
 
@@ -11,12 +14,15 @@ from routers.tenant_leases import list_tenant_leases
 
 class TenantLeaseScopeTest(unittest.TestCase):
     def setUp(self):
+        key_env = patch.dict(os.environ, {"PII_ENCRYPTION_KEY": base64.b64encode(b"t" * 32).decode()})
+        key_env.start()
+        self.addCleanup(key_env.stop)
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         self.db = sessionmaker(bind=engine)()
-        self.landlord = User(email="owner@example.com")
-        self.current_user = User(email="tenant@example.com")
-        self.other_user = User(email="other@example.com")
+        self.landlord = User(role="landlord", email="owner@example.com")
+        self.current_user = User(role="tenant", email="tenant@example.com")
+        self.other_user = User(role="tenant", email="other@example.com")
         self.db.add_all([self.landlord, self.current_user, self.other_user])
         self.db.flush()
         property_item = LandlordProperty(landlord_id=self.landlord.id, name="測試公寓", address="臺北市測試路 1 號")

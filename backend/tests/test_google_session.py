@@ -22,7 +22,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import User, UserIdentity, UserRole
+from models import User, UserIdentity
 from routers.auth import (
     GoogleAccountResponse,
     GoogleTicketRequest,
@@ -51,11 +51,11 @@ class GoogleSessionTest(unittest.TestCase):
 
     def _bound_user(self, status: str = "active") -> User:
         """建立一個已綁定 Google 的租客帳號。"""
-        user = User(email=ACCOUNT.email, display_name="測試租客", status=status)
+        user = User(role="tenant", email=ACCOUNT.email, display_name="測試租客", status=status)
         self.db.add(user)
         self.db.commit()
         self.db.add_all([
-            UserRole(user_id=user.id, role="tenant"),
+
             UserIdentity(
                 user_id=user.id,
                 provider="google",
@@ -127,7 +127,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException, Response
 from routers import auth
-from models import User, UserIdentity, UserRole
+from models import User, UserIdentity
 
 
 class GoogleSessionTests(unittest.TestCase):
@@ -138,8 +138,7 @@ class GoogleSessionTests(unittest.TestCase):
         self.response = Response()
         self.db = MagicMock()
         self.records = {UserIdentity: SimpleNamespace(user_id=42),
-                        UserRole: SimpleNamespace(role='tenant'),
-                        User: SimpleNamespace(id=42, email='test@example.com', status='active', last_login_at=None)}
+                        User: SimpleNamespace(id=42, email='test@example.com', role='tenant', status='active', last_login_at=None)}
         self.db.query.side_effect = lambda model: SimpleNamespace(
             filter=lambda *args: SimpleNamespace(first=lambda: self.records[model]))
         self.patches = [patch.object(auth, '_google_config', return_value=('id', 'test-secret', '', '')),
@@ -174,7 +173,7 @@ class GoogleSessionTests(unittest.TestCase):
         self.mocks[2].assert_not_called()
 
     def test_role_mismatch_does_not_issue_cookie(self):
-        self.records[UserRole] = None
+        self.records[User].role = 'landlord'
         with self.assertRaises(HTTPException) as error:
             self.exchange()
         self.assertEqual(error.exception.status_code, 403)

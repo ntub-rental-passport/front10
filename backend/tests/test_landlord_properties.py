@@ -1,3 +1,6 @@
+import os
+import base64
+from unittest.mock import patch
 import unittest
 
 from fastapi import HTTPException
@@ -20,11 +23,14 @@ from routers.landlord_tenants import tenant_options
 
 class LandlordPropertyRulesTest(unittest.TestCase):
     def setUp(self):
+        key_env = patch.dict(os.environ, {"PII_ENCRYPTION_KEY": base64.b64encode(b"t" * 32).decode()})
+        key_env.start()
+        self.addCleanup(key_env.stop)
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         self.db = sessionmaker(bind=engine)()
-        self.landlord_a = User(email="owner-a@example.com", email_verified_at=None)
-        self.landlord_b = User(email="owner-b@example.com", email_verified_at=None)
+        self.landlord_a = User(role="landlord", email="owner-a@example.com", email_verified_at=None)
+        self.landlord_b = User(role="landlord", email="owner-b@example.com", email_verified_at=None)
         self.db.add_all([self.landlord_a, self.landlord_b])
         self.db.commit()
 

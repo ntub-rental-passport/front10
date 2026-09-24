@@ -1,92 +1,419 @@
-// 1. 使用者 (帳號管理)
+// Schema v3: generated from backend/database.sql (ca00945).
+// SQL is authoritative for defaults, checks, collation, and indexes.
+
 Table users {
-  id integer [primary key]
-  email varchar [unique]
-  password varchar
-  created_at timestamp
+  id int [pk, increment]
+  email varchar(254) [not null]
+  display_name varchar(100)
+  national_id varbinary(255)
+  avatar_url text
+  role varchar [not null, note: "Allowed: 'tenant','landlord','admin'"]
+  password_hash varchar(255)
+  password_changed_at datetime(6)
+  email_verified_at datetime(6)
+  status varchar [not null, note: "Allowed: 'active','suspended'"]
+  last_login_at datetime
+  created_at datetime(6) [not null]
+  indexes {
+    (email, role) [unique]
+  }
 }
 
-// 2. 租屋資訊 (核心表：租完屋後的案件紀錄)
+Table user_identities {
+  id int [pk, increment]
+  user_id int [not null]
+  provider varchar [not null, note: "Allowed: 'google'"]
+  provider_subject varchar(255) [not null]
+  provider_email varchar(254)
+  created_at datetime(6) [not null]
+  indexes {
+    (provider, provider_subject, user_id) [unique]
+  }
+}
+
+Table pending_registrations {
+  id char(36) [pk]
+  email varchar(254) [not null]
+  provider varchar [not null, note: "Allowed: 'password','google'"]
+  provider_subject varchar(255)
+  display_name varchar(100)
+  avatar_url text
+  password_hash varchar(255)
+  role varchar [not null, note: "Allowed: 'tenant','landlord','admin'"]
+  verification_code_hash char(64) [not null]
+  expires_at datetime(6) [not null]
+  resend_available_at datetime(6) [not null]
+  attempt_count tinyint [not null]
+  send_count tinyint [not null]
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
+  indexes {
+    (email, role) [unique]
+    (provider, provider_subject, role) [unique]
+  }
+}
+
+Table pending_admin_logins {
+  id varchar(36) [pk, not null]
+  user_id int [not null]
+  email varchar(254) [not null]
+  verification_code_hash varchar(64) [not null]
+  expires_at datetime [not null]
+  attempt_count int [not null]
+  request_ip varchar(45)
+  created_at datetime [not null]
+}
+
 Table rentals {
-  id integer [primary key]
-  user_id integer [ref: > users.id]
-  address text [note: '租屋地址']
-  start_date date [note: '租期開始']
-  end_date date [note: '租期結束']
-  rent_amount integer [note: '租金']
-  deposit_amount integer [note: '押金']
-  other_info text [note: '相關資訊備註']
-  rental_status varchar
-  payment_day integer [note: '每月應繳租金日期 (例如: 5 代表每月5號)']
-  electricity_type enum('meter', 'flat', 'included') [note: '電費計價方式: 依度數、固定、內含']
-  electricity_rate numeric [note: '若依度數計費，每度多少元；若固定，則是每期固定金額']
-  water_fee_info varchar [note: '水費說明 (例如: 隨水單、每人100元、內含)']
+  id int [pk, increment]
+  user_id int [not null]
+  review_date date
+  review_days int
+  has_landlord_review_signature boolean [not null]
+  has_tenant_review_signature boolean [not null]
+  address text [not null]
+  land_number varchar(100)
+  building_number varchar(100)
+  building_area decimal(8,2)
+  has_annex_building boolean [not null]
+  annex_building_desc varchar(255)
+  rental_scope varchar [not null, note: "Allowed: 'entire','partial'"]
+  rental_scope_details varchar(255)
+  has_parking boolean [not null]
+  parking_details varchar(255)
+  has_equipment boolean [not null]
+  equipment_list text
+  start_date date [not null]
+  end_date date [not null]
+  handover_date date
+  rent_amount int [not null]
+  payment_interval_months int [not null]
+  payment_day int [not null]
+  payment_method varchar(50)
+  total_periods int [not null]
+  deposit_months int [not null]
+  deposit_amount int [not null]
+  management_fee_rule varchar(255)
+  water_fee_rule varchar(255)
+  electricity_fee_type varchar(100)
+  electricity_fee_rate varchar(100)
+  gas_fee_rule varchar(255)
+  network_fee_rule varchar(255)
+  other_fees_rule text
+  abandoned_items_rule text
+  jurisdiction_court varchar(100)
+  landlord_name varbinary(255)
+  landlord_national_id varbinary(255)
+  landlord_registered_address varbinary(512)
+  landlord_contact_address varbinary(512)
+  landlord_phone varbinary(255)
+  tenant_name varchar(100)
+  tenant_national_id varbinary(255)
+  tenant_registered_address varbinary(512)
+  tenant_contact_address varbinary(512)
+  tenant_phone varbinary(255)
+  contract_tag varchar(30)
+  other_info text
+  rental_status varchar(20) [not null]
+  confirmed_at datetime(6)
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
 }
 
-// 3. 契約掃描與風險分析 (連結至特定租屋案)
+Table bills {
+  id int [pk, increment]
+  rental_id int [not null]
+  period_index int [not null]
+  period_start date [not null]
+  period_end date [not null]
+  due_date date [not null]
+  rent_amount int [not null]
+  electricity_amount int
+  water_amount int
+  paid_at datetime(6)
+  payment_method varchar [note: "Allowed: 'bank-transfer','cash','line-pay','other'"]
+  payment_note text
+  payment_proof_url varchar(512)
+}
+
 Table contract_analyses {
-  id integer [primary key]
-  rental_id integer [ref: - rentals.id] // 一個租屋案對應一份分析
-  contract_file_url varchar
-  ocr_raw_text text
-  risk_report text
-  negotiation_script text // AI 談判腳本
+  id int [pk, increment]
+  rental_id int [not null, unique]
+  contract_file_url varchar(512) [not null]
+  ocr_raw_text longtext [not null]
+  risk_report text [not null]
+  negotiation_script longtext
 }
 
-// 4. 點交存證管理 (連結至特定租屋案)
 Table inspection_records {
-  id integer [primary key]
-  rental_id integer [ref: > rentals.id]
-  type enum('check_in', 'check_out')
-  photo_url varchar
-  description text
-  captured_at timestamp [note: '系統自動記錄時間']
+  id int [pk, increment]
+  rental_id int [not null]
+  type varchar [not null, note: "Allowed: 'check_in','check_out'"]
+  photo_url varchar(512) [not null]
+  item_name varchar(100)
+  room_name varchar(100)
+  vlm_result json
+  user_note text
+  captured_at datetime(6) [not null]
 }
 
-// 5. 記事板 (連結至特定租屋案，支援多人)
 Table message_boards {
-  id integer [primary key]
-  rental_id integer [ref: > rentals.id]
-  content text
-  last_editor_id integer [ref: > users.id]
-  updated_at timestamp
+  id int [pk, increment]
+  rental_id int [not null]
+  content text [not null]
+  last_editor_id int [not null]
+  updated_at datetime(6) [not null]
 }
 
-// 6. 生活提醒與垃圾車收藏 (個人化功能)
-Table notifications {
-  id integer [primary key]
-  user_id integer [ref: > users.id]
-  category enum('payment', 'trash', 'inspection', 'contract_end')
+Table landlord_properties {
+  id int [pk, increment]
+  landlord_id int [not null]
+  name varchar(100) [not null]
+  address text
+  city varchar(50)
+  created_at datetime(6) [not null]
+}
+
+Table landlord_rooms {
+  id int [pk, increment]
+  property_id int [not null]
+  number varchar(50) [not null]
+  status varchar [not null, note: "Allowed: 'vacant','occupied','turnover','maintenance'"]
+  floor int
+  area decimal(8,2)
+  expected_rent int
+  created_at datetime(6) [not null]
+}
+
+Table landlord_tenants {
+  id int [pk, increment]
+  landlord_id int [not null]
+  name varchar(100) [not null]
+  phone varbinary(255) [not null]
+  email varchar(254)
+  national_id varbinary(255)
+  birth_date date
+  contact_address varbinary(512)
+  emergency_name varchar(100)
+  emergency_phone varbinary(255)
+  notes text
+  line_user_id varchar(255)
+  line_status varchar [not null, note: "Allowed: 'unbound','invited','bound','expired'"]
+  line_invited_at datetime(6)
+  line_bound_at datetime(6)
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
+  deleted_at datetime(6)
+}
+
+Table landlord_leases {
+  id int [pk, increment]
+  tenant_id int [not null]
+  property_id int [not null]
+  room_id int [not null]
+  start_date date [not null]
+  end_date date [not null]
+  monthly_rent int [not null]
+  deposit_amount int [not null]
+  payment_day tinyint [not null]
+  payment_frequency varchar(30) [not null]
+  contract_id varchar(100)
+  status varchar [not null, note: "Allowed: 'pending','active','ended','terminated'"]
+  moved_out_at date
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
+}
+
+Table landlord_move_outs {
+  id int [pk, increment]
+  lease_id int [not null, unique]
+  move_out_date date [not null]
+  reason text
+  final_rent int [not null]
+  utility_fee int [not null]
+  deposit_refund int [not null]
+  deposit_deduction int [not null]
+  deduction_reason text
+  inspection_status varchar(30) [not null]
+  notes text
+  created_at datetime(6) [not null]
+}
+
+Table landlord_tenant_activities {
+  id int [pk, increment]
+  tenant_id int [not null]
+  kind varchar(50) [not null]
+  detail text [not null]
+  occurred_at datetime(6) [not null]
+}
+
+Table repair_tickets {
+  id int [pk, increment]
+  tenant_user_id int [not null]
+  rental_id int
+  lease_id int
+  location varchar(100)
+  equipment varchar(100)
+  description text [not null]
+  urgency varchar [not null, note: "Allowed: 'low','medium','high','urgent'"]
+  available_time text
+  access_permission varchar [not null, note: "Allowed: 'present','absent','contact-first'"]
+  status varchar [not null, note: "Allowed: 'new','acknowledged','scheduled','in_progress','completed','cancelled'"]
+  landlord_read_at datetime(6)
+  responsibility varchar [not null, note: "Allowed: 'landlord','tenant','shared','undetermined'"]
+  responsibility_note text
+  vendor_name varchar(100)
+  vendor_phone varchar(30)
+  scheduled_at datetime(6)
+  completed_at datetime(6)
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
+}
+
+Table repair_ticket_photos {
+  id int [pk, increment]
+  ticket_id int [not null]
+  photo_url varchar(512) [not null]
+  photo_name varchar(255)
+  uploaded_at datetime(6) [not null]
+}
+
+Table personal_notes {
+  id int [pk, increment]
+  user_id int [not null]
+  title varchar(200) [not null]
   content text
-  remind_at timestamp
-  is_sent boolean [default: false]
+  tag varchar [not null, note: "Allowed: '租務','提醒','維護','採買'"]
+  due_date date
+  due_time time
+  done boolean [not null]
+  done_at datetime(6)
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
+}
+
+Table households {
+  id int [pk, increment]
+  name varchar(100) [not null]
+  invite_code varchar(20) [not null, unique]
+  created_by int [not null]
+  created_at datetime(6) [not null]
+}
+
+Table household_members {
+  id int [pk, increment]
+  household_id int [not null]
+  user_id int [not null]
+  display_name varchar(100) [not null]
+  role varchar(50)
+  accent varchar [not null, note: "Allowed: 'indigo','emerald','amber','rose'"]
+  joined_at datetime(6) [not null]
+}
+
+Table roommate_tasks {
+  id int [pk, increment]
+  household_id int [not null]
+  creator_member_id int
+  assignee_member_id int
+  title varchar(200) [not null]
+  content text
+  tag varchar [not null, note: "Allowed: '公共區域','清潔','帳務','採買'"]
+  due_date date
+  due_time time
+  done boolean [not null]
+  done_at datetime(6)
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
+}
+
+Table notifications {
+  id int [pk, increment]
+  user_id int [not null]
+  category varchar [not null, note: "Allowed: 'payment','trash','inspection','contract_end','utility_outage','repair','subsidy'"]
+  content text [not null]
+  remind_at datetime(6) [not null]
+  is_sent boolean [not null]
 }
 
 Table trash_favorites {
-  id integer [primary key]
-  user_id integer [ref: > users.id]
-  station_id varchar
-  station_name varchar
+  id int [pk, increment]
+  user_id int [not null]
+  station_id varchar(50) [not null]
+  station_name varchar(255) [not null]
 }
 
-// 在原有語法的基礎上，新增或更新以下部分
-
-// 7. 租屋補助申請管理 (FR-06)
 Table subsidy_applications {
-  id integer [primary key]
-  user_id integer [ref: > users.id]
-  rental_id integer [ref: > rentals.id] // 關聯到特定租屋案
-  application_status varchar [note: '審核中、補件中、已通過、已撥款']
-  remark text [note: '官方回傳的審核備註']
+  id int [pk, increment]
+  user_id int [not null]
+  rental_id int [not null]
+  application_type varchar [not null, note: "Allowed: 'housing','rent_subsidy','recovery'"]
+  application_status varchar(50) [not null]
+  submitted_at datetime(6)
+  decided_at datetime(6)
+  rejection_reason text
+  remark text
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
 }
-// 8. 停水停電即時查詢快取表 (當使用者點擊時紀錄/快取結果)
-Table utility_outages {
-  id integer [primary key]
-  rental_id integer [ref: > rentals.id, note: '關聯特定租屋案，記錄是哪間房子的查詢結果']
-  type enum('water', 'electricity') [note: '停水或停電']
-  
-  // 記錄政府網站回傳的實際狀態
-  is_outage boolean [note: '目前是否停水電 (True/False)']
-  status_message text [note: '政府網站回傳的文字 (例如: 正常供水、或是 5/22 09:00施工停水)']
-  
+
+Table subsidy_documents {
+  id int [pk, increment]
+  application_id int [not null]
+  doc_type varchar(50) [not null]
+  file_url varchar(512) [not null]
+  original_filename varchar(255)
+  uploaded_at datetime(6) [not null]
 }
+
+Table admin_settings {
+  setting_key varchar(100) [pk, not null]
+  value json [not null]
+  updated_at datetime(6) [not null]
+  updated_by int
+}
+
+Table admin_audit_logs {
+  id bigint [pk, increment]
+  actor_user_id int [not null]
+  action varchar(100) [not null]
+  target_type varchar(50)
+  target_id varchar(100)
+  detail json
+  ip varchar(45)
+  created_at datetime(6) [not null]
+}
+
+Ref: user_identities.user_id > users.id
+Ref: pending_admin_logins.user_id > users.id
+Ref: rentals.user_id > users.id
+Ref: bills.rental_id > rentals.id
+Ref: contract_analyses.rental_id > rentals.id
+Ref: inspection_records.rental_id > rentals.id
+Ref: message_boards.rental_id > rentals.id
+Ref: message_boards.last_editor_id > users.id
+Ref: landlord_properties.landlord_id > users.id
+Ref: landlord_rooms.property_id > landlord_properties.id
+Ref: landlord_tenants.landlord_id > users.id
+Ref: landlord_leases.tenant_id > landlord_tenants.id
+Ref: landlord_leases.property_id > landlord_properties.id
+Ref: landlord_leases.room_id > landlord_rooms.id
+Ref: landlord_move_outs.lease_id > landlord_leases.id
+Ref: landlord_tenant_activities.tenant_id > landlord_tenants.id
+Ref: repair_tickets.tenant_user_id > users.id
+Ref: repair_tickets.rental_id > rentals.id
+Ref: repair_tickets.lease_id > landlord_leases.id
+Ref: repair_ticket_photos.ticket_id > repair_tickets.id
+Ref: personal_notes.user_id > users.id
+Ref: households.created_by > users.id
+Ref: household_members.household_id > households.id
+Ref: household_members.user_id > users.id
+Ref: roommate_tasks.household_id > households.id
+Ref: roommate_tasks.creator_member_id > household_members.id
+Ref: roommate_tasks.assignee_member_id > household_members.id
+Ref: notifications.user_id > users.id
+Ref: trash_favorites.user_id > users.id
+Ref: subsidy_applications.user_id > users.id
+Ref: subsidy_applications.rental_id > rentals.id
+Ref: subsidy_documents.application_id > subsidy_applications.id
+Ref: admin_settings.updated_by > users.id
+Ref: admin_audit_logs.actor_user_id > users.id

@@ -102,7 +102,8 @@ function saveUserProfiles(profiles: Record<string, UserProfile>): void {
 function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserProfile {
   const profiles = getUserProfiles()
   const normalizedEmail = email.trim().toLowerCase()
-  const currentProfile = profiles[normalizedEmail] ?? {
+  const profileKey = `${normalizedEmail}:${updates.role ?? "tenant"}`
+  const currentProfile = profiles[profileKey] ?? {
     email: normalizedEmail,
     emailVerified: false,
     nickname: null,
@@ -114,7 +115,7 @@ function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserPr
     email: normalizedEmail,
   }
 
-  profiles[normalizedEmail] = nextProfile
+  profiles[profileKey] = nextProfile
   saveUserProfiles(profiles)
   return nextProfile
 }
@@ -127,7 +128,7 @@ function createSession(
 ): AuthSession {
   const session: AuthSession = {
     email: profile.email,
-    userId: userId === null || userId === undefined ? `email:${profile.email}` : String(userId),
+    userId: userId === null || userId === undefined ? `email:${profile.email}:${role}` : String(userId),
     isAuthenticated: true,
     role,
     emailVerified: profile.emailVerified,
@@ -164,6 +165,7 @@ export function isSessionExpired(
 
 export function signIn(role: AuthRole, email: string): AuthSession {
   const profile = upsertUserProfile(email, {
+    role,
     emailVerified: true,
   })
 
@@ -250,6 +252,7 @@ export function registerWithGoogle(
   userId?: string | number | null,
 ): AuthSession {
   const profile = upsertUserProfile(email, {
+    role,
     emailVerified: true,
     nickname: null,
   })
@@ -332,13 +335,11 @@ export async function startEmailRegistration(
   email: string,
   password: string,
   role: AuthRole = 'tenant',
-  inviteCode = '',
 ): Promise<PendingRegistration> {
   const result = await startRegistration({
     email: email.trim().toLowerCase(),
     password,
     role: role === 'landlord' ? 'landlord' : 'tenant',
-    inviteCode: inviteCode.trim() || undefined,
   })
   const pending: PendingRegistration = {
     registrationId: result.registrationId,
@@ -384,11 +385,9 @@ export function clearGoogleRegistrationContext(): void {
 
 export async function startGoogleEmailRegistration(
   context: GoogleRegistrationContext,
-  inviteCode = '',
 ): Promise<PendingRegistration> {
   const result = await startRegistration({
     role: context.role,
-    inviteCode: inviteCode.trim() || undefined,
     googleRegistrationToken: context.registrationToken,
   })
   const pending: PendingRegistration = {
@@ -443,6 +442,7 @@ export function finishNicknameSetup(nickname: string): AuthSession | null {
 
   const cleanNickname = nickname.trim()
   const profile = upsertUserProfile(session.email, {
+    role: session.role,
     nickname: cleanNickname || null,
     emailVerified: session.emailVerified,
   })
@@ -452,5 +452,5 @@ export function finishNicknameSetup(nickname: string): AuthSession | null {
 
 export function getAuthenticatedUserId(session: AuthSession | null = getAuthSession()): string {
   if (!session) return ''
-  return session.userId || `email:${session.email.trim().toLowerCase()}`
+  return session.userId || `email:${session.email.trim().toLowerCase()}:${session.role}`
 }

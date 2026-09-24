@@ -8,7 +8,6 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
@@ -61,6 +60,8 @@ class TenantPayload(BaseModel):
             raise ValueError("手機格式不正確。")
         if self.email and not EMAIL_PATTERN.match(self.email):
             raise ValueError("Email 格式不正確。")
+        if self.contact_address and len(self.contact_address.encode('utf-8')) > 483:
+            raise ValueError("聯絡地址過長，請縮短至 483 bytes 以內。")
         if not ((self.property_id and self.room_id) or (self.property_name and self.room_number)):
             raise ValueError("請選擇或輸入棟別與房號。")
         return self
@@ -283,7 +284,14 @@ def tenant_detail(tenant_id: int, db: Session = Depends(get_db), landlord: User 
 def create_tenant(payload: TenantPayload, db: Session = Depends(get_db), landlord: User = Depends(get_current_landlord)):
     property_item, room = _resolve_room(db, landlord.id, payload)
     _assert_no_overlap(db, room.id, payload.lease_start, payload.lease_end)
-    duplicate = db.query(LandlordTenant).filter(LandlordTenant.landlord_id == landlord.id, LandlordTenant.deleted_at.is_(None), or_(LandlordTenant.phone == payload.phone, LandlordTenant.email == payload.email if payload.email else False)).first()
+    # AES-GCM uses a fresh nonce, so encrypted phone numbers cannot be compared
+    # with SQL equality. Only decrypt contacts owned by this landlord.
+    contacts = db.query(LandlordTenant.phone, LandlordTenant.email).filter(
+        LandlordTenant.landlord_id == landlord.id, LandlordTenant.deleted_at.is_(None)
+    ).all()
+    email = payload.email.strip().lower() if payload.email else None
+    duplicate = any(phone == payload.phone.strip() or (email and existing_email == email)
+                    for phone, existing_email in contacts)
     if duplicate: raise HTTPException(status_code=409, detail="相同手機或 Email 的租客已存在。")
     tenant = LandlordTenant(landlord_id=landlord.id, name=payload.name.strip(), phone=payload.phone.strip(), email=payload.email.strip().lower() if payload.email else None,
         national_id=payload.national_id, birth_date=payload.birth_date, contact_address=payload.contact_address, emergency_name=payload.emergency_name,
