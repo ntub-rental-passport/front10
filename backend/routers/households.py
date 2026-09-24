@@ -126,7 +126,7 @@ def list_members(household_id: int, user: User = Depends(get_current_tenant), db
 @router.post("/{household_id}/members", status_code=201)
 def create_member(household_id: int, data: MemberCreate, user: User = Depends(get_current_tenant), db: Session = Depends(get_db)):
     owned(db, household_id, user)
-    account = db.query(User).filter(User.email == data.email.strip().lower(), User.role == "tenant", User.status == "active").first()
+    account = db.query(User).filter(User.email == data.email.strip().lower(), User.has_role("tenant"), User.status == "active").first()
     if account is None:
         raise HTTPException(422, "請填寫已註冊且啟用中的租客信箱；尚未註冊請先使用邀請連結。")
     if db.query(HouseholdMember).filter_by(household_id=household_id, user_id=account.id).first():

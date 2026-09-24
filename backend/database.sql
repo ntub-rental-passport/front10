@@ -1,13 +1,15 @@
 SET FOREIGN_KEY_CHECKS = 0;
--- RentMate 資料庫重建（第三版 · 定案正式版）
+-- RentMate 資料庫重建（多重角色版）
 -- ==================================================================
 -- 主要設計決策：
---   1. users.role 三選一（tenant/landlord/admin），一帳號一身份
+--   1. users 儲存唯一帳號，user_roles 儲存帳號身分；同一帳號可同時是 tenant 與 landlord
 --   2. Admin 不透過公開註冊入口建立，走獨立 /admin/register 流程
 --   3. 合約欄位攤平儲存於 rentals（供拼回契約 + 租補預帶）
 --   4. 敏感個資採用 VARBINARY 加密儲存（地址放寬至 512 bytes 避免溢位）
 --   5. rentals 為合約快照，bills 為每期實際帳單
 --   6. 維修工單雙向相容：rental_id 或 lease_id 至少具備一個
+--   7. 本檔為新資料庫建表定義，非既有資料庫的升級腳本；舊帳號合併需同步處理外鍵
+--   8. 後端 ORM、註冊、登入與權限檢查透過 user_roles 核對帳號身分
 --
 
 USE `115-RentMate`;
@@ -20,17 +22,28 @@ CREATE TABLE `users` (
   `display_name` VARCHAR(100) DEFAULT NULL,
   `national_id` VARBINARY(255) DEFAULT NULL COMMENT '承租人身分證，租補申請預帶用（可編輯）',
   `avatar_url` TEXT DEFAULT NULL,
-  `role` ENUM('tenant','landlord','admin') NOT NULL COMMENT '一帳號一身份，由註冊路徑決定',
   `password_hash` VARCHAR(255) DEFAULT NULL COMMENT 'Google-only 為 NULL',
   `password_changed_at` DATETIME(6) DEFAULT NULL,
   `email_verified_at` DATETIME(6) DEFAULT NULL,
   `status` ENUM('active','suspended') NOT NULL DEFAULT 'active',
   `last_login_at` DATETIME DEFAULT NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  UNIQUE KEY `uq_users_email_role` (`email`, `role`),
-  INDEX `ix_users_status` (`status`),
-  INDEX `ix_users_role` (`role`)
+  UNIQUE KEY `uq_users_email` (`email`),
+  INDEX `ix_users_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `user_roles` (
+  `user_id` INT NOT NULL,
+  `role` ENUM('tenant','landlord','admin') NOT NULL COMMENT '帳號擁有的身分，每種身分各存一筆',
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`user_id`, `role`),
+  CONSTRAINT `fk_user_roles_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  INDEX `ix_user_roles_role` (`role`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 例如：為既有帳號新增房客及房東身分（將 123 換成實際 users.id）：
+-- INSERT INTO `user_roles` (`user_id`, `role`) VALUES (123, 'tenant'), (123, 'landlord');
+-- 註冊／新增身分時應在同一交易內建立帳號及角色；公開入口不得授予 admin。
 
 CREATE TABLE `user_identities` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -40,7 +53,7 @@ CREATE TABLE `user_identities` (
   `provider_email` VARCHAR(254) DEFAULT NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   CONSTRAINT `fk_user_identities_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
-  UNIQUE KEY `uq_identity_provider_subject_user` (`provider`, `provider_subject`, `user_id`)
+  UNIQUE KEY `uq_identity_provider_subject` (`provider`, `provider_subject`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `pending_registrations` (
@@ -51,7 +64,7 @@ CREATE TABLE `pending_registrations` (
   `display_name` VARCHAR(100) DEFAULT NULL,
   `avatar_url` TEXT DEFAULT NULL,
   `password_hash` VARCHAR(255) DEFAULT NULL,
-  `role` ENUM('tenant','landlord','admin') NOT NULL COMMENT '驗證後要建立的帳號身份',
+  `role` ENUM('tenant','landlord','admin') NOT NULL COMMENT '驗證通過並確認帳號所有權後，要新增至 user_roles 的身分',
   `verification_code_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `expires_at` DATETIME(6) NOT NULL,
   `resend_available_at` DATETIME(6) NOT NULL,

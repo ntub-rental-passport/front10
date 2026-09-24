@@ -1,8 +1,9 @@
-"""ORM mappings for database.sql (schema v3, source ca00945)."""
+"""ORM mappings for database.sql (multi-role accounts)."""
 import datetime
 from sqlalchemy import Boolean, Column, Date, DateTime, Time, Enum, Integer, BigInteger, String, Text, DECIMAL, JSON, ForeignKey, UniqueConstraint, CheckConstraint, Index, CHAR
 from sqlalchemy.dialects.mysql import DATETIME, LONGTEXT, TINYINT
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_method
 from database import Base
 from encrypted_fields import EncryptedText
 
@@ -11,19 +12,28 @@ Timestamp = DateTime().with_variant(DATETIME(fsp=6), "mysql")
 
 class User(Base):
     __tablename__ = 'users'
-    __table_args__ = (UniqueConstraint('email', 'role', name='uq_users_email_role'), Index('ix_users_status', 'status'), Index('ix_users_role', 'role'),)
+    __table_args__ = (UniqueConstraint('email', name='uq_users_email'), Index('ix_users_status', 'status'),)
     id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
     email = Column(String(254), nullable=False)
     display_name = Column(String(100), nullable=True)
     national_id = Column(EncryptedText(255), nullable=True)
     avatar_url = Column(Text, nullable=True)
-    role = Column(Enum('tenant','landlord','admin', validate_strings=True, create_constraint=True), nullable=False)
     password_hash = Column(String(255), nullable=True)
     password_changed_at = Column(Timestamp, nullable=True)
     email_verified_at = Column(Timestamp, nullable=True)
     status = Column(Enum('active','suspended', validate_strings=True, create_constraint=True), nullable=False, default='active')
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+    roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
+
+    @hybrid_method
+    def has_role(self, role):
+        return any(item.role == role for item in self.roles)
+
+    @has_role.expression
+    def has_role(cls, role):
+        return cls.roles.any(UserRole.role == role)
 
     rentals = relationship(
         "Rental", back_populates="user", cascade="all, delete-orphan"
@@ -49,9 +59,18 @@ class User(Base):
 
     landlord_tenants = relationship("LandlordTenant", back_populates="landlord")
 
+class UserRole(Base):
+    __tablename__ = 'user_roles'
+    __table_args__ = (Index('ix_user_roles_role', 'role'),)
+    user_id = Column(Integer, ForeignKey('users.id', name='fk_user_roles_user', ondelete='CASCADE'), primary_key=True, nullable=False)
+    role = Column(Enum('tenant','landlord','admin', validate_strings=True, create_constraint=True), primary_key=True, nullable=False)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+    user = relationship("User", back_populates="roles")
+
+
 class UserIdentity(Base):
     __tablename__ = 'user_identities'
-    __table_args__ = (UniqueConstraint('provider', 'provider_subject', 'user_id', name='uq_identity_provider_subject_user'),)
+    __table_args__ = (UniqueConstraint('provider', 'provider_subject', name='uq_identity_provider_subject'),)
     id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     provider = Column(Enum('google', validate_strings=True, create_constraint=True), nullable=False)

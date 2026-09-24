@@ -1,3 +1,7 @@
+# 歷史文件：目前登入結構請參閱 [多身分帳號與登入](multi-role-auth.md)
+
+以下為舊單身分版本紀錄，已不適用於目前的 `database.sql`、ORM 與登入流程。`upgrade_local_sqlite_v3.py` 的輸出也已改為保留多身分帳號，請勿依下文拆分帳號。
+
 # 新資料庫結構對應（schema v3）
 
 基準為 `ca00945` 的 `backend/database.sql`，共 27 張表，另依確認後的需求調整帳號唯一限制：每個帳號只有一個角色，同一個 email 可以各有一個租客與房東帳號。

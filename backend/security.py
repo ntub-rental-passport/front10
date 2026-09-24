@@ -138,10 +138,10 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
         )
 
     user = db.get(User, current.id)
-    if user is None or user.role != current.role:
+    if user is None or not user.has_role(current.role):
         raise HTTPException(status_code=401, detail="帳號或身分已變更，請重新登入。")
     _reject_if_suspended(user)
-    return CurrentUser(id=user.id, email=user.email, role=user.role)
+    return CurrentUser(id=user.id, email=user.email, role=current.role)
 
 
 # ==========================================================================
@@ -224,7 +224,7 @@ def get_current_landlord(
     if payload.get("role") != "landlord":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限房東使用。")
     user = db.query(User).filter(User.id == user_id).first()
-    if not user or user.role != "landlord":
+    if not user or not user.has_role("landlord"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="房東權限不存在。")
     _reject_if_suspended(user)
     return user
@@ -262,7 +262,7 @@ def get_current_admin(
     if payload.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限管理員使用。")
     user = db.query(User).filter(User.id == user_id).first()
-    if not user or user.role != "admin":
+    if not user or not user.has_role("admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="管理員權限不存在。")
     _reject_if_suspended(user)
     return user
@@ -279,7 +279,7 @@ def get_current_tenant(
     if payload.get("role") != "tenant":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限租客使用。")
     user = db.query(User).filter(User.id == user_id).first()
-    if not user or user.role != "tenant":
+    if not user or not user.has_role("tenant"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租客權限不存在。")
     _reject_if_suspended(user)
     return user

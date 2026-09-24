@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
+from models import UserRole
 from models import LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, User
 from routers.tenant_leases import list_tenant_leases
 
@@ -20,9 +21,9 @@ class TenantLeaseScopeTest(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         self.db = sessionmaker(bind=engine)()
-        self.landlord = User(role="landlord", email="owner@example.com")
-        self.current_user = User(role="tenant", email="tenant@example.com")
-        self.other_user = User(role="tenant", email="other@example.com")
+        self.landlord = User(roles=[UserRole(role="landlord")], email="owner@example.com")
+        self.current_user = User(roles=[UserRole(role="tenant")], email="tenant@example.com")
+        self.other_user = User(roles=[UserRole(role="tenant")], email="other@example.com")
         self.db.add_all([self.landlord, self.current_user, self.other_user])
         self.db.flush()
         property_item = LandlordProperty(landlord_id=self.landlord.id, name="測試公寓", address="臺北市測試路 1 號")

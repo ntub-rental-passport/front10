@@ -1,8 +1,8 @@
-"""Copy a legacy local SQLite database into a separate schema-v3 database.
+"""Copy a legacy local SQLite database into a separate current-schema database.
 
 Default: read-only plan. --apply creates a new file; --activate switches .env
 only after schema, foreign-key, row-count and decryption checks pass.
-The original database is never edited. Multi-role users become separate accounts.
+The original database is never edited. Multi-role users retain their IDs and role memberships.
 """
 import argparse
 import base64
@@ -55,35 +55,25 @@ def plan(source):
         user['password_changed_at'] = credential.get('password_changed_at')
 
     account_ids = {}
-    next_id = max(users, default=0) + 1
-    split_users = []
+    current_users = []
+    memberships = []
+    emails = set()
     for user_id, user in users.items():
         available = roles.get(user_id, {user['role']} if user.get('role') else set())
         if not available or not available <= {'tenant', 'landlord', 'admin'}:
             raise ValueError(f'User {user_id}: invalid or missing legacy role')
-        # Tenant IDs are also used by the separate garbage-reminder SQLite
-        # queue and browser caches. Preserve that ID; remap landlord foreign keys.
-        for index, role in enumerate(sorted(available, key={'tenant': 0, 'landlord': 1, 'admin': 2}.get)):
-            new_id = user_id if index == 0 else next_id
-            if index:
-                next_id += 1
-            account_ids[user_id, role] = new_id
-            split_users.append({**user, 'id': new_id, 'role': role,
-                                'email': user['email'].strip().lower()})
-    rows['users'] = split_users
-
-    identities = []
-    next_identity = max((row['id'] for row in rows.get('user_identities', [])), default=0) + 1
-    for identity in rows.get('user_identities', []):
-        targets = [new for (old, role), new in account_ids.items() if old == identity['user_id']]
-        if not targets:
-            raise ValueError('Identity points to a missing account')
-        for index, user_id in enumerate(targets):
-            identities.append({**identity, 'user_id': user_id,
-                               'id': identity['id'] if index == 0 else next_identity})
-            if index:
-                next_identity += 1
-    rows['user_identities'] = identities
+        email = user['email'].strip().lower()
+        if email in emails:
+            raise ValueError('Duplicate account email: explicitly merge accounts and foreign keys before migration')
+        emails.add(email)
+        current_users.append({**user, 'email': email})
+        for role in sorted(available):
+            account_ids[user_id, role] = user_id
+            previous = next((r for r in rows.get('user_roles', [])
+                             if r['user_id'] == user_id and r['role'] == role), {})
+            memberships.append({**previous, 'user_id': user_id, 'role': role})
+    rows['users'] = current_users
+    rows['user_roles'] = memberships
 
     def account_id(old_id, required_role):
         if (old_id, required_role) not in account_ids:
@@ -171,7 +161,7 @@ def plan(source):
                     if required_role:
                         row[column.name] = account_id(old_id, required_role)
                     else:
-                        targets = [new for (old, role), new in account_ids.items() if old == old_id]
+                        targets = list({new for (old, role), new in account_ids.items() if old == old_id})
                         if len(targets) != 1:
                             raise ValueError(f'Ambiguous ownership: {name}.{column.name}; explicit mapping needed')
                         row[column.name] = targets[0]
@@ -226,11 +216,11 @@ def migrate(source, target):
                 expected = data[table.name]
                 if len(actual) != len(expected):
                     raise ValueError('Row count mismatch: ' + table.name)
-                key = list(table.primary_key.columns)[0].name
-                by_id = {row[key]: row for row in actual}
+                keys = [column.name for column in table.primary_key.columns]
+                by_id = {tuple(row[key] for key in keys): row for row in actual}
                 for row in expected:
                     for column, value in row.items():
-                        if by_id[row[key]][column] != value:
+                        if by_id[tuple(row[key] for key in keys)][column] != value:
                             raise ValueError(f'Value verification failed: {table.name}.{column}')
         require_current_schema(engine)
     finally:

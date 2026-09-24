@@ -36,6 +36,7 @@ from models import (
     PendingRegistration,
     User,
     UserIdentity,
+    UserRole,
 )
 from security import (
     CurrentUser,
@@ -344,12 +345,12 @@ def login_with_email(
     if payload.role not in ALLOWED_ROLES:
         raise HTTPException(status_code=422, detail="role-mismatch")
 
-    user = db.query(User).filter(User.email == email, User.role == payload.role).first()
+    user = db.query(User).filter(User.email == email, User.has_role(payload.role)).first()
     if user is None or not user.password_hash:
         raise HTTPException(status_code=404, detail="account-not-found")
     if user.email_verified_at is None:
         raise HTTPException(status_code=403, detail="email-not-verified")
-    if user.role != payload.role:
+    if not user.has_role(payload.role):
         raise HTTPException(status_code=403, detail="role-mismatch")
 
     try:
@@ -366,7 +367,7 @@ def login_with_email(
     _record_login(db, user)
 
     # 登入成功：簽發 JWT 並放進 HttpOnly cookie，後續請求以此驗證身分。
-    # payload.role 已與 users.role 核對；每個帳號只有一個角色。
+    # payload.role 已與 user_roles 核對；token 代表本次選定的身分。
     set_auth_cookie(response, create_cookie_token(user.id, user.email, payload.role))
 
     return EmailLoginResponse(
@@ -599,9 +600,14 @@ def exchange_google_ticket(
     identity = db.query(UserIdentity).filter(
         UserIdentity.provider == "google",
         UserIdentity.provider_subject == account.subject,
-        UserIdentity.user.has(User.role == requested_role),
     ).first()
-    registration_required = identity is None
+    user = None
+    if identity:
+        user = db.query(User).filter(User.id == identity.user_id).first()
+        if user is None:
+            raise HTTPException(status_code=401, detail="Google 帳號對應的會員資料不存在，請聯絡管理者。")
+        _reject_if_suspended(user)
+    registration_required = user is None or not user.has_role(requested_role)
     _, client_secret, _, _ = _google_config()
     registration_token = (
         _create_google_registration_token(
@@ -616,19 +622,13 @@ def exchange_google_ticket(
 
     # Only a registered identity with the requested role may receive a login cookie.
     # New Google accounts must finish registration before becoming authenticated.
-    if identity:
-        user = db.query(User).filter(User.id == identity.user_id).first()
-        if user is None:
-            raise HTTPException(status_code=401, detail="Google 帳號對應的會員資料不存在，請聯絡管理者。")
-        if user.role != requested_role:
-            raise HTTPException(status_code=403, detail="Account role does not match the selected login")
-        _reject_if_suspended(user)
+    if not registration_required:
         _record_login(db, user)
         set_auth_cookie(response, create_cookie_token(user.id, user.email, requested_role))
 
     return GoogleOAuthSessionResponse(
         **account.model_dump(),
-        userId=(identity.user_id if identity else None),
+        userId=(user.id if not registration_required else None),
         flowVersion=2,
         role=requested_role,
         redirectPath=(
@@ -638,7 +638,7 @@ def exchange_google_ticket(
         ),
         registrationRequired=registration_required,
         registrationToken=registration_token,
-        accessToken=(create_access_token(identity.user_id, requested_role) if identity else None),
+        accessToken=(create_access_token(user.id, requested_role) if not registration_required else None),
     )
 
 
@@ -668,7 +668,9 @@ def start_registration(
     display_name = None
     avatar_url = None
     password_hash = None
-    role = _safe_role(payload.role)
+    if payload.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=422, detail="role-mismatch")
+    role = payload.role
 
     if payload.googleRegistrationToken:
         _, client_secret, _, _ = _google_config()
@@ -684,7 +686,9 @@ def start_registration(
         provider_subject = str(account.get("subject") or "")
         display_name = str(account.get("name")) if account.get("name") else None
         avatar_url = str(account.get("picture")) if account.get("picture") else None
-        role = _safe_role(str(token_payload.get("role") or role))
+        role = str(token_payload.get("role") or role)
+        if role not in ALLOWED_ROLES:
+            raise HTTPException(status_code=422, detail="role-mismatch")
         if not provider_subject:
             raise HTTPException(status_code=401, detail="Google 註冊資料缺少帳號識別碼。")
     else:
@@ -694,15 +698,24 @@ def start_registration(
             raise HTTPException(status_code=422, detail="密碼長度必須介於 8 到 128 個字元。")
         password_hash = password_hasher.hash(password)
 
-    existing_user = db.query(User).filter(User.email == email, User.role == role).first()
+    existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
-        raise HTTPException(status_code=409, detail="此電子信箱已經註冊，請直接登入。")
-    if provider_subject and db.query(UserIdentity).filter(
+        _reject_if_suspended(existing_user)
+        if existing_user.has_role(role):
+            raise HTTPException(status_code=409, detail="此電子信箱已有此身分，請直接登入。")
+        if provider == "password":
+            if not existing_user.password_hash:
+                raise HTTPException(status_code=409, detail="請使用原有 Google 登入方式新增身分。")
+            try:
+                password_hasher.verify(existing_user.password_hash, payload.password)
+            except (InvalidHashError, VerificationError, VerifyMismatchError):
+                raise HTTPException(status_code=401, detail="invalid-password")
+    identity = db.query(UserIdentity).filter(
         UserIdentity.provider == provider,
         UserIdentity.provider_subject == provider_subject,
-        UserIdentity.user.has(User.role == role),
-    ).first():
-        raise HTTPException(status_code=409, detail="此 Google 帳號已經註冊，請直接登入。")
+    ).first() if provider_subject else None
+    if identity and (existing_user is None or identity.user_id != existing_user.id):
+        raise HTTPException(status_code=409, detail="此 Google 身分已綁定其他帳號。")
 
     pending = db.query(PendingRegistration).filter(
         PendingRegistration.email == email, PendingRegistration.role == role
@@ -843,38 +856,47 @@ def verify_registration(
             detail=f"驗證碼不正確，還可嘗試 {attempts_remaining} 次。",
         )
 
-    # 建立正式的 User 紀錄
-    user = User(
-        email=pending.email,
-        role=pending.role,
-        display_name=pending.display_name,
-        avatar_url=pending.avatar_url,
-        email_verified_at=now,
-        created_at=now,
-    )
-    db.add(user)
+    if pending.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=403, detail="公開註冊不能授予此身分。")
+    # 驗證信箱所有權後，沿用既有帳號；不覆寫其密碼或個人資料。
+    user = db.query(User).filter(User.email == pending.email).with_for_update().first()
+    is_new = user is None
+    if is_new:
+        user = User(email=pending.email, display_name=pending.display_name,
+                    avatar_url=pending.avatar_url, email_verified_at=now, created_at=now)
+        db.add(user)
+    else:
+        _reject_if_suspended(user)
+        if user.has_role(pending.role):
+            raise HTTPException(status_code=409, detail="此帳號已有此身分，請直接登入。")
     try:
         db.flush()  # 先取得新使用者的自增 id，才能建立關聯資料與簽發 token
         if pending.provider == "google":
-            db.add(UserIdentity(
-                user_id=user.id,
-                provider="google",
-                provider_subject=pending.provider_subject,
-                provider_email=pending.email,
-                created_at=now,
-            ))
+            identity = db.query(UserIdentity).filter(
+                UserIdentity.provider == "google",
+                UserIdentity.provider_subject == pending.provider_subject,
+            ).first()
+            if identity and identity.user_id != user.id:
+                raise HTTPException(status_code=409, detail="此 Google 身分已綁定其他帳號。")
+            if not identity:
+                db.add(UserIdentity(user_id=user.id, provider="google",
+                    provider_subject=pending.provider_subject, provider_email=pending.email, created_at=now))
         elif pending.password_hash:
-            user.password_hash = pending.password_hash
-            user.password_changed_at = now
+            if is_new:
+                user.password_hash = pending.password_hash
+                user.password_changed_at = now
         else:
             raise HTTPException(status_code=500, detail="註冊資料缺少登入憑證。")
 
+        user.roles.append(UserRole(role=pending.role))
+        user.email_verified_at = user.email_verified_at or now
+        user.last_login_at = now
         response = RegistrationVerifyResponse(
             userId=user.id,
-            email=pending.email,
+            email=user.email,
             role=pending.role,
-            displayName=pending.display_name,
-            avatarUrl=pending.avatar_url,
+            displayName=user.display_name,
+            avatarUrl=user.avatar_url,
             accessToken=create_access_token(user.id, pending.role),
         )
         db.delete(pending)
@@ -886,6 +908,9 @@ def verify_registration(
     except IntegrityError as error:
         db.rollback()
         raise HTTPException(status_code=409, detail="帳號已由另一個驗證程序建立，請直接登入。") from error
+    except HTTPException:
+        db.rollback()
+        raise
 
 
 # ==========================================
@@ -896,12 +921,12 @@ def get_me(
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> EmailLoginResponse:
-    """Restore the session only while its role still matches the account."""
+    """Restore the selected session role only while the account still owns it."""
     user = db.query(User).filter(User.id == current.id).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="帳號不存在，請重新登入。")
 
-    if user.role != current.role:
+    if not user.has_role(current.role):
         raise HTTPException(status_code=401, detail="Account role changed; sign in again")
 
     # 已登入者被停用時，這裡是最快被觸發的檢查點：
@@ -987,10 +1012,10 @@ def admin_login_start(
     email = _normalize_email(payload.email)
     generic_error = HTTPException(status_code=401, detail="帳號或密碼不正確。")
 
-    user = db.query(User).filter(User.email == email, User.role == "admin").first()
+    user = db.query(User).filter(User.email == email, User.has_role("admin")).first()
     if user is None or not user.password_hash:
         raise generic_error
-    if user.role != "admin":
+    if not user.has_role("admin"):
         raise generic_error
     try:
         password_hasher.verify(user.password_hash, payload.password)
@@ -1081,7 +1106,7 @@ def admin_login_verify(
         raise HTTPException(status_code=400, detail=f"驗證碼不正確，還可嘗試 {remaining} 次。")
 
     user = db.query(User).filter(User.id == challenge.user_id).first()
-    if user is None or user.role != "admin":
+    if user is None or not user.has_role("admin"):
         # 帳號在挑戰有效期間被刪除或撤銷管理員權限
         db.delete(challenge)
         db.commit()

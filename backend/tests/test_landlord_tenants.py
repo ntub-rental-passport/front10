@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
+from models import UserRole
 from models import LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, User
 from routers.landlord_tenants import (
     LeaseUpdatePayload,
@@ -31,8 +32,8 @@ class LandlordTenantRulesTest(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         self.db = sessionmaker(bind=engine)()
-        self.landlord_a = User(role="landlord", email="a@example.com", email_verified_at=None)
-        self.landlord_b = User(role="landlord", email="b@example.com", email_verified_at=None)
+        self.landlord_a = User(roles=[UserRole(role="landlord")], email="a@example.com", email_verified_at=None)
+        self.landlord_b = User(roles=[UserRole(role="landlord")], email="b@example.com", email_verified_at=None)
         self.db.add_all([self.landlord_a, self.landlord_b])
         self.db.flush()
         property_item = LandlordProperty(landlord_id=self.landlord_a.id, name="A 棟")

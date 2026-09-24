@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from argon2 import PasswordHasher  # noqa: E402
 
 from database import SessionLocal, engine  # noqa: E402
-from models import PendingAdminLogin, User  # noqa: E402
+from models import PendingAdminLogin, User, UserRole  # noqa: E402
 
 MIN_PASSWORD_LENGTH = 12
 
@@ -41,13 +41,7 @@ def _normalize(email: str) -> str:
 
 
 def _require_user(db, email: str) -> User:
-    # Password/revoke target an admin specifically; grant must never pick an
-    # arbitrary tenant or landlord when an email belongs to multiple accounts.
-    users = db.query(User).filter(User.email == _normalize(email)).all()
-    admins = [user for user in users if user.role == 'admin']
-    if len(users) > 1 and not admins:
-        sys.exit('This email has multiple accounts. Use a separate administrator email; no roles were changed.')
-    user = admins[0] if admins else (users[0] if users else None)
+    user = db.query(User).filter(User.email == _normalize(email)).one_or_none()
     if user is None:
         sys.exit(f"❌ 找不到帳號 {email}。請先讓本人在網站完成註冊，再授予管理員權限。")
     return user
@@ -60,7 +54,7 @@ def _prompt_password() -> str:
     而管理員只有少數幾人，提高長度要求的實務成本很低。
     """
     while True:
-        password = getpass.getpass("請輸入後台密碼（不會顯示）：")
+        password = getpass.getpass("請輸入帳號共用密碼（房客／房東／後台皆使用，不會顯示）：")
         if len(password) < MIN_PASSWORD_LENGTH:
             print(f"   密碼至少 {MIN_PASSWORD_LENGTH} 個字元，請重新輸入。")
             continue
@@ -80,7 +74,7 @@ def cmd_list() -> None:
     try:
         admins = (
             db.query(User)
-            .filter(User.role == "admin")
+            .filter(User.has_role("admin"))
             .all()
         )
         if not admins:
@@ -89,7 +83,7 @@ def cmd_list() -> None:
         print(f"目前共 {len(admins)} 位管理員：")
         for user in admins:
             has_password = bool(user.password_hash)
-            roles = user.role
+            roles = ', '.join(sorted(item.role for item in user.roles))
             print(f"  #{user.id} {user.email}  角色={roles}  後台密碼={'已設定' if has_password else '⚠️ 未設定'}")
     finally:
         db.close()
@@ -99,12 +93,12 @@ def cmd_grant(email: str) -> None:
     db = SessionLocal()
     try:
         user = _require_user(db, email)
-        already = user.role == "admin"
+        already = user.has_role("admin")
         print(f"帳號 #{user.id} {user.email}" + ("（已是管理員，將只重設密碼）" if already else ""))
 
         password = _prompt_password()
         if not already:
-            user.role = "admin"
+            user.roles.append(UserRole(role="admin"))
         user.status = "active"
         _set_password(db, user, password)
         db.commit()
@@ -119,7 +113,7 @@ def cmd_password(email: str) -> None:
     db = SessionLocal()
     try:
         user = _require_user(db, email)
-        if user.role != "admin":
+        if not user.has_role("admin"):
             sys.exit(f"❌ {user.email} 不是管理員，請先執行 grant。")
         _set_password(db, user, _prompt_password())
         db.commit()
@@ -132,19 +126,17 @@ def cmd_revoke(email: str) -> None:
     db = SessionLocal()
     try:
         user = _require_user(db, email)
-        if user.role != "admin":
+        if not user.has_role("admin"):
             print("Account is not an administrator; no changes made.")
             return
-        # A single-role schema cannot remove a role. Suspend the admin account;
-        # do not silently convert it into a tenant or landlord.
-        user.status = "suspended"
+        user.roles = [item for item in user.roles if item.role != "admin"]
         # 撤銷權限的同時清掉進行中的登入挑戰，避免「已通過帳密、
         # 驗證碼還在手上」的人趁著挑戰有效期間完成登入
         db.query(PendingAdminLogin).filter(PendingAdminLogin.user_id == user.id).delete()
         db.commit()
 
         remaining = (
-            db.query(User).filter(User.role == "admin", User.status == "active").count()
+            db.query(User).filter(User.has_role("admin"), User.status == "active").count()
         )
         print(f"✅ 已撤銷 {user.email} 的管理員權限。")
         if remaining == 0:

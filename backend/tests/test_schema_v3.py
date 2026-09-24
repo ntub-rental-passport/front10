@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from database import Base, get_db
 from encrypted_fields import EncryptedText
+from models import UserRole
 from models import User, UserIdentity, PendingRegistration, LandlordTenant, Rental, Bill, InspectionRecord
 from routers import auth, admin
 from schema_check import schema_problems
@@ -29,7 +30,7 @@ class SchemaContractTests(unittest.TestCase):
     def test_every_table_column_type_nullability_and_foreign_key_matches_sql(self):
         sql = (Path(__file__).parents[1] / 'database.sql').read_text(encoding='utf-8')
         tables = dict(re.findall(r'CREATE TABLE `([^`]+)`\s*\((.*?)\) ENGINE', sql, re.S))
-        self.assertEqual(len(tables), 27)
+        self.assertEqual(len(tables), 28)
         self.assertEqual(set(tables), set(Base.metadata.tables))
         for name, body in tables.items():
             columns = dict(re.findall(r'^\s*`([^`]+)`\s+([^\n]+)', body, re.M))
@@ -56,7 +57,7 @@ class SchemaContractTests(unittest.TestCase):
         self.addCleanup(engine.dispose)
         with engine.begin() as connection:
             connection.execute(text('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)'))
-        self.assertIn('Missing column: users.role', schema_problems(engine))
+        self.assertIn('Missing table: user_roles', schema_problems(engine))
         self.assertEqual(inspect(engine).get_table_names(), ['users'])
 
 
@@ -83,7 +84,7 @@ class NewSchemaApiTests(unittest.TestCase):
     def test_new_schema_passes_read_only_check(self):
         self.assertEqual(schema_problems(self.engine), [])
 
-    def test_registration_and_login_store_single_role_and_password_in_users(self):
+    def test_registration_stores_role_in_user_roles_and_password_in_users(self):
         pending_id = '11111111-1111-1111-1111-111111111111'
         now = datetime.utcnow()
         with self.Session() as db:
@@ -96,7 +97,7 @@ class NewSchemaApiTests(unittest.TestCase):
         self.assertEqual(response.json()['role'], 'landlord')
         with self.Session() as db:
             user = db.query(User).one()
-            self.assertEqual(user.role, 'landlord')
+            self.assertTrue(user.has_role('landlord'))
             self.assertTrue(auth.password_hasher.verify(user.password_hash, 'test-password-123'))
             self.assertIsNotNone(user.password_changed_at)
         payload = {'email': 'new@example.com', 'password': 'test-password-123', 'role': 'landlord'}
@@ -104,11 +105,11 @@ class NewSchemaApiTests(unittest.TestCase):
         payload['role'] = 'tenant'
         self.assertEqual(self.client.post('/api/auth/login', json=payload).status_code, 404)
         with self.Session() as db:
-            db.query(User).one().role = 'tenant'
+            db.query(User).one().roles = [UserRole(role='tenant')]
             db.commit()
         self.assertEqual(self.client.get('/api/auth/me').status_code, 401)
 
-    def test_same_email_two_roles_register_and_login_independently(self):
+    def test_same_email_two_roles_share_account_and_password(self):
         ids = {}
         with patch.object(auth, 'send_verification_email'), patch.object(auth, 'generate_verification_code', return_value='123456'):
             # Both requests can remain pending without replacing one another.
@@ -126,18 +127,18 @@ class NewSchemaApiTests(unittest.TestCase):
                 duplicate = self.client.post('/api/auth/registration/start', json={
                     'email': 'SHARED@example.com', 'password': 'another-password', 'role': role})
                 self.assertEqual(duplicate.status_code, 409, duplicate.text)
-        self.assertNotEqual(ids['tenant'], ids['landlord'])
+        self.assertEqual(ids['tenant'], ids['landlord'])
         for role, user_id in ids.items():
             response = self.client.post('/api/auth/login', json={
-                'email': 'shared@example.com', 'password': role + '-password-123', 'role': role})
+                'email': 'shared@example.com', 'password': 'tenant-password-123', 'role': role})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()['userId'], user_id)
             other = 'landlord' if role == 'tenant' else 'tenant'
             response = self.client.post('/api/auth/login', json={
-                'email': 'shared@example.com', 'password': other + '-password-123', 'role': role})
+                'email': 'shared@example.com', 'password': 'landlord-password-123', 'role': role})
             self.assertEqual(response.status_code, 401)
         with self.Session() as db:
-            db.add(User(email='shared@example.com', role='tenant'))
+            db.add(User(email='shared@example.com', roles=[UserRole(role='tenant')]))
             with self.assertRaises(IntegrityError):
                 db.commit()
             db.rollback()
@@ -163,11 +164,11 @@ class NewSchemaApiTests(unittest.TestCase):
                 self.assertEqual(result.status_code, 200, result.text)
                 self.assertFalse(result.json()['registrationRequired'])
                 self.assertEqual(result.json()['userId'], user_id)
-        self.assertNotEqual(ids['tenant'], ids['landlord'])
+        self.assertEqual(ids['tenant'], ids['landlord'])
 
-    def test_admin_two_factor_and_directory_use_users_role(self):
+    def test_admin_two_factor_and_directory_use_user_roles(self):
         with self.Session() as db:
-            user = User(email='admin@example.com', role='admin', password_hash=auth.password_hasher.hash('test-password-123'))
+            user = User(email='admin@example.com', roles=[UserRole(role='admin')], password_hash=auth.password_hasher.hash('test-password-123'))
             db.add(user)
             db.commit()
             user_id = user.id
@@ -182,13 +183,13 @@ class NewSchemaApiTests(unittest.TestCase):
         self.assertEqual(response.json()[0]['roles'], ['admin'])
         self.assertTrue(response.json()[0]['hasPassword'])
         with self.Session() as db:
-            db.get(User, user_id).role = 'tenant'
+            db.get(User, user_id).roles = [UserRole(role='tenant')]
             db.commit()
         self.assertEqual(self.client.get('/api/admin/users', headers=headers).status_code, 403)
 
     def test_sensitive_values_are_encrypted_at_rest_and_round_trip(self):
         with self.Session() as db:
-            owner = User(email='owner@example.com', role='landlord')
+            owner = User(email='owner@example.com', roles=[UserRole(role='landlord')])
             db.add(owner)
             db.flush()
             tenant = LandlordTenant(landlord_id=owner.id, name='Test', phone='0912345678', national_id='A123456789', contact_address='台北市測試路')
@@ -203,7 +204,7 @@ class NewSchemaApiTests(unittest.TestCase):
 
     def test_bills_and_inspections_use_new_columns(self):
         with self.Session() as db:
-            user = User(email='tenant@example.com', role='tenant')
+            user = User(email='tenant@example.com', roles=[UserRole(role='tenant')])
             db.add(user)
             db.flush()
             rental = Rental(user_id=user.id, address='Test', start_date=date(2026, 1, 1), end_date=date(2027, 1, 1), rent_amount=10000, deposit_amount=20000, payment_day=5, total_periods=12)

@@ -1,7 +1,7 @@
 """Read-only compatibility check; application startup never migrates a database."""
 from sqlalchemy import inspect, UniqueConstraint
 from database import Base
-import models  # Register all 27 tables.
+import models  # Register all mapped tables.
 
 
 def schema_problems(engine) -> list[str]:
@@ -13,13 +13,17 @@ def schema_problems(engine) -> list[str]:
             problems.append(f"Missing table: {name}")
             continue
         columns = {column['name']: column for column in inspector.get_columns(name)}
+        if name == 'user_roles':
+            primary_key = inspector.get_pk_constraint(name).get('constrained_columns') or []
+            if primary_key != ['user_id', 'role']:
+                problems.append('Incompatible primary key: user_roles; expected (user_id, role)')
         if name in {'users', 'user_identities', 'pending_registrations'}:
             expected = {frozenset(c.name for c in constraint.columns)
                         for constraint in table.constraints if isinstance(constraint, UniqueConstraint)}
             actual_unique = {frozenset(item['column_names']) for item in inspector.get_unique_constraints(name)}
             actual_unique.update(frozenset(item['column_names']) for item in inspector.get_indexes(name) if item.get('unique'))
             if actual_unique != expected:
-                problems.append(f'Incompatible account uniqueness: {name}; email must be scoped by role')
+                problems.append(f'Incompatible account uniqueness: {name}; accounts and provider identities must be unique')
         for column in table.columns:
             if column.name not in columns:
                 problems.append(f"Missing column: {name}.{column.name}")
@@ -38,7 +42,7 @@ def schema_problems(engine) -> list[str]:
 def require_current_schema(engine) -> None:
     problems = schema_problems(engine)
     if problems:
-        raise RuntimeError("Database schema v3 is required. No database changes were made.\n" + "\n".join(problems))
+        raise RuntimeError("The multi-role database schema is required. No database changes were made.\n" + "\n".join(problems))
 
 
 if __name__ == '__main__':
@@ -46,5 +50,5 @@ if __name__ == '__main__':
     if engine is None:
         raise SystemExit('DATABASE_URL is not configured')
     issues = schema_problems(engine)
-    print('\n'.join(issues) if issues else 'Schema v3 table, column and type checks passed')
+    print('\n'.join(issues) if issues else 'Multi-role schema table, column and type checks passed')
     raise SystemExit(1 if issues else 0)

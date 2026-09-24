@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base, get_db
+from models import UserRole
 from models import User, Note, HouseholdTask
 from routers import households, notes
 from security import create_access_token
@@ -25,7 +26,7 @@ class NotesApiTests(unittest.TestCase):
         self.Session = sessionmaker(bind=self.engine)
         with self.Session() as db:
             for user_id in range(1, 5):
-                db.add(User(role="tenant", id=user_id, email=f"user{user_id}@example.com", display_name=f"User {user_id}",
+                db.add(User(roles=[UserRole(role="tenant")], id=user_id, email=f"user{user_id}@example.com", display_name=f"User {user_id}",
                             status="suspended" if user_id == 4 else "active"))
             db.flush()
             db.commit()

@@ -106,7 +106,7 @@ def _row(user: User) -> AdminUserRow:
         email=user.email,
         displayName=user.display_name,
         avatarUrl=user.avatar_url,
-        roles=[user.role],
+        roles=sorted(item.role for item in user.roles),
         status=user.status or "active",
         emailVerified=user.email_verified_at is not None,
         hasPassword=bool(user.password_hash),
@@ -174,12 +174,12 @@ def update_user_status(
         if user.id == admin.id:
             raise HTTPException(status_code=400, detail="不能停用自己的帳號。")
 
-        is_admin = user.role == "admin"
+        is_admin = user.has_role("admin")
         if is_admin:
             remaining = (
                 db.query(User)
                 .filter(
-                    User.role == "admin",
+                    User.has_role("admin"),
                     User.status == "active",
                     User.id != user.id,
                 )

@@ -22,6 +22,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
+from models import UserRole
 from models import User, UserIdentity
 from routers.auth import (
     GoogleAccountResponse,
@@ -51,7 +52,7 @@ class GoogleSessionTest(unittest.TestCase):
 
     def _bound_user(self, status: str = "active") -> User:
         """建立一個已綁定 Google 的租客帳號。"""
-        user = User(role="tenant", email=ACCOUNT.email, display_name="測試租客", status=status)
+        user = User(roles=[UserRole(role="tenant")], email=ACCOUNT.email, display_name="測試租客", status=status)
         self.db.add(user)
         self.db.commit()
         self.db.add_all([
@@ -138,7 +139,7 @@ class GoogleSessionTests(unittest.TestCase):
         self.response = Response()
         self.db = MagicMock()
         self.records = {UserIdentity: SimpleNamespace(user_id=42),
-                        User: SimpleNamespace(id=42, email='test@example.com', role='tenant', status='active', last_login_at=None)}
+                        User: User(id=42, email='test@example.com', roles=[UserRole(role='tenant')], status='active', last_login_at=None)}
         self.db.query.side_effect = lambda model: SimpleNamespace(
             filter=lambda *args: SimpleNamespace(first=lambda: self.records[model]))
         self.patches = [patch.object(auth, '_google_config', return_value=('id', 'test-secret', '', '')),
@@ -173,10 +174,10 @@ class GoogleSessionTests(unittest.TestCase):
         self.mocks[2].assert_not_called()
 
     def test_role_mismatch_does_not_issue_cookie(self):
-        self.records[User].role = 'landlord'
-        with self.assertRaises(HTTPException) as error:
-            self.exchange()
-        self.assertEqual(error.exception.status_code, 403)
+        self.records[User].roles = [UserRole(role='landlord')]
+        result = self.exchange()
+        self.assertTrue(result.registrationRequired)
+        self.assertIsNone(result.accessToken)
         self.assertNotIn('set-cookie', self.response.headers)
 
     def test_missing_member_does_not_issue_credentials(self):

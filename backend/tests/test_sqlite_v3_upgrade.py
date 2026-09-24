@@ -47,11 +47,11 @@ class UpgradeTests(unittest.TestCase):
             ''')
             db.commit()
 
-    def test_split_preserves_password_google_and_role_owned_data_with_backup(self):
+    def test_preserves_shared_account_roles_password_google_and_owned_data_with_backup(self):
         before = hashlib.sha256(self.source.read_bytes()).digest()
         counts = migrate(self.source, self.target)
-        self.assertEqual(counts['users'], 2)
-        self.assertEqual(counts['user_identities'], 2)
+        self.assertEqual(counts['users'], 1)
+        self.assertEqual(counts['user_identities'], 1)
         self.assertEqual(hashlib.sha256(self.source.read_bytes()).digest(), before)
         self.assertEqual(read_source(self.target.with_name('v3-legacy-snapshot.db')), read_source(self.source))
         engine = create_engine('sqlite:///' + self.target.as_posix())
@@ -60,10 +60,11 @@ class UpgradeTests(unittest.TestCase):
             with engine.connect() as db:
                 def rows(name):
                     return list(db.execute(select(Base.metadata.tables[name])).mappings())
-                accounts = {row['role']: row for row in rows('users')}
+                users = {row['id']: row for row in rows('users')}
+                accounts = {row['role']: users[row['user_id']] for row in rows('user_roles')}
                 self.assertEqual(set(accounts), {'tenant', 'landlord'})
                 self.assertEqual(accounts['tenant']['id'], 1)
-                self.assertNotEqual(accounts['tenant']['id'], accounts['landlord']['id'])
+                self.assertEqual(accounts['tenant']['id'], accounts['landlord']['id'])
                 self.assertEqual({row['password_hash'] for row in accounts.values()}, {'unchanged-argon2-hash'})
                 self.assertEqual({row['user_id'] for row in rows('user_identities')}, {row['id'] for row in accounts.values()})
                 self.assertEqual(rows('landlord_properties')[0]['landlord_id'], accounts['landlord']['id'])
@@ -87,17 +88,16 @@ class UpgradeTests(unittest.TestCase):
 
     def test_plan_is_read_only_and_never_overwrites_existing_target(self):
         before = self.source.read_bytes()
-        self.assertEqual(len(plan(self.source)['users']), 2)
+        self.assertEqual(len(plan(self.source)['users']), 1)
         self.assertFalse(self.target.exists())
         with self.assertRaises(ValueError):
             migrate(self.source, self.source)
         self.assertEqual(self.source.read_bytes(), before)
 
-    def test_ambiguous_notification_ownership_requires_mapping(self):
+    def test_shared_account_notification_keeps_ownership(self):
         with closing(sqlite3.connect(self.source)) as db:
             db.executescript('CREATE TABLE notifications (id INTEGER, user_id INTEGER); INSERT INTO notifications VALUES (1, 1);')
-        with self.assertRaisesRegex(ValueError, 'Ambiguous ownership'):
-            plan(self.source)
+        self.assertEqual(plan(self.source)['notifications'][0]['user_id'], 1)
 
     def test_missing_tenant_role_does_not_assign_household_to_landlord(self):
         with closing(sqlite3.connect(self.source)) as db:

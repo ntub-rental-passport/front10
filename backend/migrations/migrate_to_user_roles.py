@@ -1,13 +1,13 @@
-"""Retired migration: schema v3 stores the single role and password in users.
+"""Retired migration: historical password-credential splitting is unsupported.
 
-Historical SQL migrations in this directory are not upgrades to schema v3.
-See docs/database-v3-upgrade.md before migrating existing data.
+The current schema uses user_roles but keeps passwords in users.
+See docs/multi-role-auth.md before migrating existing data.
 """
 import sys
 
 
 def main(apply: bool = False) -> int:
-    print("Retired: do not migrate schema v3 back to user_roles/password credential tables.")
+    print("Retired: this tool does not upgrade to the current schema. See docs/multi-role-auth.md.")
     return 1
 
 
