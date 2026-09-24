@@ -304,22 +304,6 @@ function removeRecipient(email: string): void {
   recipientEmails.value = recipientEmails.value.filter((item) => item !== email)
 }
 
-// 切換模式時把挑好的人清掉：兩邊是不同的名單，留著會變成「後端沒有這個人」
-watch(when, () => {
-  if (recipientEmails.value.length > 0) recipientEmails.value = []
-})
-
-/**
- * 切到排程時把管道收斂成只有 Email。
- *
- * 不做這件事會變成死路：套了模板之後站內是開的，切到排程後「站內不支援」
- * 擋住發送，但那顆開關在排程模式是 disabled —— 管理員關不掉它，只能切回
- * 立即發送關掉再切回來。自己收斂掉，比要求對方猜出這個順序好。
- */
-watch(when, (value) => {
-  if (value === 'schedule') channels.value = ['email']
-})
-
 /* -------------------- 管道 -------------------- */
 
 function channelOn(channel: NotifChannel): boolean {
@@ -332,9 +316,36 @@ function setChannel(channel: NotifChannel, on: boolean): void {
     : channels.value.filter((item) => item !== channel)
 }
 
-/* -------------------- 草稿 -------------------- */
+/* -------------------- 初始狀態：query 帶進來的意圖 > 草稿 -------------------- */
 
-const restored = readDraft()
+const presetTemplate = typeof route.query.template === 'string' ? route.query.template : ''
+// ?to= 可以是一個 email，也可以是逗號分隔的好幾個（使用者管理的批次發通知）。
+// 重複的、空白的都去掉，不然收件人清單會出現同一個人兩次。
+const presetTo = route.query.to
+const presetEmails = [
+  ...new Set(
+    (Array.isArray(presetTo) ? presetTo : [presetTo])
+      .flatMap((value) => (typeof value === 'string' ? value.split(',') : []))
+      .map((value) => value.trim())
+      .filter((value) => value !== ''),
+  ),
+]
+const presetSchedule = route.query.when === 'schedule'
+
+/**
+ * 帶著明確意圖進來時（模板列按「發送」、使用者管理對某幾個人發通知、
+ * 排程頁按「排程發送」）不還原草稿。
+ *
+ * 原本是先還原草稿、再讓 query 蓋過去，結果兩件事混在一起：從使用者管理
+ * 對兩個人按「發送通知」，卻帶回上次沒寫完的排程草稿的標題與排程模式；
+ * 而模式從「立即」變「排程」又觸發了「清空收件人」，剛帶進來的兩個人
+ * 就這樣不見了，畫面寫「沒有符合的收件人」。2026-09-24 驗收批次發通知時踩到。
+ *
+ * 舊草稿不會被刪；管理員開始編輯後，這一次的內容會成為新的草稿。
+ */
+const hasPreset = presetTemplate !== '' || presetEmails.length > 0 || presetSchedule
+
+const restored = hasPreset ? null : readDraft()
 if (restored) {
   templateId.value = restored.templateId
   title.value = restored.title
@@ -357,26 +368,41 @@ if (restored) {
   restoredAt.value = restored.savedAt
 }
 
-// query 帶進來的 preset 蓋過草稿：管理員是「從模板列按發送」進來的，
-// 他要的是那個模板，不是上次沒寫完的東西。
-const presetTemplate = route.query.template
-if (typeof presetTemplate === 'string' && presetTemplate !== '') {
-  applyTemplate(presetTemplate)
-  restoredAt.value = ''
-}
-const presetTo = route.query.to
-if (typeof presetTo === 'string' && presetTo !== '') {
+if (presetTemplate !== '') applyTemplate(presetTemplate)
+if (presetEmails.length > 0) {
   recipientKind.value = 'users'
-  recipientEmails.value = [presetTo]
-  restoredAt.value = ''
+  recipientEmails.value = presetEmails
 }
-if (route.query.when === 'schedule') when.value = 'schedule'
+if (presetSchedule) {
+  when.value = 'schedule'
+  channels.value = ['email']
+}
 
 if (scheduledAt.value === '') {
   const next = new Date(now.value.getTime() + 60 * 60 * 1000)
   next.setMinutes(0, 0, 0)
   scheduledAt.value = toDateTimeLocal(next)
 }
+
+// ⚠️ 以下兩個 watcher 一定要在上面的初始化之後才註冊。Vue 的 watcher 會對
+// 「註冊之後」的變化起反應，setup 當下還原草稿或套用 ?when=schedule 時改到
+// when，如果 watcher 已經在了，就會把剛帶進來的收件人清掉。
+// 切換模式時把挑好的人清掉：兩邊是不同的名單，留著會變成「後端沒有這個人」
+watch(when, () => {
+  if (recipientEmails.value.length > 0) recipientEmails.value = []
+})
+
+/**
+ * 切到排程時把管道收斂成只有 Email。
+ *
+ * 不做這件事會變成死路：套了模板之後站內是開的，切到排程後「站內不支援」
+ * 擋住發送，但那顆開關在排程模式是 disabled —— 管理員關不掉它，只能切回
+ * 立即發送關掉再切回來。自己收斂掉，比要求對方猜出這個順序好。
+ */
+watch(when, (value) => {
+  if (value === 'schedule') channels.value = ['email']
+})
+
 
 // 變數輸入框要跟著內容裡實際出現的變數走
 watch(
