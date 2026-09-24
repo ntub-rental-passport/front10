@@ -82,7 +82,7 @@ import StatusDot from '@/src/components/admin/StatusDot.vue'
 const route = useRoute()
 const router = useRouter()
 
-const { rowOf } = useAdminDirectory()
+const { rowOf, setRealAccountStatus } = useAdminDirectory()
 const { setStatus, setRole, setAdminRole } = useAdminUsers()
 const { plans, planOf, changePlan, grantCredits, isExpiringSoon } = useAdminSubscription()
 const { ticketViews } = useAdminMaintenance()
@@ -99,6 +99,17 @@ useRegisterAdminPageTitle(
 
 // 停用帳號與調整角色屬於高風險操作，維持只有超級管理員能執行
 const isSuper = computed(() => getCurrentAdminRole() === 'super')
+
+/**
+ * 這一頁看的是不是資料庫裡真的存在的人。
+ *
+ * 真實帳號與展示資料走的是完全不同的路：停用真實帳號要打後端 API，
+ * 展示資料只改 localStorage。這一頁原本不分，一律呼叫展示資料的
+ * setStatus —— 它只在 localStorage 裡找人，找不到 real-2 這種 id 就直接
+ * return。結果真實帳號的「停用帳號」按了沒有任何作用、也沒有任何錯誤：
+ * 管理員以為停用了，對方其實還登得進來。
+ */
+const isReal = computed(() => row.value?.realAccountId !== undefined)
 
 // 同一筆案件會同時掛在房東與租客兩邊，詳情頁依身分拆成兩區，空的那區不顯示
 const depositGroups = computed(() =>
@@ -233,19 +244,43 @@ function matchVariant(deposit: UserDepositView): 'default' | 'secondary' | 'dest
   return 'default'
 }
 
+// 身分與權限角色只對展示資料開放。真實帳號在畫面上是唯讀的（見 template），
+// 這裡再擋一次：後端沒有改角色的 API，就算有人繞過畫面呼叫到這裡，
+// 也不能讓它「看起來改了」。
 function handleRoleChange(value: unknown): void {
-  if (!row.value) return
+  if (!row.value || isReal.value) return
   setRole(row.value.user.id, value as AdminUserRole)
 }
 
 function handleAdminRoleChange(value: unknown): void {
-  if (!row.value) return
+  if (!row.value || isReal.value) return
   setAdminRole(row.value.user.id, value as AdminRole)
 }
 
-function toggleStatus(): void {
-  if (!row.value) return
-  setStatus(row.value.user.id, row.value.user.status === 'active' ? 'suspended' : 'active')
+const statusBusy = ref(false)
+const statusError = ref('')
+
+async function toggleStatus(): Promise<void> {
+  const current = row.value
+  if (!current) return
+  const next = current.user.status === 'active' ? 'suspended' : 'active'
+
+  if (!isReal.value) {
+    setStatus(current.user.id, next)
+    return
+  }
+
+  // 真實帳號走後端，跟列表頁的停用同一條路。後端的拒絕理由
+  // （不能停用自己、這是最後一位管理員）要原樣顯示，靜靜失敗最糟。
+  statusError.value = ''
+  statusBusy.value = true
+  try {
+    await setRealAccountStatus(current, next)
+  } catch (error) {
+    statusError.value = error instanceof Error ? error.message : '操作失敗，請稍後再試。'
+  } finally {
+    statusBusy.value = false
+  }
 }
 
 function handlePlanChange(value: unknown): void {
@@ -304,8 +339,11 @@ function openSendDialog(): void {
       <div class="flex items-center gap-1.5 text-muted-foreground">
         <span>{{ row.user.email }}</span>
         <span :title="row.user.emailVerified ? 'Email 已驗證' : 'Email 未驗證'">
-          <BadgeCheck v-if="row.user.emailVerified" class="h-4 w-4 text-emerald-600" />
-          <ShieldAlert v-else class="h-4 w-4 text-amber-600" />
+          <!-- 跟列表頁同一組：--accent 是填色不是文字色，未驗證的圖示包在實心琥珀小圓裡 -->
+          <BadgeCheck v-if="row.user.emailVerified" class="h-4 w-4 text-success" />
+          <span v-else class="inline-flex rounded-full bg-accent p-0.5">
+            <ShieldAlert class="h-3 w-3 text-accent-foreground" />
+          </span>
         </span>
         <span class="mx-1">·</span>
         <span>註冊於 {{ formatDate(row.user.registeredAt) }}</span>
@@ -374,12 +412,26 @@ function openSendDialog(): void {
         <p v-if="!isSuper" class="rounded-xl bg-muted/50 p-3 text-sm text-muted-foreground">
           調整角色與停用帳號僅限超級管理員，以下為唯讀。
         </p>
+        <!--
+          真實帳號的角色不開放從網頁改：後端沒有這支 API，而且這是刻意的 ——
+          超級管理員只能由能登入伺服器的人用 manage_admin.py 授予（見 admin.py）。
+          開放從後台改角色，等於拆掉那道門。
+        -->
+        <p v-else-if="isReal" class="rounded-xl bg-muted/50 p-3 text-sm text-muted-foreground">
+          這是真實帳號，身分與權限角色需要由後端的 manage_admin.py 調整，這裡是唯讀。停用／啟用可以直接在這裡操作。
+        </p>
+        <p
+          v-if="statusError"
+          class="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm font-medium text-destructive"
+        >
+          {{ statusError }}
+        </p>
 
         <div class="flex flex-wrap items-center gap-6">
           <div class="space-y-1.5">
             <p class="text-sm text-muted-foreground">身分</p>
             <Select
-              v-if="isSuper"
+              v-if="isSuper && !isReal"
               :model-value="row.user.role"
               @update:model-value="handleRoleChange"
             >
@@ -396,7 +448,7 @@ function openSendDialog(): void {
           <div v-if="row.user.role === 'admin'" class="space-y-1.5">
             <p class="text-sm text-muted-foreground">權限角色</p>
             <Select
-              v-if="isSuper"
+              v-if="isSuper && !isReal"
               :model-value="row.user.adminRole ?? 'super'"
               @update:model-value="handleAdminRoleChange"
             >
@@ -415,9 +467,10 @@ function openSendDialog(): void {
             <Button
               :variant="row.user.status === 'active' ? 'destructive' : 'default'"
               size="sm"
+              :disabled="statusBusy"
               @click="toggleStatus"
             >
-              {{ row.user.status === 'active' ? '停用帳號' : '啟用帳號' }}
+              {{ statusBusy ? '處理中…' : row.user.status === 'active' ? '停用帳號' : '啟用帳號' }}
             </Button>
           </div>
         </div>
@@ -428,7 +481,14 @@ function openSendDialog(): void {
     <Card class="rounded-3xl">
       <CardHeader class="p-5"><CardTitle>訂閱與容量</CardTitle></CardHeader>
       <CardContent class="px-5 pb-5">
-        <p v-if="!row.subscription" class="text-muted-foreground">此帳號尚未訂閱任何方案。</p>
+        <!--
+          真實帳號永遠沒有訂閱資料。寫「此帳號尚未訂閱」會讓人以為是這個人
+          選擇不訂閱，實際上是後端根本沒有訂閱功能 —— 要把真正的原因講出來。
+        -->
+        <p v-if="!row.subscription && isReal" class="text-muted-foreground">
+          真實帳號目前沒有訂閱資料 —— 訂閱只存在於展示資料，後端還沒有訂閱功能。
+        </p>
+        <p v-else-if="!row.subscription" class="text-muted-foreground">此帳號尚未訂閱任何方案。</p>
 
         <div v-else-if="effectivePlan" class="space-y-4">
           <div class="flex flex-wrap items-center gap-6">
@@ -523,7 +583,10 @@ function openSendDialog(): void {
         </p>
       </CardHeader>
       <CardContent class="px-5 pb-5 space-y-6">
-        <p v-if="row.deposits.length === 0" class="text-muted-foreground">沒有相關的押金記錄。</p>
+        <p v-if="row.deposits.length === 0 && isReal" class="text-muted-foreground">
+          真實帳號目前沒有押金資料 —— 押金對帳只存在於展示資料，後端還沒有這個功能。
+        </p>
+        <p v-else-if="row.deposits.length === 0" class="text-muted-foreground">沒有相關的押金記錄。</p>
 
         <div v-for="group in depositGroups" :key="group.side" class="space-y-2">
           <p class="font-semibold">以{{ caseSideLabels[group.side] }}身分</p>
@@ -654,14 +717,25 @@ function openSendDialog(): void {
       <CardHeader class="p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>報修工單</CardTitle>
-          <Button variant="outline" size="sm" @click="goToTickets">
+          <!-- 真實帳號在工單頁也查不到任何東西（原因見下方說明），不給一顆會帶到空頁的按鈕 -->
+          <Button v-if="!isReal" variant="outline" size="sm" @click="goToTickets">
             在工單頁查看全部
             <ExternalLink class="ml-1 h-3.5 w-3.5" />
           </Button>
         </div>
       </CardHeader>
       <CardContent class="px-5 pb-5 space-y-6">
-        <p v-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
+        <!--
+          不能寫「沒有相關的報修工單」—— 這個人可能真的報修過，只是後台看不到。
+          前台（租客端與房東端）的報修都存在瀏覽器的 rentmate-repair-tickets-v1
+          （useRepairTickets），後台工單頁讀的是另一份 adminMaintenanceCollection，
+          兩邊沒有任何程式碼互相讀寫。
+        -->
+        <p v-if="row.tickets.length === 0 && isReal" class="text-muted-foreground">
+          這個帳號在前台（租客端或房東端）送出的報修，目前不會出現在後台 ——
+          前台和後台的工單是兩份分開的資料，還沒有接起來。
+        </p>
+        <p v-else-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
 
         <div v-for="group in ticketGroups" :key="group.side" class="space-y-2">
           <p class="font-semibold">以{{ caseSideLabels[group.side] }}身分</p>

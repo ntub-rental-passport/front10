@@ -20,6 +20,7 @@ import {
   type UserDirectoryFilter,
   type UserDirectoryRow,
 } from '@/src/utils/admin-user-directory'
+import { dropDemoDuplicates } from '@/src/utils/admin-user-list'
 
 /**
  * 使用者管理的資料來源。
@@ -110,8 +111,12 @@ export function useAdminDirectory() {
     ),
   )
 
-  // 真實帳號排在前面：它們是會真的影響到人的那些列
-  const rows = computed<UserDirectoryRow[]>(() => [...realRows.value, ...demoRows.value])
+  // 真實帳號排在前面：它們是會真的影響到人的那些列。
+  // 同 email 的展示資料拿掉 —— admin@rentmate.tw 曾經同時出現兩列（見 dropDemoDuplicates）
+  const rows = computed<UserDirectoryRow[]>(() => [
+    ...realRows.value,
+    ...dropDemoDuplicates(realRows.value, demoRows.value),
+  ])
 
   const filteredRows = computed(() => filterUserDirectory(rows.value, filter.value))
 
