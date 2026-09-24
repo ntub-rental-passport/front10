@@ -35,11 +35,11 @@ import { fetchAdminAccounts, type AdminAccount } from '@/src/services/adminUsers
 import { createScheduled } from '@/src/services/scheduledNotificationApi'
 import { extractVariables, renderTemplate } from '@/src/utils/notif-template'
 import {
-  ACTION_LINK_GROUPS,
-  ACTION_LINK_OPTIONS,
+  TENANT_ROUTE_GROUPS,
+  TENANT_ROUTE_OPTIONS,
   DEFAULT_ACTION_LABEL,
   actionLinkError,
-} from '@/src/utils/notif-action-link'
+} from '@/src/utils/tenant-route-link'
 import {
   AUDIENCE_LABEL,
   audiencePreviewText,
@@ -198,7 +198,7 @@ const actionUrlValue = computed({
 })
 
 function optionsInGroup(group: string) {
-  return ACTION_LINK_OPTIONS.filter((item) => item.group === group)
+  return TENANT_ROUTE_OPTIONS.filter((item) => item.group === group)
 }
 
 /**
@@ -655,7 +655,7 @@ const confirmCount = computed(() =>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem :value="NO_ACTION">不加按鈕</SelectItem>
-                  <SelectGroup v-for="group in ACTION_LINK_GROUPS" :key="group">
+                  <SelectGroup v-for="group in TENANT_ROUTE_GROUPS" :key="group">
                     <SelectLabel>{{ group }}</SelectLabel>
                     <SelectItem
                       v-for="option in optionsInGroup(group)"

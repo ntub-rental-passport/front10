@@ -1,4 +1,5 @@
 import type { Announcement, AnnouncementLevel } from '@/src/mocks/admin/content'
+import { resolvePhase, type Phase } from './phase'
 
 export function isAnnouncementActive(a: Announcement, now: Date): boolean {
   if (!a.published) return false
@@ -11,15 +12,17 @@ export function isAnnouncementActive(a: Announcement, now: Date): boolean {
 /**
  * 後台列表原本只顯示日期區間，看不出「現在生效中／已過期／還沒開始」，
  * seed 資料因此把「（已過期）」寫進標題來補救——那是介面沒把話說完的徵兆。
+ *
+ * 這組「草稿／排程／生效／過期」狀態機後來被輪播也需要，核心邏輯已經抽到
+ * ./phase（Phase / resolvePhase）。這裡留著 AnnouncementPhase 這個型別名稱
+ * 與 resolveAnnouncementPhase 這個函式名稱，純粹是因為既有的 import（
+ * StatusBadge、AnnouncementsTab…）已經在用這兩個名字，沒有理由為了內部
+ * 換了實作就逼所有呼叫端跟著改名。
  */
-export type AnnouncementPhase = 'draft' | 'scheduled' | 'active' | 'expired'
+export type AnnouncementPhase = Phase
 
 export function resolveAnnouncementPhase(a: Announcement, now: Date): AnnouncementPhase {
-  if (!a.published) return 'draft'
-  const current = now.getTime()
-  if (current < new Date(a.startAt).getTime()) return 'scheduled'
-  if (a.endAt !== null && current > new Date(a.endAt).getTime()) return 'expired'
-  return 'active'
+  return resolvePhase(a, now)
 }
 
 /** 租客端（首頁、通知中心）只該看到跟自己身分有關的公告，房東專屬的公告不該混進來。 */

@@ -20,9 +20,13 @@ const LABELS: Record<AnnouncementLevel, string> = {
   urgent: '緊急',
 }
 
+// warning 改用 --accent 語意色（跟 StatusBadge 的排程中同一組），不再寫死
+// amber——它是深色頁面上僅有的亮色粉彩塊，而且沒有走 design token，換色或
+// 調對比時這裡不會跟著動。info／urgent 本來就已經是 token（primary／
+// destructive），不需要跟著改。
 const CLASSES: Record<AnnouncementLevel, string> = {
   info: 'border-primary/40 bg-primary/10 text-primary',
-  warning: 'border-amber-300 bg-amber-50 text-amber-700',
+  warning: 'border-transparent bg-accent text-accent-foreground',
   urgent: 'border-destructive/40 bg-destructive/10 text-destructive',
 }
 
