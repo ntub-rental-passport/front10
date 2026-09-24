@@ -22,12 +22,17 @@ const LABELS: Record<AnnouncementLevel, string> = {
 
 // warning 改用 --accent 語意色（跟 StatusBadge 的排程中同一組），不再寫死
 // amber——它是深色頁面上僅有的亮色粉彩塊，而且沒有走 design token，換色或
-// 調對比時這裡不會跟著動。info／urgent 本來就已經是 token（primary／
-// destructive），不需要跟著改。
+// 調對比時這裡不會跟著動。
+//
+// urgent 從「淡紅底 + 紅字」改成實心填色（跟 STATUS_CHIP_CLASS.danger 同一組）。
+// 淡底的問題是對比會跟著它踩的底色漂移：放在頁面上深色 5.65、淺色 4.65，
+// 放進公告列的卡片底裡深色只剩 4.37 —— 同一顆膠囊換個位置就不過 AA。
+// 實心填色是不透明的，不管放在哪裡都是 6.35。
+// 順帶形成等級的視覺升級：一般＝淡底、注意＝實心琥珀、緊急＝實心紅。
 const CLASSES: Record<AnnouncementLevel, string> = {
   info: 'border-primary/40 bg-primary/10 text-primary',
   warning: 'border-transparent bg-accent text-accent-foreground',
-  urgent: 'border-destructive/40 bg-destructive/10 text-destructive',
+  urgent: 'border-transparent bg-destructive-surface text-destructive-surface-foreground',
 }
 
 const label = computed(() =>

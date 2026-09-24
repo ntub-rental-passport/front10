@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Badge } from '@/components/ui/badge/index'
+import { computed, ref } from 'vue'
 import { Button } from '@/components/ui/button/index'
 import {
   Dialog,
@@ -21,37 +20,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select/index'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table/index'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
-import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import LevelBadge from '@/src/components/admin/LevelBadge.vue'
-import StatusBadge from '@/src/components/admin/StatusBadge.vue'
 import AnnouncementBanner from '@/src/components/content/AnnouncementBanner.vue'
+import { STATUS_CHIP_CLASS } from '@/src/components/admin/status-dot'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
-import { useExpandedRows } from '@/src/composables/admin/useExpandedRows'
-import { isDashboardAnnouncementLevel, resolveAnnouncementPhase } from '@/src/utils/announcement'
-import { formatDate } from '@/src/utils/admin-format'
+import { useNow } from '@/src/composables/useNow'
+import {
+  announcementPlacement,
+  announcementPlacementSummary,
+  formatAnnouncementShortDate,
+  resolveAnnouncementPhase,
+  type AnnouncementPhase,
+  type AnnouncementPlacement,
+} from '@/src/utils/announcement'
 import { dateKey } from '@/src/utils/date-key'
 import type { Announcement, AnnouncementAudience, AnnouncementLevel } from '@/src/mocks/admin/content'
 
 const { announcements, saveAnnouncement, removeAnnouncement } = useAdminContent()
-const { isExpanded, toggle } = useExpandedRows()
 
-// 每次渲染都用同一個「現在」判斷所有列的階段，避免逐列各取一次而在跨秒時出現不一致
-const phaseOf = (item: Announcement) => resolveAnnouncementPhase(item, new Date())
-
-const levelLabels: Record<AnnouncementLevel, string> = {
-  info: '一般',
-  warning: '注意',
-  urgent: '緊急',
-}
+// 狀態與排序一律靠這個「現在」算，不要在別處各自 new Date()——否則頁面開著
+// 跨過整點時，生效中／已過期的分組不會跟著動，直到使用者重新整理才會發現。
+const now = useNow()
 
 const audienceLabels: Record<AnnouncementAudience, string> = {
   all: '全部',
@@ -59,8 +49,100 @@ const audienceLabels: Record<AnnouncementAudience, string> = {
   landlord: '房東',
 }
 
-const dialogOpen = ref(false)
-const deleteTarget = ref<Announcement | null>(null)
+/* ---------------------------------------------------------------------- *
+ * 左欄：依狀態分組的清單
+ * ---------------------------------------------------------------------- */
+
+const SECTIONS: { phase: AnnouncementPhase; label: string }[] = [
+  { phase: 'active', label: '生效中' },
+  { phase: 'scheduled', label: '排程中' },
+  { phase: 'draft', label: '未發布' },
+  { phase: 'expired', label: '已過期' },
+]
+
+function endAtAscending(a: Announcement, b: Announcement): number {
+  // 生效中依結束時間由近到遠排，長期（endAt 為 null）視為無限遠，排最後
+  const av = a.endAt === null ? Number.POSITIVE_INFINITY : new Date(a.endAt).getTime()
+  const bv = b.endAt === null ? Number.POSITIVE_INFINITY : new Date(b.endAt).getTime()
+  return av - bv
+}
+
+function startAtAscending(a: Announcement, b: Announcement): number {
+  return new Date(a.startAt).getTime() - new Date(b.startAt).getTime()
+}
+
+function updatedAtDescending(a: Announcement, b: Announcement): number {
+  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+}
+
+function endAtDescending(a: Announcement, b: Announcement): number {
+  // 已過期的公告一定有 endAt（resolvePhase 判定 expired 的條件本身就要求
+  // endAt !== null），這裡補 0 只是防呆，邏輯上不會真的用到
+  const av = a.endAt === null ? 0 : new Date(a.endAt).getTime()
+  const bv = b.endAt === null ? 0 : new Date(b.endAt).getTime()
+  return bv - av
+}
+
+const grouped = computed<Record<AnnouncementPhase, Announcement[]>>(() => {
+  const current = now.value
+  const buckets: Record<AnnouncementPhase, Announcement[]> = {
+    active: [],
+    scheduled: [],
+    draft: [],
+    expired: [],
+  }
+  for (const item of announcements.value) {
+    buckets[resolveAnnouncementPhase(item, current)].push(item)
+  }
+  buckets.active.sort(endAtAscending)
+  buckets.scheduled.sort(startAtAscending)
+  buckets.draft.sort(updatedAtDescending)
+  buckets.expired.sort(endAtDescending)
+  return buckets
+})
+
+// 已過期預設收合——這段通常最長，但已經沒有人在看，展開只是為了偶爾回頭查
+const expiredCollapsed = ref(true)
+
+function placementOf(item: Announcement): AnnouncementPlacement {
+  return announcementPlacement(item, now.value)
+}
+
+function placementSummaryOf(item: Announcement): string {
+  return announcementPlacementSummary(placementOf(item))
+}
+
+function daysBetween(from: Date, to: Date): number {
+  // 兩邊都先壓成本地午夜再比較天數，避免 now 帶著的時分秒讓「還剩幾天」
+  // 在同一天內因為時刻不同而跳動
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate())
+  return Math.round((b.getTime() - a.getTime()) / 86400000)
+}
+
+/** 列表右側的時間提示；未發布沒有時間可講，回傳空字串讓 template 不顯示。 */
+function rowTiming(item: Announcement, phase: AnnouncementPhase): string {
+  const current = now.value
+  if (phase === 'active') {
+    return item.endAt === null ? '長期' : `還剩 ${daysBetween(current, new Date(item.endAt))} 天`
+  }
+  if (phase === 'scheduled') {
+    return `${daysBetween(current, new Date(item.startAt))} 天後開始`
+  }
+  if (phase === 'expired') {
+    return item.endAt === null ? '' : `${formatAnnouncementShortDate(item.endAt)} 結束`
+  }
+  return ''
+}
+
+/* ---------------------------------------------------------------------- *
+ * 右欄：選取狀態與草稿
+ * ---------------------------------------------------------------------- */
+
+type PanelMode = 'empty' | 'edit' | 'create'
+
+const panelMode = ref<PanelMode>('empty')
+const selectedId = ref<string | null>(null)
 
 interface DraftState {
   id?: string
@@ -90,8 +172,6 @@ function fromDateInput(value: string): string {
   return new Date(`${value}T00:00:00`).toISOString()
 }
 
-const draft = ref<DraftState>(emptyDraft())
-
 function emptyDraft(): DraftState {
   return {
     title: '',
@@ -104,13 +184,8 @@ function emptyDraft(): DraftState {
   }
 }
 
-function openCreate(): void {
-  draft.value = emptyDraft()
-  dialogOpen.value = true
-}
-
-function openEdit(item: Announcement): void {
-  draft.value = {
+function draftFromItem(item: Announcement): DraftState {
+  return {
     id: item.id,
     title: item.title,
     body: item.body,
@@ -120,12 +195,79 @@ function openEdit(item: Announcement): void {
     startAt: toDateInput(item.startAt),
     endAt: item.endAt ? toDateInput(item.endAt) : '',
   }
-  dialogOpen.value = true
 }
 
-function submit(): void {
+const draft = ref<DraftState>(emptyDraft())
+// 切換列或按新增前用來比對「有沒有還沒存的變更」的快照，見 isDirty。
+const originalDraft = ref<DraftState>(emptyDraft())
+
+const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(originalDraft.value))
+
+function isSelected(item: Announcement): boolean {
+  return panelMode.value === 'edit' && selectedId.value === item.id
+}
+
+/* ---- 有未儲存變更時，切列或新增要先確認是否放棄 ---- */
+
+const discardConfirmOpen = ref(false)
+const pendingNavigation = ref<(() => void) | null>(null)
+
+function guardedNavigate(action: () => void): void {
+  if (isDirty.value) {
+    pendingNavigation.value = action
+    discardConfirmOpen.value = true
+    return
+  }
+  action()
+}
+
+function confirmDiscard(): void {
+  const action = pendingNavigation.value
+  discardConfirmOpen.value = false
+  pendingNavigation.value = null
+  action?.()
+}
+
+function cancelDiscard(): void {
+  discardConfirmOpen.value = false
+  pendingNavigation.value = null
+}
+
+function loadItem(item: Announcement): void {
+  const snapshot = draftFromItem(item)
+  draft.value = snapshot
+  originalDraft.value = { ...snapshot }
+  selectedId.value = item.id
+  panelMode.value = 'edit'
+}
+
+function loadCreate(): void {
+  const snapshot = emptyDraft()
+  draft.value = snapshot
+  originalDraft.value = { ...snapshot }
+  selectedId.value = null
+  panelMode.value = 'create'
+}
+
+function selectItem(item: Announcement): void {
+  if (isSelected(item)) return
+  guardedNavigate(() => loadItem(item))
+}
+
+function startCreate(): void {
+  if (panelMode.value === 'create') return
+  guardedNavigate(() => loadCreate())
+}
+
+function canSubmit(): boolean {
+  return draft.value.title.trim() !== '' && draft.value.body.trim() !== '' && draft.value.startAt !== ''
+}
+
+function save(): void {
+  if (!canSubmit()) return
+  const creating = panelMode.value === 'create'
   saveAnnouncement({
-    id: draft.value.id,
+    id: creating ? undefined : draft.value.id,
     title: draft.value.title,
     body: draft.value.body,
     level: draft.value.level,
@@ -134,181 +276,282 @@ function submit(): void {
     startAt: fromDateInput(draft.value.startAt),
     endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
   })
-  dialogOpen.value = false
+
+  if (creating) {
+    // saveAnnouncement 新增時把新項目 unshift 進 announcements 最前面（見
+    // useAdminContent.ts），它本身不回傳新 id——存檔後讀 [0] 就是剛剛建立
+    // 的那一筆，這是唯一能拿到產生出來的 id 的辦法，面板才能切到編輯模式
+    // 並讓清單裡正確反白選中它。
+    const created = announcements.value[0]
+    selectedId.value = created.id
+    panelMode.value = 'edit'
+    draft.value = { ...draft.value, id: created.id }
+  }
+  originalDraft.value = { ...draft.value }
+}
+
+/* ---- 刪除：面板底部觸發，沿用既有的確認對話框 ---- */
+
+const deleteTarget = ref<Announcement | null>(null)
+
+function requestDelete(): void {
+  const current = announcements.value.find((item) => item.id === selectedId.value)
+  if (current) deleteTarget.value = current
 }
 
 function confirmDelete(): void {
-  if (deleteTarget.value) removeAnnouncement(deleteTarget.value.id)
+  if (!deleteTarget.value) return
+  const removedId = deleteTarget.value.id
+  removeAnnouncement(removedId)
+  if (selectedId.value === removedId) {
+    selectedId.value = null
+    panelMode.value = 'empty'
+  }
   deleteTarget.value = null
 }
 
-const canSubmit = () => draft.value.title.trim() !== '' && draft.value.body.trim() !== '' && draft.value.startAt !== ''
+/* ---------------------------------------------------------------------- *
+ * 右欄上半部：即時預覽——一定要吃「草稿」而不是已存檔的內容，
+ * 這樣改等級、改受眾的當下上面就會跟著變，這正是把編輯與預覽放在一起的理由。
+ * ---------------------------------------------------------------------- */
+
+const draftPlacementInput = computed(() => ({
+  audience: draft.value.audience,
+  published: draft.value.published,
+  level: draft.value.level,
+  // 草稿的日期是 <input type="date"> 字串，可能暫時是空的（例如使用者正在
+  // 清空重填）；退回「現在」避免 new Date('') 產生 Invalid Date 讓預覽算出
+  // 詭異的結果，這只影響預覽判斷，不影響實際存檔內容。
+  startAt: draft.value.startAt ? fromDateInput(draft.value.startAt) : new Date().toISOString(),
+  endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
+}))
+
+const draftPlacement = computed<AnnouncementPlacement>(() =>
+  announcementPlacement(draftPlacementInput.value, now.value),
+)
+const draftPlacementText = computed(() => announcementPlacementSummary(draftPlacement.value))
+
+const draftAppearsSomewhere = computed(
+  () => draftPlacement.value.kind === 'live' || draftPlacement.value.kind === 'scheduled',
+)
+
+// 'live' 與 'scheduled' 是唯一帶 locations 欄位的兩種 kind；先判斷 kind 讓
+// TypeScript 把 placement 收斂成那兩種，才能安全讀 .locations，不用強制轉型。
+const showBannerSample = computed(() => {
+  const placement = draftPlacement.value
+  return (
+    (placement.kind === 'live' || placement.kind === 'scheduled') &&
+    placement.locations.includes('dashboard-banner')
+  )
+})
+const showInboxSample = computed(() => {
+  const placement = draftPlacement.value
+  return (
+    (placement.kind === 'live' || placement.kind === 'scheduled') &&
+    !placement.locations.includes('dashboard-banner')
+  )
+})
+
+const summaryBoxClass = computed(() => [
+  'rounded-lg px-3 py-2 text-xs font-medium',
+  draftAppearsSomewhere.value ? 'bg-success/10 text-foreground' : 'bg-muted text-muted-foreground',
+])
+
+// 只給上方樣品用的臨時物件，不會存檔；id／updatedAt 隨便填，AnnouncementBanner 不看這兩個欄位
+const previewAnnouncement = computed<Announcement>(() => ({
+  id: draft.value.id ?? 'preview',
+  title: draft.value.title,
+  body: draft.value.body,
+  level: draft.value.level,
+  audience: draft.value.audience,
+  published: draft.value.published,
+  startAt: draftPlacementInput.value.startAt,
+  endAt: draftPlacementInput.value.endAt,
+  updatedAt: new Date().toISOString(),
+}))
 </script>
 
 <template>
   <div class="space-y-4">
-    <div class="flex justify-end">
-      <Button @click="openCreate">新增公告</Button>
-    </div>
+    <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <!-- ============ 左：依狀態分組的清單 ============ -->
+      <div class="space-y-6">
+        <div class="flex justify-end">
+          <Button @click="startCreate">新增公告</Button>
+        </div>
 
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>標題</TableHead>
-          <TableHead>等級</TableHead>
-          <TableHead>受眾</TableHead>
-          <TableHead>狀態</TableHead>
-          <TableHead>生效期間</TableHead>
-          <TableHead class="text-right">操作</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        <template v-for="item in announcements" :key="item.id">
-          <!-- 已過期的公告整列降低對比，掃視時可以直接跳過 -->
-          <TableRow
-            :class="['cursor-pointer', phaseOf(item) === 'expired' && 'opacity-55']"
-            @click="toggle(item.id)"
-          >
-            <TableCell class="font-medium">
-              <div class="flex items-center gap-2">
-                <component
-                  :is="isExpanded(item.id) ? ChevronDown : ChevronRight"
-                  class="h-4 w-4 shrink-0 text-muted-foreground"
-                />
-                <span>{{ item.title }}</span>
-              </div>
-            </TableCell>
-            <TableCell><LevelBadge :level="item.level" /></TableCell>
-            <TableCell class="text-sm text-muted-foreground">
-              {{ audienceLabels[item.audience] }}
-            </TableCell>
-            <TableCell><StatusBadge :phase="phaseOf(item)" /></TableCell>
-            <TableCell class="text-sm text-muted-foreground">
-              {{ formatDate(item.startAt) }} ～ {{ item.endAt ? formatDate(item.endAt) : '長期' }}
-            </TableCell>
-            <TableCell class="text-right" @click.stop>
-              <AdminRowActions
-                :actions="[{ label: '刪除', danger: true, onSelect: () => (deleteTarget = item) }]"
+        <div
+          v-if="announcements.length === 0"
+          class="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground"
+        >
+          <p>尚無公告。</p>
+          <Button class="mt-3" size="sm" @click="startCreate">新增第一則公告</Button>
+        </div>
+
+        <template v-else>
+          <div v-for="section in SECTIONS" :key="section.phase">
+            <template v-if="grouped[section.phase].length > 0">
+              <!-- 已過期預設收合，其餘三段一律展開——狀態本身已經排序過重要性 -->
+              <button
+                v-if="section.phase === 'expired'"
+                type="button"
+                class="flex w-full items-center gap-1.5 py-2 text-left text-sm font-semibold text-foreground/70"
+                @click="expiredCollapsed = !expiredCollapsed"
               >
-                <Button variant="outline" size="sm" @click="openEdit(item)">編輯</Button>
-              </AdminRowActions>
-            </TableCell>
-          </TableRow>
+                <component :is="expiredCollapsed ? ChevronRight : ChevronDown" class="h-4 w-4 shrink-0" />
+                {{ section.label }}（{{ grouped[section.phase].length }}）
+              </button>
+              <h3 v-else class="py-2 text-sm font-semibold text-foreground/70">
+                {{ section.label }}（{{ grouped[section.phase].length }}）
+              </h3>
 
-          <TableRow v-if="isExpanded(item.id)" class="hover:bg-transparent">
-            <TableCell colspan="6" class="bg-muted/30">
-              <p class="mb-1 text-xs font-medium text-muted-foreground">公告內文</p>
-              <p class="whitespace-pre-wrap text-sm">{{ item.body }}</p>
-              <p class="mt-2 text-xs text-muted-foreground">
-                最後更新 {{ formatDate(item.updatedAt) }}
-              </p>
-
-              <div class="mt-4 space-y-2 border-t border-border pt-4">
-                <p class="text-xs font-medium text-muted-foreground">租客會看到的樣子</p>
-
+              <div v-if="section.phase !== 'expired' || !expiredCollapsed" class="space-y-2 pb-2">
                 <!--
-                  一定要講清楚的事實：儀表板橫幅只放 warning／urgent
-                  （見 isDashboardAnnouncementLevel），info 公告完全不會出現在
-                  這裡，只會進通知中心的列表。後台原本沒有任何地方講這件事，
-                  管理員很容易以為發了公告就會跳出來，發了 info 公告卻沒人看到。
+                  已過期的不再整列淡化。舊版要淡化，是因為已過期的混在清單裡、需要一個方法
+                  讓眼睛跳過；現在它自成一段、預設收合、段落標題就寫著「已過期」，淡化變成
+                  重複訊號。代價卻很實在：opacity 會讓字和底一起變淡，深色下這一列的等級
+                  膠囊掉到 2.42、說明行 3.59。
+                -->
+                <button
+                  v-for="item in grouped[section.phase]"
+                  :key="item.id"
+                  type="button"
+                  class="flex w-full flex-col gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+                  :class="[
+                    isSelected(item) ? 'border-primary bg-primary/5' : 'border-border',
+                  ]"
+                  @click="selectItem(item)"
+                >
+                  <div class="flex items-center gap-2">
+                    <LevelBadge :level="item.level" />
+                    <span class="min-w-0 flex-1 truncate font-medium">{{ item.title }}</span>
+                  </div>
+                  <p class="truncate text-xs text-foreground/70">
+                    {{ audienceLabels[item.audience] }} · {{ placementSummaryOf(item) }}
+                    <template v-if="rowTiming(item, section.phase)"> · {{ rowTiming(item, section.phase) }}</template>
+                  </p>
+                </button>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <!-- ============ 右：詳情面板（預覽＋編輯同一處，釘住） ============ -->
+      <div class="lg:sticky lg:top-4 lg:self-start">
+        <div
+          v-if="panelMode === 'empty'"
+          class="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground"
+        >
+          選一則公告來預覽與編輯
+        </div>
+
+        <div v-else class="space-y-6 rounded-2xl border border-border p-5">
+          <!-- 上半部：租客會看到的樣子，即時反映下方還沒存檔的編輯內容 -->
+          <section class="space-y-3">
+            <h2 class="text-sm font-semibold">租客會看到的樣子</h2>
+            <p :class="summaryBoxClass">{{ draftPlacementText }}</p>
+
+            <AnnouncementBanner v-if="showBannerSample" :announcement="previewAnnouncement" />
+            <div
+              v-else-if="showInboxSample"
+              class="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground"
+            >
+              <LevelBadge :level="draft.level" prefixed />
+              <span>只會顯示成通知中心裡的一則列表項目，不會有儀表板橫幅那種樣式。</span>
+            </div>
+          </section>
+
+          <!-- 下半部：編輯表單 -->
+          <section class="space-y-4 border-t border-border pt-5">
+            <h2 class="text-sm font-semibold">{{ panelMode === 'create' ? '新增公告' : '編輯公告' }}</h2>
+
+            <div class="space-y-2">
+              <Label for="an-title">標題</Label>
+              <Input id="an-title" v-model="draft.title" />
+            </div>
+            <div class="space-y-2">
+              <Label for="an-body">內容</Label>
+              <Textarea id="an-body" v-model="draft.body" rows="3" />
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="space-y-2">
+                <Label>等級</Label>
+                <Select v-model="draft.level">
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="info">一般</SelectItem>
+                    <SelectItem value="warning">注意</SelectItem>
+                    <SelectItem value="urgent">緊急</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div class="space-y-2">
+                <Label>受眾</Label>
+                <Select v-model="draft.audience">
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部</SelectItem>
+                    <SelectItem value="tenant">租客</SelectItem>
+                    <SelectItem value="landlord">房東</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p class="text-xs text-foreground/70">「全部」目前只有租客端會顯示公告。</p>
+                <!--
+                  房東端目前沒有任何一行程式碼讀公告（見 announcementPlacement 的說明），
+                  選了「房東」要當場講清楚，不能等存檔後才在列表發現公告根本沒送出去。
                 -->
                 <p
-                  :class="[
-                    'rounded-lg px-3 py-2 text-xs font-medium',
-                    isDashboardAnnouncementLevel(item.level)
-                      ? 'bg-success/10 text-foreground'
-                      : 'bg-muted text-muted-foreground',
-                  ]"
+                  v-if="draftPlacement.kind === 'landlord-unsupported'"
+                  :class="['rounded-lg px-2.5 py-1.5 text-xs font-medium', STATUS_CHIP_CLASS.warn]"
                 >
-                  <template v-if="isDashboardAnnouncementLevel(item.level)">
-                    會出現在租客儀表板最上方的橫幅——「{{ levelLabels[item.level] }}」等級會跳出來。
-                  </template>
-                  <template v-else>
-                    不會出現在租客儀表板橫幅。只有「注意」與「緊急」等級會跳出來，
-                    「{{ levelLabels[item.level] }}」等級只會進通知中心，租客要自己點進去才看得到。
-                  </template>
+                  這則公告目前不會出現在任何地方，因為房東端尚未讀取公告。
                 </p>
-
-                <AnnouncementBanner v-if="isDashboardAnnouncementLevel(item.level)" :announcement="item" />
-                <div
-                  v-else
-                  class="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground"
-                >
-                  <LevelBadge :level="item.level" prefixed />
-                  <span>只會顯示成通知中心裡的一則列表項目，不會有儀表板橫幅那種樣式。</span>
-                </div>
               </div>
-            </TableCell>
-          </TableRow>
-        </template>
+            </div>
+            <div class="flex items-center justify-between rounded-xl border px-3 py-2">
+              <Label class="mb-0">發布</Label>
+              <Switch v-model="draft.published" />
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="space-y-2">
+                <Label for="an-start">開始日</Label>
+                <Input id="an-start" v-model="draft.startAt" type="date" />
+              </div>
+              <div class="space-y-2">
+                <Label for="an-end">結束日（可留空）</Label>
+                <Input id="an-end" v-model="draft.endAt" type="date" />
+              </div>
+            </div>
 
-        <TableRow v-if="announcements.length === 0">
-          <TableCell colspan="6" class="py-8 text-center text-muted-foreground">尚無公告。</TableCell>
-        </TableRow>
-      </TableBody>
-    </Table>
+            <div class="flex justify-end">
+              <Button :disabled="!canSubmit()" @click="save">儲存</Button>
+            </div>
+          </section>
 
-    <Dialog v-model:open="dialogOpen">
+          <!-- 刪除：只有編輯既有公告時才看得到，新增中還沒有東西可以刪 -->
+          <section v-if="panelMode === 'edit'" class="border-t border-border pt-4">
+            <Button variant="outline" class="text-destructive" @click="requestDelete">刪除公告</Button>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- 放棄未儲存變更的確認 -->
+    <Dialog :open="discardConfirmOpen" @update:open="(o: boolean) => { if (!o) cancelDiscard() }">
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{{ draft.id ? '編輯公告' : '新增公告' }}</DialogTitle>
-          <DialogDescription>公告會顯示在使用者工作區頂端。</DialogDescription>
+          <DialogTitle>放棄未儲存的變更？</DialogTitle>
+          <DialogDescription>切換到別的公告會遺失目前還沒存檔的編輯內容。</DialogDescription>
         </DialogHeader>
-        <div class="space-y-4">
-          <div class="space-y-2">
-            <Label for="an-title">標題</Label>
-            <Input id="an-title" v-model="draft.title" />
-          </div>
-          <div class="space-y-2">
-            <Label for="an-body">內容</Label>
-            <Textarea id="an-body" v-model="draft.body" rows="3" />
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div class="space-y-2">
-              <Label>等級</Label>
-              <Select v-model="draft.level">
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="info">一般</SelectItem>
-                  <SelectItem value="warning">注意</SelectItem>
-                  <SelectItem value="urgent">緊急</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div class="space-y-2">
-              <Label>受眾</Label>
-              <Select v-model="draft.audience">
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部</SelectItem>
-                  <SelectItem value="tenant">租客</SelectItem>
-                  <SelectItem value="landlord">房東</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div class="flex items-center justify-between rounded-xl border px-3 py-2">
-            <Label class="mb-0">發布</Label>
-            <Switch v-model="draft.published" />
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div class="space-y-2">
-              <Label for="an-start">開始日</Label>
-              <Input id="an-start" v-model="draft.startAt" type="date" />
-            </div>
-            <div class="space-y-2">
-              <Label for="an-end">結束日（可留空）</Label>
-              <Input id="an-end" v-model="draft.endAt" type="date" />
-            </div>
-          </div>
-        </div>
         <DialogFooter>
-          <Button variant="outline" @click="dialogOpen = false">取消</Button>
-          <Button :disabled="!canSubmit()" @click="submit">儲存</Button>
+          <Button variant="outline" @click="cancelDiscard">取消</Button>
+          <Button variant="destructive" @click="confirmDiscard">放棄變更</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
+    <!-- 刪除確認：沿用既有的做法 -->
     <Dialog :open="deleteTarget !== null" @update:open="(o: boolean) => { if (!o) deleteTarget = null }">
       <DialogContent>
         <DialogHeader>

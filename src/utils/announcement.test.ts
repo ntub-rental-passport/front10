@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   announcementDismissKey,
+  announcementPlacement,
+  announcementPlacementSummary,
+  formatAnnouncementShortDate,
   isAnnouncementActive,
   isAnnouncementDismissed,
   isAnnouncementVisibleToTenant,
   isDashboardAnnouncementLevel,
   migrateAnnouncements,
   resolveAnnouncementPhase,
+  type AnnouncementPlacement,
 } from './announcement'
 import type { Announcement } from '@/src/mocks/admin/content'
 
@@ -189,5 +193,237 @@ describe('resolveAnnouncementPhase', () => {
       now,
     )
     expect(phase).toBe('active')
+  })
+})
+
+describe('announcementPlacement', () => {
+  const now = new Date('2026-09-24T00:00:00.000Z')
+
+  describe('audience 為 landlord：優先於狀態，任何狀態都判定成沒有人讀取', () => {
+    it('已發布、日期在區間內仍是 landlord-unsupported，不是 active', () => {
+      const a = make({
+        audience: 'landlord',
+        level: 'warning',
+        published: true,
+        startAt: '2026-09-01T00:00:00.000Z',
+        endAt: '2026-09-30T00:00:00.000Z',
+      })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'landlord-unsupported' })
+    })
+
+    it('草稿狀態的房東公告是 landlord-unsupported，不是 unpublished', () => {
+      const a = make({ audience: 'landlord', published: false })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'landlord-unsupported' })
+    })
+
+    it('排程中的房東公告是 landlord-unsupported，不是 scheduled', () => {
+      const a = make({
+        audience: 'landlord',
+        published: true,
+        startAt: '2026-10-01T00:00:00.000Z',
+        endAt: null,
+      })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'landlord-unsupported' })
+    })
+
+    it('已過期的房東公告是 landlord-unsupported，不是 expired', () => {
+      const a = make({
+        audience: 'landlord',
+        published: true,
+        startAt: '2026-08-01T00:00:00.000Z',
+        endAt: '2026-09-01T00:00:00.000Z',
+      })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'landlord-unsupported' })
+    })
+  })
+
+  describe('audience 為 all／tenant：由狀態與等級決定出現在哪', () => {
+    it('草稿的 warning 不會出現', () => {
+      const a = make({ audience: 'all', level: 'warning', published: false })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'unpublished' })
+    })
+
+    it('草稿狀態跟等級無關，info／urgent 一樣是 unpublished', () => {
+      expect(
+        announcementPlacement(make({ audience: 'tenant', level: 'info', published: false }), now).kind,
+      ).toBe('unpublished')
+      expect(
+        announcementPlacement(make({ audience: 'all', level: 'urgent', published: false }), now).kind,
+      ).toBe('unpublished')
+    })
+
+    it('已過期的 urgent 不會出現（bug 修好前，展開列預覽就是把這個組合講成「會出現在儀表板」）', () => {
+      const a = make({
+        audience: 'all',
+        level: 'urgent',
+        published: true,
+        startAt: '2026-08-01T00:00:00.000Z',
+        endAt: '2026-08-10T00:00:00.000Z',
+      })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'expired' })
+    })
+
+    it('已過期狀態跟等級無關，info／warning 一樣是 expired', () => {
+      const base = {
+        audience: 'tenant' as const,
+        published: true,
+        startAt: '2026-08-01T00:00:00.000Z',
+        endAt: '2026-08-10T00:00:00.000Z',
+      }
+      expect(announcementPlacement(make({ ...base, level: 'info' }), now).kind).toBe('expired')
+      expect(announcementPlacement(make({ ...base, level: 'warning' }), now).kind).toBe('expired')
+    })
+
+    it('排程中的 warning 會帶開始時間，且會出現在儀表板＋通知中心', () => {
+      const a = make({
+        audience: 'all',
+        level: 'warning',
+        published: true,
+        startAt: '2026-09-30T00:00:00.000Z',
+        endAt: null,
+      })
+      expect(announcementPlacement(a, now)).toEqual({
+        kind: 'scheduled',
+        startAt: '2026-09-30T00:00:00.000Z',
+        locations: ['dashboard-banner', 'notification-center'],
+      })
+    })
+
+    it('排程中的 urgent 也會出現在儀表板＋通知中心', () => {
+      const a = make({
+        audience: 'tenant',
+        level: 'urgent',
+        published: true,
+        startAt: '2026-10-05T00:00:00.000Z',
+        endAt: null,
+      })
+      expect(announcementPlacement(a, now)).toEqual({
+        kind: 'scheduled',
+        startAt: '2026-10-05T00:00:00.000Z',
+        locations: ['dashboard-banner', 'notification-center'],
+      })
+    })
+
+    it('排程中的 info 只會出現在通知中心', () => {
+      const a = make({
+        audience: 'all',
+        level: 'info',
+        published: true,
+        startAt: '2026-10-01T00:00:00.000Z',
+        endAt: null,
+      })
+      expect(announcementPlacement(a, now)).toEqual({
+        kind: 'scheduled',
+        startAt: '2026-10-01T00:00:00.000Z',
+        locations: ['notification-center'],
+      })
+    })
+
+    it('生效中的 info 只在通知中心', () => {
+      const a = make({
+        audience: 'all',
+        level: 'info',
+        published: true,
+        startAt: '2026-09-01T00:00:00.000Z',
+        endAt: null,
+      })
+      expect(announcementPlacement(a, now)).toEqual({
+        kind: 'live',
+        locations: ['notification-center'],
+      })
+    })
+
+    it('生效中的 warning 兩個地方都有', () => {
+      const a = make({
+        audience: 'tenant',
+        level: 'warning',
+        published: true,
+        startAt: '2026-09-01T00:00:00.000Z',
+        endAt: null,
+      })
+      expect(announcementPlacement(a, now)).toEqual({
+        kind: 'live',
+        locations: ['dashboard-banner', 'notification-center'],
+      })
+    })
+
+    it('生效中的 urgent 兩個地方都有', () => {
+      const a = make({
+        audience: 'all',
+        level: 'urgent',
+        published: true,
+        startAt: '2026-09-01T00:00:00.000Z',
+        endAt: '2026-09-30T00:00:00.000Z',
+      })
+      expect(announcementPlacement(a, now)).toEqual({
+        kind: 'live',
+        locations: ['dashboard-banner', 'notification-center'],
+      })
+    })
+
+    it('audience 為 tenant 與 all 判斷結果一致（只有 landlord 特殊）', () => {
+      const base = {
+        level: 'warning' as const,
+        published: true,
+        startAt: '2026-09-01T00:00:00.000Z',
+        endAt: null,
+      }
+      expect(announcementPlacement(make({ ...base, audience: 'all' }), now)).toEqual(
+        announcementPlacement(make({ ...base, audience: 'tenant' }), now),
+      )
+    })
+  })
+})
+
+describe('announcementPlacementSummary', () => {
+  it('landlord-unsupported：講清楚原因是房東端尚未讀取公告', () => {
+    const placement: AnnouncementPlacement = { kind: 'landlord-unsupported' }
+    expect(announcementPlacementSummary(placement)).toBe('不會出現在任何地方 —— 房東端尚未讀取公告')
+  })
+
+  it('unpublished', () => {
+    expect(announcementPlacementSummary({ kind: 'unpublished' })).toBe('未發布 —— 不會出現')
+  })
+
+  it('expired', () => {
+    expect(announcementPlacementSummary({ kind: 'expired' })).toBe('已過期 —— 目前不會出現')
+  })
+
+  it('scheduled，儀表板＋通知中心：帶「M/D 起」前綴', () => {
+    const placement: AnnouncementPlacement = {
+      kind: 'scheduled',
+      startAt: '2026-09-30T00:00:00.000Z',
+      locations: ['dashboard-banner', 'notification-center'],
+    }
+    expect(announcementPlacementSummary(placement)).toBe('9/30 起：儀表板橫幅＋通知中心')
+  })
+
+  it('scheduled，只有通知中心', () => {
+    const placement: AnnouncementPlacement = {
+      kind: 'scheduled',
+      startAt: '2026-10-05T00:00:00.000Z',
+      locations: ['notification-center'],
+    }
+    expect(announcementPlacementSummary(placement)).toBe('10/5 起：只在通知中心')
+  })
+
+  it('live，儀表板＋通知中心', () => {
+    const placement: AnnouncementPlacement = {
+      kind: 'live',
+      locations: ['dashboard-banner', 'notification-center'],
+    }
+    expect(announcementPlacementSummary(placement)).toBe('儀表板橫幅＋通知中心')
+  })
+
+  it('live，只在通知中心', () => {
+    const placement: AnnouncementPlacement = { kind: 'live', locations: ['notification-center'] }
+    expect(announcementPlacementSummary(placement)).toBe('只在通知中心')
+  })
+})
+
+describe('formatAnnouncementShortDate', () => {
+  it('不補零、不帶年份的 M/D', () => {
+    expect(formatAnnouncementShortDate('2026-09-30T00:00:00.000Z')).toBe('9/30')
+    expect(formatAnnouncementShortDate('2026-01-05T00:00:00.000Z')).toBe('1/5')
   })
 })
