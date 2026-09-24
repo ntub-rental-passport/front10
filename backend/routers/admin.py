@@ -8,6 +8,8 @@
 這些是在告訴攻擊者「現在正是打的好時機」。健康度資訊本身就是情報。
 """
 
+from datetime import timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
@@ -97,7 +99,21 @@ class UpdateStatusRequest(BaseModel):
 
 
 def _iso(value) -> str | None:
-    return value.isoformat() if value else None
+    """資料庫時間轉成前端吃的 ISO 字串，**一定要帶時區**。
+
+    created_at 與 last_login_at 都是用 datetime.utcnow() 寫進去的 naive UTC，
+    直接 isoformat() 會得到 "2026-09-24T04:48:00" —— 沒有時區標記。
+    瀏覽器會把沒有時區的 ISO 字串當成**本地時間**解析，在 UTC+8 就整整
+    早了 8 小時：2 分鐘前才登入的人，後台顯示「8 小時前」。
+    2026-09-24 加「最後登入」欄時實測踩到。
+
+    naive 一律視為 UTC（因為寫入端全都用 utcnow）；已經帶時區的原樣輸出。
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
 
 
 def _row(user: User) -> AdminUserRow:
