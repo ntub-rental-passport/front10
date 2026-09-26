@@ -13,10 +13,10 @@ const navItems = [
   { label: '房務', path: '/landlord/properties', icon: Building2 },
   { label: '租客', path: '/landlord/tenants', icon: Users },
   { label: '帳務', path: '/landlord/finance', icon: ReceiptText },
+  { label: '方案與訂閱', path: '/landlord/subscription', icon: CreditCard },
   { label: '報修', path: '/landlord/maintenance', icon: Wrench },
   { label: '合約', path: '/landlord/contracts', icon: FileText },
   { label: '設定', path: '/landlord/settings', icon: Settings },
-  { label: '方案與訂閱', path: '/landlord/subscription', icon: CreditCard },
 ]
 
 function isActive(path: string): boolean {
