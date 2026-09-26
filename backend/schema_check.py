@@ -1,5 +1,6 @@
 """Read-only compatibility check; application startup never migrates a database."""
 from sqlalchemy import inspect, UniqueConstraint
+from sqlalchemy.types import Boolean, Integer
 from database import Base
 import models  # Register all mapped tables.
 
@@ -30,8 +31,17 @@ def schema_problems(engine) -> list[str]:
                 continue
             actual = columns[column.name]
             expected_type = column.type.dialect_impl(engine.dialect)
-            if actual['type']._type_affinity is not expected_type._type_affinity:
+
+            # === 修正：相容 MySQL 將 Boolean 存為 TINYINT(Integer) 的特異性 ===
+            actual_affinity = actual['type']._type_affinity
+            expected_affinity = expected_type._type_affinity
+            is_bool_compat = (
+                expected_affinity is Boolean and actual_affinity is Integer
+            )
+
+            if actual_affinity is not expected_affinity and not is_bool_compat:
                 problems.append(f"Incompatible type: {name}.{column.name}")
+
         for column_name in columns.keys() - table.columns.keys():
             column = columns[column_name]
             if not column.get('nullable') and column.get('default') is None and not column.get('autoincrement'):
