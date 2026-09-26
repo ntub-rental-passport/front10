@@ -6,6 +6,7 @@ import {
   logoutFromServer,
   resendRegistration,
   startRegistration,
+  updateDisplayName,
   verifyRegistration,
   type GoogleOAuthSession,
 } from '@/src/services/authApi'
@@ -250,11 +251,12 @@ export function registerWithGoogle(
   role: AuthRole = 'tenant',
   accessToken?: string | null,
   userId?: string | number | null,
+  displayName: string | null = null,
 ): AuthSession {
   const profile = upsertUserProfile(email, {
     role,
     emailVerified: true,
-    nickname: null,
+    nickname: displayName,
   })
 
   return createSession(role, profile, accessToken, userId)
@@ -436,18 +438,27 @@ export async function completeEmailVerification(code: string): Promise<AuthSessi
   return createSession(verified.role, profile, verified.accessToken, verified.userId)
 }
 
-export function finishNicknameSetup(nickname: string): AuthSession | null {
+/**
+ * 寫入顯示名稱：先存進後端資料庫，成功了才更新本機 session。
+ *
+ * 順序很重要 —— 反過來的話，後端存檔失敗時本機仍顯示已設定暱稱，
+ * 使用者換裝置登入就會發現名字不見了，而且沒有任何地方提示他失敗過。
+ */
+export async function finishNicknameSetup(nickname: string): Promise<AuthSession | null> {
   const session = getAuthSession()
   if (!session) return null
 
   const cleanNickname = nickname.trim()
-  const profile = upsertUserProfile(session.email, {
-    role: session.role,
-    nickname: cleanNickname || null,
-    emailVerified: session.emailVerified,
+  if (!cleanNickname) return session
+
+  const updated = await updateDisplayName(cleanNickname)
+  const profile = upsertUserProfile(updated.email, {
+    role: updated.role,
+    nickname: updated.displayName,
+    emailVerified: true,
   })
 
-  return createSession(session.role, profile, session.accessToken, session.userId)
+  return createSession(updated.role, profile, updated.accessToken, updated.userId)
 }
 
 export function getAuthenticatedUserId(session: AuthSession | null = getAuthSession()): string {

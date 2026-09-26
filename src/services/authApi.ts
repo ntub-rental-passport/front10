@@ -127,6 +127,24 @@ export async function fetchCurrentUser(): Promise<EmailLoginResponse | null> {
   return await response.json().catch(() => null)
 }
 
+/** 更新顯示名稱（註冊最後一步）；暱稱寫回資料庫，換裝置登入才不會又被問一次。 */
+export async function updateDisplayName(displayName: string): Promise<EmailLoginResponse> {
+  const response = await authFetch(`${API_BASE_URL}/auth/profile`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ displayName }),
+  })
+  const body = (await response.json().catch(() => null)) as
+    | (EmailLoginResponse & { detail?: string })
+    | null
+  if (!response.ok) {
+    throw new Error(body?.detail || '儲存顯示名稱失敗，請稍後再試。')
+  }
+  if (!body) throw new Error('帳號服務沒有回傳資料。')
+  return body
+}
+
 /** 登出：請後端清除 HttpOnly JWT cookie（前端讀不到、也刪不掉這個 cookie）。 */
 export async function logoutFromServer(): Promise<void> {
   try {

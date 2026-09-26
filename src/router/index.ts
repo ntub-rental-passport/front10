@@ -252,10 +252,6 @@ router.beforeEach(async (to) => {
     return '/admin'
   }
 
-  if (to.path !== '/welcome' && needsNicknameSetup(session)) {
-    return '/welcome'
-  }
-
   if (to.path === '/welcome' && !needsNicknameSetup(session)) {
     return resolveRoleHome(session.role)
   }

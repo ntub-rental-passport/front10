@@ -943,6 +943,46 @@ def get_me(
     )
 
 
+class ProfileUpdateRequest(BaseModel):
+    displayName: str = Field(min_length=1, max_length=100)
+
+
+@router.patch("/profile", response_model=EmailLoginResponse)
+def update_profile(
+    payload: ProfileUpdateRequest,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmailLoginResponse:
+    """更新顯示名稱。
+
+    註冊最後一步（/welcome）就是呼叫這裡 —— 暱稱只存在 localStorage 的話，
+    換一台裝置登入就會被當成「還沒設定暱稱」，再被要求輸入一次。
+    """
+    user = db.query(User).filter(User.id == current.id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="帳號不存在，請重新登入。")
+    if not user.has_role(current.role):
+        raise HTTPException(status_code=401, detail="Account role changed; sign in again")
+    _reject_if_suspended(user)
+
+    display_name = payload.displayName.strip()
+    if not display_name:
+        raise HTTPException(status_code=422, detail="顯示名稱不能為空白。")
+
+    user.display_name = display_name
+    db.commit()
+    db.refresh(user)
+
+    return EmailLoginResponse(
+        userId=user.id,
+        email=user.email,
+        role=current.role,
+        displayName=user.display_name,
+        avatarUrl=getattr(user, "avatar_url", None),
+        accessToken=create_access_token(user.id, current.role),
+    )
+
+
 @router.post("/logout")
 def logout(response: Response) -> dict[str, bool]:
     """登出：清除 HttpOnly 認證 cookie。"""
