@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import hashlib
 import hmac
 import json
@@ -10,13 +10,13 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import requests as http_requests
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from dotenv import dotenv_values, load_dotenv
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleRequest
@@ -26,10 +26,25 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
-from email_service import EmailConfigurationError, send_verification_email
+from email_service import (
+    EmailConfigurationError,
+    send_admin_login_code,
+    send_verification_email,
+)
 from models import (
+    PendingAdminLogin,
     PendingRegistration,
     User,
+    UserIdentity,
+    UserRole,
+)
+from security import (
+    CurrentUser,
+    clear_auth_cookie,
+    create_access_token,   # Bearer 版（Authorization 標頭）
+    create_cookie_token,   # Cookie 版（HttpOnly JWT）
+    get_current_user,
+    set_auth_cookie,
 )
 from verification import (
     generate_verification_code,
@@ -64,10 +79,12 @@ class EmailLoginRequest(BaseModel):
 
 
 class EmailLoginResponse(BaseModel):
+    userId: int
     email: str
     role: str
     displayName: str | None = None
     avatarUrl: str | None = None
+    accessToken: str
 
 
 class GoogleLoginRequest(BaseModel):
@@ -87,18 +104,19 @@ class GoogleAccountResponse(BaseModel):
 
 
 class GoogleOAuthSessionResponse(GoogleAccountResponse):
+    userId: int | None = None
     flowVersion: int = 2
     role: str
     redirectPath: str | None = None
     registrationRequired: bool
     registrationToken: str | None = None
+    accessToken: str | None = None
 
 
 class RegistrationStartRequest(BaseModel):
     email: str | None = None
     password: str | None = None
     role: str = "tenant"
-    inviteCode: str | None = Field(default=None, max_length=100)
     googleRegistrationToken: str | None = None
 
 
@@ -120,10 +138,12 @@ class RegistrationPendingResponse(BaseModel):
 
 
 class RegistrationVerifyResponse(BaseModel):
+    userId: int
     email: str
     role: str
     displayName: str | None = None
     avatarUrl: str | None = None
+    accessToken: str
 
 
 def _google_config() -> tuple[str, str, str, str]:
@@ -236,6 +256,41 @@ def _read_signed_state(state_value: str, signing_key: str) -> dict[str, object]:
         ) from error
 
 
+def _create_google_registration_token(
+    account: GoogleAccountResponse,
+    role: str,
+    redirect_path: str | None,
+    signing_key: str,
+) -> str:
+    payload = {
+        "account": account.model_dump(),
+        "role": _safe_role(role),
+        "redirectPath": _safe_redirect_path(redirect_path),
+        "expiresAt": int(time.time()) + REGISTRATION_TOKEN_MAX_AGE_SECONDS,
+    }
+    encoded_payload = _base64url_encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    )
+    signature = _base64url_encode(
+        hmac.new(signing_key.encode("utf-8"), encoded_payload.encode("ascii"), hashlib.sha256).digest()
+    )
+    return f"{encoded_payload}.{signature}"
+
+
+def _read_google_registration_token(token: str, signing_key: str) -> dict[str, object]:
+    try:
+        payload = _read_signed_state(token, signing_key)
+        account = payload.get("account")
+        if not isinstance(account, dict):
+            raise ValueError("missing Google account")
+        return payload
+    except (HTTPException, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google 註冊資料無效或已過期，請重新使用 Google 登入。",
+        ) from error
+
+
 def _normalize_email(value: str | None) -> str:
     email = (value or "").strip().lower()
     if not email or len(email) > 254 or "@" not in email:
@@ -246,21 +301,56 @@ def _normalize_email(value: str | None) -> str:
 # ==========================================
 # 1. 一般密碼登入
 # ==========================================
+# ==========================================
+# 帳號狀態
+# ==========================================
+
+SUSPENDED_DETAIL = "此帳號已被停用，請聯絡管理員。"
+
+
+def _reject_if_suspended(user: User) -> None:
+    """帳號被停用時中止登入。
+
+    ⚠️ 每一條登入路徑都必須呼叫這個函式。後台若有「停用」按鈕卻擋不住登入，
+    那顆按鈕就是假的 —— 比沒有更糟，因為管理員會以為問題已經處理了。
+
+    這裡的訊息刻意講明「已被停用」而非含糊的「帳號或密碼不正確」：
+    停用是管理員主動做的處置，當事人有權知道自己被停權、該找誰處理；
+    而且能走到這一步的人本來就已經通過帳密驗證，不存在洩漏帳號存在與否的問題。
+    """
+    if getattr(user, "status", "active") == "suspended":
+        raise HTTPException(status_code=403, detail=SUSPENDED_DETAIL)
+
+
+def _record_login(db: Session, user: User) -> None:
+    """蓋上最後登入時間。
+
+    失敗不影響登入 —— 這只是後台的參考資訊，
+    不該因為寫不進去就把已經驗證成功的人擋在門外。
+    """
+    try:
+        user.last_login_at = datetime.utcnow()
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
 @router.post("/login", response_model=EmailLoginResponse)
 def login_with_email(
     payload: EmailLoginRequest,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> EmailLoginResponse:
     email = _normalize_email(payload.email)
     if payload.role not in ALLOWED_ROLES:
         raise HTTPException(status_code=422, detail="role-mismatch")
 
-    user = db.query(User).filter(User.email == email).first()
-    if user is None or user.password_hash is None:
+    user = db.query(User).filter(User.email == email, User.has_role(payload.role)).first()
+    if user is None or not user.password_hash:
         raise HTTPException(status_code=404, detail="account-not-found")
     if user.email_verified_at is None:
         raise HTTPException(status_code=403, detail="email-not-verified")
-    if user.role != payload.role:
+    if not user.has_role(payload.role):
         raise HTTPException(status_code=403, detail="role-mismatch")
 
     try:
@@ -270,13 +360,23 @@ def login_with_email(
 
     if password_hasher.check_needs_rehash(user.password_hash):
         user.password_hash = password_hasher.hash(payload.password)
+        user.password_changed_at = datetime.utcnow()
         db.commit()
 
+    _reject_if_suspended(user)
+    _record_login(db, user)
+
+    # 登入成功：簽發 JWT 並放進 HttpOnly cookie，後續請求以此驗證身分。
+    # payload.role 已與 user_roles 核對；token 代表本次選定的身分。
+    set_auth_cookie(response, create_cookie_token(user.id, user.email, payload.role))
+
     return EmailLoginResponse(
+        userId=user.id,
         email=user.email,
-        role=user.role,
+        role=payload.role,
         displayName=user.display_name,
-        avatarUrl=getattr(user, "avatar_url", None),
+        avatarUrl=user.avatar_url,
+        accessToken=create_access_token(user.id, payload.role),
     )
 
 
@@ -286,6 +386,16 @@ def _registration_limits() -> tuple[int, int, int, int]:
     resend_cooldown = int(os.getenv("VERIFICATION_RESEND_COOLDOWN_SECONDS", "60"))
     max_sends = int(os.getenv("VERIFICATION_MAX_SENDS", "5"))
     return expires_seconds, max_attempts, resend_cooldown, max_sends
+
+
+def _google_http_session() -> http_requests.Session:
+    session = http_requests.Session()
+    session.trust_env = os.getenv("GOOGLE_OAUTH_TRUST_ENV_PROXY", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    return session
 
 
 def _pending_response(pending: PendingRegistration, now: datetime) -> RegistrationPendingResponse:
@@ -302,11 +412,12 @@ def _pending_response(pending: PendingRegistration, now: datetime) -> Registrati
 
 def _verify_google_id_token(credential: str, client_id: str) -> GoogleAccountResponse:
     try:
-        claims = id_token.verify_oauth2_token(
-            credential,
-            GoogleRequest(),
-            client_id,
-        )
+        with _google_http_session() as session:
+            claims = id_token.verify_oauth2_token(
+                credential,
+                GoogleRequest(session=session),
+                client_id,
+            )
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -357,6 +468,7 @@ def _store_ticket(account: GoogleAccountResponse, role: str, redirect_path: str 
 
 @router.get("/google/start")
 def start_google_oauth(
+    request: Request,
     role: str = Query(default="tenant"),
     redirect_path: str | None = Query(default=None, alias="redirect"),
 ) -> RedirectResponse:
@@ -364,6 +476,21 @@ def start_google_oauth(
     safe_role = _safe_role(role)
     if not client_id or not client_secret:
         return _frontend_login_redirect(google_error="missing_config", role=safe_role)
+
+    # OAuth state cookie 必須與 callback 使用相同主機名稱。
+    # 本機可能從 127.0.0.1 開頁，但 Google 設定的 callback 是 localhost。
+    callback = urlsplit(redirect_uri)
+    loopback_hosts = {"localhost", "127.0.0.1", "::1"}
+    if (
+        request.url.hostname in loopback_hosts
+        and callback.hostname in loopback_hosts
+        and request.url.hostname != callback.hostname
+    ):
+        query = urlencode({"role": safe_role, "redirect": _safe_redirect_path(redirect_path)})
+        return RedirectResponse(
+            url=urlunsplit((callback.scheme, callback.netloc, "/api/auth/google/start", query, "")),
+            status_code=status.HTTP_302_FOUND,
+        )
 
     state_value = _create_signed_state(safe_role, redirect_path, client_secret)
     authorization_query = urlencode(
@@ -411,17 +538,18 @@ def google_oauth_callback(
 
     try:
         state_payload = _read_signed_state(state_value, client_secret)
-        token_response = http_requests.post(
-            GOOGLE_TOKEN_URL,
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": redirect_uri,
-            },
-            timeout=15,
-        )
+        with _google_http_session() as session:
+            token_response = session.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": redirect_uri,
+                },
+                timeout=15,
+            )
         token_response.raise_for_status()
         credential = token_response.json().get("id_token")
         if not credential:
@@ -449,6 +577,7 @@ def google_oauth_callback(
 @router.post("/google/session", response_model=GoogleOAuthSessionResponse)
 def exchange_google_ticket(
     payload: GoogleTicketRequest,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> GoogleOAuthSessionResponse:
     with _ticket_lock:
@@ -468,53 +597,48 @@ def exchange_google_ticket(
         )
 
     requested_role = _safe_role(str(ticket_data["role"]))
-
-    # 直接使用 google_sub 查詢 Users 表
-    user = db.query(User).filter(User.google_sub == account.subject).first()
-
-    if user is None:
-        # 首次 Google 登入：直接新增使用者
-        now = datetime.utcnow()
-        user = User(
-            email=account.email,
-            display_name=account.name,
-            google_sub=account.subject,
-            role=requested_role,
-            email_verified_at=now,
-            created_at=now,
+    identity = db.query(UserIdentity).filter(
+        UserIdentity.provider == "google",
+        UserIdentity.provider_subject == account.subject,
+    ).first()
+    user = None
+    if identity:
+        user = db.query(User).filter(User.id == identity.user_id).first()
+        if user is None:
+            raise HTTPException(status_code=401, detail="Google 帳號對應的會員資料不存在，請聯絡管理者。")
+        _reject_if_suspended(user)
+    registration_required = user is None or not user.has_role(requested_role)
+    _, client_secret, _, _ = _google_config()
+    registration_token = (
+        _create_google_registration_token(
+            account,
+            requested_role,
+            str(ticket_data["redirectPath"]) if ticket_data.get("redirectPath") else None,
+            client_secret,
         )
-        db.add(user)
-        try:
-            db.commit()
-            db.refresh(user)
-        except IntegrityError:
-            db.rollback()
-            # 若已有此 Email 的一般密碼帳號，自動補上 google_sub 綁定
-            user = db.query(User).filter(User.email == account.email).first()
-            if user:
-                user.google_sub = account.subject
-                db.commit()
-            else:
-                raise HTTPException(status_code=409, detail="帳號建立失敗，請稍後再試。")
-    else:
-        # 已有 Google 帳號：比對角色
-        if user.role != requested_role:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"此帳號的角色為「{'租客' if user.role == 'tenant' else '房東'}」，請切換頁籤登入。",
-            )
+        if registration_required
+        else None
+    )
+
+    # Only a registered identity with the requested role may receive a login cookie.
+    # New Google accounts must finish registration before becoming authenticated.
+    if not registration_required:
+        _record_login(db, user)
+        set_auth_cookie(response, create_cookie_token(user.id, user.email, requested_role))
 
     return GoogleOAuthSessionResponse(
         **account.model_dump(),
+        userId=(user.id if not registration_required else None),
         flowVersion=2,
-        role=user.role,
+        role=requested_role,
         redirectPath=(
             str(ticket_data["redirectPath"])
             if ticket_data.get("redirectPath")
             else None
         ),
-        registrationRequired=False,
-        registrationToken=None,
+        registrationRequired=registration_required,
+        registrationToken=registration_token,
+        accessToken=(create_access_token(user.id, requested_role) if not registration_required else None),
     )
 
 
@@ -539,21 +663,62 @@ def start_registration(
 ) -> RegistrationPendingResponse:
     now = datetime.utcnow()
     expires_seconds, _, resend_cooldown, max_sends = _registration_limits()
-    
-    email = _normalize_email(payload.email)
-    password = payload.password or ""
-    if len(password) < 8 or len(password) > 128:
-        raise HTTPException(status_code=422, detail="密碼長度必須介於 8 到 128 個字元。")
-    
-    password_hash = password_hasher.hash(password)
-    role = _safe_role(payload.role)
+    provider = "password"
+    provider_subject = None
+    display_name = None
+    avatar_url = None
+    password_hash = None
+    if payload.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=422, detail="role-mismatch")
+    role = payload.role
+
+    if payload.googleRegistrationToken:
+        _, client_secret, _, _ = _google_config()
+        token_payload = _read_google_registration_token(
+            payload.googleRegistrationToken,
+            client_secret,
+        )
+        account = token_payload["account"]
+        if not isinstance(account, dict):
+            raise HTTPException(status_code=401, detail="Google 註冊資料格式錯誤。")
+        provider = "google"
+        email = _normalize_email(str(account.get("email") or ""))
+        provider_subject = str(account.get("subject") or "")
+        display_name = str(account.get("name")) if account.get("name") else None
+        avatar_url = str(account.get("picture")) if account.get("picture") else None
+        role = str(token_payload.get("role") or role)
+        if role not in ALLOWED_ROLES:
+            raise HTTPException(status_code=422, detail="role-mismatch")
+        if not provider_subject:
+            raise HTTPException(status_code=401, detail="Google 註冊資料缺少帳號識別碼。")
+    else:
+        email = _normalize_email(payload.email)
+        password = payload.password or ""
+        if len(password) < 8 or len(password) > 128:
+            raise HTTPException(status_code=422, detail="密碼長度必須介於 8 到 128 個字元。")
+        password_hash = password_hasher.hash(password)
 
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
-        raise HTTPException(status_code=409, detail="此電子信箱已經註冊，請直接登入。")
+        _reject_if_suspended(existing_user)
+        if existing_user.has_role(role):
+            raise HTTPException(status_code=409, detail="此電子信箱已有此身分，請直接登入。")
+        if provider == "password":
+            if not existing_user.password_hash:
+                raise HTTPException(status_code=409, detail="請使用原有 Google 登入方式新增身分。")
+            try:
+                password_hasher.verify(existing_user.password_hash, payload.password)
+            except (InvalidHashError, VerificationError, VerifyMismatchError):
+                raise HTTPException(status_code=401, detail="invalid-password")
+    identity = db.query(UserIdentity).filter(
+        UserIdentity.provider == provider,
+        UserIdentity.provider_subject == provider_subject,
+    ).first() if provider_subject else None
+    if identity and (existing_user is None or identity.user_id != existing_user.id):
+        raise HTTPException(status_code=409, detail="此 Google 身分已綁定其他帳號。")
 
     pending = db.query(PendingRegistration).filter(
-        PendingRegistration.email == email
+        PendingRegistration.email == email, PendingRegistration.role == role
     ).with_for_update().first()
 
     if pending and pending.resend_available_at > now:
@@ -571,6 +736,7 @@ def start_registration(
         pending = PendingRegistration(
             id=str(uuid.uuid4()),
             email=email,
+            provider=provider,
             send_count=1,
             created_at=now,
         )
@@ -578,12 +744,17 @@ def start_registration(
     else:
         pending.send_count += 1
 
+    pending.provider = provider
+    pending.provider_subject = provider_subject
+    pending.display_name = display_name
+    pending.avatar_url = avatar_url
     pending.password_hash = password_hash
     pending.role = role
     pending.verification_code_hash = hash_verification_code(pending.id, code)
     pending.expires_at = now + timedelta(seconds=expires_seconds)
     pending.resend_available_at = now + timedelta(seconds=resend_cooldown)
     pending.attempt_count = 0
+    pending.updated_at = now
 
     try:
         db.flush()
@@ -656,6 +827,7 @@ def resend_registration_code(
 @router.post("/registration/verify", response_model=RegistrationVerifyResponse)
 def verify_registration(
     payload: RegistrationVerifyRequest,
+    http_response: Response,
     db: Session = Depends(get_db),
 ) -> RegistrationVerifyResponse:
     now = datetime.utcnow()
@@ -684,26 +856,316 @@ def verify_registration(
             detail=f"驗證碼不正確，還可嘗試 {attempts_remaining} 次。",
         )
 
-    # 建立正式的 User 紀錄
-    user = User(
-        email=pending.email,
-        password_hash=pending.password_hash,
-        role=pending.role,
-        email_verified_at=now,
-        created_at=now,
-    )
-    db.add(user)
-    
+    if pending.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=403, detail="公開註冊不能授予此身分。")
+    # 驗證信箱所有權後，沿用既有帳號；不覆寫其密碼或個人資料。
+    user = db.query(User).filter(User.email == pending.email).with_for_update().first()
+    is_new = user is None
+    if is_new:
+        user = User(email=pending.email, display_name=pending.display_name,
+                    avatar_url=pending.avatar_url, email_verified_at=now, created_at=now)
+        db.add(user)
+    else:
+        _reject_if_suspended(user)
+        if user.has_role(pending.role):
+            raise HTTPException(status_code=409, detail="此帳號已有此身分，請直接登入。")
     try:
+        db.flush()  # 先取得新使用者的自增 id，才能建立關聯資料與簽發 token
+        if pending.provider == "google":
+            identity = db.query(UserIdentity).filter(
+                UserIdentity.provider == "google",
+                UserIdentity.provider_subject == pending.provider_subject,
+            ).first()
+            if identity and identity.user_id != user.id:
+                raise HTTPException(status_code=409, detail="此 Google 身分已綁定其他帳號。")
+            if not identity:
+                db.add(UserIdentity(user_id=user.id, provider="google",
+                    provider_subject=pending.provider_subject, provider_email=pending.email, created_at=now))
+        elif pending.password_hash:
+            if is_new:
+                user.password_hash = pending.password_hash
+                user.password_changed_at = now
+        else:
+            raise HTTPException(status_code=500, detail="註冊資料缺少登入憑證。")
+
+        user.roles.append(UserRole(role=pending.role))
+        user.email_verified_at = user.email_verified_at or now
+        user.last_login_at = now
         response = RegistrationVerifyResponse(
-            email=pending.email,
+            userId=user.id,
+            email=user.email,
             role=pending.role,
-            displayName=None,
-            avatarUrl=None,
+            displayName=user.display_name,
+            avatarUrl=user.avatar_url,
+            accessToken=create_access_token(user.id, pending.role),
         )
         db.delete(pending)
         db.commit()
+        # 註冊完成即視為已登入：同時發出兩套憑證（見 security.py 開頭說明）
+        # cookie 版供合約／OCR 端點使用，Bearer 版（response.accessToken）供房東／租客端點使用
+        set_auth_cookie(http_response, create_cookie_token(user.id, user.email, pending.role))
         return response
     except IntegrityError as error:
         db.rollback()
         raise HTTPException(status_code=409, detail="帳號已由另一個驗證程序建立，請直接登入。") from error
+    except HTTPException:
+        db.rollback()
+        raise
+
+
+# ==========================================
+# 5. Session 查詢與登出
+# ==========================================
+@router.get("/me", response_model=EmailLoginResponse)
+def get_me(
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmailLoginResponse:
+    """Restore the selected session role only while the account still owns it."""
+    user = db.query(User).filter(User.id == current.id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="帳號不存在，請重新登入。")
+
+    if not user.has_role(current.role):
+        raise HTTPException(status_code=401, detail="Account role changed; sign in again")
+
+    # 已登入者被停用時，這裡是最快被觸發的檢查點：
+    # 前端每次重新整理都會打 /me，不必等 cookie 過期
+    _reject_if_suspended(user)
+
+    return EmailLoginResponse(
+        userId=user.id,
+        email=user.email,
+        role=current.role,
+        displayName=user.display_name,
+        avatarUrl=getattr(user, "avatar_url", None),
+        accessToken=create_access_token(user.id, current.role),
+    )
+
+
+class ProfileUpdateRequest(BaseModel):
+    displayName: str = Field(min_length=1, max_length=100)
+
+
+@router.patch("/profile", response_model=EmailLoginResponse)
+def update_profile(
+    payload: ProfileUpdateRequest,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmailLoginResponse:
+    """更新顯示名稱。
+
+    註冊最後一步（/welcome）就是呼叫這裡 —— 暱稱只存在 localStorage 的話，
+    換一台裝置登入就會被當成「還沒設定暱稱」，再被要求輸入一次。
+    """
+    user = db.query(User).filter(User.id == current.id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="帳號不存在，請重新登入。")
+    if not user.has_role(current.role):
+        raise HTTPException(status_code=401, detail="Account role changed; sign in again")
+    _reject_if_suspended(user)
+
+    display_name = payload.displayName.strip()
+    if not display_name:
+        raise HTTPException(status_code=422, detail="顯示名稱不能為空白。")
+
+    user.display_name = display_name
+    db.commit()
+    db.refresh(user)
+
+    return EmailLoginResponse(
+        userId=user.id,
+        email=user.email,
+        role=current.role,
+        displayName=user.display_name,
+        avatarUrl=getattr(user, "avatar_url", None),
+        accessToken=create_access_token(user.id, current.role),
+    )
+
+
+@router.post("/logout")
+def logout(response: Response) -> dict[str, bool]:
+    """登出：清除 HttpOnly 認證 cookie。"""
+    clear_auth_cookie(response)
+    return {"ok": True}
+
+
+# ==========================================
+# 6. 管理員登入（兩階段：帳密 → 信箱驗證碼）
+# ==========================================
+#
+# 為何管理員需要第二階段驗證，而一般使用者不需要：
+# 管理員可存取全站使用者資料、調整系統設定、關閉功能，
+# 帳密外洩的損害遠大於單一使用者帳號。要求「必須能收到該信箱的信」，
+# 可擋下純粹的帳密外洩（攻擊者有密碼但沒有信箱存取權）。
+#
+# 附帶效果：驗證信本身即是入侵偵測 —— 帳密若遭盜用，
+# 真正的管理員會先收到一封自己沒有發起的登入通知。
+
+ADMIN_LOGIN_CODE_EXPIRES_SECONDS = 5 * 60
+ADMIN_LOGIN_MAX_ATTEMPTS = 3
+
+
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AdminLoginChallengeResponse(BaseModel):
+    """第一階段回應：不含任何身分資訊，僅給後續驗證用的識別碼。"""
+
+    challengeId: str
+    email: str
+    expiresIn: int
+    attemptsRemaining: int
+
+
+class AdminLoginVerifyRequest(BaseModel):
+    challengeId: str = Field(min_length=36, max_length=36)
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+def _client_ip(request: Request) -> str | None:
+    """取得真實來源 IP。
+
+    正式環境經 Cloudflare 與 Nginx 代理，直接取連線位址只會得到代理的 IP。
+    Nginx 已設定 real_ip 還原並轉發 X-Forwarded-For，取其第一段即原始來源。
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:45]
+    return request.client.host[:45] if request.client else None
+
+
+@router.post("/admin/login", response_model=AdminLoginChallengeResponse)
+def admin_login_start(
+    payload: AdminLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminLoginChallengeResponse:
+    """第一階段：驗證帳密與管理員身分，寄出驗證碼。
+
+    ⚠️ 所有失敗情形一律回相同的 401 與相同訊息 —— 不可透露
+    「帳號不存在」「不是管理員」「密碼錯誤」之別，否則等同提供
+    攻擊者一個列舉管理員帳號的工具。
+    """
+    email = _normalize_email(payload.email)
+    generic_error = HTTPException(status_code=401, detail="帳號或密碼不正確。")
+
+    user = db.query(User).filter(User.email == email, User.has_role("admin")).first()
+    if user is None or not user.password_hash:
+        raise generic_error
+    if not user.has_role("admin"):
+        raise generic_error
+    try:
+        password_hasher.verify(user.password_hash, payload.password)
+    except (InvalidHashError, VerificationError, VerifyMismatchError):
+        raise generic_error
+
+    # 停用的帳號連驗證碼都不該寄出：寄了等於讓被停權的人以為還能登入，
+    # 也讓攻擊者能拿被停用的管理員帳號當寄信管道
+    _reject_if_suspended(user)
+
+    now = datetime.utcnow()
+
+    # 同一帳號同時只保留一組有效挑戰，避免併發登入產生多組可用驗證碼
+    db.query(PendingAdminLogin).filter(PendingAdminLogin.user_id == user.id).delete()
+
+    code = generate_verification_code()
+    challenge_id = str(uuid.uuid4())
+    client_ip = _client_ip(request)
+
+    challenge = PendingAdminLogin(
+        id=challenge_id,
+        user_id=user.id,
+        email=user.email,
+        verification_code_hash=hash_verification_code(challenge_id, code),
+        expires_at=now + timedelta(seconds=ADMIN_LOGIN_CODE_EXPIRES_SECONDS),
+        attempt_count=0,
+        request_ip=client_ip,
+        created_at=now,
+    )
+    db.add(challenge)
+
+    try:
+        db.flush()
+        send_admin_login_code(
+            user.email,
+            code,
+            max(1, ADMIN_LOGIN_CODE_EXPIRES_SECONDS // 60),
+            client_ip,
+        )
+        db.commit()
+    except EmailConfigurationError as error:
+        db.rollback()
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (OSError, smtplib.SMTPException) as error:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="驗證信寄送失敗，請稍後再試。") from error
+
+    return AdminLoginChallengeResponse(
+        challengeId=challenge_id,
+        email=user.email,
+        expiresIn=ADMIN_LOGIN_CODE_EXPIRES_SECONDS,
+        attemptsRemaining=ADMIN_LOGIN_MAX_ATTEMPTS,
+    )
+
+
+@router.post("/admin/verify", response_model=EmailLoginResponse)
+def admin_login_verify(
+    payload: AdminLoginVerifyRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> EmailLoginResponse:
+    """第二階段：驗證碼正確才簽發憑證，完成登入。"""
+    now = datetime.utcnow()
+    challenge = (
+        db.query(PendingAdminLogin)
+        .filter(PendingAdminLogin.id == payload.challengeId)
+        .with_for_update()
+        .first()
+    )
+
+    if challenge is None:
+        raise HTTPException(status_code=404, detail="登入請求不存在，請重新登入。")
+    if challenge.expires_at <= now:
+        db.delete(challenge)
+        db.commit()
+        raise HTTPException(status_code=410, detail="驗證碼已過期，請重新登入。")
+
+    if not verification_code_matches(challenge.id, payload.code, challenge.verification_code_hash):
+        challenge.attempt_count += 1
+        remaining = max(0, ADMIN_LOGIN_MAX_ATTEMPTS - challenge.attempt_count)
+        if remaining == 0:
+            # 次數用盡即作廢整組挑戰，必須重新輸入帳密 —— 使暴力猜測
+            # 六位數驗證碼的成本回到「需先通過帳密驗證」
+            db.delete(challenge)
+            db.commit()
+            raise HTTPException(status_code=429, detail="驗證錯誤次數過多，請重新登入。")
+        db.commit()
+        raise HTTPException(status_code=400, detail=f"驗證碼不正確，還可嘗試 {remaining} 次。")
+
+    user = db.query(User).filter(User.id == challenge.user_id).first()
+    if user is None or not user.has_role("admin"):
+        # 帳號在挑戰有效期間被刪除或撤銷管理員權限
+        db.delete(challenge)
+        db.commit()
+        raise HTTPException(status_code=403, detail="此帳號已無管理員權限。")
+
+    db.delete(challenge)
+    db.commit()
+
+    # 挑戰有效期間才被停用的情況：驗證碼是正確的，但帳號已經不能用了
+    _reject_if_suspended(user)
+    _record_login(db, user)
+
+    # 與其他登入路徑一致：同時發出 cookie 與 Bearer 兩套憑證
+    set_auth_cookie(response, create_cookie_token(user.id, user.email, "admin"))
+    return EmailLoginResponse(
+        userId=user.id,
+        email=user.email,
+        role="admin",
+        displayName=user.display_name,
+        avatarUrl=user.avatar_url,
+        accessToken=create_access_token(user.id, "admin"),
+    )

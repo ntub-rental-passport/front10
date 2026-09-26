@@ -39,6 +39,7 @@ const router = createRouter({
         { path: 'properties', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '房務管理', description: '管理棟別、房間、出租狀態與房屋設備。' } },
         { path: 'tenants', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '租客管理', description: '管理租客資料、租約狀態、房號與聯絡資訊。' } },
         { path: 'finance', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '帳務管理', description: '管理租金收款、待收款、逾期款項與日常支出。' } },
+        { path: 'subscription', component: () => import('@/src/pages/landlord/subscription.vue') },
         { path: 'maintenance', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '報修管理', description: '追蹤租客報修、處理狀態、費用與完成紀錄。' } },
         { path: 'contracts', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '合約管理', description: '管理租約、附件、到期提醒與續約進度。' } },
         { path: 'settings', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '房東設定', description: '設定收款提醒、通知方式與房東帳號偏好。' } },

@@ -35,7 +35,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User, UserRole
+from models import User
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(ROOT_ENV_FILE)
@@ -107,7 +107,7 @@ def clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
 
 
-def get_current_user(request: Request) -> CurrentUser:
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> CurrentUser:
     """FastAPI 依賴：從 cookie 取出並驗證 JWT，失敗一律回 401。
 
     需要登入的端點加上 `user: CurrentUser = Depends(get_current_user)` 即受保護；
@@ -121,7 +121,7 @@ def get_current_user(request: Request) -> CurrentUser:
         )
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return CurrentUser(
+        current = CurrentUser(
             id=int(payload["sub"]),
             email=str(payload.get("email", "")),
             role=str(payload.get("role", "tenant")),
@@ -136,6 +136,12 @@ def get_current_user(request: Request) -> CurrentUser:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="無效的登入憑證，請重新登入。",
         )
+
+    user = db.get(User, current.id)
+    if user is None or not user.has_role(current.role):
+        raise HTTPException(status_code=401, detail="帳號或身分已變更，請重新登入。")
+    _reject_if_suspended(user)
+    return CurrentUser(id=user.id, email=user.email, role=current.role)
 
 
 # ==========================================================================
@@ -192,6 +198,21 @@ def read_access_token(token: str) -> dict[str, object]:
         ) from error
 
 
+SUSPENDED_DETAIL = "此帳號已被停用，請聯絡管理員。"
+
+
+def _reject_if_suspended(user: User) -> None:
+    """帳號被停用時拒絕存取。
+
+    每個角色守門員都會呼叫。為什麼要在這裡再檢查一次（登入時已經擋過）：
+    token 簽發後在有效期內內容不會變，若只在登入時檢查，
+    停用一個「已經登入」的帳號要等到 token 過期（最長 24 小時）才生效。
+    處置一個正在搗亂的帳號時，等 24 小時是不能接受的。
+    """
+    if getattr(user, "status", "active") == "suspended":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SUSPENDED_DETAIL)
+
+
 def get_current_landlord(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
@@ -203,9 +224,9 @@ def get_current_landlord(
     if payload.get("role") != "landlord":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限房東使用。")
     user = db.query(User).filter(User.id == user_id).first()
-    role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "landlord").first()
-    if not user or not role:
+    if not user or not user.has_role("landlord"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="房東權限不存在。")
+    _reject_if_suspended(user)
     return user
 
 
@@ -241,9 +262,9 @@ def get_current_admin(
     if payload.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限管理員使用。")
     user = db.query(User).filter(User.id == user_id).first()
-    role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "admin").first()
-    if not user or not role:
+    if not user or not user.has_role("admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="管理員權限不存在。")
+    _reject_if_suspended(user)
     return user
 
 
@@ -258,7 +279,7 @@ def get_current_tenant(
     if payload.get("role") != "tenant":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此功能僅限租客使用。")
     user = db.query(User).filter(User.id == user_id).first()
-    role = db.query(UserRole).filter(UserRole.user_id == user_id, UserRole.role == "tenant").first()
-    if not user or not role:
+    if not user or not user.has_role("tenant"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租客權限不存在。")
+    _reject_if_suspended(user)
     return user

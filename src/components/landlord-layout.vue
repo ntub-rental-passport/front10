@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { Building2, FileText, Home, LogOut, Menu, ReceiptText, Settings, Users, Wrench, X } from 'lucide-vue-next'
+import { Building2, CreditCard, FileText, Home, LogOut, Menu, ReceiptText, Settings, Users, Wrench, X } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { signOut } from '@/src/composables/useAuth'
 
@@ -16,6 +16,7 @@ const navItems = [
   { label: '報修', path: '/landlord/maintenance', icon: Wrench },
   { label: '合約', path: '/landlord/contracts', icon: FileText },
   { label: '設定', path: '/landlord/settings', icon: Settings },
+  { label: '方案與訂閱', path: '/landlord/subscription', icon: CreditCard },
 ]
 
 function isActive(path: string): boolean {
