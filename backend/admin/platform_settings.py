@@ -22,7 +22,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 預設值。登入有效時間的預設見 DEFAULT_SESSION_MINUTES 的說明
 DEFAULT_PASSWORD_MIN_LENGTH = 8
@@ -132,7 +132,7 @@ def update_settings(changes: dict, *, actor: str) -> dict:
                     'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
                     (key, value),
                 )
-        import audit_service
+        from admin import audit_service
 
         for key, value in changed.items():
             audit_service.record('系統設定', '安全性設定', _describe(key, before[key], value), actor=actor)

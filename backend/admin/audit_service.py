@@ -35,7 +35,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 系統自己做的事（例如排程寄送的結果）用這個當操作者，前端顯示成「系統」
 SYSTEM_ACTOR = 'system'

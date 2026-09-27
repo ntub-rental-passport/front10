@@ -57,8 +57,8 @@ import os
 
 import httpx
 
-import upstream_state
-from http_retry import is_http_transient, with_retry
+from common import upstream_state
+from common.http_retry import is_http_transient, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -162,12 +162,21 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, pu
     }
     if force_json:
         payload["format"] = "json"
+    # Opt in per deployment; not every Ollama model supports thinking controls.
+    thinking = _env("OLLAMA_THINK").lower()
+    if thinking in ("true", "false"):
+        payload["think"] = thinking == "true"
 
     timeout = httpx.Timeout(read_timeout, connect=CONNECT_TIMEOUT)
 
     async def send() -> str:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(f"{base}/api/generate", json=payload, headers=headers)
+            if response.status_code == 404:
+                logger.error(
+                    "Ollama 回 404：請用 ollama list 確認 OLLAMA_MODEL=%s 已安裝，並檢查 OLLAMA_URL 是否指向 Ollama 服務",
+                    payload["model"],
+                )
             if response.status_code in (401, 403):
                 # 這是設定問題不是服務問題，值得單獨標示 ——
                 # 否則會被誤判成「桌機關機」。也因此不該重試。
@@ -286,7 +295,7 @@ async def generate(
             text = await call(prompt, read_timeout=read_timeout, force_json=force_json, purpose=purpose)
         except LlmUnavailable as error:
             # 未設定或正在冷卻，跳過不算失敗
-            logger.debug("LLM provider %s 略過：%s", name, error or "未設定")
+            logger.info("LLM provider %s 略過：%s（非本次 API 呼叫失敗）", name, error or "未設定")
             continue
         except Exception as error:
             # 一定要印例外類別名稱：httpx 的逾時類例外 str() 是空字串，
@@ -303,5 +312,6 @@ async def generate(
             return text
         logger.warning("LLM provider %s 回傳空字串", name)
 
-    logger.error("所有 LLM provider 皆不可用（順序：%s）", ",".join(provider_order()))
+    logger.error("已設定的 LLM provider 皆未產生可用結果（已設定：%s；順序：%s）",
+                 ",".join(configured_providers()) or "無", ",".join(provider_order()))
     raise LlmUnavailable from last_error

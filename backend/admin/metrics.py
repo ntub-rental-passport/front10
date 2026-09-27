@@ -132,7 +132,7 @@ async def _record_server_error(request, status: int, error_type: str | None) -> 
     if error_type:
         detail += f"（{error_type}）"
     try:
-        import monitoring_service  # 延遲 import，避免啟動順序的循環相依
+        from admin import monitoring_service  # 延遲 import，避免啟動順序的循環相依
 
         await asyncio.to_thread(monitoring_service.record_event, 'backend', 'server-error', detail)
     except Exception:

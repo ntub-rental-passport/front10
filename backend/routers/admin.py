@@ -14,12 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
-import audit_service
-import monitoring_service
-from database import engine, get_db
-from metrics import request_counter
-from models import PendingAdminLogin, User
-from security import get_current_admin
+from admin import audit_service
+from admin import monitoring_service
+from db.database import engine, get_db
+from admin.metrics import request_counter
+from db.models import PendingAdminLogin, User
+from auth.security import get_current_admin
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 

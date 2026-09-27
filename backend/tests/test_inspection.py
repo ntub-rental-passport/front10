@@ -14,10 +14,10 @@ from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from database import Base, get_db
-from models import User, UserRole, Rental, InspectionItem, InspectionRecord
+from db.database import Base, get_db
+from db.models import User, UserRole, Rental, InspectionItem, InspectionRecord
 from routers import inspection
-from security import create_access_token
+from auth.security import create_access_token
 from migrations.create_inspection_items import upgrade
 
 

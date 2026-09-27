@@ -9,10 +9,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-import audit_service
-import scheduled_notification_service as service
-from models import User
-from security import get_current_admin
+from admin import audit_service
+from notifications import scheduled_notification_service as service
+from db.models import User
+from auth.security import get_current_admin
 
 router = APIRouter(prefix='/api/admin/scheduled-notifications', tags=['Admin'])
 

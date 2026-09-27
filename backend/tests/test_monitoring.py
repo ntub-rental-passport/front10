@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import monitoring_service as monitor
+from admin import monitoring_service as monitor
 
 T0 = 1_790_000_000.0  # 固定起點，事件時間好比對
 
@@ -201,7 +201,7 @@ class MonitoringTests(unittest.TestCase):
             )
 
     def schedule(self, id, due, status):
-        import scheduled_notification_service as scheduled
+        from notifications import scheduled_notification_service as scheduled
 
         with scheduled.connect() as db:
             db.execute(
@@ -230,7 +230,7 @@ class MonitoringTests(unittest.TestCase):
         self.assertEqual(queue['lastIssueAt'], monitor._iso(T0 - 2 * 86400))
 
     def test_garbage_overdue_counts_either_channel_but_not_cancelled_reminders(self):
-        import garbage_service
+        from notifications import garbage_service
 
         with garbage_service.connect() as db:
             db.executemany(
@@ -301,7 +301,7 @@ class MonitoringTests(unittest.TestCase):
         import asyncio
         from types import SimpleNamespace
 
-        import metrics
+        from admin import metrics
 
         request = SimpleNamespace(
             method='POST',
@@ -324,7 +324,7 @@ class MonitoringTests(unittest.TestCase):
         import asyncio
         from types import SimpleNamespace
 
-        import metrics
+        from admin import metrics
 
         request = SimpleNamespace(method='GET', url=SimpleNamespace(path='/api/x', query=''))
 

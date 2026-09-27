@@ -35,7 +35,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 事件保留天數。回答得了「上週三晚上是不是掛過」，資料量也有上限。
 RETENTION_DAYS = 30
@@ -299,7 +299,7 @@ def _describe_http_failure(error: Exception) -> str:
 def probe_database() -> tuple[bool, str | None] | None:
     from sqlalchemy import text
 
-    from database import engine
+    from db.database import engine
 
     if engine is None:
         return None
@@ -317,7 +317,7 @@ def probe_llm_desktop() -> tuple[bool, str | None] | None:
     """探測桌機的 Ollama（經 Cloudflare Tunnel）。沒有設定或不在嘗試順序裡就回 None。"""
     import httpx
 
-    import llm_provider
+    from ai import llm_provider
 
     if 'ollama' not in llm_provider.provider_order():
         return None
@@ -446,7 +446,7 @@ def queue_status(now: float | None = None) -> dict:
 
 
 def _scheduled_queue(ts: float) -> dict:
-    import scheduled_notification_service as scheduled
+    from notifications import scheduled_notification_service as scheduled
 
     with scheduled.connect() as db:
         count = lambda sql, *args: db.execute(sql, args).fetchone()[0]  # noqa: E731
@@ -479,7 +479,7 @@ def _scheduled_queue(ts: float) -> dict:
 
 
 def _garbage_queue(ts: float) -> dict:
-    import garbage_service
+    from notifications import garbage_service
 
     with garbage_service.connect() as db:
         count = lambda sql, *args: db.execute(sql, args).fetchone()[0]  # noqa: E731
@@ -510,8 +510,8 @@ def _garbage_queue(ts: float) -> dict:
 # ---------------------------------------------------------------
 
 def config_status() -> list[dict]:
-    import garbage_service
-    import llm_provider
+    from notifications import garbage_service
+    from ai import llm_provider
 
     return [
         {

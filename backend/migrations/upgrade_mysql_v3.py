@@ -1,7 +1,7 @@
 """Rebuild a legacy MySQL database in place as schema v3, keeping every account.
 
 Default: read-only plan. --apply --confirm DATABASE drops every table in the
-connected database, runs backend/database.sql, copies the planned rows back and
+connected database, runs backend/db/database.sql, copies the planned rows back and
 checks values, row counts and the schema. Dropped tables cannot be brought back
 by this tool: take a mysqldump first and restore from it if a step fails.
 
@@ -19,12 +19,12 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from sqlalchemy import MetaData, String, inspect, select
-from database import Base
-import models  # noqa: F401  Register every v3 table.
+from db.database import Base
+from db import models  # noqa: F401  Register every v3 table.
 from migrations.upgrade_local_sqlite_v3 import plan_rows
-from schema_check import require_current_schema, schema_problems
+from db.schema_check import require_current_schema, schema_problems
 
-SCHEMA_SQL = BACKEND / 'database.sql'
+SCHEMA_SQL = BACKEND / 'db' / 'database.sql'
 TRANSIENT = ('pending_registrations', 'pending_admin_logins', 'admin_sessions')
 
 
@@ -99,7 +99,7 @@ def main():
     parser.add_argument('--apply', action='store_true', help='drop every table and rebuild as schema v3')
     parser.add_argument('--confirm', metavar='DATABASE', help='name of the database being rebuilt (required with --apply)')
     args = parser.parse_args()
-    from database import engine
+    from db.database import engine
     if engine is None or engine.dialect.name != 'mysql':
         raise SystemExit('DATABASE_URL must point at the MySQL database to upgrade (SQLite: upgrade_local_sqlite_v3.py)')
     database = engine.url.database

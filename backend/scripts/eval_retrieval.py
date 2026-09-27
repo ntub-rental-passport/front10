@@ -47,8 +47,8 @@ shared/contract-field-extraction.js 裡已經有切條文的 regex（CLAUSE_HEAD
 四個刻意放進去的違法點，各自對應語料裡一塊明確的法規。
 這是人工判定的，不是模型說了算。
 
-    python eval_retrieval.py            # 比較所有可用的 provider
-    python eval_retrieval.py --long     # 只測長合約
+    python scripts/eval_retrieval.py            # 比較所有可用的 provider
+    python scripts/eval_retrieval.py --long     # 只測長合約
 """
 
 import argparse
@@ -57,11 +57,11 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import embeddings  # noqa: E402
-import law_corpus  # noqa: E402
-from deidentify import deidentify  # noqa: E402
+from ai import embeddings  # noqa: E402
+from ai import law_corpus  # noqa: E402
+from ai.deidentify import deidentify  # noqa: E402
 
 logging.basicConfig(level=logging.WARNING)
 

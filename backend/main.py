@@ -6,13 +6,13 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-from database import engine, Base
-from metrics import count_requests
+from db.database import engine, Base
+from admin.metrics import count_requests
 from routers import admin, auth, contract, garbage, landlord_properties, landlord_tenants, inspection, tenant_leases, outage
 from routers import notes, households, scheduled_notifications, platform_settings_api
-from garbage_service import dispatch_due
-from scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
-import monitoring_service
+from notifications.garbage_service import dispatch_due
+from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
+from admin import monitoring_service
 
 # ---------------------------------------------------------------
 # 應用程式的 log
@@ -38,7 +38,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # 啟動只檢查結構，避免在舊資料庫中自動建立另一套表格。
 if engine is not None:
-    from schema_check import require_current_schema
+    from db.schema_check import require_current_schema
     require_current_schema(engine)
 
 @asynccontextmanager

@@ -9,14 +9,14 @@ shell 歷史（~/.bash_history）與 ps 的行程列表中，等同明文外洩�
 
 ## 用法
 
-    python manage_admin.py list                     # 列出目前所有管理員
-    python manage_admin.py grant <email>            # 授予管理員並設定後台密碼
-    python manage_admin.py password <email>         # 只重設後台密碼
-    python manage_admin.py revoke <email>           # 撤銷管理員權限
+    python scripts/manage_admin.py list                     # 列出目前所有管理員
+    python scripts/manage_admin.py grant <email>            # 授予管理員並設定後台密碼
+    python scripts/manage_admin.py password <email>         # 只重設後台密碼
+    python scripts/manage_admin.py revoke <email>           # 撤銷管理員權限
 
 正式機（容器內）：
 
-    docker compose exec fastapi python manage_admin.py list
+    docker compose exec fastapi python scripts/manage_admin.py list
 """
 
 import getpass
@@ -24,12 +24,12 @@ from datetime import datetime
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from argon2 import PasswordHasher  # noqa: E402
 
-from database import SessionLocal, engine  # noqa: E402
-from models import PendingAdminLogin, User, UserRole  # noqa: E402
+from db.database import SessionLocal, engine  # noqa: E402
+from db.models import PendingAdminLogin, User, UserRole  # noqa: E402
 
 MIN_PASSWORD_LENGTH = 12
 
@@ -158,7 +158,7 @@ def main() -> None:
         cmd_list()
     elif command in {"grant", "password", "revoke"}:
         if len(params) != 1:
-            sys.exit(f"用法：python manage_admin.py {command} <email>")
+            sys.exit(f"用法：python scripts/manage_admin.py {command} <email>")
         {"grant": cmd_grant, "password": cmd_password, "revoke": cmd_revoke}[command](params[0])
     else:
         sys.exit(__doc__)

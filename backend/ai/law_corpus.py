@@ -62,8 +62,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import embeddings
-from embeddings import EmbeddingUnavailable, cosine, embed_texts
+from ai import embeddings
+from ai.embeddings import EmbeddingUnavailable, cosine, embed_texts
 
 logger = logging.getLogger(__name__)
 
@@ -342,7 +342,7 @@ async def retrieve(query: str = "", limit: int | None = None) -> list[LawChunk]:
                     ",".join(c.id for c in selected))
         return selected
 
-    logger.warning("所有 embedding provider 都不可用，本次退回全部給")
+    logger.warning("所有 embedding provider 都不可用，改用全部法規語料；仍可進行 LLM 分析")
     return CHUNKS
 
 

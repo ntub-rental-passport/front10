@@ -21,9 +21,9 @@ from fastapi import HTTPException, Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database import Base
-from models import UserRole
-from models import User, UserIdentity
+from db.database import Base
+from db.models import UserRole
+from db.models import User, UserIdentity
 from routers.auth import (
     GoogleAccountResponse,
     GoogleTicketRequest,
@@ -128,7 +128,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException, Response
 from routers import auth
-from models import User, UserIdentity
+from db.models import User, UserIdentity
 
 
 class GoogleSessionTests(unittest.TestCase):

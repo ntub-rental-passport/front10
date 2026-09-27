@@ -10,12 +10,12 @@ import os
 import json
 import logging
 
-from database import get_db
-import models
-from deidentify import deidentify
-from law_corpus import format_for_prompt, resolve_citations, retrieve
-from llm_provider import LlmUnavailable, generate
-from security import CurrentUser, get_current_user
+from db.database import get_db
+from db import models
+from ai.deidentify import deidentify
+from ai.law_corpus import format_for_prompt, resolve_citations, retrieve
+from ai.llm_provider import LlmUnavailable, generate
+from auth.security import CurrentUser, get_current_user
 
 router = APIRouter(
     prefix="/api/contract",

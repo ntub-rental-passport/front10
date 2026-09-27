@@ -4,8 +4,8 @@ from sqlalchemy import Boolean, Column, Date, DateTime, Time, Enum, Integer, Big
 from sqlalchemy.dialects.mysql import DATETIME, LONGTEXT, TINYINT
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_method
-from database import Base
-from encrypted_fields import EncryptedText
+from db.database import Base
+from db.encrypted_fields import EncryptedText
 
 Timestamp = DateTime().with_variant(DATETIME(fsp=6), "mysql")
 

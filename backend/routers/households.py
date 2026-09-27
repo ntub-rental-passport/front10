@@ -8,10 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from database import get_db
-from models import User
-from notes_models import Household, HouseholdMember, HouseholdTask
-from security import get_current_tenant
+from db.database import get_db
+from db.models import User
+from db.notes_models import Household, HouseholdMember, HouseholdTask
+from auth.security import get_current_tenant
 from routers.notes import NoteCreate, NoteUpdate
 
 router = APIRouter(prefix="/api/households", tags=["Households"])

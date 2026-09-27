@@ -40,13 +40,13 @@ AUTH_TOKEN_SECRET="<openssl rand -hex 32>"   # Bearer 版
 ```
 
 > 長期建議收斂為單一機制，避免兩套金鑰與兩套邏輯的維護負擔。
-> 詳見 `backend/security.py` 檔頭說明。
+> 詳見 `backend/auth/security.py` 檔頭說明。
 
 ## 資料庫結構變更
 
-目前以 `backend/database.sql` 的 schema v3（27 張表）為基準。單一角色與密碼存於 `users`；記事與共居採新表名及整數主鍵，敏感欄位加密後存入 VARBINARY。
+目前以 `backend/db/database.sql` 的 schema v3（27 張表）為基準。單一角色與密碼存於 `users`；記事與共居採新表名及整數主鍵，敏感欄位加密後存入 VARBINARY。
 
-部署前設定 `PII_ENCRYPTION_KEY`，執行 `python backend/schema_check.py` 檢查結構。後端啟動只讀驗證，不會自動建表或遷移。舊庫必須先規劃資料轉換；不要再執行舊的 `migrate_to_user_roles.py`。
+部署前設定 `PII_ENCRYPTION_KEY`，執行 `python -m db.schema_check (from backend/)` 檢查結構。後端啟動只讀驗證，不會自動建表或遷移。舊庫必須先規劃資料轉換；不要再執行舊的 `migrate_to_user_roles.py`。
 
 完整欄位對應、金鑰設定與資料轉換注意事項請見 [database-v3-upgrade.md](docs/database-v3-upgrade.md)。
 

@@ -1,4 +1,4 @@
-"""把 Chroma 向量庫裡的法規文字匯出成 backend/law_corpus.json。
+"""把 Chroma 向量庫裡的法規文字匯出成 backend/ai/law_corpus.json。
 
 ## 為什麼要匯出，而不是讓後端直接讀 Chroma
 
@@ -21,7 +21,7 @@
 
 ## 用法
 
-    python rag/export_corpus.py            # 產生 backend/law_corpus.json
+    python rag/export_corpus.py            # 產生 backend/ai/law_corpus.json
     python rag/export_corpus.py --preview  # 只印出來看，不寫檔
 """
 
@@ -32,7 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "rag" / "rental_law_db" / "chroma.sqlite3"
-OUT_PATH = ROOT / "backend" / "law_corpus.json"
+OUT_PATH = ROOT / "backend" / "ai" / "law_corpus.json"
 
 # 檔名太長，顯示給使用者時用簡稱
 SOURCE_LABELS = {

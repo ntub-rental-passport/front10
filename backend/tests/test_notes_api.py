@@ -8,11 +8,11 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from database import Base, get_db
-from models import UserRole
-from models import User, Note, HouseholdTask
+from db.database import Base, get_db
+from db.models import UserRole
+from db.models import User, Note, HouseholdTask
 from routers import households, notes
-from security import create_access_token
+from auth.security import create_access_token
 
 
 class NotesApiTests(unittest.TestCase):

@@ -14,9 +14,9 @@ from openai import OpenAI
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session, joinedload
-from database import get_db
-from models import InspectionItem, InspectionRecord, Rental, User
-from security import get_current_tenant
+from db.database import get_db
+from db.models import InspectionItem, InspectionRecord, Rental, User
+from auth.security import get_current_tenant
 
 # 自動載入專案根目錄的 .env
 BASE_DIR = Path(__file__).resolve().parent.parent

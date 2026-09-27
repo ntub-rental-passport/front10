@@ -10,10 +10,10 @@
 import asyncio
 import unittest
 
-import embeddings
-import law_corpus
-import upstream_state
-from law_corpus import LawChunk, VectorSpace, retrieve
+from ai import embeddings
+from ai import law_corpus
+from common import upstream_state
+from ai.law_corpus import LawChunk, VectorSpace, retrieve
 
 
 def make_chunks(vectors_by_space: dict[str, list[list[float]]], count: int = 3):
@@ -269,7 +269,7 @@ class TunnelUrlTest(unittest.TestCase):
     """
 
     def setUp(self):
-        import llm_provider
+        from ai import llm_provider
         self.llm_provider = llm_provider
         self.saved = dict(embeddings.os.environ)
         for key in ("LLM_TUNNEL_URL", "OLLAMA_URL", "LOCAL_EMBEDDING_URL"):

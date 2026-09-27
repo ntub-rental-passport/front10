@@ -1,4 +1,4 @@
-"""把法規語料向量化，寫回 backend/law_corpus.json。
+"""把法規語料向量化，寫回 backend/ai/law_corpus.json。
 
 ## 一份語料，兩組向量
 
@@ -34,8 +34,8 @@ NVIDIA 那組仍然是好的備援。
 
 金鑰只在 VM 的 .env 裡，所以在容器內執行，再把結果複製回 repo：
 
-    docker compose exec -T fastapi python build_vectors.py --provider all
-    docker compose cp fastapi:/app/law_corpus.json backend/law_corpus.json
+    docker compose exec -T fastapi python scripts/build_vectors.py --provider all
+    docker compose cp fastapi:/app/ai/law_corpus.json backend/ai/law_corpus.json
 
     # 從 VM 同步回開發機，commit 進版控
 
@@ -50,14 +50,14 @@ import json
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
 
-import embeddings  # noqa: E402
-from embeddings import EmbeddingUnavailable, embed_texts, model_for  # noqa: E402
+from ai import embeddings  # noqa: E402
+from ai.embeddings import EmbeddingUnavailable, embed_texts, model_for  # noqa: E402
 
-# 與本檔同目錄。容器內是 /app/law_corpus.json，開發機是 backend/law_corpus.json
-CORPUS_PATH = HERE / "law_corpus.json"
+# 與執行時檢索共用 ai/ 下的語料，容器與本機使用相同相對位置。
+CORPUS_PATH = HERE / "ai" / "law_corpus.json"
 BATCH_SIZE = 10   # 一次送太多會被拒；29 塊分 3 批即可
 
 

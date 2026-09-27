@@ -1,6 +1,6 @@
 # 多身分帳號與登入
 
-目前 `backend/database.sql` 與 ORM 使用同一份多身分結構：
+目前 `backend/db/database.sql` 與 ORM 使用同一份多身分結構：
 
 | 資料 | 欄位 |
 | --- | --- |
@@ -22,7 +22,7 @@
 
 ## 資料庫套用
 
-後端啟動與 `python backend/schema_check.py` 只檢查結構，不會自動更改資料庫。舊 `users.role` 結構無法直接配合新版程式，必須先遷移或在新資料庫套用 `backend/database.sql`。
+後端啟動與在 `backend` 目錄執行 `python -m db.schema_check` 只檢查結構，不會自動更改資料庫。舊 `users.role` 結構無法直接配合新版程式，必須先遷移或在新資料庫套用 `backend/db/database.sql`。
 
 `database.sql` 是建表檔，不是 ALTER 升級腳本。同 email 的舊房客／房東帳號若有不同 ID，需明確選定保留帳號、密碼並重新對應外鍵；本次程式修改沒有操作現有資料庫。
 

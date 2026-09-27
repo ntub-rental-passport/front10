@@ -7,9 +7,9 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database import Base
-from models import UserRole
-from models import LandlordProperty, User
+from db.database import Base
+from db.models import UserRole
+from db.models import LandlordProperty, User
 from routers.landlord_properties import (
     PropertyPayload,
     RoomBatchPayload,

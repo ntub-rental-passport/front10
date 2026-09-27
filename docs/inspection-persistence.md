@@ -1,6 +1,6 @@
 # 點交資料與影像比對
 
-資料結構以 `backend/database.sql` 為準，ORM 與 API 依照其中的欄位、型別及外鍵實作。
+資料結構以 `backend/db/database.sql` 為準，ORM 與 API 依照其中的欄位、型別及外鍵實作。
 本次沿用 `rentals`、`inspection_records`，並在同一份 SQL 中新增 `inspection_items` 儲存項目與比對結果。
 
 點交頁使用登入租客擁有的 `rentals`，不再建立瀏覽器內的示範租屋處。
@@ -12,10 +12,10 @@
 
 ```powershell
 python backend/migrations/create_inspection_items.py
-python backend/schema_check.py
+python -m db.schema_check (from backend/)
 ```
 
-升級只新增 `inspection_items`，可重複執行，不刪除既有資料。新安裝可使用更新後的 `backend/database.sql`。
+升級只新增 `inspection_items`，可重複執行，不刪除既有資料。新安裝可使用更新後的 `backend/db/database.sql`。
 完成後重新啟動後端。舊 `rentmate-handover-store` 是未綁定帳號與真實租約的瀏覽器示範資料，
 不會自動匯入；請選擇正確租約後重新建立項目及上傳照片。
 

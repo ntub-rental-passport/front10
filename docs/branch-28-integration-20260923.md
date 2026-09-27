@@ -33,4 +33,4 @@
 
 ## 本機資料保留
 
-整合前 main 已備份至 `backup/main-before-28-20260923`。原有 `.env.example`、`backend/law_corpus.py`、`backend/llm_provider.py` 與兩個未追蹤檔案已另存 Git stash，整合完成後回復至工作目錄，不納入此次提交。
+整合前 main 已備份至 `backup/main-before-28-20260923`。原有 `.env.example`、`backend/ai/law_corpus.py`、`backend/ai/llm_provider.py` 與兩個未追蹤檔案已另存 Git stash，整合完成後回復至工作目錄，不納入此次提交。

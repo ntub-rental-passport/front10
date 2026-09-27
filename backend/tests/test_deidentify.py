@@ -1,6 +1,6 @@
 import unittest
 
-from deidentify import deidentify
+from ai.deidentify import deidentify
 
 
 class DeidentifyTest(unittest.TestCase):

@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import unittest
 
-from database import Base
+from db.database import Base
 from migrations.upgrade_mysql_v3 import prepare, schema_statements
 
 CREATED = datetime(2026, 9, 1, 8, 0)
@@ -57,7 +57,7 @@ class PrepareTests(unittest.TestCase):
 
 class SchemaStatementTests(unittest.TestCase):
     def test_creates_every_table_and_leaves_the_database_name_to_the_connection(self):
-        sql = (Path(__file__).parents[1] / 'database.sql').read_text(encoding='utf-8')
+        sql = (Path(__file__).parents[1] / 'db' / 'database.sql').read_text(encoding='utf-8')
         statements = schema_statements(sql)
         created = {re.match(r'CREATE TABLE `(\w+)`', statement).group(1)
                    for statement in statements if statement.startswith('CREATE TABLE')}

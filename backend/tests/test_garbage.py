@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
-import garbage_service as service
+from notifications import garbage_service as service
 from routers.garbage import ActiveInput, list_reminders, toggle_reminder, delete_reminder, validate_subscription
 
 

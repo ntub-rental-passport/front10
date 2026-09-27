@@ -21,10 +21,10 @@ sys.path.insert(0, str(ROOT / 'backend'))
 
 from sqlalchemy import MetaData, Numeric, create_engine, select, event, text
 from dotenv import dotenv_values
-from database import Base
-import models
-from schema_check import require_current_schema
-from encrypted_fields import EncryptedText
+from db.database import Base
+from db import models
+from db.schema_check import require_current_schema
+from db.encrypted_fields import EncryptedText
 
 RENAMES = {'notes': 'personal_notes', 'note_households': 'households',
            'note_household_members': 'household_members', 'note_household_tasks': 'roommate_tasks'}

@@ -35,7 +35,7 @@ from uuid import uuid4
 TZ = timezone(timedelta(hours=8))
 logger = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 排程一次最多能排多久以後（與垃圾車提醒一致）
 MAX_LEAD = timedelta(days=366)
@@ -245,8 +245,8 @@ def _default_resolve(recipient: dict) -> list[str]:
     讀的是 MySQL 的 users 表（真正註冊過的帳號），不是後台前端那份
     localStorage 的示範資料。
     """
-    from database import SessionLocal
-    from models import User, UserRole
+    from db.database import SessionLocal
+    from db.models import User, UserRole
 
     if recipient.get('kind') == 'users':
         return list(recipient.get('emails') or [])
@@ -269,7 +269,7 @@ def _default_resolve(recipient: dict) -> list[str]:
 def _default_send_email(recipient_email: str, title: str, body: str) -> None:
     from email.message import EmailMessage
 
-    from email_service import _send, _smtp_config
+    from notifications.email_service import _send, _smtp_config
 
     config = _smtp_config()
     message = EmailMessage()
@@ -384,7 +384,7 @@ def _record_audit(row, detail: str) -> None:
     一則通知從誰排的到寄給了幾個人，才是完整的一段。
     """
     try:
-        import audit_service
+        from admin import audit_service
 
         audit_service.record(
             '通知管理',
@@ -400,7 +400,7 @@ def _record_audit(row, detail: str) -> None:
 def _record_monitor_event(kind: str, detail: str) -> None:
     """寫進後台監控的事件紀錄。寫不進去不能影響寄送本身。"""
     try:
-        import monitoring_service  # 延遲 import：monitoring_service 也會讀這個模組的佇列
+        from admin import monitoring_service  # 延遲 import：monitoring_service 也會讀這個模組的佇列
 
         monitoring_service.record_event('scheduled-notification', kind, detail)
     except Exception:

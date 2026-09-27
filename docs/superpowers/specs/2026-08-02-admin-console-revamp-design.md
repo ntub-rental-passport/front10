@@ -163,7 +163,7 @@ adminRole == null      → null
 
 ### 後端資料模型
 
-`backend/models.py` 新增單列表 `system_settings`（id 固定為 1）：
+`backend/db/models.py` 新增單列表 `system_settings`（id 固定為 1）：
 
 | 分區 | 欄位 |
 |---|---|

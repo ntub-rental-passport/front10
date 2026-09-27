@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-import scheduled_notification_service as service
+from notifications import scheduled_notification_service as service
 
 
 class ScheduledNotificationTests(unittest.TestCase):
@@ -228,7 +228,7 @@ class ScheduledNotificationTests(unittest.TestCase):
     # -------------------- 監控事件 --------------------
 
     def monitor_kinds(self):
-        import monitoring_service
+        from admin import monitoring_service
         return [(e['kind'], e['detail']) for e in reversed(monitoring_service.list_events())]
 
     def test_missed_schedule_is_recorded_once_in_the_monitor_log(self):
@@ -256,7 +256,7 @@ class ScheduledNotificationTests(unittest.TestCase):
     # -------------------- 稽核紀錄 --------------------
 
     def audit_of(self, item):
-        import audit_service
+        from admin import audit_service
         return [
             (e['actor'], e['detail'])
             for e in reversed(audit_service.list_events(subject=f"scheduled:{item['id']}"))
