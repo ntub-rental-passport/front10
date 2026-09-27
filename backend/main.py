@@ -10,7 +10,7 @@ from sqlalchemy import text
 from database import engine, Base
 from metrics import count_requests
 from routers import admin, auth, contract, garbage, landlord_properties, landlord_tenants, inspection, tenant_leases, outage
-from routers import notes, households, scheduled_notifications
+from routers import notes, households, scheduled_notifications, platform_settings_api
 from garbage_service import dispatch_due
 from scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
 import monitoring_service
@@ -120,6 +120,7 @@ app.include_router(outage.router)
 app.include_router(notes.router)
 app.include_router(households.router)
 app.include_router(scheduled_notifications.router)
+app.include_router(platform_settings_api.router)
 
 @app.get("/")
 def root():
