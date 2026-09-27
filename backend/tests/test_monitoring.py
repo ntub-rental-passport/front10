@@ -103,6 +103,13 @@ class MonitoringTests(unittest.TestCase):
         monitor.record_check('ocr', False, '連不上', now=T0)
         self.assertRegex(monitor.list_events()[0]['at'], r'[+-]\d{2}:\d{2}$')
 
+    def test_kind_filter_keeps_outages_visible_behind_a_burst_of_server_errors(self):
+        monitor.record_check('ocr', False, '連不上', now=T0)
+        for i in range(5):
+            monitor.record_event('backend', 'server-error', f'GET /api/x{i} → 500', now=T0 + 10 + i)
+        self.assertEqual([e['kind'] for e in monitor.list_events(limit=3)], ['server-error'] * 3)
+        self.assertEqual([e['kind'] for e in monitor.list_events(limit=3, kinds=['down', 'recovered'])], ['down'])
+
     def test_prune_drops_events_older_than_retention(self):
         monitor.record_event('backend', 'server-error', 'GET /api/x → 500', now=T0)
         monitor.record_event('backend', 'server-error', 'GET /api/y → 500', now=T0 + 40 * 86400)

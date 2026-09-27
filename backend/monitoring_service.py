@@ -219,11 +219,20 @@ def prune(now: float | None = None, days: int = RETENTION_DAYS) -> int:
         return db.execute('DELETE FROM monitor_events WHERE at < ?', (ts - days * 86400,)).rowcount
 
 
-def list_events(limit: int = 200) -> list[dict]:
+def list_events(limit: int = 200, kinds: list[str] | None = None) -> list[dict]:
+    """新到舊。`kinds` 只取某幾類 —— 稽核紀錄只要斷線類，不篩的話一陣 5xx
+    就會把它們擠出 limit 之外。"""
     with _open() as db:
-        rows = db.execute(
-            'SELECT * FROM monitor_events ORDER BY at DESC, id DESC LIMIT ?', (limit,)
-        ).fetchall()
+        if kinds:
+            marks = ', '.join('?' for _ in kinds)
+            rows = db.execute(
+                f'SELECT * FROM monitor_events WHERE kind IN ({marks}) ORDER BY at DESC, id DESC LIMIT ?',
+                (*kinds, limit),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                'SELECT * FROM monitor_events ORDER BY at DESC, id DESC LIMIT ?', (limit,)
+            ).fetchall()
     return [
         {
             'id': row['id'],

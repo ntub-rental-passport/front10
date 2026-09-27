@@ -11,9 +11,10 @@
 from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
+import audit_service
 import monitoring_service
 from database import engine, get_db
 from metrics import request_counter
@@ -103,6 +104,9 @@ class AdminUserRow(BaseModel):
 
 class UpdateStatusRequest(BaseModel):
     status: str
+    # 停用原因，選填。只寫進稽核紀錄，不存在帳號上（見 audit_service）。
+    # 這裡的上限只是擋掉離譜的輸入，實際保留長度由 clean_reason 截斷。
+    reason: str | None = Field(default=None, max_length=1000)
 
 
 def _iso(value) -> str | None:
@@ -139,14 +143,32 @@ def _row(user: User) -> AdminUserRow:
     )
 
 
+@router.get("/audit")
+def read_audit(
+    limit: int = 500,
+    subject: str | None = None,
+    admin: User = Depends(get_current_admin),
+) -> list[dict]:
+    """後端記的稽核紀錄（新到舊）。僅限管理員。
+
+    `subject` 查單一對象的紀錄，例如 `user:12` —— 使用者詳情頁用它找最近一次停用的原因。
+    """
+    return audit_service.list_events(limit=max(1, min(limit, 2000)), subject=subject or None)
+
+
 @router.get("/monitoring/events")
 def read_monitoring_events(
     limit: int = 200,
+    kinds: str | None = None,
     admin: User = Depends(get_current_admin),
 ) -> list[dict]:
     """監控事件紀錄（最近 30 天）。僅限管理員 —— 理由同 /metrics：
-    「什麼時候掛過、多久、為什麼」是攻擊者最想要的情報之一。"""
-    return monitoring_service.list_events(limit=max(1, min(limit, 500)))
+    「什麼時候掛過、多久、為什麼」是攻擊者最想要的情報之一。
+
+    `kinds` 以逗號分隔，只取某幾類（稽核紀錄用 `down,recovered,backend-downtime`）。
+    """
+    wanted = [kind.strip() for kind in (kinds or '').split(',') if kind.strip()]
+    return monitoring_service.list_events(limit=max(1, min(limit, 500)), kinds=wanted or None)
 
 
 @router.get("/users", response_model=list[AdminUserRow])
@@ -227,7 +249,19 @@ def update_user_status(
         # 否則「已通過帳密、驗證碼還在手上」的人仍能在挑戰有效期內完成登入
         db.query(PendingAdminLogin).filter(PendingAdminLogin.user_id == user.id).delete()
 
+    previous = user.status
     user.status = payload.status
     db.commit()
     db.refresh(user)
+
+    # 狀態沒變（重複按、兩個分頁各按一次）不記：那不是一次操作
+    if previous != payload.status:
+        if payload.status == "suspended":
+            reason = audit_service.clean_reason(payload.reason)
+            detail = f"停用帳號：{reason}" if reason else "停用帳號"
+        else:
+            detail = "啟用帳號"
+        audit_service.record(
+            "使用者管理", user.email, detail, actor=admin.email, subject=f"user:{user.id}"
+        )
     return _row(user)
