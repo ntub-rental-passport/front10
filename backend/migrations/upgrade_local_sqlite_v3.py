@@ -44,7 +44,11 @@ def read_source(path):
 
 
 def plan(source):
-    rows = read_source(source)
+    return plan_rows(read_source(source))
+
+
+def plan_rows(rows):
+    """Map legacy rows ({table: [row, ...]}) onto schema v3; upgrade_mysql_v3 shares this mapping."""
     roles = {}
     for row in rows.get('user_roles', []):
         roles.setdefault(row['user_id'], set()).add(row['role'])
