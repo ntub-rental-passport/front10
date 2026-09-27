@@ -27,10 +27,24 @@ echo "=========================================="
 echo "[1/3] 上傳程式碼..."
 #    --exclude desktop：那是桌機端代理，VM 不需要，而且它的 README
 #    描述的是「怎麼連進家裡的網路」—— 沒有理由多放一份在別的機器上。
+#    --exclude '*.db'：開發機的 SQLite（backend/ 底下的稽核、設定、監控紀錄）
+#    不該上伺服器。正式環境的 SQLite 在 VM 的 data/garbage/，本機萬一出現
+#    同名路徑，沒有這條就會直接蓋掉正式資料。
+#    --exclude .gstack：瀏覽測試工具的 console／network log。
 rsync -avz \
   --exclude node_modules --exclude dist --exclude .venv --exclude .git \
   --exclude logs --exclude '__pycache__' --exclude .env --exclude desktop \
+  --exclude '*.db' --exclude '*.db-*' --exclude .gstack \
   "$SRC/" "$VM:~/rentmate/" | tail -3
+
+# 上面的 rsync 不會刪檔：本機刪掉或改名的前端檔會一直留在 VM 上，
+# 而 web 映像的 npm run build（vue-tsc -b）會檢查整個目錄，
+# 殘留檔 import 已經刪掉的東西，build 就失敗。
+# src/ 只放前端原始碼、VM 上沒有該保留的獨有檔案，所以只對它做完整鏡像。
+# ⚠️ 不可以改成對整個專案 --delete：VM 上有只存在那邊的東西
+#    （data/ 的正式環境 SQLite、deploy/ 的部分腳本），會被一起刪掉。
+rsync -az --delete --itemize-changes "$SRC/src/" "$VM:~/rentmate/src/" \
+  | awk '/^\*deleting/ {print "  刪除 VM 上的殘留檔 src/" $2}'
 
 # ---------- 2. 套用 Nginx 設定 ----------
 # nginx.conf 是由 nginx-tls.conf.example 複製而來（設定的真正來源是後者）
