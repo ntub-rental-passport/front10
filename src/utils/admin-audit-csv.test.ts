@@ -28,17 +28,24 @@ describe('buildAuditCsv', () => {
 
   it('第一行是標題列', () => {
     const csv = buildAuditCsv([], formatAt)
-    expect(csv).toBe('時間,操作者,動作,對象,詳情')
+    expect(csv).toBe('時間,操作者,動作,對象,詳情,來源')
   })
 
   it('依序輸出每一筆紀錄', () => {
     const rows: AuditCsvRow[] = [
-      { at: '2026-08-18T10:00:00Z', actor: 'admin@rentmate.tw', action: '登入', target: 'admin@rentmate.tw', detail: '管理員登入後台' },
+      { at: '2026-08-18T10:00:00Z', actor: 'admin@rentmate.tw', action: '登入', target: 'admin@rentmate.tw', detail: '管理員登入後台', source: '後端' },
     ]
     const csv = buildAuditCsv(rows, formatAt)
     const lines = csv.split('\r\n')
     expect(lines).toHaveLength(2)
-    expect(lines[1]).toBe('2026-08-18T10:00:00Z,admin@rentmate.tw,登入,admin@rentmate.tw,管理員登入後台')
+    expect(lines[1]).toBe('2026-08-18T10:00:00Z,admin@rentmate.tw,登入,admin@rentmate.tw,管理員登入後台,後端')
+  })
+
+  it('來源欄讓匯出的檔案也分得出哪幾筆是展示資料', () => {
+    const rows: AuditCsvRow[] = [
+      { at: '2026-08-18T10:00:00Z', actor: '系統', action: '系統', target: '點交照片批次', detail: '自動刪除', source: '展示資料' },
+    ]
+    expect(buildAuditCsv(rows, formatAt).split('\r\n')[1]).toMatch(/,展示資料$/)
   })
 
   it('欄位含逗號、引號、換行時整份 CSV 仍然逐欄對齊', () => {
@@ -49,19 +56,20 @@ describe('buildAuditCsv', () => {
         action: '使用者管理',
         target: 'derek.wu@example.com',
         detail: '停用帳號：備註寫著 "多次, 違規"\n已通知房東',
+        source: '本機',
       },
     ]
     const csv = buildAuditCsv(rows, formatAt)
     const lines = csv.split('\r\n')
     // 逃逸後的欄位本身含換行，行數不會單純等於紀錄數 + 1
-    expect(lines[0]).toBe('時間,操作者,動作,對象,詳情')
+    expect(lines[0]).toBe('時間,操作者,動作,對象,詳情,來源')
     expect(csv).toContain('"停用帳號：備註寫著 ""多次, 違規""\n已通知房東"')
   })
 
   it('多筆紀錄之間用 CRLF 分隔', () => {
     const rows: AuditCsvRow[] = [
-      { at: 'a', actor: 'x', action: '登入', target: 'x', detail: '1' },
-      { at: 'b', actor: 'y', action: '登入', target: 'y', detail: '2' },
+      { at: 'a', actor: 'x', action: '登入', target: 'x', detail: '1', source: '後端' },
+      { at: 'b', actor: 'y', action: '登入', target: 'y', detail: '2', source: '後端' },
     ]
     const csv = buildAuditCsv(rows, formatAt)
     expect(csv.split('\r\n')).toHaveLength(3)

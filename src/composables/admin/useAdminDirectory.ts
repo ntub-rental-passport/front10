@@ -144,11 +144,12 @@ export function useAdminDirectory() {
   async function setRealAccountStatus(
     row: UserDirectoryRow,
     status: 'active' | 'suspended',
+    reason?: string,
   ): Promise<void> {
     if (row.realAccountId === undefined) {
       throw new Error('這是展示資料，沒有可以停用的真實帳號。')
     }
-    const updated = await updateAccountStatus(row.realAccountId, status)
+    const updated = await updateAccountStatus(row.realAccountId, status, reason)
     realRows.value = realRows.value.map((item) =>
       item.realAccountId === updated.id ? realAccountToRow(updated) : item,
     )

@@ -136,10 +136,12 @@ function applyAutoOverdueTransitions(logAction: ReturnType<typeof useAdminAudit>
       note: '超過設定頁的逾期門檻仍未獲房東回應，系統自動標記為逾期',
     })
 
+    // 操作者是系統，跟上面 timeline 一致：這是門檻判定的結果，不是開著頁面的管理員做的
     logAction(
       '報修工單',
       ticket.id,
       `狀態由「${maintenanceStatusLabels[previous]}」自動變更為「${maintenanceStatusLabels.overdue}」（系統依逾期門檻判定）`,
+      'system',
     )
   }
 }

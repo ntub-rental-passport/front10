@@ -51,14 +51,17 @@ export async function fetchAdminAccounts(signal?: AbortSignal): Promise<AdminAcc
 export async function updateAccountStatus(
   id: number,
   status: 'active' | 'suspended',
+  /** 停用原因，選填。只寫進後端的稽核紀錄，對方看不到 */
+  reason?: string,
 ): Promise<AdminAccount> {
   const headers = authHeaders()
   if (!headers) throw new Error('尚未登入或登入已過期，請重新登入。')
 
+  const trimmed = reason?.trim()
   const response = await fetch(`${API_BASE_URL}/admin/users/${id}/status`, {
     method: 'PATCH',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(trimmed ? { status, reason: trimmed } : { status }),
   })
   const body = (await response.json().catch(() => null)) as
     | (AdminAccount & { detail?: string })

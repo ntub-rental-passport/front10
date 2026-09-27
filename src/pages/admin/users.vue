@@ -14,6 +14,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog/index'
 import { Input } from '@/components/ui/input/index'
+import { Label } from '@/components/ui/label/index'
+import { Textarea } from '@/components/ui/textarea/index'
 import {
   Select,
   SelectContent,
@@ -164,10 +166,16 @@ const statusError = ref('')
 
 async function toggleStatus(row: UserDirectoryRow): Promise<void> {
   if (row.realAccountId === undefined) return
+  // 停用走確認框（跟批次同一個）：按下去對方立刻登不進來，而且可以附原因。
+  // 啟用是把權限還回去，維持一鍵。
+  if (row.user.status === 'active') {
+    openSingleSuspend(row)
+    return
+  }
   statusError.value = ''
   statusBusyId.value = row.realAccountId
   try {
-    await setRealAccountStatus(row, row.user.status === 'active' ? 'suspended' : 'active')
+    await setRealAccountStatus(row, 'active')
   } catch (error) {
     // 後端的拒絕理由要讓操作者看到（不能停用自己、這是最後一位管理員）
     statusError.value = error instanceof Error ? error.message : '操作失敗，請稍後再試。'
@@ -321,6 +329,13 @@ type BulkAction = 'suspend' | 'activate'
 const bulkAction = ref<BulkAction | null>(null)
 const bulkTargets = ref<UserDirectoryRow[]>([])
 const bulkRunning = ref(false)
+/** 停用原因，選填，只寫進稽核紀錄。批次停用時所有人共用這一句 */
+const suspendReason = ref('')
+/**
+ * 確認框是從批次列打開的，還是從單筆的「停用」按鈕。
+ * 單筆停用完不該順手清掉使用者另外勾好的批次選取。
+ */
+const bulkFromSelection = ref(true)
 const bulkResult = ref<{
   action: BulkAction
   succeeded: number
@@ -330,7 +345,17 @@ const bulkResult = ref<{
 function openBulk(action: BulkAction): void {
   bulkResult.value = null
   bulkTargets.value = [...(action === 'suspend' ? bulkPlan.value.suspend : bulkPlan.value.activate)]
+  bulkFromSelection.value = true
+  suspendReason.value = ''
   bulkAction.value = action
+}
+
+function openSingleSuspend(row: UserDirectoryRow): void {
+  bulkResult.value = null
+  bulkTargets.value = [row]
+  bulkFromSelection.value = false
+  suspendReason.value = ''
+  bulkAction.value = 'suspend'
 }
 
 function closeBulk(): void {
@@ -342,13 +367,14 @@ async function confirmBulk(): Promise<void> {
   const action = bulkAction.value
   if (!action) return
   bulkRunning.value = true
+  const reason = action === 'suspend' ? suspendReason.value : undefined
   const outcomes = await runBulkStatus(bulkTargets.value, (row) =>
-    setRealAccountStatus(row, action === 'suspend' ? 'suspended' : 'active'),
+    setRealAccountStatus(row, action === 'suspend' ? 'suspended' : 'active', reason),
   )
   bulkResult.value = { action, ...summarizeBulk(outcomes) }
   bulkRunning.value = false
   bulkAction.value = null
-  clearSelection()
+  if (bulkFromSelection.value) clearSelection()
 }
 
 function displayName(row: UserDirectoryRow): string {
@@ -777,7 +803,10 @@ function displayName(row: UserDirectoryRow): string {
       <AdminRoleCountCard :counts="adminCounts" :colors="adminRoleColors" />
     </div>
 
-    <!-- 批次停用／啟用的確認框：逐一列出會動到誰，名單在打開時就凍結 -->
+    <!--
+      停用／啟用的確認框：逐一列出會動到誰，名單在打開時就凍結。
+      單筆的「停用」也走這裡（名單只有一個人），才有地方填停用原因。
+    -->
     <Dialog :open="bulkAction !== null" @update:open="(open: boolean) => { if (!open) closeBulk() }">
       <DialogContent>
         <DialogHeader>
@@ -801,6 +830,20 @@ function displayName(row: UserDirectoryRow): string {
             <span class="truncate text-xs text-muted-foreground">{{ row.user.email }}</span>
           </li>
         </ul>
+        <!-- 原因選填：寫進稽核紀錄，事後回頭查才知道當初為什麼停 -->
+        <div v-if="bulkAction === 'suspend'" class="space-y-2">
+          <Label for="suspend-reason">停用原因（選填）</Label>
+          <Textarea
+            id="suspend-reason"
+            v-model="suspendReason"
+            rows="2"
+            maxlength="200"
+            placeholder="例如：多次發布不當內容"
+          />
+          <p class="text-xs text-muted-foreground">
+            只寫進稽核紀錄，對方看不到。{{ bulkTargets.length > 1 ? '這幾個帳號共用這一句。' : '' }}
+          </p>
+        </div>
         <DialogFooter>
           <Button variant="outline" :disabled="bulkRunning" @click="closeBulk">取消</Button>
           <Button

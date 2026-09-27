@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
+import { Textarea } from '@/components/ui/textarea/index'
 import { Progress } from '@/components/ui/progress/index'
 import {
   Select,
@@ -84,6 +85,9 @@ import {
 } from '@/src/utils/admin-entitlements'
 import { useRegisterAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
+import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
+import { fetchAdminAudit, type ServerAuditEvent } from '@/src/services/adminAuditApi'
+import { latestSuspension, suspensionNote } from '@/src/utils/admin-audit-sources'
 
 const route = useRoute()
 const router = useRouter()
@@ -267,14 +271,32 @@ function handleAdminRoleChange(value: unknown): void {
 
 const statusBusy = ref(false)
 const statusError = ref('')
+/** 停用走確認框（跟列表頁同一種），可以附原因；啟用是把權限還回去，維持一鍵 */
+const suspendOpen = ref(false)
+const suspendReason = ref('')
 
-async function toggleStatus(): Promise<void> {
+function toggleStatus(): void {
   const current = row.value
   if (!current) return
-  const next = current.user.status === 'active' ? 'suspended' : 'active'
+  if (current.user.status === 'active') {
+    suspendReason.value = ''
+    suspendOpen.value = true
+    return
+  }
+  void applyStatus('active')
+}
+
+async function confirmSuspend(): Promise<void> {
+  suspendOpen.value = false
+  await applyStatus('suspended', suspendReason.value)
+}
+
+async function applyStatus(next: 'active' | 'suspended', reason?: string): Promise<void> {
+  const current = row.value
+  if (!current) return
 
   if (!isReal.value) {
-    setStatus(current.user.id, next)
+    setStatus(current.user.id, next, reason)
     return
   }
 
@@ -283,13 +305,43 @@ async function toggleStatus(): Promise<void> {
   statusError.value = ''
   statusBusy.value = true
   try {
-    await setRealAccountStatus(current, next)
+    await setRealAccountStatus(current, next, reason)
+    await loadStatusHistory()
   } catch (error) {
     statusError.value = error instanceof Error ? error.message : '操作失敗，請稍後再試。'
   } finally {
     statusBusy.value = false
   }
 }
+
+/*
+ * 「停用中」旁邊的那一句：最近一次停用的原因、誰停的、什麼時候。
+ * 真實帳號讀後端的稽核紀錄；展示帳號的停用本來就只記在這台瀏覽器，讀本機那份。
+ * 這個功能上線前就被停用的帳號沒有紀錄，就不顯示，不編一句出來。
+ */
+const { events: localAuditEvents } = useAdminAudit()
+const serverStatusHistory = ref<ServerAuditEvent[]>([])
+
+async function loadStatusHistory(): Promise<void> {
+  const id = row.value?.realAccountId
+  if (id === undefined) {
+    serverStatusHistory.value = []
+    return
+  }
+  serverStatusHistory.value = (await fetchAdminAudit({ subject: `user:${id}`, limit: 50 })) ?? []
+}
+
+// 放在 row、isReal 之後：immediate 的 watcher 在 setup 當下就會執行
+watch(() => row.value?.realAccountId, () => void loadStatusHistory(), { immediate: true })
+
+const suspensionText = computed(() => {
+  const current = row.value
+  if (!current || current.user.status !== 'suspended') return null
+  const latest = isReal.value
+    ? latestSuspension(serverStatusHistory.value)
+    : latestSuspension(localAuditEvents.value.filter((event) => event.target === current.user.email))
+  return latest ? suspensionNote(latest) : null
+})
 
 function handlePlanChange(value: unknown): void {
   if (!row.value?.subscription) return
@@ -371,6 +423,7 @@ function openSendDialog(): void {
                 :label="row.user.status === 'active' ? '正常' : '停用'"
                 emphasize
               />
+              <p v-if="suspensionText" class="mt-1.5 text-xs text-foreground/70">{{ suspensionText }}</p>
             </dd>
 
             <dt class="text-foreground/70">身分</dt>
@@ -820,6 +873,39 @@ function openSendDialog(): void {
           <DialogDescription>{{ selectedTicket.address }}</DialogDescription>
         </DialogHeader>
         <TicketDetailPanel :ticket="selectedTicket" />
+      </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="suspendOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>停用「{{ row?.user.nickname?.trim() || row?.user.email }}」？</DialogTitle>
+          <DialogDescription>
+            {{
+              isReal
+                ? '停用會立刻生效：對方馬上就登不進來，直到你再把這個帳號啟用。'
+                : '這是展示帳號，停用只會改這台瀏覽器裡的資料。'
+            }}
+          </DialogDescription>
+        </DialogHeader>
+
+        <!-- 原因選填：寫進稽核紀錄，也會顯示在這一頁的「停用」旁邊 -->
+        <div class="space-y-2">
+          <Label for="detail-suspend-reason">停用原因（選填）</Label>
+          <Textarea
+            id="detail-suspend-reason"
+            v-model="suspendReason"
+            rows="2"
+            maxlength="200"
+            placeholder="例如：多次發布不當內容"
+          />
+          <p class="text-xs text-muted-foreground">只寫進稽核紀錄，對方看不到。</p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" @click="suspendOpen = false">取消</Button>
+          <Button variant="destructive" @click="confirmSuspend">確認停用</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
 

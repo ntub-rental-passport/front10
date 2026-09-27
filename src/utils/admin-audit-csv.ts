@@ -11,9 +11,14 @@ export interface AuditCsvRow {
   action: string
   target: string
   detail: string
+  /**
+   * 後端／本機／展示資料。畫面上有標籤，CSV 沒有 —— 不寫出來的話，
+   * 匯出去的檔案分不出哪幾筆是從來沒發生過的種子資料。
+   */
+  source: string
 }
 
-const CSV_HEADER = ['時間', '操作者', '動作', '對象', '詳情']
+const CSV_HEADER = ['時間', '操作者', '動作', '對象', '詳情', '來源']
 
 /** 含逗號、雙引號或換行的欄位要用雙引號包起來，欄位內原有的雙引號要重複一次跳脫 */
 export function escapeCsvField(value: string): string {
@@ -31,6 +36,7 @@ export function buildAuditCsv(rows: AuditCsvRow[], formatAt: (iso: string) => st
     row.action,
     row.target,
     row.detail,
+    row.source,
   ])]
 
   // CSV 標準換行是 CRLF，Excel 對 LF-only 的檔案偶爾會整份擠成一欄
