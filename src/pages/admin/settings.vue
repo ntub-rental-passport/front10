@@ -664,7 +664,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   </Select>
                   <p class="text-xs text-muted-foreground">
                     從登入起算，重新整理不會延長；只對之後登入的人生效。
-                    管理員固定 {{ sessionLabel(platform?.adminSessionMinutes ?? 120) }}，不受這個設定影響 —— 設錯時你還進得來改回去。
+                    管理員固定 {{ sessionLabel(platform?.adminSessionMinutes ?? 480) }}、閒置
+                    {{ platform?.adminIdleMinutes ?? 20 }} 分鐘自動登出，不受這個設定影響 —— 設錯時你還進得來改回去。
                   </p>
                 </div>
               </div>
@@ -692,6 +693,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
               <li>
                 <p class="font-medium">伺服器限速</p>
                 <p class="text-muted-foreground">伺服器對登入請求有速率限制，短時間內大量嘗試會被擋下。這是真正擋暴力猜密碼的那一層。</p>
+              </li>
+              <li>
+                <p class="font-medium">管理員閒置登出</p>
+                <p class="text-muted-foreground">
+                  管理員 {{ platform?.adminIdleMinutes ?? 20 }} 分鐘沒有操作就自動登出（登出前一分鐘會先提醒）。由伺服器判斷，關掉分頁或改電腦時鐘都繞不過；背景自動更新的頁面不算操作。
+                </p>
               </li>
               <li>
                 <p class="font-medium">管理員登入驗證碼</p>

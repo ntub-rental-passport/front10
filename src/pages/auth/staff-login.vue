@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/src/components/layouts/AuthLayout.vue'
 import { Button } from '@/components/ui/button/index'
 import { Input } from '@/components/ui/input/index'
@@ -24,6 +24,14 @@ import { recordLogin } from '@/src/composables/admin/useAdminUsers'
  * 「已通過帳密驗證」的憑據，留在磁碟上等於把第一道關卡的成果外洩。
  */
 const router = useRouter()
+const route = useRoute()
+
+/** 從後台被帶回來的原因（見 AdminLayout 的閒置登出），講清楚比讓人自己猜好 */
+const logoutNotice = computed(() => {
+  if (route.query.reason === 'idle') return '你已經閒置超過 20 分鐘，為了保護後台已自動登出，請重新登入。'
+  if (route.query.reason === 'expired') return '這次登入已經失效（可能在別處登出，或系統更新），請重新登入。'
+  return ''
+})
 
 const step = ref<'credentials' | 'code'>('credentials')
 const email = ref('')
@@ -130,6 +138,8 @@ function restart(): void {
         帳號、角色、內容與系統維護。登入需通過密碼與信箱驗證碼兩道驗證。
       </p>
     </div>
+
+    <p v-if="logoutNotice" class="mt-6 rounded-xl border bg-muted/40 px-4 py-3 text-sm">{{ logoutNotice }}</p>
 
     <form v-if="step === 'credentials'" class="mt-8 space-y-5" @submit.prevent="submitCredentials">
       <div class="space-y-2">
