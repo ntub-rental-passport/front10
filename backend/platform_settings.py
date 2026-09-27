@@ -31,12 +31,15 @@ PASSWORD_MIN_LENGTH_RANGE = (8, 64)
 PASSWORD_MAX_LENGTH = 128
 
 #: 一般使用者（租客、房東）登入後多久要重新登入。從登入起算，不因重新整理延長。
-DEFAULT_SESSION_MINUTES = 120
+#: 預設 1 天：改版前的實際行為就是「常在用的人 24 小時才要重新登入」（cookie 的期限）。
+DEFAULT_SESSION_MINUTES = 1440
 #: 只給選單上的這幾個值：自由輸入很容易打出 1 分鐘這種讓所有人一登入就被登出的值
 SESSION_MINUTE_OPTIONS = (30, 60, 120, 480, 1440, 4320, 10080)
 
-#: 管理員固定，不受設定影響（見模組說明）
-ADMIN_SESSION_MINUTES = 120
+#: 管理員固定，不受設定影響（見模組說明）。一個工作天收一次信箱驗證碼。
+ADMIN_SESSION_MINUTES = 480
+#: 管理員閒置超過這麼久就要重新登入，由伺服器判斷（見 models.AdminSession）
+ADMIN_IDLE_MINUTES = 20
 
 LABELS = {
     'password_min_length': ('密碼最短長度', '字元'),

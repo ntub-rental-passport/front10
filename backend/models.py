@@ -540,3 +540,22 @@ class AdminAuditLog(Base):
     detail = Column(JSON, nullable=True)
     ip = Column(String(45), nullable=True)
     created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+class AdminSession(Base):
+    """管理員登入的伺服器端紀錄，用來判斷閒置。
+
+    登入憑證本身是無狀態的：只看憑證的話，拿到它的人可以一路用到期限（8 小時）。
+    管理員閒置太久（platform_settings.ADMIN_IDLE_MINUTES）要重新登入，
+    這件事只能在伺服器這邊判斷 —— 前端的計時器關掉分頁、改時鐘就繞過了。
+
+    `last_active_at` 只在前端回報「使用者真的有在操作」時更新
+    （POST /api/auth/admin/activity），一般 API 請求不更新：後台有些頁面會在
+    背景輪詢，把它們算成操作的話，人走開了 session 也永遠不會閒置。
+    """
+
+    __tablename__ = 'admin_sessions'
+    __table_args__ = (Index('ix_admin_sessions_user_id', 'user_id'),)
+    id = Column(String(36), nullable=False, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    last_active_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)

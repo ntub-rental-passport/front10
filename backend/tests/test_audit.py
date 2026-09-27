@@ -214,6 +214,21 @@ class AdminLoginAuditTests(AuditTestCase):
         # 經過 Cloudflare 與 Nginx，要記的是最前面那一段，不是代理的位址
         self.assertEqual(self.logins(), [('管理員登入', '203.0.113.7')])
 
+    def test_login_creates_a_server_session_that_logout_removes(self):
+        from models import AdminSession
+        from routers.auth import logout
+        from security import AUTH_COOKIE_NAME, create_cookie_token, read_access_token
+
+        result = self.verify(self.CODE)
+        session = self.db.query(AdminSession).one()
+        # Bearer token 帶著伺服器端紀錄的 id，閒置判斷才有東西可以對
+        self.assertEqual(read_access_token(result.accessToken)['sid'], session.id)
+
+        cookie = create_cookie_token(self.admin.id, self.admin.email, 'admin', sid=session.id)
+        logout(SimpleNamespace(cookies={AUTH_COOKIE_NAME: cookie}), Response(), db=self.db)
+        # 登出後那張 Bearer token 也跟著失效，不必等它自己過期
+        self.assertEqual(self.db.query(AdminSession).count(), 0)
+
     def test_wrong_code_after_a_correct_password_is_recorded(self):
         with self.assertRaises(HTTPException):
             self.verify('000000')

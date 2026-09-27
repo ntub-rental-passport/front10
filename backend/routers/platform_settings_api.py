@@ -24,6 +24,7 @@ def _admin_view() -> dict:
         'sessionMinutes': values['session_minutes'],
         'sessionMinuteOptions': list(platform_settings.SESSION_MINUTE_OPTIONS),
         'adminSessionMinutes': platform_settings.ADMIN_SESSION_MINUTES,
+        'adminIdleMinutes': platform_settings.ADMIN_IDLE_MINUTES,
         'defaults': {
             'passwordMinLength': platform_settings.DEFAULT_PASSWORD_MIN_LENGTH,
             'sessionMinutes': platform_settings.DEFAULT_SESSION_MINUTES,

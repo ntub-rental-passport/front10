@@ -31,11 +31,11 @@ class PlatformSettingsTestCase(unittest.TestCase):
 class StoreTests(PlatformSettingsTestCase):
     def test_defaults_without_creating_a_file(self):
         # 每個會簽發憑證的測試都會讀設定；讀的時候建檔，backend/ 底下就會多一堆資料庫
-        self.assertEqual(settings.get_settings(), {'password_min_length': 8, 'session_minutes': 120})
+        self.assertEqual(settings.get_settings(), {'password_min_length': 8, 'session_minutes': 1440})
         self.assertFalse(self.db_path.exists())
 
     def test_update_is_persisted_and_audited_per_changed_field(self):
-        settings.update_settings({'password_min_length': 12, 'session_minutes': 120}, actor='admin@example.com')
+        settings.update_settings({'password_min_length': 12, 'session_minutes': 1440}, actor='admin@example.com')
         self.assertEqual(settings.password_min_length(), 12)
         # 登入有效時間沒變，只記一筆
         self.assertEqual(
