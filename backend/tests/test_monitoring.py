@@ -249,6 +249,45 @@ class MonitoringTests(unittest.TestCase):
         self.assertTrue(next(i for i in items if i['key'] == 'smtp')['ok'])
 
 
+    def vision_ok(self):
+        return next(i for i in monitor.config_status() if i['key'] == 'vision')['ok']
+
+    def ocr_reports(self, configured):
+        class Response:
+            status_code = 200
+
+            def json(self):
+                return {'ok': True, 'credentialsConfigured': configured}
+
+        with patch.dict(os.environ, {'OCR_API_PORT': '8787'}), patch('httpx.get', return_value=Response()):
+            self.assertEqual(monitor.probe_ocr(), (True, None))
+
+    def test_vision_status_comes_from_the_ocr_service(self):
+        # 正式環境金鑰只掛進 OCR 的容器：後端這邊看不到檔案，但 OCR 說它有
+        with patch.dict(os.environ, {'GOOGLE_APPLICATION_CREDENTIALS': '/nowhere/vision-key.json'}):
+            self.assertFalse(self.vision_ok())
+            self.ocr_reports(True)
+            self.assertTrue(self.vision_ok())
+
+    def test_ocr_saying_no_wins_over_a_local_file(self):
+        with tempfile.NamedTemporaryFile(suffix='.json') as key, \
+             patch.dict(os.environ, {'GOOGLE_APPLICATION_CREDENTIALS': key.name}):
+            self.assertTrue(self.vision_ok())    # 還沒回報：退回看本機檔案
+            self.ocr_reports(False)
+            self.assertFalse(self.vision_ok())
+
+    def test_odd_health_payload_is_ignored_not_trusted(self):
+        class Response:
+            status_code = 200
+
+            def json(self):
+                return {'ok': True}              # 舊版 OCR 沒有這個欄位
+
+        with patch.dict(os.environ, {'OCR_API_PORT': '8787', 'GOOGLE_APPLICATION_CREDENTIALS': ''}), \
+             patch('httpx.get', return_value=Response()):
+            monitor.probe_ocr()
+            self.assertFalse(self.vision_ok())
+
     # -------------------- 5xx --------------------
 
     def test_server_errors_are_recorded_without_query_string_or_error_message(self):

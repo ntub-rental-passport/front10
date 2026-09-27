@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 import process from 'node:process'
@@ -543,11 +544,18 @@ async function runAiReviewJob({ jobId, files, visionPages, pageTexts, targetFiel
   }
 }
 
+// 只看變數有沒有值不夠：正式環境的金鑰是掛載進來的，掛載漏了變數照樣有值。
+// 後台監控的「Google Vision 憑證」就是讀這個欄位（backend/monitoring_service.py）。
+function visionCredentialsReady() {
+  const file = process.env.GOOGLE_APPLICATION_CREDENTIALS
+  return Boolean(file) && existsSync(path.resolve(file))
+}
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'rentmate-ocr-api',
-    credentialsConfigured: Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS),
+    credentialsConfigured: visionCredentialsReady(),
     aiOcr: {
       enabled: ollamaConfig.enabled,
       model: ollamaConfig.model,
