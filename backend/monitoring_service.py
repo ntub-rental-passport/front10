@@ -350,7 +350,49 @@ def probe_ocr() -> tuple[bool, str | None] | None:
         return False, _describe_http_failure(error)
     if response.status_code != 200:
         return False, f'HTTP {response.status_code}'
+    _remember_ocr_credentials(response)
     return True, None
+
+
+#: OCR 服務最近一次回報的 Vision 憑證狀態（1／0），存在 monitor_meta
+_OCR_CREDENTIALS_KEY = 'ocr-vision-credentials'
+
+
+def _remember_ocr_credentials(response) -> None:
+    """記下 OCR 服務自己回報的 Vision 憑證狀態，給「外部服務設定」用。
+
+    Vision 憑證是 OCR 服務在用。正式環境金鑰只掛進 OCR 的容器，後端自己去看
+    檔案在不在，永遠會說「未設定」—— 所以以 OCR 服務的回報為準。
+    """
+    try:
+        configured = response.json().get('credentialsConfigured')
+    except Exception:
+        return
+    if not isinstance(configured, bool):
+        return
+    with _write() as db:
+        db.execute(
+            'INSERT INTO monitor_meta (key, value) VALUES (?, ?) '
+            'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+            (_OCR_CREDENTIALS_KEY, 1 if configured else 0),
+        )
+
+
+def _vision_configured() -> bool:
+    """OCR 回報過就以它為準；從沒回報過（開發時沒開 OCR）才看後端這邊的檔案 ——
+    開發機上兩邊是同一台，這個退路在那裡是準的。"""
+    with _open() as db:
+        row = db.execute('SELECT value FROM monitor_meta WHERE key = ?', (_OCR_CREDENTIALS_KEY,)).fetchone()
+    if row is not None:
+        return bool(row['value'])
+
+    path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '').strip()
+    if not path:
+        return False
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = _REPO_ROOT / candidate
+    return candidate.is_file()
 
 
 PROBES = {
@@ -462,14 +504,6 @@ def config_status() -> list[dict]:
     import garbage_service
     import llm_provider
 
-    vision_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '').strip()
-    vision_ok = False
-    if vision_path:
-        candidate = Path(vision_path)
-        if not candidate.is_absolute():
-            candidate = _REPO_ROOT / candidate
-        vision_ok = candidate.is_file()
-
     return [
         {
             'key': 'smtp',
@@ -498,7 +532,7 @@ def config_status() -> list[dict]:
         {
             'key': 'vision',
             'label': 'Google Vision 憑證',
-            'ok': vision_ok,
-            'hint': 'OCR 服務用來辨識合約文字。檔案路徑要存在，不只是有設變數。',
+            'ok': _vision_configured(),
+            'hint': 'OCR 服務用來辨識合約文字。以 OCR 服務的回報為準：金鑰檔要真的在，不只是有設變數。',
         },
     ]

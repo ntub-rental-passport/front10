@@ -1,0 +1,8 @@
+# 開發機上的 SQLite（排程通知、垃圾車提醒、監控紀錄）不進映像檔。
+# 正式環境的資料在掛載的 /app/var（見 docker-compose.yml），
+# 這些檔案放進去只會把開發時的資料一起帶上伺服器。
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+__pycache__/
