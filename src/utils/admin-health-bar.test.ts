@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildHealthBarItems } from './admin-health-bar'
-import type { DbPoolSnapshot, RequestSnapshot } from './admin-monitoring'
+import type { DbPoolSnapshot, RequestSnapshot, ServiceState } from './admin-monitoring'
 
 describe('buildHealthBarItems', () => {
-  it('固定回傳三項：資料庫連線池、API 錯誤率、LLM Provider', () => {
+  it('固定回傳三項：資料庫、API 錯誤率、AI 模型（桌機）', () => {
     const items = buildHealthBarItems(null, null)
-    expect(items.map((item) => item.id)).toEqual(['db-pool', 'error-rate', 'llm-provider'])
+    expect(items.map((item) => item.id)).toEqual(['db-pool', 'error-rate', 'llm-desktop'])
   })
 
   describe('資料庫連線池', () => {
@@ -89,16 +89,38 @@ describe('buildHealthBarItems', () => {
     })
   })
 
-  describe('LLM Provider', () => {
-    it('目前一律是尚未接上：顯示無法取得，tone 是 idle，絕不是 ok', () => {
-      const items = buildHealthBarItems(
-        { configured: true, capacity: 10, inUse: 1, utilization: 0.1 },
-        { windowMinutes: 60, total: 0, clientErrors: 0, serverErrors: 0, errorRate: 0, serverErrorRate: 0 },
-      )
-      const llmItem = items.find((item) => item.id === 'llm-provider')
-      expect(llmItem?.statusText).toBe('無法取得')
-      expect(llmItem?.tone).toBe('idle')
-      expect(llmItem?.tone).not.toBe('ok')
+  describe('AI 模型（桌機）', () => {
+    const now = new Date(2026, 8, 27, 12, 0)
+    const recent = new Date(now.getTime() - 60_000).toISOString()
+    const probe = (overrides: Partial<ServiceState>): ServiceState => ({
+      service: 'llm-desktop',
+      label: 'AI 模型（桌機）',
+      status: 'up',
+      since: recent,
+      detail: null,
+      checkedAt: recent,
+      ...overrides,
+    })
+    const llmOf = (services: ServiceState[] | null) =>
+      buildHealthBarItems(null, null, services, now).find((item) => item.id === 'llm-desktop')
+
+    it('讀不到監控數據：無法取得，tone 是 idle，絕不是 ok', () => {
+      expect(llmOf(null)).toMatchObject({ statusText: '無法取得', tone: 'idle' })
+    })
+
+    it('後端沒設定桌機位址：說「未設定」，不是故障', () => {
+      expect(llmOf([])).toMatchObject({ statusText: '未設定', tone: 'idle' })
+    })
+
+    it('探測在線才是綠燈', () => {
+      expect(llmOf([probe({})])).toMatchObject({ statusText: '在線', tone: 'ok' })
+    })
+
+    it('探測連不上：顯示原因，tone 是 danger', () => {
+      expect(llmOf([probe({ status: 'down', detail: '連線逾時' })])).toMatchObject({
+        statusText: '連線逾時',
+        tone: 'danger',
+      })
     })
   })
 })

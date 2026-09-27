@@ -6,7 +6,6 @@
  * 哪個方案能用哪些功能）是兩回事，不共用開關也不共用文案——見卡片說明文字。
  */
 import { computed, reactive, ref } from 'vue'
-import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
 import {
@@ -21,6 +20,7 @@ import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Textarea } from '@/components/ui/textarea/index'
 import { AlertTriangle } from 'lucide-vue-next'
+import StatusDot from '@/src/components/admin/StatusDot.vue'
 import { useAdminFeatureOutages } from '@/src/composables/admin/useAdminFeatureOutages'
 import { useTickingNow } from '@/src/composables/useTickingNow'
 import { PLAN_FEATURES, PLAN_FEATURE_KEYS, type PlanFeatureKey } from '@/src/utils/admin-entitlements'
@@ -124,7 +124,7 @@ const rows = computed<RowView[]>(() =>
 <template>
   <Card class="rounded-3xl">
     <CardHeader class="p-5">
-      <CardTitle>功能開關</CardTitle>
+      <CardTitle class="text-base">功能開關</CardTitle>
       <CardDescription>
         功能發生故障時，在這裡暫停該功能給「所有使用者」使用；這與方案權益
         （哪個方案能用哪些功能）是兩回事——權益關閉是「升級即可使用」，
@@ -132,7 +132,7 @@ const rows = computed<RowView[]>(() =>
       </CardDescription>
     </CardHeader>
 
-    <CardContent class="px-5 pb-5 space-y-3">
+    <CardContent class="grid gap-3 px-5 pb-5 md:grid-cols-2">
       <div
         v-for="row in rows"
         :key="row.key"
@@ -141,9 +141,11 @@ const rows = computed<RowView[]>(() =>
         <div class="min-w-0 space-y-1">
           <div class="flex flex-wrap items-center gap-2">
             <p class="font-medium">{{ row.label }}</p>
-            <Badge :variant="row.closed ? 'destructive' : 'secondary'">
-              {{ row.closed ? '維護中' : '正常' }}
-            </Badge>
+            <!--
+              維護中是 warn 不是 danger：這是管理員自己關的，功能沒有壞得更嚴重，
+              要做的事是「記得打開」。原本的實心紅色 Badge 讓它看起來像事故本身。
+            -->
+            <StatusDot :tone="row.closed ? 'warn' : 'ok'" :label="row.closed ? '維護中' : '正常'" emphasize />
           </div>
 
           <template v-if="row.closed">

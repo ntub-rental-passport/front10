@@ -1,14 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  LLM_DESKTOP_SERVICE,
+  SERVICE_STALE_MS,
   backendMonitor,
   classifyResponseTime,
+  databaseMonitor,
   dbPoolMonitor,
   errorRateMonitor,
+  formatDuration,
+  formatPairedTime,
   formatResponseTime,
+  formatShortDateTime,
+  formatTimeAgo,
   pendingMonitor,
+  serviceMonitor,
   type DbPoolSnapshot,
   type RequestSnapshot,
+  type ServiceState,
 } from './admin-monitoring'
 
 // 測試固定沿用種子預設值，不直接依賴 mocks/admin/settings —— 純邏輯檔的測試不該跟 collection 耦合
@@ -192,5 +201,143 @@ describe('後端回傳壞掉的數字時', () => {
     // 「沒有這個欄位」跟「這個欄位是垃圾」要分開處理
     const reading = dbPoolMonitor({ configured: true, capacity: 30, inUse: 0 })
     expect(reading.state).toBe('ok')
+  })
+})
+
+/* -------------------- 後端探測的服務 -------------------- */
+
+// 用本地時間建構，測試不管在哪個時區跑都一樣
+const NOW = new Date(2026, 8, 27, 12, 0)
+const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000).toISOString()
+
+function probe(overrides: Partial<ServiceState> = {}): ServiceState {
+  return {
+    service: 'llm-desktop',
+    label: 'AI 模型（桌機）',
+    status: 'up',
+    since: minutesAgo(3 * 24 * 60),
+    detail: null,
+    checkedAt: minutesAgo(1),
+    ...overrides,
+  }
+}
+
+describe('formatDuration', () => {
+  it('只留兩個單位，整數時省略零頭', () => {
+    expect(formatDuration(20)).toBe('不到 1 分鐘')
+    expect(formatDuration(5 * 60)).toBe('5 分鐘')
+    expect(formatDuration(2 * 3600)).toBe('2 小時')
+    expect(formatDuration(2 * 3600 + 5 * 60)).toBe('2 小時 5 分')
+    expect(formatDuration(3 * 86400 + 4 * 3600 + 59)).toBe('3 天 4 小時')
+    expect(formatDuration(2 * 86400)).toBe('2 天')
+  })
+
+  it('負數（時鐘不同步）當成零，不要印出「-3 分鐘」', () => {
+    expect(formatDuration(-180)).toBe('不到 1 分鐘')
+  })
+})
+
+describe('formatShortDateTime／formatPairedTime', () => {
+  it('短格式不帶年份，時與分補零', () => {
+    expect(formatShortDateTime(new Date(2026, 8, 7, 9, 5).toISOString())).toBe('9/7 09:05')
+  })
+
+  it('跟 anchor 同一天只寫時分，跨日才帶日期', () => {
+    const start = new Date(2026, 8, 26, 23, 10).toISOString()
+    expect(formatPairedTime(start, new Date(2026, 8, 26, 23, 40).toISOString())).toBe('23:40')
+    expect(formatPairedTime(start, new Date(2026, 8, 27, 7, 12).toISOString())).toBe('9/27 07:12')
+  })
+
+  it('讀不懂的時間顯示破折號，不顯示 NaN', () => {
+    expect(formatShortDateTime('not-a-date')).toBe('—')
+  })
+})
+
+describe('formatTimeAgo', () => {
+  it('一分鐘內是剛剛，之後沿用 formatDuration', () => {
+    expect(formatTimeAgo(minutesAgo(0.3), NOW)).toBe('剛剛')
+    expect(formatTimeAgo(minutesAgo(3), NOW)).toBe('3 分鐘前')
+    expect(formatTimeAgo(minutesAgo(125), NOW)).toBe('2 小時 5 分前')
+  })
+
+  it('未來的時間當成剛剛，沒有值就是破折號', () => {
+    expect(formatTimeAgo(minutesAgo(-2), NOW)).toBe('剛剛')
+    expect(formatTimeAgo(null, NOW)).toBe('—')
+  })
+})
+
+describe('serviceMonitor', () => {
+  it('在線：寫「自某時起正常」，不宣稱「連續在線」—— 後端停機的那段沒人在看', () => {
+    const reading = serviceMonitor([probe()], LLM_DESKTOP_SERVICE, NOW)
+    expect(reading.state).toBe('ok')
+    expect(reading.value).toBe('在線')
+    expect(reading.detail).toBe(`自 ${formatShortDateTime(minutesAgo(3 * 24 * 60))} 起正常`)
+    expect(reading.detail).not.toContain('連續')
+  })
+
+  it('斷線：大字是原因，下面寫從什麼時候開始、已經多久', () => {
+    const reading = serviceMonitor(
+      [probe({ status: 'down', detail: '連線逾時', since: minutesAgo(42) })],
+      LLM_DESKTOP_SERVICE,
+      NOW,
+    )
+    expect(reading.state).toBe('down')
+    expect(reading.value).toBe('連線逾時')
+    expect(reading.detail).toContain('已 42 分鐘')
+  })
+
+  it('後端沒探測（沒設定位址）是「未設定」，不是掛了', () => {
+    const reading = serviceMonitor([], LLM_DESKTOP_SERVICE, NOW)
+    expect(reading.state).toBe('unavailable')
+    expect(reading.stateLabel).toBe('未設定')
+    expect(reading.detail).toContain('LLM_TUNNEL_URL')
+  })
+
+  it('讀不到監控數據時是「無法取得」—— 不知道它在不在，就不說它掛了', () => {
+    const reading = serviceMonitor(null, LLM_DESKTOP_SERVICE, NOW)
+    expect(reading.state).toBe('unavailable')
+    expect(reading.stateLabel).toBe('無法取得')
+  })
+
+  it('檢查時間太舊就是資料過期：背景迴圈停了，那顆綠燈是很久以前的樣子', () => {
+    const staleMinutes = SERVICE_STALE_MS / 60_000 + 1
+    const reading = serviceMonitor([probe({ checkedAt: minutesAgo(staleMinutes) })], LLM_DESKTOP_SERVICE, NOW)
+    expect(reading.state).toBe('unavailable')
+    expect(reading.stateLabel).toBe('資料過期')
+    expect(reading.value).toBeNull()
+  })
+
+  it('斷線但資料過期時也不報紅 —— 過期的紅燈跟過期的綠燈一樣不能信', () => {
+    const reading = serviceMonitor(
+      [probe({ status: 'down', detail: '連不上', checkedAt: minutesAgo(60) })],
+      LLM_DESKTOP_SERVICE,
+      NOW,
+    )
+    expect(reading.state).toBe('unavailable')
+  })
+})
+
+describe('databaseMonitor', () => {
+  const pool: DbPoolSnapshot = { configured: true, capacity: 15, inUse: 0, idle: 5, utilization: 0 }
+
+  it('探測正常時照連線池的判定', () => {
+    const reading = databaseMonitor(pool, [probe({ service: 'database' })], NOW)
+    expect(reading.state).toBe('ok')
+    expect(reading.value).toBe('0 / 15')
+    expect(reading.label).toBe('資料庫')
+  })
+
+  it('連線池一片綠但探測連不上：以探測為準', () => {
+    const reading = databaseMonitor(
+      pool,
+      [probe({ service: 'database', status: 'down', detail: '連線逾時', since: minutesAgo(5) })],
+      NOW,
+    )
+    expect(reading.state).toBe('down')
+    expect(reading.value).toBe('連線逾時')
+  })
+
+  it('沒有探測資料時退回只看連線池', () => {
+    expect(databaseMonitor(pool, null, NOW).state).toBe('ok')
   })
 })
