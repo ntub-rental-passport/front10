@@ -35,7 +35,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User, UserRole
+from models import AdminSession, User, UserRole
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(ROOT_ENV_FILE)
@@ -83,9 +83,11 @@ class CurrentUser(BaseModel):
     role: str
     #: cookie 的到期時間（epoch 秒）。/me 重發 Bearer token 時沿用它，登入期限才不會被重新整理延長
     exp: int | None = None
+    #: 管理員登入的 AdminSession id（見 get_current_admin 的閒置判斷）；其他身分沒有
+    sid: str | None = None
 
 
-def create_cookie_token(user_id: int, email: str, role: str) -> str:
+def create_cookie_token(user_id: int, email: str, role: str, sid: str | None = None) -> str:
     """簽發放入 HttpOnly cookie 的 JWT。
 
     原名為 create_access_token，因與 Bearer 版同名而更名。
@@ -99,6 +101,8 @@ def create_cookie_token(user_id: int, email: str, role: str) -> str:
         "iat": now,
         "exp": now + timedelta(seconds=session_seconds(role)),
     }
+    if sid:
+        payload["sid"] = sid
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -151,6 +155,7 @@ def get_current_user(request: Request) -> CurrentUser:
             email=str(payload.get("email", "")),
             role=str(payload.get("role", "tenant")),
             exp=int(payload["exp"]) if payload.get("exp") is not None else None,
+            sid=str(payload["sid"]) if payload.get("sid") else None,
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -199,6 +204,7 @@ def create_access_token(
     role: str,
     expires_seconds: int | None = None,
     expires_at: int | None = None,
+    sid: str | None = None,
 ) -> str:
     """簽發放入 Authorization 標頭的 Bearer token。
 
@@ -207,7 +213,9 @@ def create_access_token(
     """
     if expires_at is None:
         expires_at = int(time.time()) + (expires_seconds if expires_seconds is not None else session_seconds(role))
-    payload = {"sub": user_id, "role": role, "exp": int(expires_at)}
+    payload: dict[str, object] = {"sub": user_id, "role": role, "exp": int(expires_at)}
+    if sid:
+        payload["sid"] = sid
     body = _encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     signature = _encode(hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).digest())
     return f"{body}.{signature}"
@@ -286,7 +294,30 @@ def get_current_admin(
     2. **token 說是 admin 還不算數，一定要回資料庫再確認一次。** token 簽發後
        在有效期內內容不會變，若只信 token，撤銷管理員權限要等到 token 過期
        才會生效。查一次 DB，撤銷就能立即生效。
+
+    第 3 點（閒置登出）見 admin_session_from。
     """
+    user, _ = admin_session_from(authorization, db)
+    return user
+
+
+#: 閒置被登出時的訊息。前端看到這句就知道要帶使用者回內部登入頁
+ADMIN_IDLE_DETAIL = "閒置太久，請重新登入。"
+
+
+def admin_session_from(authorization: str | None, db: Session) -> tuple[User, AdminSession]:
+    """驗證管理員的 Bearer token，並確認伺服器端的登入紀錄還在、沒有閒置太久。
+
+    3. **閒置太久要重新登入。** token 本身是無狀態的，只看它的話，拿到的人可以
+       一路用到期限（8 小時）。每個管理員登入都有一筆 AdminSession，記最後一次
+       「真的有人在操作」的時間；超過 ADMIN_IDLE_MINUTES 就作廢。
+
+       這裡**不更新**最後操作時間：後台有些頁面會在背景輪詢，把輪詢算成操作的話，
+       人走開了也永遠不會閒置。更新只走 POST /api/auth/admin/activity，
+       由前端在偵測到滑鼠、鍵盤操作時回報。
+    """
+    import platform_settings
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="請先登入管理員帳號。")
     payload = read_access_token(authorization[7:])
@@ -298,7 +329,22 @@ def get_current_admin(
     if not user or not role:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="管理員權限不存在。")
     _reject_if_suspended(user)
-    return user
+
+    sid = payload.get("sid")
+    session = (
+        db.query(AdminSession).filter(AdminSession.id == str(sid), AdminSession.user_id == user_id).first()
+        if sid
+        else None
+    )
+    # 沒有 sid 的是改版前簽發的憑證：一律請他重新登入一次，不給舊憑證繞過閒置判斷
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登入已失效，請重新登入。")
+    idle = datetime.utcnow() - session.last_active_at
+    if idle > timedelta(minutes=platform_settings.ADMIN_IDLE_MINUTES):
+        db.delete(session)
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ADMIN_IDLE_DETAIL)
+    return user, session
 
 
 def get_current_tenant(

@@ -17,7 +17,7 @@ import requests as http_requests
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from dotenv import dotenv_values, load_dotenv
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleRequest
@@ -35,6 +35,7 @@ from email_service import (
     send_verification_email,
 )
 from models import (
+    AdminSession,
     PendingAdminLogin,
     PendingRegistration,
     User,
@@ -44,6 +45,7 @@ from models import (
 )
 from security import (
     CurrentUser,
+    admin_session_from,
     clear_auth_cookie,
     create_access_token,   # Bearer 版（Authorization 標頭）
     create_cookie_token,   # Cookie 版（HttpOnly JWT）
@@ -955,15 +957,39 @@ def get_me(
         displayName=user.display_name,
         avatarUrl=getattr(user, "avatar_url", None),
         # 沿用 cookie 的到期時間：重新整理不該把登入期限延長一輪
-        accessToken=create_access_token(user.id, current.role, expires_at=current.exp),
+        accessToken=create_access_token(user.id, current.role, expires_at=current.exp, sid=current.sid),
     )
 
 
 @router.post("/logout")
-def logout(response: Response) -> dict[str, bool]:
-    """登出：清除 HttpOnly 認證 cookie。"""
+def logout(request: Request, response: Response, db: Session = Depends(get_db)) -> dict[str, bool]:
+    """登出：清除 HttpOnly 認證 cookie；管理員的話，連伺服器端的登入紀錄一起刪掉，
+    手上那張 Bearer token 也就跟著失效，不必等它自己過期。"""
+    try:
+        current = get_current_user(request)
+    except HTTPException:
+        current = None
+    if current is not None and current.sid:
+        db.query(AdminSession).filter(AdminSession.id == current.sid).delete()
+        db.commit()
     clear_auth_cookie(response)
     return {"ok": True}
+
+
+@router.post("/admin/activity")
+def report_admin_activity(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    """前端偵測到管理員真的在操作（滑鼠、鍵盤）時回報，延後閒置登出。
+
+    只有這支會更新最後操作時間；一般 API 請求不會 —— 見 security.admin_session_from。
+    已經閒置過頭的，這裡跟其他後台 API 一樣回 401，不能用回報來「復活」。
+    """
+    _, admin_session = admin_session_from(authorization, db)
+    admin_session.last_active_at = datetime.utcnow()
+    db.commit()
+    return {"idleMinutes": platform_settings.ADMIN_IDLE_MINUTES}
 
 
 # ==========================================
@@ -1224,13 +1250,18 @@ def admin_login_verify(
     _record_login(db, user)
     _audit_admin_login(user.email, user.id, "管理員登入", request)
 
+    # 伺服器端的登入紀錄：閒置太久就作廢（見 security.admin_session_from）
+    admin_session = AdminSession(id=str(uuid.uuid4()), user_id=user.id, created_at=now, last_active_at=now)
+    db.add(admin_session)
+    db.commit()
+
     # 與其他登入路徑一致：同時發出 cookie 與 Bearer 兩套憑證
-    set_auth_cookie(response, create_cookie_token(user.id, user.email, "admin"))
+    set_auth_cookie(response, create_cookie_token(user.id, user.email, "admin", sid=admin_session.id))
     return EmailLoginResponse(
         userId=user.id,
         email=user.email,
         role="admin",
         displayName=user.display_name,
         avatarUrl=user.avatar_url,
-        accessToken=create_access_token(user.id, "admin"),
+        accessToken=create_access_token(user.id, "admin", sid=admin_session.id),
     )
