@@ -229,6 +229,24 @@ class AdminLoginAuditTests(AuditTestCase):
         # 登出後那張 Bearer token 也跟著失效，不必等它自己過期
         self.assertEqual(self.db.query(AdminSession).count(), 0)
 
+    def test_page_reload_keeps_the_session_id_and_the_original_expiry(self):
+        # 合併 main 時抓到的：get_current_user 重新組 CurrentUser 時丟掉了 exp 與 sid，
+        # 結果每次重新整理，/me 發的新憑證都沒有 sid（管理員立刻被擋）、期限也被延長
+        from models import AdminSession
+        from routers.auth import get_me
+        from security import AUTH_COOKIE_NAME, create_cookie_token, get_current_user, read_access_token
+
+        self.verify(self.CODE)
+        session = self.db.query(AdminSession).one()
+        cookie = create_cookie_token(self.admin.id, self.admin.email, 'admin', sid=session.id)
+        current = get_current_user(SimpleNamespace(cookies={AUTH_COOKIE_NAME: cookie}), self.db)
+        self.assertEqual(current.sid, session.id)
+        self.assertIsNotNone(current.exp)
+
+        reissued = read_access_token(get_me(current=current, db=self.db).accessToken)
+        self.assertEqual(reissued['sid'], session.id)
+        self.assertEqual(reissued['exp'], current.exp)
+
     def test_wrong_code_after_a_correct_password_is_recorded(self):
         with self.assertRaises(HTTPException):
             self.verify('000000')

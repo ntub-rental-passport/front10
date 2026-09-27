@@ -1,7 +1,6 @@
 import logging
 import os
 import asyncio
-import logging
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI

@@ -627,6 +627,18 @@ def exchange_google_ticket(
         else None
     )
 
+    # ⚠️ 憑證只在「已綁定過 Google 的帳號」時簽發。
+    #
+    # registration_required 為 True 代表這個 Google 帳號還沒有對應的本站帳號，
+    # 此時只回註冊票證讓前端引導完成註冊 —— 還不是登入狀態，不可給 cookie。
+    #
+    # 這裡原本直接寫 create_cookie_token(user.id, ...)，但這個函式裡從來沒有
+    # user 這個變數（合併 main 時留下的），只要真的走到就會 NameError。
+    # 之所以很久沒被發現，是因為 Google 的 redirect URI 尚未設定完成，
+    # 這支端點一直到不了 —— 設定完成後第一次執行就 500。
+    #
+    # identity 在但 user 不見了 → 401 且請對方聯絡管理者，不是叫他重新註冊：
+    # identity 還在的話重新註冊會撞到唯一鍵，等於叫人去撞牆。
     # Only a registered identity with the requested role may receive a login cookie.
     # New Google accounts must finish registration before becoming authenticated.
     if not registration_required:
@@ -1001,7 +1013,7 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
     """登出：清除 HttpOnly 認證 cookie；管理員的話，連伺服器端的登入紀錄一起刪掉，
     手上那張 Bearer token 也就跟著失效，不必等它自己過期。"""
     try:
-        current = get_current_user(request)
+        current = get_current_user(request, db)
     except HTTPException:
         current = None
     if current is not None and current.sid:

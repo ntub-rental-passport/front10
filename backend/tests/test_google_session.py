@@ -199,3 +199,7 @@ class GoogleSessionTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:
             self.exchange()
         self.assertEqual(error.exception.status_code, 401)
+
+
+if __name__ == "__main__":
+    unittest.main()

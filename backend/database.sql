@@ -91,6 +91,16 @@ CREATE TABLE `pending_admin_logins` (
   INDEX `ix_pending_admin_logins_expires_at` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 管理員登入的伺服器端紀錄：閒置 20 分鐘作廢（見 models.AdminSession、security.admin_session_from）
+CREATE TABLE `admin_sessions` (
+  `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+  `user_id` INT NOT NULL,
+  `created_at` DATETIME NOT NULL,
+  `last_active_at` DATETIME NOT NULL,
+  CONSTRAINT `fk_admin_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  INDEX `ix_admin_sessions_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- ============ 2. 租客端 · 合約書（快照） ============
 

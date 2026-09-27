@@ -1061,7 +1061,24 @@ async function exportAnalysisReport(): Promise<void> {
               </div>
             </article>
 
-            <div v-if="!filteredRisks.length && !(activeRiskTab === 'history' && records.length)" class="risk-empty-state">
+            <!--
+              分析失敗時不可顯示綠色勾勾 —— 那是在對使用者宣稱
+              一個我們沒有驗證過的結論。文案寫「不代表已通過檢查」
+              仍不夠，因為圖示本身就在說「沒問題」。
+
+              排除 history：那是處理紀錄，空的只代表還沒處理過任何項目，
+              跟 AI 分析成不成功無關。
+            -->
+            <div
+              v-if="!filteredRisks.length && aiAnalysisState === 'failed' && activeRiskTab !== 'history'"
+              class="risk-empty-state is-unknown"
+            >
+              <AlertTriangle :size="22" />
+              <strong>這個分類尚未分析</strong>
+              <span>AI 分析未能完成，因此無法判斷是否有風險。</span>
+            </div>
+
+            <div v-else-if="!filteredRisks.length && !(activeRiskTab === 'history' && records.length)" class="risk-empty-state">
               <CheckCircle2 :size="22" />
               <strong>這個分類目前沒有待列項目</strong>
               <span>這不代表完整契約已通過檢查，請核對原文與分析狀態。</span>
