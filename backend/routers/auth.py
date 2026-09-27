@@ -27,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import audit_service
+import platform_settings
 from database import get_db
 from email_service import (
     EmailConfigurationError,
@@ -716,8 +717,13 @@ def start_registration(
     else:
         email = _normalize_email(payload.email)
         password = payload.password or ""
-        if len(password) < 8 or len(password) > 128:
-            raise HTTPException(status_code=422, detail="密碼長度必須介於 8 到 128 個字元。")
+        # 最短長度照後台「系統設定」（platform_settings.py）；已註冊的人不受影響
+        minimum = platform_settings.password_min_length()
+        if len(password) < minimum or len(password) > platform_settings.PASSWORD_MAX_LENGTH:
+            raise HTTPException(
+                status_code=422,
+                detail=f"密碼長度必須介於 {minimum} 到 {platform_settings.PASSWORD_MAX_LENGTH} 個字元。",
+            )
         password_hash = password_hasher.hash(password)
 
     existing_user = db.query(User).filter(User.email == email).first()
@@ -948,7 +954,8 @@ def get_me(
         role=current.role,
         displayName=user.display_name,
         avatarUrl=getattr(user, "avatar_url", None),
-        accessToken=create_access_token(user.id, current.role),
+        # 沿用 cookie 的到期時間：重新整理不該把登入期限延長一輪
+        accessToken=create_access_token(user.id, current.role, expires_at=current.exp),
     )
 
 

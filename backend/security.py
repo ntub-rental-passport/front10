@@ -49,7 +49,18 @@ JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 AUTH_COOKIE_NAME = "access_token"
 # access token 有效期：24 小時（畢業專題規模先不做 refresh token 輪替）
-ACCESS_TOKEN_MAX_AGE_SECONDS = 24 * 60 * 60
+def session_seconds(role: str) -> int:
+    """登入憑證的有效秒數。
+
+    一般使用者照後台「系統設定」的登入有效時間；管理員固定，不受那個設定影響 ——
+    一般使用者的期限設錯時，管理員必須還進得來改回去（見 platform_settings.py）。
+    延遲 import：platform_settings 會用到稽核紀錄，不讓這裡在啟動時就牽一串。
+    """
+    import platform_settings
+
+    if role == "admin":
+        return platform_settings.ADMIN_SESSION_MINUTES * 60
+    return platform_settings.session_minutes() * 60
 
 if not JWT_SECRET:
     raise RuntimeError(
@@ -70,6 +81,8 @@ class CurrentUser(BaseModel):
     id: int
     email: str
     role: str
+    #: cookie 的到期時間（epoch 秒）。/me 重發 Bearer token 時沿用它，登入期限才不會被重新整理延長
+    exp: int | None = None
 
 
 def create_cookie_token(user_id: int, email: str, role: str) -> str:
@@ -84,17 +97,29 @@ def create_cookie_token(user_id: int, email: str, role: str) -> str:
         "email": email,
         "role": role,
         "iat": now,
-        "exp": now + timedelta(seconds=ACCESS_TOKEN_MAX_AGE_SECONDS),
+        "exp": now + timedelta(seconds=session_seconds(role)),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def _seconds_until_exp(token: str) -> int | None:
+    """cookie 的 max_age 跟著 token 本身的期限走，兩者才不會一個比一個久。"""
+    try:
+        payload = jwt.decode(token, options={"verify_signature": False})
+        return max(0, int(payload["exp"]) - int(time.time()))
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError):
+        return None
+
+
 def set_auth_cookie(response: Response, token: str) -> None:
     """把 JWT 放進 HttpOnly cookie 回給瀏覽器，之後的請求會自動帶上。"""
+    import platform_settings
+
+    max_age = _seconds_until_exp(token)
     response.set_cookie(
         key=AUTH_COOKIE_NAME,
         value=token,
-        max_age=ACCESS_TOKEN_MAX_AGE_SECONDS,
+        max_age=max_age if max_age is not None else platform_settings.DEFAULT_SESSION_MINUTES * 60,
         httponly=True,
         secure=_cookie_secure(),
         samesite="lax",
@@ -125,6 +150,7 @@ def get_current_user(request: Request) -> CurrentUser:
             id=int(payload["sub"]),
             email=str(payload.get("email", "")),
             role=str(payload.get("role", "tenant")),
+            exp=int(payload["exp"]) if payload.get("exp") is not None else None,
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -168,9 +194,20 @@ def _decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def create_access_token(user_id: int, role: str, expires_seconds: int = 86400) -> str:
-    """簽發放入 Authorization 標頭的 Bearer token。"""
-    payload = {"sub": user_id, "role": role, "exp": int(time.time()) + expires_seconds}
+def create_access_token(
+    user_id: int,
+    role: str,
+    expires_seconds: int | None = None,
+    expires_at: int | None = None,
+) -> str:
+    """簽發放入 Authorization 標頭的 Bearer token。
+
+    `expires_at`（epoch 秒）優先：/me 重發時要沿用登入當下決定的期限，
+    否則每次重新整理都會把登入延長一輪。沒給就照 session_seconds(role)。
+    """
+    if expires_at is None:
+        expires_at = int(time.time()) + (expires_seconds if expires_seconds is not None else session_seconds(role))
+    payload = {"sub": user_id, "role": role, "exp": int(expires_at)}
     body = _encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     signature = _encode(hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).digest())
     return f"{body}.{signature}"
