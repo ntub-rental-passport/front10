@@ -311,6 +311,7 @@ def dispatch_due(now=None, resolve=None, send_email=None) -> int:
             ).rowcount
         if marked:
             _record_monitor_event('notification-missed', f"「{row['title']}」")
+            _record_audit(row, '錯過預定時間，沒有寄出（後端當時沒有在執行）')
 
     with connect() as db:
         rows = db.execute(
@@ -358,13 +359,42 @@ def dispatch_due(now=None, resolve=None, send_email=None) -> int:
         # 部分失敗也要記 —— 「30 人裡 3 人沒寄到」在排程列表上看得到，
         # 但沒有人會每天去翻；監控的事件紀錄才是會被看到的地方。
         failed = result['email']['failed']
+        sent = result['email']['sent']
         if status == 'failed' and failed == 0:
             _record_monitor_event('notification-failed', f"「{row['title']}」：無法取得收件人")
+            _record_audit(row, '無法取得收件人，沒有寄出')
         elif status == 'failed':
             _record_monitor_event('notification-failed', f"「{row['title']}」：全部 {failed} 人寄送失敗")
+            _record_audit(row, f'全部 {failed} 人寄送失敗')
         elif failed > 0:
             _record_monitor_event('notification-failed', f"「{row['title']}」：{failed} 人寄送失敗")
+            _record_audit(row, f'寄出 {sent} 人，{failed} 人失敗')
+        elif sent > 0:
+            _record_audit(row, f'已寄出給 {sent} 人')
+        else:
+            _record_audit(row, '沒有符合條件的收件人，沒有寄出')
     return handled
+
+
+def _record_audit(row, detail: str) -> None:
+    """寫進後台稽核紀錄，跟「誰排的、誰取消的」放在一起。
+
+    監控事件只留 30 天，只靠它的話，一個月後回頭看會只剩「某人排了一則通知」，
+    看不到它後來怎麼了 —— 更糟的是看起來像從來沒出過事。成功寄出也要記，
+    一則通知從誰排的到寄給了幾個人，才是完整的一段。
+    """
+    try:
+        import audit_service
+
+        audit_service.record(
+            '通知管理',
+            f"排程通知「{row['title']}」",
+            detail,
+            actor=audit_service.SYSTEM_ACTOR,
+            subject=f"scheduled:{row['id']}",
+        )
+    except Exception:
+        logger.exception('Could not record audit event for scheduled notification %s', row['id'])
 
 
 def _record_monitor_event(kind: str, detail: str) -> None:

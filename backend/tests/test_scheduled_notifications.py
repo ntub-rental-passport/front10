@@ -16,6 +16,8 @@ class ScheduledNotificationTests(unittest.TestCase):
             'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
             # 寄送失敗、錯過會寫進監控事件紀錄 —— 不指到暫存檔的話會寫進真的 monitoring.db
             'MONITOR_DB': self.temp.name + '/monitoring.db',
+            # 寄送結果也會寫進稽核紀錄，同理
+            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
             'SMTP_USERNAME': 'sender@example.com',
             'SMTP_APP_PASSWORD': 'app-password',
         })
@@ -250,6 +252,52 @@ class ScheduledNotificationTests(unittest.TestCase):
         self.create()
         self.dispatch()
         self.assertEqual(self.monitor_kinds(), [])
+
+    # -------------------- 稽核紀錄 --------------------
+
+    def audit_of(self, item):
+        import audit_service
+        return [
+            (e['actor'], e['detail'])
+            for e in reversed(audit_service.list_events(subject=f"scheduled:{item['id']}"))
+        ]
+
+    def test_successful_send_is_audited_with_the_count(self):
+        # 監控只記失敗；稽核要記完整的一段：誰排的之後，還有「寄給了幾個人」
+        item = self.create()
+        self.dispatch()
+        self.assertEqual(self.audit_of(item), [('system', '已寄出給 2 人')])
+
+    def test_partial_and_total_failures_are_audited(self):
+        partial = self.create(title='續約提醒')
+
+        def flaky(address, title, body):
+            if address == 'a@example.com':
+                raise RuntimeError('mailbox full')
+
+        self.dispatch(send=flaky)
+        self.assertEqual(self.audit_of(partial), [('system', '寄出 1 人，1 人失敗')])
+
+        total = self.create(title='繳費提醒')
+
+        def broken(address, title, body):
+            raise RuntimeError('smtp down')
+
+        self.dispatch(send=broken)
+        self.assertEqual(self.audit_of(total), [('system', '全部 2 人寄送失敗')])
+
+    def test_missed_schedule_is_audited_once(self):
+        item = self.create()
+        late = datetime.now(service.TZ) + self.LEAD + service.MISSED_AFTER + timedelta(minutes=1)
+        self.dispatch(at=late)
+        self.dispatch(at=late)
+        self.assertEqual(self.audit_of(item), [('system', '錯過預定時間，沒有寄出（後端當時沒有在執行）')])
+
+    def test_nobody_to_send_to_is_audited_as_not_sent(self):
+        # 「已寄出給 0 人」會被讀成寄成功了
+        item = self.create()
+        self.dispatch(emails=())
+        self.assertEqual(self.audit_of(item), [('system', '沒有符合條件的收件人，沒有寄出')])
 
 
 if __name__ == '__main__':

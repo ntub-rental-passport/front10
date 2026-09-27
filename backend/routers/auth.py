@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+import audit_service
 from database import get_db
 from email_service import (
     EmailConfigurationError,
@@ -1149,9 +1150,18 @@ def admin_login_start(
     )
 
 
+def _audit_admin_login(email: str, user_id: int, detail: str, request: Request) -> None:
+    """管理員登入寫進稽核紀錄。只記這一步（驗證碼）—— 能拿到後台權限的只有這條路，
+    帳密那一步的失敗不記，理由見 audit_service 的說明。"""
+    audit_service.record(
+        "登入", email, detail, actor=email, subject=f"user:{user_id}", ip=_client_ip(request)
+    )
+
+
 @router.post("/admin/verify", response_model=EmailLoginResponse)
 def admin_login_verify(
     payload: AdminLoginVerifyRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ) -> EmailLoginResponse:
@@ -1174,13 +1184,22 @@ def admin_login_verify(
     if not verification_code_matches(challenge.id, payload.code, challenge.verification_code_hash):
         challenge.attempt_count += 1
         remaining = max(0, ADMIN_LOGIN_MAX_ATTEMPTS - challenge.attempt_count)
+        # 走到這一步代表帳密是對的：驗證碼過不了，密碼很可能已經外洩
+        email, user_id = challenge.email, challenge.user_id
         if remaining == 0:
             # 次數用盡即作廢整組挑戰，必須重新輸入帳密 —— 使暴力猜測
             # 六位數驗證碼的成本回到「需先通過帳密驗證」
             db.delete(challenge)
             db.commit()
+            _audit_admin_login(
+                email,
+                user_id,
+                f"帳密正確，但驗證碼錯誤 {ADMIN_LOGIN_MAX_ATTEMPTS} 次，這次登入已作廢",
+                request,
+            )
             raise HTTPException(status_code=429, detail="驗證錯誤次數過多，請重新登入。")
         db.commit()
+        _audit_admin_login(email, user_id, f"帳密正確，但驗證碼錯誤（還可再試 {remaining} 次）", request)
         raise HTTPException(status_code=400, detail=f"驗證碼不正確，還可嘗試 {remaining} 次。")
 
     user = db.query(User).filter(User.id == challenge.user_id).first()
@@ -1196,6 +1215,7 @@ def admin_login_verify(
     # 挑戰有效期間才被停用的情況：驗證碼是正確的，但帳號已經不能用了
     _reject_if_suspended(user)
     _record_login(db, user)
+    _audit_admin_login(user.email, user.id, "管理員登入", request)
 
     # 與其他登入路徑一致：同時發出 cookie 與 Bearer 兩套憑證
     set_auth_cookie(response, create_cookie_token(user.id, user.email, "admin"))
