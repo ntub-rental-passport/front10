@@ -1,13 +1,24 @@
 import { onScopeDispose, ref } from 'vue'
 import {
+  LLM_DESKTOP_SERVICE,
+  OCR_SERVICE,
   backendMonitor,
-  dbPoolMonitor,
+  databaseMonitor,
   errorRateMonitor,
+  parseIsoTime,
+  serviceMonitor,
   type DbPoolSnapshot,
   type MonitorReading,
   type RequestSnapshot,
+  type ServiceState,
 } from '@/src/utils/admin-monitoring'
-import { fetchAdminMetrics } from '@/src/services/adminMetricsApi'
+import type {
+  ConfigItem,
+  MonitorEvent,
+  MonitorSummary,
+  QueuesSnapshot,
+} from '@/src/utils/admin-monitoring-report'
+import { fetchAdminMetrics, fetchMonitorEvents } from '@/src/services/adminMetricsApi'
 import { adminSettings } from './useAdminSettings'
 
 /**
@@ -45,19 +56,34 @@ const TIMEOUT_MS = 5_000
  *
  * 兩個來源：
  *   1. `/api/health` —— 不需登入，量後端是否回應與往返時間
- *   2. `/api/admin/metrics` —— 僅限管理員，取連線池與錯誤率
+ *   2. `/api/admin/metrics` —— 僅限管理員，取連線池與錯誤率，以及後端背景迴圈
+ *      記下的服務狀態、佇列、設定（前端只讀，不會叫後端當場去探測桌機或 OCR）
  *
  * 為何分成兩支而不是合併：健康檢查必須在登入之前就能用
  * （後端掛掉時反而會因為登入不了而看不到監控結果），
  * 而營運數據會洩漏「現在正是攻擊的好時機」，必須鎖起來。
  */
-export function useSystemHealth() {
+export function useSystemHealth(options: { withEvents?: boolean } = {}) {
   const responseMs = ref<number | null>(null)
   const checkedAt = ref<string | null>(null)
   const checking = ref(false)
   // null 代表這一輪讀取失敗（後端掛了、權限不足），與「還沒讀過」不同
   const dbPool = ref<DbPoolSnapshot | null>(null)
   const requests = ref<RequestSnapshot | null>(null)
+  /** 第一輪 metrics 回來了沒。沒回來之前畫面要說「量測中」，不是「讀不到」 */
+  const metricsLoaded = ref(false)
+  const metricsAvailable = ref(false)
+  const services = ref<ServiceState[] | null>(null)
+  const queues = ref<QueuesSnapshot | null>(null)
+  const config = ref<ConfigItem[] | null>(null)
+  const summary = ref<MonitorSummary | null>(null)
+  /** 只有監控頁要（withEvents）。總覽頁也用這個 composable，沒必要每 30 秒多抓 200 筆 */
+  const events = ref<MonitorEvent[] | null>(null)
+  /**
+   * 伺服器時間 − 瀏覽器時間。「已斷線 N 分鐘」「資料過期」都拿伺服器時間算，
+   * 管理員的電腦時鐘不準也不會誤判。
+   */
+  const clockOffsetMs = ref(0)
 
   async function check(): Promise<void> {
     checking.value = true
@@ -78,7 +104,6 @@ export function useSystemHealth() {
     } finally {
       clearTimeout(timer)
       checkedAt.value = new Date().toLocaleTimeString('zh-TW', { hour12: false })
-      checking.value = false
     }
 
     // 自己的逾時控制器：健康檢查的 timer 在上面的 finally 已經清掉，
@@ -87,19 +112,40 @@ export function useSystemHealth() {
     const metricsTimer = setTimeout(() => metricsController.abort(), TIMEOUT_MS)
     try {
       const metrics = await fetchAdminMetrics(metricsController.signal)
+      metricsAvailable.value = metrics !== null
       dbPool.value = metrics?.dbPool ?? null
       requests.value = metrics?.requests ?? null
+      services.value = metrics?.services ?? null
+      queues.value = metrics?.queues ?? null
+      config.value = metrics?.config ?? null
+      summary.value = metrics?.summary ?? null
+
+      const serverTime = parseIsoTime(metrics?.summary?.serverTime)
+      if (serverTime !== null) clockOffsetMs.value = serverTime - Date.now()
+
+      if (options.withEvents) {
+        events.value = metrics ? await fetchMonitorEvents(metricsController.signal) : null
+      }
     } finally {
       clearTimeout(metricsTimer)
+      metricsLoaded.value = true
+      // 放在最後：按鈕的「量測中」要涵蓋整輪，不是只有第一支請求
+      checking.value = false
     }
+  }
+
+  /** 以伺服器時鐘為準的「現在」，見 clockOffsetMs */
+  function serverNow(): Date {
+    return new Date(Date.now() + clockOffsetMs.value)
   }
 
   void check()
   const timer = window.setInterval(() => void check(), POLL_INTERVAL_MS)
   onScopeDispose(() => window.clearInterval(timer))
 
-  /** 已接上的監控項 */
+  /** 已接上的監控項：前三項是後端本身，後兩項是它依賴的外部服務 */
   function liveMonitors(): MonitorReading[] {
+    const now = serverNow()
     return [
       backendMonitor(
         responseMs.value,
@@ -107,8 +153,10 @@ export function useSystemHealth() {
         adminSettings.value.responseOkMs,
         adminSettings.value.responseDegradedMs,
       ),
-      dbPoolMonitor(dbPool.value),
+      databaseMonitor(dbPool.value, services.value, now),
       errorRateMonitor(requests.value),
+      serviceMonitor(services.value, LLM_DESKTOP_SERVICE, now),
+      serviceMonitor(services.value, OCR_SERVICE, now),
     ]
   }
 
@@ -129,7 +177,15 @@ export function useSystemHealth() {
     checking,
     dbPool,
     requests,
+    metricsLoaded,
+    metricsAvailable,
+    services,
+    queues,
+    config,
+    summary,
+    events,
     check,
+    serverNow,
     liveMonitors,
     pendingMonitors,
   }

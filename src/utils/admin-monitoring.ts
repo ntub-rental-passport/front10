@@ -9,6 +9,8 @@
  * 等真的接上後數值對不起來，反而會懷疑是不是接錯。
  */
 
+import type { StatusDotTone } from '@/src/components/admin/status-dot'
+
 export type MonitorState = 'ok' | 'degraded' | 'down' | 'unavailable'
 
 export const monitorStateLabels: Record<MonitorState, string> = {
@@ -16,6 +18,19 @@ export const monitorStateLabels: Record<MonitorState, string> = {
   degraded: '緩慢',
   down: '無回應',
   unavailable: '尚未接上',
+}
+
+/**
+ * MonitorState → StatusDot 的顏色。
+ *
+ * 監控卡原本自己寫死 emerald／amber（不在 design token 裡，也不跟深淺色切換），
+ * 總覽的健康條又另外有一份對照。現在兩邊都用這一份。
+ */
+export const MONITOR_STATE_TONE: Record<MonitorState, StatusDotTone> = {
+  ok: 'ok',
+  degraded: 'warn',
+  down: 'danger',
+  unavailable: 'idle',
 }
 
 /**
@@ -53,6 +68,13 @@ export interface MonitorReading {
   detail: string
   /** 後端端點是否已存在。false 時畫面顯示空狀態而非數字。 */
   connected: boolean
+  /**
+   * 取代 monitorStateLabels 的狀態文字。「尚未接上」只適合還沒實作的項目；
+   * 後端刻意不探測（沒設定位址）或探測停了，要講清楚是哪一種。
+   */
+  stateLabel?: string
+  /** 數值下方的補充說明，一行一句 */
+  notes?: string[]
 }
 
 /** 尚未接上的監控項目，資料形狀先定義好，之後只要換掉來源就會亮起來 */
@@ -246,4 +268,190 @@ export function errorRateMonitor(snapshot: RequestSnapshot | null): MonitorReadi
       `5xx ${snapshot.serverErrors} 筆、4xx ${snapshot.clientErrors} 筆`,
     connected: true,
   }
+}
+
+/* -------------------- 後端探測的服務（背景迴圈每 60 秒一次） -------------------- */
+
+/** backend/monitoring_service.py 的 service_states() */
+export interface ServiceState {
+  service: string
+  label: string
+  status: 'up' | 'down'
+  since: string | null
+  detail: string | null
+  checkedAt: string | null
+}
+
+/**
+ * 探測結果多久沒更新就不能信。
+ *
+ * 後端每 60 秒探測一次。背景迴圈停了的話，資料庫裡留著的是最後一次看到的
+ * 狀態 —— 那會是一顆永遠亮著的綠燈。超過這個時間就改顯示「資料過期」。
+ */
+export const SERVICE_STALE_MS = 5 * 60_000
+
+export function parseIsoTime(iso: string | null | undefined): number | null {
+  if (!iso) return null
+  const time = Date.parse(iso)
+  return Number.isNaN(time) ? null : time
+}
+
+/** 「5 分鐘」「2 小時 5 分」「3 天 4 小時」。只留兩個單位，再細就沒人在看了。 */
+export function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds))
+  if (total < 60) return '不到 1 分鐘'
+  const minutes = Math.floor(total / 60)
+  if (minutes < 60) return `${minutes} 分鐘`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return minutes % 60 ? `${hours} 小時 ${minutes % 60} 分` : `${hours} 小時`
+  const days = Math.floor(hours / 24)
+  return hours % 24 ? `${days} 天 ${hours % 24} 小時` : `${days} 天`
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+/** 「9/27 10:02」。監控紀錄只留 30 天，年份省略。 */
+export function formatShortDateTime(iso: string): string {
+  const time = parseIsoTime(iso)
+  if (time === null) return '—'
+  const date = new Date(time)
+  return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/** 「剛剛」「3 分鐘前」「2 小時 5 分前」。未來的時間（時鐘不同步）當成剛剛。 */
+export function formatTimeAgo(iso: string | null, now: Date): string {
+  const time = parseIsoTime(iso)
+  if (time === null) return '—'
+  const seconds = (now.getTime() - time) / 1000
+  return seconds < 60 ? '剛剛' : `${formatDuration(seconds)}前`
+}
+
+/**
+ * 跟另一個時間放在一起顯示的時間（「13:40 恢復」「最早 16:28」）。
+ * 跟 anchor 同一天就只寫時分，跨日才帶日期 —— 同一列裡日期寫兩次只是雜訊。
+ */
+export function formatPairedTime(anchorIso: string, iso: string): string {
+  const anchor = parseIsoTime(anchorIso)
+  const time = parseIsoTime(iso)
+  if (anchor === null || time === null) return '—'
+  const anchorDate = new Date(anchor)
+  const date = new Date(time)
+  const sameDay =
+    anchorDate.getFullYear() === date.getFullYear() &&
+    anchorDate.getMonth() === date.getMonth() &&
+    anchorDate.getDate() === date.getDate()
+  return sameDay ? `${pad(date.getHours())}:${pad(date.getMinutes())}` : formatShortDateTime(iso)
+}
+
+function isStale(state: ServiceState, now: Date): boolean {
+  const checkedAt = parseIsoTime(state.checkedAt)
+  return checkedAt === null || now.getTime() - checkedAt > SERVICE_STALE_MS
+}
+
+function downDetail(state: ServiceState, now: Date): string {
+  const since = parseIsoTime(state.since)
+  if (since === null) return ''
+  return `${formatShortDateTime(state.since!)} 起無法連線（已 ${formatDuration((now.getTime() - since) / 1000)}）`
+}
+
+export interface ServiceMeta {
+  id: string
+  label: string
+  description: string
+  /** 後端沒有設定這項服務的位址，所以根本沒有探測 */
+  unconfigured: string
+}
+
+export const LLM_DESKTOP_SERVICE: ServiceMeta = {
+  id: 'llm-desktop',
+  label: 'AI 模型（桌機）',
+  description: '合約分析與法規對話的主要模型，經 Cloudflare Tunnel 連到桌機',
+  unconfigured: '後端沒有設定桌機位址（LLM_TUNNEL_URL 或 OLLAMA_URL），所以沒有探測',
+}
+
+export const OCR_SERVICE: ServiceMeta = {
+  id: 'ocr',
+  label: 'OCR 服務',
+  description: '合約掃描的文字辨識，獨立的 Node 服務',
+  unconfigured: '後端沒有設定 OCR 服務位址（OCR_HEALTH_URL 或 OCR_API_PORT），所以沒有探測',
+}
+
+/**
+ * 後端探測的服務 → 監控項。
+ *
+ * `states` 是 null 代表這一輪讀不到監控數據（後端掛了、登入過期）。那時我們
+ * 不知道 AI 模型在不在 —— 不能說它掛了，也不能說它沒設定，只能說讀不到。
+ */
+export function serviceMonitor(
+  states: ServiceState[] | null,
+  meta: ServiceMeta,
+  now: Date,
+): MonitorReading {
+  const base = { id: meta.id, label: meta.label, description: meta.description }
+
+  if (states === null) {
+    return {
+      ...base,
+      state: 'unavailable',
+      stateLabel: '無法取得',
+      value: null,
+      detail: '讀取失敗，請確認後端狀態',
+      connected: false,
+    }
+  }
+
+  const state = states.find((item) => item.service === meta.id)
+  if (!state) {
+    return { ...base, state: 'unavailable', stateLabel: '未設定', value: null, detail: meta.unconfigured, connected: false }
+  }
+
+  if (isStale(state, now)) {
+    return {
+      ...base,
+      state: 'unavailable',
+      stateLabel: '資料過期',
+      value: null,
+      detail: state.checkedAt
+        ? `最後一次檢查是 ${formatShortDateTime(state.checkedAt)}，背景檢查可能停了`
+        : '後端沒有回報檢查時間',
+      connected: false,
+    }
+  }
+
+  if (state.status === 'down') {
+    return { ...base, state: 'down', value: state.detail ?? '連不上', detail: downDetail(state, now), connected: true }
+  }
+
+  // 寫「自 X 起正常」而不是「已連續在線 N 天」：後端自己停機的那段時間沒有人在檢查，
+  // 我們不知道那段期間它在不在，不能宣稱「連續」。
+  return {
+    ...base,
+    state: 'ok',
+    value: '在線',
+    detail: state.since ? `自 ${formatShortDateTime(state.since)} 起正常` : '',
+    connected: true,
+  }
+}
+
+/**
+ * 資料庫：連線池（每次讀 metrics 當下的數字）＋ 後端每 60 秒的連線探測。
+ *
+ * 連線池只看得到「借出去幾條」，看不出資料庫本身還在不在 —— 資料庫掛了，
+ * 池子照樣可以是 0 / 15 一片綠。所以探測失敗時以探測為準。
+ */
+export function databaseMonitor(
+  pool: DbPoolSnapshot | null,
+  states: ServiceState[] | null,
+  now: Date,
+): MonitorReading {
+  const reading: MonitorReading = {
+    ...dbPoolMonitor(pool),
+    label: '資料庫',
+    description: '連不連得上，以及連線池用了多少',
+  }
+  const probe = states?.find((item) => item.service === 'database')
+  if (!probe || probe.status !== 'down' || isStale(probe, now)) return reading
+  return { ...reading, state: 'down', value: probe.detail ?? '連不上', detail: downDetail(probe, now), connected: true }
 }

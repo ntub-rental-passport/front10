@@ -53,7 +53,7 @@ const { records: depositRecords, stats: depositStats } = useAdminDeposits()
 //
 // 這兩個是本頁唯一打真實後端的區塊（其餘都是展示資料，見下方個別區塊的註解）。
 const { realAccounts, realAccountsLoading, realAccountsError } = useAdminDirectory()
-const { dbPool, requests } = useSystemHealth()
+const { dbPool, requests, services, serverNow } = useSystemHealth()
 
 // 開關打開不代表此刻生效，排程可能尚未開始或已結束
 const maintenanceActive = computed(() => isMaintenanceActive(settings.value))
@@ -157,7 +157,9 @@ const { count: queueCount } = useAdminQueue()
 // requests），門檻判斷沿用既有的 src/utils/admin-monitoring.ts。LLM provider
 // 目前沒有對應的後端端點，buildHealthBarItems 會用 pendingMonitor 佔位，
 // 誠實顯示「無法取得」而不是假綠燈——見 admin-health-bar.ts 的說明。
-const healthBarItems = computed(() => buildHealthBarItems(dbPool.value, requests.value))
+const healthBarItems = computed(() =>
+  buildHealthBarItems(dbPool.value, requests.value, services.value, serverNow()),
+)
 
 // ── 最近登入的使用者（真實資料）──────────────────────────────────────
 //
@@ -265,9 +267,9 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
 
     <!--
       系統健康條：真實資料，來自 adminMetricsApi.ts 打的 /api/admin/metrics
-      （dbPool、requests），門檻判斷沿用 src/utils/admin-monitoring.ts。
-      讀不到或尚未接上（LLM provider）一律顯示「無法取得」，不放假的綠燈——
-      見 src/utils/admin-health-bar.ts。
+      （dbPool、requests、後端背景迴圈探測的 AI 模型），判定沿用
+      src/utils/admin-monitoring.ts，跟系統監控頁同一套。
+      讀不到就說讀不到、沒設定就說未設定，不放假的綠燈——見 src/utils/admin-health-bar.ts。
     -->
     <Card data-real="true" class="rounded-3xl">
       <CardContent class="px-5 pb-5 flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
