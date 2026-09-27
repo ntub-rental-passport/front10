@@ -13,6 +13,7 @@ const router = useRouter()
 const route = useRoute()
 const nickname = ref('')
 const errorMessage = ref('')
+const submitting = ref(false)
 
 async function handleStart(): Promise<void> {
   if (!nickname.value.trim()) {
@@ -21,8 +22,18 @@ async function handleStart(): Promise<void> {
   }
 
   errorMessage.value = ''
-  finishNicknameSetup(nickname.value)
-  await router.push(normalizeAuthRedirect(route.query.redirect) || '/app')
+  submitting.value = true
+  try {
+    // 存進資料庫成功才離開這一頁；失敗就留在原地顯示原因，
+    // 否則使用者會以為設定好了，下次登入卻又被要求輸入一次
+    const session = await finishNicknameSetup(nickname.value)
+    if (!session) throw new Error('登入狀態已失效，請重新登入。')
+    await router.push(normalizeAuthRedirect(route.query.redirect) || '/app')
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '儲存顯示名稱失敗，請稍後再試。'
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -64,8 +75,13 @@ async function handleStart(): Promise<void> {
           <p v-if="errorMessage" class="text-sm text-destructive">{{ errorMessage }}</p>
         </div>
 
-        <Button type="submit" size="lg" class="h-12 w-full rounded-[1rem] text-base">
-          開始使用
+        <Button
+          type="submit"
+          size="lg"
+          :disabled="submitting"
+          class="h-12 w-full rounded-[1rem] text-base"
+        >
+          {{ submitting ? '儲存中…' : '開始使用' }}
         </Button>
       </form>
     </div>

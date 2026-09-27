@@ -18,7 +18,6 @@ import {
 } from 'lucide-vue-next'
 import rentmateLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import {
-  needsNicknameSetup,
   registerWithGoogle,
   resolveRoleHome,
   saveGoogleRegistrationContext,
@@ -201,11 +200,18 @@ async function handleGoogleOAuthReturn(): Promise<void> {
       })
       return
     }
-    const session = registerWithGoogle(account.email, account.role, account.accessToken, account.userId)
-    const target = needsNicknameSetup(session)
-      ? '/welcome'
-      : account.redirectPath || resolveRoleHome(session.role)
-    await router.replace(target)
+    // Google 已經給了名字就直接沿用，不要再把使用者丟到暱稱設定頁 ——
+    // /welcome 是註冊的最後一步，登入不該經過它
+    const session = registerWithGoogle(
+      account.email,
+      account.role,
+      account.accessToken,
+      account.userId,
+      account.name,
+    )
+    await router.replace(
+      normalizeAuthRedirect(account.redirectPath) || resolveRoleHome(session.role),
+    )
   } catch (error) {
     loginError.value = error instanceof Error
       ? error.message

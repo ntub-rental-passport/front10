@@ -1,0 +1,8 @@
+{
+  "name": "台灣電力公司計畫性工作停電資料",
+  "datasetUrl": "https://data.gov.tw/dataset/26144",
+  "provider": "台灣電力股份有限公司",
+  "license": "政府資料開放授權條款-第1版",
+  "fetchedAt": "2026-09-18T18:55:55.007378+08:00",
+  "records": 10095
+}

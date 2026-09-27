@@ -12,7 +12,9 @@
  * 匯出機制：把對應的 print-only 區塊用 v-if 渲染後呼叫 window.print()，
  * 瀏覽器列印對話框可以選擇實體列印或「另存 PDF」，兩種需求一次滿足。
  */
-import SmartCaptureCamera, { type CapturePayload } from '@/src/components/handover/SmartCaptureCamera.vue'
+import SmartCaptureCamera, {
+  type CapturePayload,
+} from '@/src/components/handover/SmartCaptureCamera.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -30,7 +32,13 @@ import {
   FileText,
 } from 'lucide-vue-next'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card/index'
 import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
 import {
@@ -64,6 +72,7 @@ const showCameraDialog = ref(false)
 const activeTargetItem = ref<HandoverItem | null>(null)
 
 function openCaptureModal(item: HandoverItem) {
+  if (busy.value) return
   activeTargetItem.value = item
   showCameraDialog.value = true
 }
@@ -77,7 +86,11 @@ const {
   addItem,
   removeItem,
   addEvidence,
-  removeEvidence,
+  retryAnalysis,
+  busy,
+  analyzingItemId,
+  error,
+  reload,
 } = useHandover()
 
 // ---------- 新增點交項目 ---------- //
@@ -85,15 +98,16 @@ const {
 const showAddItemDialog = ref(false)
 const newItem = ref({ room: '', name: '' })
 
-function submitAddItem() {
+async function submitAddItem() {
   if (!currentProperty.value) return
   if (!newItem.value.room || !newItem.value.name) return
-  addItem({ room: newItem.value.room, name: newItem.value.name })
+  const saved = await addItem({ room: newItem.value.room, name: newItem.value.name })
+  if (!saved) return
   newItem.value = { room: '', name: '' }
   showAddItemDialog.value = false
 }
 
-// ---------- 拍照（mock，正式接 SmartCaptureCamera）---------- //
+// ---------- 拍照與上傳存證---------- //
 
 function resizeImage(file: File, maxWidth = 1024): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -133,60 +147,7 @@ function resizeImage(file: File, maxWidth = 1024): Promise<string> {
 }
 
 async function processPhotoWithAI(item: HandoverItem, dataUrl: string) {
-  // 1. 如果之前已經有照片，先清除舊的，避免堆疊多筆
-  removeEvidence(item.id, 'baseline')
-
-  // 2. 建立響應式證據物件
-  const evidenceObj = {
-    url: dataUrl,
-    aiLabel: 'AI 分析中...',
-    aiConfidence: 0,
-    note: '正在透過 NVIDIA VLM 診斷影像瑕疵特徵...',
-    isAnalyzing: true,
-    capturedAt: new Date().toISOString(),
-  }
-
-  // 寫入 Pinia / Store
-  addEvidence(item.id, 'baseline', evidenceObj as any)
-
-  try {
-    // 3. 發送 POST 請求至 FastAPI
-    const response = await fetch(`${(import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/api\/?$/, '')}/api/inspection/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_data: dataUrl,
-        item_name: item.name,
-        room_name: item.room,
-      }),
-    })
-
-    if (!response.ok) {
-      throw new Error(`伺服器回應錯誤: ${response.status}`)
-    }
-
-    const data = await response.json()
-    const vlm = data.vlm_result
-
-    // 4. 關鍵：直接在同一個物件上修改欄位！
-    // 取得當前畫面上正在顯示的那筆 evidence
-    const currentEv = firstEvidenceOfPhase(item, 'baseline') as any
-    const target = currentEv || evidenceObj
-
-    target.isAnalyzing = false
-    target.aiLabel = vlm.has_defect ? `${vlm.severity || '中度'}瑕疵` : '狀態完好'
-    target.aiConfidence = vlm.has_defect ? 0.95 : 0.99
-    target.note = `【${vlm.item_type || item.name}｜${vlm.cause_inference}】${vlm.defect_summary}`
-
-  } catch (error) {
-    console.error('VLM 診斷失敗:', error)
-    const currentEv = firstEvidenceOfPhase(item, 'baseline') as any
-    const target = currentEv || evidenceObj
-
-    target.isAnalyzing = false
-    target.aiLabel = 'AI 診斷失敗'
-    target.note = '分析逾時或網路異常，已保留原始存證照片。'
-  }
+  await addEvidence(item.id, 'baseline', { url: dataUrl })
 }
 
 // 相機拍照回傳
@@ -214,8 +175,9 @@ async function capturePhoto(itemId: string) {
     try {
       const dataUrl = await resizeImage(file)
       await processPhotoWithAI(targetItem, dataUrl)
-    } catch (error) {
-      console.error('圖片壓縮或處理失敗:', error)
+    } catch (cause) {
+      error.value = '無法讀取圖片，請重新選擇圖片檔案。'
+      console.error('圖片壓縮或處理失敗:', cause)
     }
   }
 
@@ -298,7 +260,18 @@ function fmtDate(iso: string) {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" :aria-busy="busy">
+    <p v-if="busy" role="status" class="text-sm text-muted-foreground">
+      正在載入或儲存點交資料，AI 分析可能需要一分鐘…
+    </p>
+    <div
+      v-if="error"
+      role="alert"
+      class="rounded-md border border-destructive p-3 text-sm text-destructive"
+    >
+      {{ error }}
+      <Button variant="outline" size="sm" :disabled="busy" @click="reload">重新載入</Button>
+    </div>
     <!-- =================== 螢幕檢視（列印時隱藏） =================== -->
     <div class="screen-only space-y-6">
       <!-- 麵包屑 + 標題 -->
@@ -323,6 +296,7 @@ function fmtDate(iso: string) {
                 <Building2 class="h-3 w-3" /> 目前租屋處
               </Label>
               <Select
+                :disabled="busy"
                 :model-value="currentProperty?.id ?? ''"
                 @update:model-value="(v) => selectProperty(String(v))"
               >
@@ -359,9 +333,7 @@ function fmtDate(iso: string) {
       <div v-if="currentProperty" class="flex flex-wrap items-end gap-3 border-b pb-3">
         <Dialog v-model:open="showAddItemDialog">
           <DialogTrigger as-child>
-            <Button size="sm">
-              <Plus class="mr-1 h-4 w-4" /> 新增點交項目
-            </Button>
+            <Button size="sm"> <Plus class="mr-1 h-4 w-4" /> 新增點交項目 </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
@@ -380,7 +352,11 @@ function fmtDate(iso: string) {
             </div>
             <DialogFooter>
               <Button variant="outline" @click="showAddItemDialog = false">取消</Button>
-              <Button @click="submitAddItem">新增</Button>
+              <Button
+                :disabled="busy || !newItem.room.trim() || !newItem.name.trim()"
+                @click="submitAddItem"
+                >新增</Button
+              >
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -445,6 +421,7 @@ function fmtDate(iso: string) {
                     variant="ghost"
                     size="sm"
                     class="text-destructive"
+                    :disabled="busy"
                     @click="removeItem(it.id)"
                   >
                     <Trash2 class="h-4 w-4" />
@@ -464,17 +441,21 @@ function fmtDate(iso: string) {
                     />
 
                     <div
-                      v-if="(firstBaseline(it) as any)?.isAnalyzing"
+                      v-if="analyzingItemId === it.id"
                       class="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] flex flex-col items-center justify-center text-white gap-2"
                     >
-                      <div class="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                      <span class="text-xs tracking-wider animate-pulse font-medium">AI 診斷特徵中...</span>
+                      <div
+                        class="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent"
+                      ></div>
+                      <span class="text-xs tracking-wider animate-pulse font-medium"
+                        >AI 診斷特徵中...</span
+                      >
                     </div>
                   </div>
 
                   <!-- 正在分析時的進度提示 -->
                   <div
-                    v-if="(firstBaseline(it) as any)?.isAnalyzing"
+                    v-if="analyzingItemId === it.id"
                     class="p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2"
                   >
                     <Sparkles class="h-3.5 w-3.5 animate-spin shrink-0" />
@@ -485,7 +466,9 @@ function fmtDate(iso: string) {
                   <div v-else class="space-y-2">
                     <div class="flex items-center gap-2 text-xs flex-wrap">
                       <Badge
-                        :variant="firstBaseline(it)!.aiLabel?.includes('嚴重') ? 'destructive' : 'outline'"
+                        :variant="
+                          firstBaseline(it)!.aiLabel?.includes('嚴重') ? 'destructive' : 'outline'
+                        "
                         class="gap-1 font-semibold"
                       >
                         <Sparkles class="h-3 w-3" />
@@ -497,6 +480,14 @@ function fmtDate(iso: string) {
                       </span>
                     </div>
 
+                    <Button
+                      v-if="!firstBaseline(it)!.vlmResult"
+                      variant="outline"
+                      size="sm"
+                      :disabled="busy"
+                      @click="retryAnalysis(it.id, firstBaseline(it)!.id)"
+                      >重新辨識</Button
+                    >
                     <div
                       v-if="firstBaseline(it)!.note"
                       class="p-2.5 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed break-words"
@@ -508,6 +499,7 @@ function fmtDate(iso: string) {
                       variant="outline"
                       size="sm"
                       class="w-full"
+                      :disabled="busy"
                       @click="openCaptureModal(it)"
                     >
                       重拍
@@ -522,25 +514,29 @@ function fmtDate(iso: string) {
                 >
                   <div class="text-center">
                     <span class="text-sm font-medium text-foreground">新增點交存證照片</span>
-                    <p class="text-xs text-muted-foreground mt-0.5">系統將自動進行清晰度與瑕疵辨識</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">
+                      系統將自動進行清晰度與瑕疵辨識
+                    </p>
                   </div>
 
                   <!-- 雙功能選擇按鈕 -->
                   <div class="flex gap-2 w-full max-w-[240px] mt-1">
                     <!-- 1. 開啟相機鏡頭 (調用 SmartCaptureCamera) -->
-                    <Button 
-                      size="sm" 
-                      class="flex-1 text-xs" 
+                    <Button
+                      size="sm"
+                      class="flex-1 text-xs"
+                      :disabled="busy"
                       @click="openCaptureModal(it)"
                     >
                       <Camera class="mr-1 h-3.5 w-3.5" /> 開啟相機
                     </Button>
 
                     <!-- 2. 本機相簿 / 檔案上傳 (調用原生 file input) -->
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      class="flex-1 text-xs" 
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      class="flex-1 text-xs"
+                      :disabled="busy"
                       @click="capturePhoto(it.id)"
                     >
                       📁 檔案上傳
@@ -556,7 +552,7 @@ function fmtDate(iso: string) {
       <Card v-else>
         <CardContent class="pt-6 text-center text-muted-foreground space-y-2">
           <Building2 class="h-8 w-8 mx-auto" />
-          <p>請先選擇或新增一個租屋處。</p>
+          <p>目前沒有可用的租客合約，請先建立租約後再進行點交。</p>
         </CardContent>
       </Card>
     </div>
@@ -576,11 +572,7 @@ function fmtDate(iso: string) {
         </div>
       </div>
 
-      <div
-        v-for="group in allGroupedByRoom"
-        :key="group.room"
-        class="checklist-room"
-      >
+      <div v-for="group in allGroupedByRoom" :key="group.room" class="checklist-room">
         <h2 class="checklist-room-title">{{ group.room }}</h2>
         <table class="checklist-table">
           <thead>
@@ -619,8 +611,7 @@ function fmtDate(iso: string) {
         </div>
         <div class="text-xs">匯出時間：{{ fmtDate(new Date().toISOString()) }}</div>
         <div class="text-xs mt-1">
-          共 {{ stats.total }} 項，其中 {{ stats.done }} 項已存證，涵蓋
-          {{ stats.rooms }} 個房間。
+          共 {{ stats.total }} 項，其中 {{ stats.done }} 項已存證，涵蓋 {{ stats.rooms }} 個房間。
         </div>
       </div>
 

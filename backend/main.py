@@ -36,9 +36,10 @@ logging.basicConfig(
 # 而它講的事情（「我打了一個 https 請求」）我們從別的地方都看得到。
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# 有設定 MySQL 時才建立資料表；Google 登入驗證本身不依賴資料庫。
+# 啟動只檢查結構，避免在舊資料庫中自動建立另一套表格。
 if engine is not None:
-    Base.metadata.create_all(bind=engine)
+    from schema_check import require_current_schema
+    require_current_schema(engine)
 
 @asynccontextmanager
 async def lifespan(app):

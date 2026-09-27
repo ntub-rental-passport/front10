@@ -11,7 +11,7 @@
  * （那會讓比對失去意義）。要修搬入照請回 baseline 頁。
  */
 
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Camera,
@@ -26,7 +26,13 @@ import {
   Lock,
 } from 'lucide-vue-next'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card/index'
 import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
 import {
@@ -52,11 +58,14 @@ const {
   selectProperty,
   itemsOfCurrentProperty,
   addEvidence,
-  removeEvidence,
   runAutoDiff,
+  retryAnalysis,
+  busy,
+  error,
+  reload,
 } = useHandover()
 
-// ---------- 拍照（mock）---------- //
+// ---------- 上傳退租存證---------- //
 
 function resizeImage(file: File, maxWidth = 1024): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -109,13 +118,10 @@ async function capturePhoto(itemId: string) {
 
     try {
       const dataUrl = await resizeImage(file)
-      addEvidence(itemId, 'checkout', {
-        url: dataUrl,
-        aiLabel: 'clear',
-        aiConfidence: 0.9,
-      })
-    } catch (error) {
-      console.error('圖片處理失敗', error)
+      await addEvidence(itemId, 'checkout', { url: dataUrl })
+    } catch (cause) {
+      error.value = '無法讀取圖片，請重新選擇圖片檔案。'
+      console.error('圖片處理失敗', cause)
     }
   }
 
@@ -125,19 +131,20 @@ async function capturePhoto(itemId: string) {
 // ---------- 過濾：只顯示「搬入已存證」的項目 ---------- //
 // 沒拍搬入照的項目在退租階段不參與比對，避免誤導使用者。
 const itemsWithBaseline = computed(() =>
-  itemsOfCurrentProperty.value.filter((it) => hasEvidenceInPhase(it, 'baseline'))
+  itemsOfCurrentProperty.value.filter((it) => hasEvidenceInPhase(it, 'baseline')),
 )
 
 const itemsWithoutBaseline = computed(() =>
-  itemsOfCurrentProperty.value.filter((it) => !hasEvidenceInPhase(it, 'baseline'))
+  itemsOfCurrentProperty.value.filter((it) => !hasEvidenceInPhase(it, 'baseline')),
 )
 
 // ---------- 統計 ---------- //
 
 const stats = computed(() => {
   const total = itemsWithBaseline.value.length
-  const checkoutDone = itemsWithBaseline.value.filter((it) => hasEvidenceInPhase(it, 'checkout'))
-    .length
+  const checkoutDone = itemsWithBaseline.value.filter((it) =>
+    hasEvidenceInPhase(it, 'checkout'),
+  ).length
   const diffDone = itemsWithBaseline.value.filter((it) => it.diff).length
   return { total, checkoutDone, diffDone }
 })
@@ -146,16 +153,26 @@ const stats = computed(() => {
 
 function firstEvidence(
   item: (typeof itemsOfCurrentProperty.value)[number],
-  phase: 'baseline' | 'checkout'
+  phase: 'baseline' | 'checkout',
 ) {
   return firstEvidenceOfPhase(item, phase)
 }
 
 const diffLabels: Record<HandoverDiff['type'], { text: string; cls: string }> = {
-  unchanged: { text: '狀態相同', cls: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' },
-  new_damage: { text: '新增瑕疵', cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
+  uncertain: { text: '無法判定', cls: 'bg-gray-100 text-gray-800' },
+  unchanged: {
+    text: '狀態相同',
+    cls: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
+  },
+  new_damage: {
+    text: '新增瑕疵',
+    cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100',
+  },
   missing: { text: '物品消失', cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
-  degraded: { text: '使用痕跡', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100' },
+  degraded: {
+    text: '使用痕跡',
+    cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
+  },
 }
 
 function fmtDate(iso: string) {
@@ -164,22 +181,39 @@ function fmtDate(iso: string) {
 
 // ---------- 匯出 PDF ---------- //
 
-const lastDiffRunAt = ref<string | null>(null)
-function handleRunDiff() {
-  runAutoDiff()
-  lastDiffRunAt.value = new Date().toISOString()
+const lastDiffRunAt = computed(
+  () =>
+    itemsOfCurrentProperty.value
+      .map((item) => item.diff?.computedAt)
+      .filter((value): value is string => !!value)
+      .sort()
+      .slice(-1)[0] ?? null,
+)
+async function handleRunDiff() {
+  await runAutoDiff()
 }
 
 function exportPdf() {
   window.alert(
     `（示意）將匯出「${currentProperty.value?.alias}」之退租證據包 PDF。\n` +
-      `已比對項目：${stats.value.diffDone} / ${stats.value.total}`
+      `已比對項目：${stats.value.diffDone} / ${stats.value.total}`,
   )
 }
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" :aria-busy="busy">
+    <p v-if="busy" role="status" class="text-sm text-muted-foreground">
+      正在載入或儲存點交資料，AI 分析可能需要一分鐘…
+    </p>
+    <div
+      v-if="error"
+      role="alert"
+      class="rounded-md border border-destructive p-3 text-sm text-destructive"
+    >
+      {{ error }}
+      <Button variant="outline" size="sm" :disabled="busy" @click="reload">重新載入</Button>
+    </div>
     <!-- 麵包屑 + 標題 -->
     <div class="space-y-2">
       <Button variant="ghost" size="sm" class="-ml-2" @click="router.push('/app/handover')">
@@ -202,6 +236,7 @@ function exportPdf() {
               <Building2 class="h-3 w-3" /> 目前租屋處
             </Label>
             <Select
+              :disabled="busy"
               :model-value="currentProperty?.id ?? ''"
               @update:model-value="(v) => selectProperty(String(v))"
             >
@@ -236,7 +271,7 @@ function exportPdf() {
 
     <!-- 工具列 -->
     <div v-if="currentProperty" class="flex flex-wrap items-center gap-2 border-b pb-3">
-      <Button size="sm" @click="handleRunDiff" :disabled="stats.checkoutDone === 0">
+      <Button size="sm" @click="handleRunDiff" :disabled="busy || stats.checkoutDone === 0">
         <ArrowLeftRight class="mr-1 h-4 w-4" /> 執行自動差異比對
       </Button>
       <Button variant="outline" size="sm" @click="exportPdf" :disabled="stats.diffDone === 0">
@@ -271,14 +306,13 @@ function exportPdf() {
           </div>
         </CardHeader>
         <CardContent>
+          <p v-if="it.diff" class="mb-3 text-sm">{{ it.diff.summary }}</p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <!-- 左：搬入（唯讀） -->
             <div class="space-y-1">
               <div class="flex items-center justify-between text-xs">
                 <span class="font-medium">搬入存證</span>
-                <Badge variant="outline" class="gap-1">
-                  <Lock class="h-3 w-3" /> 唯讀
-                </Badge>
+                <Badge variant="outline" class="gap-1"> <Lock class="h-3 w-3" /> 唯讀 </Badge>
               </div>
               <div class="aspect-video bg-muted rounded-md overflow-hidden">
                 <img
@@ -325,12 +359,28 @@ function exportPdf() {
                     variant="ghost"
                     size="sm"
                     class="h-6 px-2 text-destructive"
-                    @click="removeEvidence(it.id, firstEvidence(it, 'checkout')!.id)"
+                    :disabled="busy"
+                    @click="capturePhoto(it.id)"
                   >
                     重拍
                   </Button>
                 </div>
-                <Badge v-if="firstEvidence(it, 'checkout')!.aiConfidence" variant="outline" class="gap-1">
+                <p class="text-xs text-muted-foreground">
+                  {{ firstEvidence(it, 'checkout')!.note }}
+                </p>
+                <Button
+                  v-if="!firstEvidence(it, 'checkout')!.vlmResult"
+                  variant="outline"
+                  size="sm"
+                  :disabled="busy"
+                  @click="retryAnalysis(it.id, firstEvidence(it, 'checkout')!.id)"
+                  >重新辨識</Button
+                >
+                <Badge
+                  v-if="firstEvidence(it, 'checkout')!.aiConfidence"
+                  variant="outline"
+                  class="gap-1"
+                >
                   <Sparkles class="h-3 w-3" />
                   AI 清晰度
                   {{ (firstEvidence(it, 'checkout')!.aiConfidence! * 100).toFixed(0) }}%
@@ -340,6 +390,7 @@ function exportPdf() {
               <button
                 v-else
                 class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                :disabled="busy"
                 @click="capturePhoto(it.id)"
               >
                 <Camera class="h-6 w-6 mb-1" />
@@ -353,13 +404,9 @@ function exportPdf() {
       <!-- 提示：沒搬入照的項目 -->
       <Card v-if="itemsWithoutBaseline.length > 0">
         <CardContent class="pt-6 text-sm text-muted-foreground">
-          <p class="mb-2">
-            以下 {{ itemsWithoutBaseline.length }} 項缺少搬入存證，無法進行比對：
-          </p>
+          <p class="mb-2">以下 {{ itemsWithoutBaseline.length }} 項缺少搬入存證，無法進行比對：</p>
           <ul class="list-disc pl-5">
-            <li v-for="it in itemsWithoutBaseline" :key="it.id">
-              {{ it.room }} · {{ it.name }}
-            </li>
+            <li v-for="it in itemsWithoutBaseline" :key="it.id">{{ it.room }} · {{ it.name }}</li>
           </ul>
           <Button
             variant="link"
@@ -376,7 +423,7 @@ function exportPdf() {
     <Card v-else>
       <CardContent class="pt-6 text-center text-muted-foreground space-y-2">
         <Building2 class="h-8 w-8 mx-auto" />
-        <p>請先選擇或新增一個租屋處。</p>
+        <p>目前沒有可用的租客合約，請先建立租約後再進行點交。</p>
       </CardContent>
     </Card>
   </div>

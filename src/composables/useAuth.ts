@@ -6,6 +6,7 @@ import {
   logoutFromServer,
   resendRegistration,
   startRegistration,
+  updateDisplayName,
   verifyRegistration,
   type GoogleOAuthSession,
 } from '@/src/services/authApi'
@@ -102,7 +103,8 @@ function saveUserProfiles(profiles: Record<string, UserProfile>): void {
 function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserProfile {
   const profiles = getUserProfiles()
   const normalizedEmail = email.trim().toLowerCase()
-  const currentProfile = profiles[normalizedEmail] ?? {
+  const profileKey = `${normalizedEmail}:${updates.role ?? "tenant"}`
+  const currentProfile = profiles[profileKey] ?? {
     email: normalizedEmail,
     emailVerified: false,
     nickname: null,
@@ -114,7 +116,7 @@ function upsertUserProfile(email: string, updates: Partial<UserProfile>): UserPr
     email: normalizedEmail,
   }
 
-  profiles[normalizedEmail] = nextProfile
+  profiles[profileKey] = nextProfile
   saveUserProfiles(profiles)
   return nextProfile
 }
@@ -127,7 +129,7 @@ function createSession(
 ): AuthSession {
   const session: AuthSession = {
     email: profile.email,
-    userId: userId === null || userId === undefined ? `email:${profile.email}` : String(userId),
+    userId: userId === null || userId === undefined ? `email:${profile.email}:${role}` : String(userId),
     isAuthenticated: true,
     role,
     emailVerified: profile.emailVerified,
@@ -188,6 +190,7 @@ export function isSessionExpired(session: AuthSession | null, now: number = Date
 
 export function signIn(role: AuthRole, email: string): AuthSession {
   const profile = upsertUserProfile(email, {
+    role,
     emailVerified: true,
   })
 
@@ -279,10 +282,12 @@ export function registerWithGoogle(
   role: AuthRole = 'tenant',
   accessToken?: string | null,
   userId?: string | number | null,
+  displayName: string | null = null,
 ): AuthSession {
   const profile = upsertUserProfile(email, {
+    role,
     emailVerified: true,
-    nickname: null,
+    nickname: displayName,
   })
 
   return createSession(role, profile, accessToken, userId)
@@ -363,13 +368,11 @@ export async function startEmailRegistration(
   email: string,
   password: string,
   role: AuthRole = 'tenant',
-  inviteCode = '',
 ): Promise<PendingRegistration> {
   const result = await startRegistration({
     email: email.trim().toLowerCase(),
     password,
     role: role === 'landlord' ? 'landlord' : 'tenant',
-    inviteCode: inviteCode.trim() || undefined,
   })
   const pending: PendingRegistration = {
     registrationId: result.registrationId,
@@ -415,11 +418,9 @@ export function clearGoogleRegistrationContext(): void {
 
 export async function startGoogleEmailRegistration(
   context: GoogleRegistrationContext,
-  inviteCode = '',
 ): Promise<PendingRegistration> {
   const result = await startRegistration({
     role: context.role,
-    inviteCode: inviteCode.trim() || undefined,
     googleRegistrationToken: context.registrationToken,
   })
   const pending: PendingRegistration = {
@@ -468,20 +469,30 @@ export async function completeEmailVerification(code: string): Promise<AuthSessi
   return createSession(verified.role, profile, verified.accessToken, verified.userId)
 }
 
-export function finishNicknameSetup(nickname: string): AuthSession | null {
+/**
+ * 寫入顯示名稱：先存進後端資料庫，成功了才更新本機 session。
+ *
+ * 順序很重要 —— 反過來的話，後端存檔失敗時本機仍顯示已設定暱稱，
+ * 使用者換裝置登入就會發現名字不見了，而且沒有任何地方提示他失敗過。
+ */
+export async function finishNicknameSetup(nickname: string): Promise<AuthSession | null> {
   const session = getAuthSession()
   if (!session) return null
 
   const cleanNickname = nickname.trim()
-  const profile = upsertUserProfile(session.email, {
-    nickname: cleanNickname || null,
-    emailVerified: session.emailVerified,
+  if (!cleanNickname) return session
+
+  const updated = await updateDisplayName(cleanNickname)
+  const profile = upsertUserProfile(updated.email, {
+    role: updated.role,
+    nickname: updated.displayName,
+    emailVerified: true,
   })
 
-  return createSession(session.role, profile, session.accessToken, session.userId)
+  return createSession(updated.role, profile, updated.accessToken, updated.userId)
 }
 
 export function getAuthenticatedUserId(session: AuthSession | null = getAuthSession()): string {
   if (!session) return ''
-  return session.userId || `email:${session.email.trim().toLowerCase()}`
+  return session.userId || `email:${session.email.trim().toLowerCase()}:${session.role}`
 }

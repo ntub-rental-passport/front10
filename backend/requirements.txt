@@ -13,3 +13,4 @@ PyJWT
 httpx
 openai
 Pillow
+cryptography

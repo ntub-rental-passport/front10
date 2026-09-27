@@ -73,7 +73,7 @@ function toggleEdit(): void {
   isEditing.value = !isEditing.value
 }
 
-function saveProfile(): void {
+async function saveProfile(): Promise<void> {
   const cleanName = draftName.value.trim()
   const cleanPhone = draftPhone.value.trim()
   if (!cleanName || !cleanPhone) {
@@ -81,9 +81,15 @@ function saveProfile(): void {
     return
   }
 
+  try {
+    await finishNicknameSetup(cleanName)
+  } catch (error) {
+    showFeedback(error instanceof Error ? error.message : '暱稱儲存失敗，請稍後再試')
+    return
+  }
+
   displayName.value = cleanName
   phone.value = cleanPhone
-  finishNicknameSetup(cleanName)
   isEditing.value = false
   showFeedback('個人資料已更新')
 }

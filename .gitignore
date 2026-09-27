@@ -64,3 +64,4 @@ venv/
 # 補這條規則避免它哪天又被 git add . 加回去。
 docker-compose.yml
 docker-compose.*.yml
+backend/uploads/inspection/
