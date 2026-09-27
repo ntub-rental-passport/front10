@@ -4,6 +4,7 @@
 #
 # 備份「git 裡沒有、無法從程式碼重建」的東西：
 #   - MySQL 資料（使用者、註冊資料等）
+#   - 後端 SQLite（稽核紀錄、平台設定、監控事件、排程通知、垃圾車提醒；在 data/garbage/）
 #   - .env 正式環境金鑰
 #   - key/ Google 憑證
 #   - certbot 憑證 volume（可重簽，但備份省得重跑 ACME）
@@ -37,6 +38,36 @@ docker compose exec -T mysql sh -c \
   > "$WORK/db.sql"
 echo "      $(wc -l < "$WORK/db.sql") 行、$(du -h "$WORK/db.sql" | cut -f1)"
 
+# ---------- 1b. 後端 SQLite ----------
+# 稽核紀錄、平台設定、監控事件、排程通知、垃圾車提醒是 fastapi 自己的 SQLite，
+# 放在 data/garbage/（容器裡的 /app/var），不在 MySQL 裡，mysqldump 備不到。
+# 在容器裡用 SQLite 的線上備份 API 複製：服務正在寫入也能拿到一致的快照；
+# 直接 cp 寫到一半的檔案，可能備到一個打不開的資料庫。
+# 這步失敗（例如 fastapi 沒在跑）只警告不中止 —— MySQL 與 .env 還是要備份。
+echo "      匯出後端 SQLite..."
+if docker compose exec -T fastapi python - > "$WORK/sqlite.tar" <<'PY'
+import sqlite3
+import sys
+import tarfile
+import tempfile
+from pathlib import Path
+
+with tempfile.TemporaryDirectory() as tmp, tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+    for source in sorted(Path("/app/var").glob("*.db")):
+        copy = Path(tmp) / source.name
+        src, dst = sqlite3.connect(source), sqlite3.connect(copy)
+        src.backup(dst)
+        src.close()
+        dst.close()
+        archive.add(copy, arcname=source.name)
+PY
+then
+  echo "      $(tar tf "$WORK/sqlite.tar" | wc -l | tr -d ' ') 個 SQLite 檔、$(du -h "$WORK/sqlite.tar" | cut -f1)"
+else
+  rm -f "$WORK/sqlite.tar"
+  echo "      ⚠️ 後端 SQLite 這次沒備份到（fastapi 容器沒在跑？），MySQL 與 .env 照常備份"
+fi
+
 # ---------- 2. 環境變數與金鑰 ----------
 echo "[2/5] 複製 .env 與金鑰..."
 cp "$PROJECT_DIR/.env" "$WORK/env"
@@ -68,6 +99,7 @@ RentMate 應用層備份
 主機：$(hostname)
 內容：
   db.sql              MySQL 完整 dump（115-RentMate）
+  sqlite.tar          後端 SQLite：稽核紀錄、平台設定、監控、排程通知、垃圾車提醒
   env                 正式環境 .env（含 JWT_SECRET、MySQL 密碼、SMTP、OAuth）
   key/                Google Vision / OAuth 金鑰
   certbot_conf.tar.gz Let's Encrypt 憑證

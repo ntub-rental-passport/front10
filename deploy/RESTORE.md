@@ -10,7 +10,7 @@
 | 來源 | 提供什麼 |
 |------|---------|
 | **git repo**（本機 `teddy-dev` 分支） | 程式碼、Dockerfile、compose、nginx/fail2ban 設定 |
-| **備份 tar.gz** | 資料庫、`.env` 金鑰、Vision 憑證、TLS 憑證 |
+| **備份 tar.gz** | 資料庫（MySQL 與後端 SQLite）、`.env` 金鑰、Vision 憑證、TLS 憑證 |
 | **本指南** | 把兩者組回可運行系統的步驟 |
 
 ---
@@ -45,7 +45,13 @@ docker run --rm -v rentmate_certbot_conf:/dst \
   -v "$PWD/rentmate-backup-<時間戳>":/src alpine \
   sh -c 'tar xzf /src/certbot_conf.tar.gz -C /dst'
 
-# 7. 起全部
+# 7. 還原後端 SQLite（稽核紀錄、平台設定、監控、排程通知、垃圾車提醒）
+#    一定要在 fastapi 起來之前：服務一啟動就會建立空的新檔。
+#    2026-09-28 以前的備份沒有 sqlite.tar，跳過這步。
+mkdir -p data/garbage
+tar xf rentmate-backup-<時間戳>/sqlite.tar -C data/garbage
+
+# 8. 起全部
 docker compose up -d --build
 ```
 
@@ -62,7 +68,7 @@ sudo usermod -aG docker $USER   # 重新登入生效
 #    在本機執行：
 #    rsync -avz --exclude node_modules --exclude .git ... ./ user@新IP:~/rentmate/
 
-# 3. 之後同情境 A 的步驟 2～7
+# 3. 之後同情境 A 的步驟 2～8
 
 # 4. 主機層防護全部重建（原始檔都在 deploy/）
 sudo apt install -y fail2ban
