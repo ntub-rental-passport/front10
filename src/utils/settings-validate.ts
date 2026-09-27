@@ -6,14 +6,6 @@ export type SettingsErrors = Partial<Record<keyof SystemSettings, string>>
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PERCENT_MIN = 1
 const PERCENT_MAX = 100
-const LOGIN_ATTEMPTS_MIN = 1
-const LOGIN_ATTEMPTS_MAX = 20
-const LOCKOUT_MINUTES_MIN = 1
-const LOCKOUT_MINUTES_MAX = 1440
-const SESSION_MINUTES_MIN = 5
-const SESSION_MINUTES_MAX = 10080
-const PASSWORD_LENGTH_MIN = 6
-const PASSWORD_LENGTH_MAX = 64
 const AUDIT_RETENTION_DAYS_MAX = 3650
 const OVERDUE_DAYS_MIN = 1
 const OVERDUE_DAYS_MAX = 90
@@ -85,38 +77,6 @@ export function validateSettings(settings: SystemSettings): SettingsErrors {
   )
   if (invalidAllowlistEntry) {
     errors.maintenanceAllowlist = `「${invalidAllowlistEntry}」不是有效的 Email`
-  }
-
-  if (
-    !Number.isFinite(settings.loginMaxAttempts) ||
-    settings.loginMaxAttempts < LOGIN_ATTEMPTS_MIN ||
-    settings.loginMaxAttempts > LOGIN_ATTEMPTS_MAX
-  ) {
-    errors.loginMaxAttempts = '登入失敗次數需介於 1 到 20'
-  }
-
-  if (
-    !Number.isFinite(settings.loginLockoutMinutes) ||
-    settings.loginLockoutMinutes < LOCKOUT_MINUTES_MIN ||
-    settings.loginLockoutMinutes > LOCKOUT_MINUTES_MAX
-  ) {
-    errors.loginLockoutMinutes = '鎖定時間需介於 1 到 1440 分鐘'
-  }
-
-  if (
-    !Number.isFinite(settings.sessionTimeoutMinutes) ||
-    settings.sessionTimeoutMinutes < SESSION_MINUTES_MIN ||
-    settings.sessionTimeoutMinutes > SESSION_MINUTES_MAX
-  ) {
-    errors.sessionTimeoutMinutes = 'Session 逾時需介於 5 到 10080 分鐘'
-  }
-
-  if (
-    !Number.isFinite(settings.passwordMinLength) ||
-    settings.passwordMinLength < PASSWORD_LENGTH_MIN ||
-    settings.passwordMinLength > PASSWORD_LENGTH_MAX
-  ) {
-    errors.passwordMinLength = '密碼最短長度需介於 6 到 64'
   }
 
   // 0 或負數是刻意支援的「不限制」值，不是錯誤，只擋非數字與離譜的上限

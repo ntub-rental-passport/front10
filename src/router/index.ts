@@ -209,7 +209,7 @@ router.beforeEach(async (to) => {
   let session = getAuthSession()
 
   // Session 逾時：清掉再往下走，後續的 requiresAuth 檢查會自然導向登入頁
-  if (isSessionExpired(session, adminSettings.value.sessionTimeoutMinutes)) {
+  if (isSessionExpired(session)) {
     signOut()
     session = null
   }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/src/components/layouts/AuthLayout.vue'
 import { Button } from '@/components/ui/button/index'
@@ -26,7 +26,11 @@ import {
 } from '@/src/composables/useAuth'
 import { getGoogleLoginUrl } from '@/src/services/authApi'
 import { normalizeAuthRedirect } from '@/src/utils/auth-redirect'
-import { adminSettings } from '@/src/composables/admin/useAdminSettings'
+import {
+  DEFAULT_PASSWORD_MAX_LENGTH,
+  DEFAULT_PASSWORD_MIN_LENGTH,
+  fetchPublicSettings,
+} from '@/src/services/platformSettingsApi'
 import {
   authIdentityOptions,
   getAuthIdentity,
@@ -85,9 +89,21 @@ const loginLink = computed(() => ({
 
 const redirectTarget = computed(() => normalizeAuthRedirect(route.query.redirect))
 
-// 密碼最短長度由系統設定決定，改設定後註冊頁的規則與提示都會跟著變
-const passwordMinLength = computed(() => adminSettings.value.passwordMinLength)
-const PASSWORD_MAX_LENGTH = 20
+// 密碼長度以後端為準（後台「系統設定」可調最短長度，見 backend/platform_settings.py）。
+// 以前讀的是瀏覽器裡的設定，管理員改了只有他自己那台的註冊頁會跟著變。
+// 讀不到時先用後端的預設值；送出後後端還會再檢查一次，這裡只是提早提示。
+//
+// 上限也改跟後端一致（128）：原本前端自己限 20，最短長度一旦設到 20 以上，
+// 就沒有任何密碼能通過了。
+const passwordMinLength = ref(DEFAULT_PASSWORD_MIN_LENGTH)
+const passwordMaxLength = ref(DEFAULT_PASSWORD_MAX_LENGTH)
+
+onMounted(async () => {
+  const settings = await fetchPublicSettings()
+  if (!settings) return
+  passwordMinLength.value = settings.passwordMinLength
+  passwordMaxLength.value = settings.passwordMaxLength
+})
 
 const passwordRules = computed<PasswordRule[]>(() => {
   const password = form.value.password
@@ -95,9 +111,9 @@ const passwordRules = computed<PasswordRule[]>(() => {
   return [
     {
       id: 'length',
-      label: `${passwordMinLength.value}-${PASSWORD_MAX_LENGTH} 個字元`,
+      label: `${passwordMinLength.value}-${passwordMaxLength.value} 個字元`,
       met:
-        password.length >= passwordMinLength.value && password.length <= PASSWORD_MAX_LENGTH,
+        password.length >= passwordMinLength.value && password.length <= passwordMaxLength.value,
     },
     {
       id: 'uppercase',

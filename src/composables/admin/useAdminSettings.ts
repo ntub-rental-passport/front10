@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
+import { describeSettingChanges } from '@/src/utils/settings-labels'
 import { migrateSettings, seedSettings, type SystemSettings } from '@/src/mocks/admin-seed'
 
 const settings = createAdminCollection<SystemSettings>('settings', seedSettings, migrateSettings)
@@ -27,9 +28,13 @@ export function useAdminSettings() {
       )
     }
 
-    const others = changed.filter((key) => key !== 'maintenanceMode')
+    // 中文欄位名＋前後值（「報修逾期提醒門檻：7 → 10 天」），以前寫的是英文欄位名
+    const others = describeSettingChanges(
+      { ...previous, maintenanceMode: next.maintenanceMode },
+      next,
+    )
     if (others.length > 0) {
-      logAction('系統設定', '平台設定', `更新欄位：${others.join('、')}`)
+      logAction('系統設定', '平台設定', others.join('；'))
     }
   }
 

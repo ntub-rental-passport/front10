@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { ArrowLeft, BadgeCheck, ExternalLink, Plus, Send, ShieldAlert } from 'lucide-vue-next'
+import { ArrowLeft, BadgeCheck, ChevronDown, ExternalLink, Plus, Send, ShieldAlert } from 'lucide-vue-next'
 import FeatureOutageBanner from '@/src/components/admin/FeatureOutageBanner.vue'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
@@ -88,6 +88,7 @@ import StatusDot from '@/src/components/admin/StatusDot.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { fetchAdminAudit, type ServerAuditEvent } from '@/src/services/adminAuditApi'
 import { latestSuspension, suspensionNote } from '@/src/utils/admin-audit-sources'
+import { planInclusions } from '@/src/utils/admin-plan-summary'
 
 const route = useRoute()
 const router = useRouter()
@@ -195,6 +196,22 @@ const inTrial = computed(
 )
 
 /** 試用期間實際生效的方案，可能與他名下掛的不同 */
+/*
+ * 「方案包含什麼」：方案內容只由程式定義（系統設定頁不再能改），需要查的時機
+ * 是處理某個人的時候 —— 所以放在他的方案旁邊，連他用了多少一起講。
+ * 逐人用量目前只有契約分析有記錄，其他功能只列上限。
+ */
+const planDetailsOpen = ref(false)
+const planItems = computed(() => {
+  const subscription = row.value?.subscription
+  const plan = effectivePlan.value
+  if (!subscription || !plan) return []
+  return planInclusions(plan.features, {
+    used: { 'contract-analysis': subscription.aiUsed },
+    extraCredits: subscription.extraCredits,
+  })
+})
+
 const effectivePlan = computed<SubscriptionPlan | null>(() => {
   const subscription = row.value?.subscription
   if (!subscription) return null
@@ -602,6 +619,34 @@ function openSendDialog(): void {
                     </span>
                   </p>
                 </div>
+              </div>
+
+              <div class="rounded-2xl border">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between gap-2 rounded-2xl px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-muted/40"
+                  :aria-expanded="planDetailsOpen"
+                  @click="planDetailsOpen = !planDetailsOpen"
+                >
+                  <span>
+                    {{ effectivePlan.name }}包含什麼
+                    <span v-if="inTrial" class="font-normal text-muted-foreground">（試用中）</span>
+                  </span>
+                  <ChevronDown
+                    class="h-4 w-4 shrink-0 transition-transform"
+                    :class="planDetailsOpen ? 'rotate-180' : ''"
+                    aria-hidden="true"
+                  />
+                </button>
+                <dl
+                  v-if="planDetailsOpen"
+                  class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 border-t px-4 py-3 text-sm"
+                >
+                  <template v-for="item in planItems" :key="item.key">
+                    <dt class="text-foreground/70">{{ item.label }}</dt>
+                    <dd :class="item.included ? 'font-medium' : 'text-muted-foreground'">{{ item.text }}</dd>
+                  </template>
+                </dl>
               </div>
 
               <div class="grid gap-4 sm:grid-cols-2">

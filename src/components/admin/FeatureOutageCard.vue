@@ -2,8 +2,8 @@
 /**
  * 系統監控頁的功能維護開關。
  *
- * 這裡關的是「功能故障時對所有使用者暫停」，跟方案權益（PlanEntitlementsCard，
- * 哪個方案能用哪些功能）是兩回事，不共用開關也不共用文案——見卡片說明文字。
+ * 這裡關的是「功能故障時對所有使用者暫停」，跟方案權益（哪個方案能用哪些功能，
+ * 由程式定義、後台不能改）是兩回事，不共用開關也不共用文案——見卡片說明文字。
  */
 import { computed, reactive, ref } from 'vue'
 import { Button } from '@/components/ui/button/index'

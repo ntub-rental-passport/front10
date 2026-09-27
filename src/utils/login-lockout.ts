@@ -22,6 +22,15 @@ export interface LockoutPolicy {
   loginLockoutMinutes: number
 }
 
+/**
+ * 登入頁的失敗計數用這組固定值。
+ *
+ * 以前可以在後台設定頁調，但那只改得到管理員自己那台瀏覽器，而且這個計數
+ * 存在使用者的瀏覽器裡、清掉就能繞過 —— 它只是提示，不是防護。真正擋暴力
+ * 嘗試的是伺服器的限速，設定頁現在照實這樣寫。
+ */
+export const LOGIN_LOCKOUT_POLICY: LockoutPolicy = { loginMaxAttempts: 5, loginLockoutMinutes: 15 }
+
 export interface LockoutState {
   locked: boolean
   /** 尚未鎖定時，還剩幾次機會。 */

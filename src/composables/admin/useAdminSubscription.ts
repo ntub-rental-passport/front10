@@ -1,3 +1,4 @@
+import { computed } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { useAdminAudit } from './useAdminAudit'
 import { adminUsersCollection } from './useAdminUsers'
@@ -13,13 +14,15 @@ import { ADMIN_DATASET_VERSION, discardLegacy } from '@/src/utils/admin-collecti
 import { isSubscriptionExpiring } from '@/src/utils/admin-user-directory'
 import { PLAN_FEATURES, type PlanFeatureKey } from '@/src/utils/admin-entitlements'
 
-// 舊格式的方案把契約分析額度存在 aiQuota，沒有 features 這張功能矩陣，一樣整批重 seed
-export const adminPlansCollection = createAdminCollection<SubscriptionPlan[]>(
-  'plans',
-  seedPlans,
-  discardLegacy(seedPlans, 'features'),
-)
-const plans = adminPlansCollection
+/**
+ * 方案內容只由程式定義（mocks/admin/subscription.ts 的 seedPlans）。
+ *
+ * 以前可以在系統設定頁改，改完存在瀏覽器裡。權益是產品決策，不該由後台隨手
+ * 調整，而且只改得到那一台瀏覽器。以前改過、存在 localStorage 的舊版本不再讀取。
+ */
+const PLANS: readonly SubscriptionPlan[] = seedPlans()
+export const adminPlans = computed<SubscriptionPlan[]>(() => [...PLANS])
+const plans = adminPlans
 
 // 舊格式用 userEmail 指向使用者，且沒有單次加購欄位，直接丟棄重 seed。
 // marker 用 extraCredits 而非 userId —— 前者是這一版才出現的欄位。

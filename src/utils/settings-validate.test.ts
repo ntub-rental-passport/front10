@@ -164,34 +164,6 @@ describe('維護排程與白名單驗證', () => {
   })
 })
 
-describe('安全性設定驗證', () => {
-  const cases: Array<[keyof SystemSettings, number, string | undefined]> = [
-    ['loginMaxAttempts', 0, '登入失敗次數需介於 1 到 20'],
-    ['loginMaxAttempts', 21, '登入失敗次數需介於 1 到 20'],
-    ['loginMaxAttempts', 5, undefined],
-    ['loginLockoutMinutes', 0, '鎖定時間需介於 1 到 1440 分鐘'],
-    ['loginLockoutMinutes', 1441, '鎖定時間需介於 1 到 1440 分鐘'],
-    ['loginLockoutMinutes', 15, undefined],
-    ['sessionTimeoutMinutes', 4, 'Session 逾時需介於 5 到 10080 分鐘'],
-    ['sessionTimeoutMinutes', 10081, 'Session 逾時需介於 5 到 10080 分鐘'],
-    ['sessionTimeoutMinutes', 120, undefined],
-    ['passwordMinLength', 5, '密碼最短長度需介於 6 到 64'],
-    ['passwordMinLength', 65, '密碼最短長度需介於 6 到 64'],
-    ['passwordMinLength', 8, undefined],
-  ]
-
-  for (const [field, value, expected] of cases) {
-    it(`${field} = ${value} → ${expected ?? '通過'}`, () => {
-      const result = validateSettings({ ...baseSettings(), [field]: value })
-      expect(result[field]).toBe(expected)
-    })
-  }
-
-  it('非數字一律報錯', () => {
-    const result = validateSettings({ ...baseSettings(), sessionTimeoutMinutes: Number.NaN })
-    expect(result.sessionTimeoutMinutes).toBe('Session 逾時需介於 5 到 10080 分鐘')
-  })
-})
 
 describe('稽核保留天數與逾期門檻驗證', () => {
   it('保留天數為 0 或負數代表不限制，不是錯誤', () => {

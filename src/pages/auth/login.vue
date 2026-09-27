@@ -24,9 +24,9 @@ import {
   signInWithEmail,
   type EmailSignInError,
 } from '@/src/composables/useAuth'
-import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 import {
   clearAttempts,
+  LOGIN_LOCKOUT_POLICY,
   evaluateLockout,
   getAttemptRecord,
   recordFailure,
@@ -129,7 +129,7 @@ async function handleLogin(): Promise<void> {
   loginError.value = ''
   if (emailState.value === 'error' || passwordState.value === 'error') return
 
-  const policy = adminSettings.value
+  const policy = LOGIN_LOCKOUT_POLICY
   const lockout = evaluateLockout(getAttemptRecord(email.value), policy)
   if (lockout.locked) {
     loginError.value = `登入失敗次數過多，請於 ${lockout.unlocksInMinutes} 分鐘後再試。`

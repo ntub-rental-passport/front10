@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, type Ref } from 'vue'
 import { createAdminCollection } from './useAdminStore'
 import { adminSettings } from './useAdminSettings'
 import {
@@ -7,6 +7,7 @@ import {
   type AiProvider,
   type AiProviderId,
   type AiUsageDaily,
+  type SystemSettings,
 } from '@/src/mocks/admin-seed'
 import {
   dailyAverage,
@@ -38,13 +39,26 @@ export interface ProviderUsage {
   unset: boolean
 }
 
-function quotaFor(provider: AiProviderId): number {
-  return provider === 'gemini'
-    ? adminSettings.value.platformGeminiTokenQuota
-    : adminSettings.value.platformVisionPageQuota
-}
+type QuotaSettings = Pick<
+  SystemSettings,
+  | 'platformGeminiTokenQuota'
+  | 'platformVisionPageQuota'
+  | 'quotaWarnPercent'
+  | 'quotaCriticalPercent'
+  | 'aiQuotaCriticalDays'
+>
 
-export function useAdminAiUsage() {
+/**
+ * `settingsSource` 預設是已儲存的設定；系統設定頁傳草稿進來，
+ * 才能在按下儲存之前就看到「照這個門檻，現在是什麼等級」。
+ */
+export function useAdminAiUsage(settingsSource: Ref<QuotaSettings> = adminSettings) {
+  function quotaFor(provider: AiProviderId): number {
+    return provider === 'gemini'
+      ? settingsSource.value.platformGeminiTokenQuota
+      : settingsSource.value.platformVisionPageQuota
+  }
+
   const usages = computed<ProviderUsage[]>(() => {
     const today = new Date()
 
@@ -67,9 +81,9 @@ export function useAdminAiUsage() {
           quota,
           dailyAvg,
           today,
-          warnPercent: adminSettings.value.quotaWarnPercent,
-          criticalPercent: adminSettings.value.quotaCriticalPercent,
-          criticalDaysLeft: adminSettings.value.aiQuotaCriticalDays,
+          warnPercent: settingsSource.value.quotaWarnPercent,
+          criticalPercent: settingsSource.value.quotaCriticalPercent,
+          criticalDaysLeft: settingsSource.value.aiQuotaCriticalDays,
         }),
         unset: quota <= 0,
       }

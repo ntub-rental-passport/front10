@@ -147,21 +147,45 @@ export function getAuthSession(): AuthSession | null {
 }
 
 /**
- * Session 是否已超過有效時間。
+ * 登入憑證裡的到期時間（epoch 毫秒）。讀不出來回 null。
  *
- * 逾時分鐘數由呼叫端傳入而非在這裡讀 adminSettings —— useAuth 若相依後台設定，
- * 會與 useAdminAudit（它需要 getAuthSession 取得操作者）形成循環相依。
- *
- * 舊 session 沒有 issuedAt，視為不過期，避免改版後把所有人踢出去。
+ * 後端的 Bearer token 是 `base64url(JSON).簽章`（backend/security.py），
+ * 不是三段式的 JWT。這裡只讀到期時間、不驗簽章 —— 驗章是後端的事，
+ * 前端只是想知道「什麼時候該請使用者重新登入」。
  */
-export function isSessionExpired(
-  session: AuthSession | null,
-  timeoutMinutes: number,
-  now: number = Date.now(),
-): boolean {
-  if (!session?.issuedAt) return false
-  if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) return false
-  return now - session.issuedAt > timeoutMinutes * 60_000
+export function tokenExpiresAt(token: string | undefined): number | null {
+  if (!token) return null
+  const body = token.split('.')[0] ?? ''
+  try {
+    const padded = body.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(body.length / 4) * 4, '=')
+    const exp: unknown = JSON.parse(atob(padded))?.exp
+    return typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
+/** 沒有登入憑證的 session（本機的展示登入）用這個期限 */
+export const FALLBACK_SESSION_MINUTES = 120
+
+/**
+ * 登入是否已過期。
+ *
+ * 以後端發的憑證為準：期限由後台「系統設定」的登入有效時間決定（管理員另外固定），
+ * 從登入起算，重新整理不會延長（見 backend/platform_settings.py）。
+ *
+ * 以前前端用瀏覽器裡的設定自己算：每次重新整理就重新計時，後端的憑證卻是固定
+ * 24 小時 —— 兩邊各說各的，管理員在設定頁改的值也只會改到自己那台瀏覽器。
+ *
+ * 沒有憑證的 session 退回用登入時間；舊 session 連 issuedAt 都沒有，視為不過期，
+ * 避免改版後把所有人踢出去。
+ */
+export function isSessionExpired(session: AuthSession | null, now: number = Date.now()): boolean {
+  if (!session) return false
+  const expiresAt = tokenExpiresAt(session.accessToken)
+  if (expiresAt !== null) return now >= expiresAt
+  if (!session.issuedAt) return false
+  return now - session.issuedAt > FALLBACK_SESSION_MINUTES * 60_000
 }
 
 export function signIn(role: AuthRole, email: string): AuthSession {
