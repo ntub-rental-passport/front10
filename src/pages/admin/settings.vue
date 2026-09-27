@@ -207,6 +207,13 @@ function confirmReset(): void {
                 稽核紀錄查詢頁只會顯示這個天數以內的紀錄；設為 0 或負數代表不限制、永久顯示。
                 原始紀錄不會被刪除，只是超過天數的不再顯示。
               </p>
+              <!--
+                例外要講出來：斷線類事件來自後端的監控紀錄，那邊只留 30 天。
+                不寫的話，設成 90 天的人會以為三個月前的斷線也查得到。
+              -->
+              <p class="text-xs text-muted-foreground">
+                例外：斷線、恢復、後端停機這類服務狀態，後端只保留 30 天，不受這個設定影響。
+              </p>
             </div>
             <div class="space-y-2">
               <Label for="maintenanceOverdueDays">報修逾期提醒門檻（天）</Label>

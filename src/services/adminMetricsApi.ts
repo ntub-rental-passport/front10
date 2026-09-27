@@ -52,12 +52,19 @@ export async function fetchAdminMetrics(signal?: AbortSignal): Promise<AdminMetr
  * 讀不到回 null，跟「讀到了、一筆都沒有」（空陣列）分開 —— 後者畫面要說
  * 「這段期間沒有異常」，前者不能這樣說。
  */
-export async function fetchMonitorEvents(signal?: AbortSignal): Promise<MonitorEvent[] | null> {
+export async function fetchMonitorEvents(
+  signal?: AbortSignal,
+  options: { limit?: number; kinds?: MonitorEvent['kind'][] } = {},
+): Promise<MonitorEvent[] | null> {
   const token = getAuthSession()?.accessToken
   if (!token) return null
 
+  // kinds：只取某幾類。稽核紀錄只要斷線類，不篩的話一陣 5xx 就會把它們擠出 limit 之外
+  const query = new URLSearchParams({ limit: String(options.limit ?? 200) })
+  if (options.kinds?.length) query.set('kinds', options.kinds.join(','))
+
   try {
-    const response = await fetch(`${API_BASE_URL}/admin/monitoring/events?limit=200`, {
+    const response = await fetch(`${API_BASE_URL}/admin/monitoring/events?${query}`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
       signal,

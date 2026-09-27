@@ -58,11 +58,14 @@ export function recordLogin(email: string): void {
 export function useAdminUsers() {
   const { logAction } = useAdminAudit()
 
-  function setStatus(id: string, status: AdminUserStatus): void {
+  /** `reason` 只在停用時有意義，寫進稽核紀錄（跟後端的真實帳號同一種寫法） */
+  function setStatus(id: string, status: AdminUserStatus, reason?: string): void {
     const user = users.value.find((item) => item.id === id)
     if (!user || user.status === status) return
     user.status = status
-    logAction('使用者管理', user.email, status === 'suspended' ? '停用帳號' : '啟用帳號')
+    const trimmed = reason?.trim()
+    const detail = status === 'suspended' ? (trimmed ? `停用帳號：${trimmed}` : '停用帳號') : '啟用帳號'
+    logAction('使用者管理', user.email, detail)
   }
 
   function setRole(id: string, role: AdminUserRole): void {
