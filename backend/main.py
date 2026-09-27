@@ -13,6 +13,7 @@ from routers import admin, auth, contract, garbage, landlord_properties, landlor
 from routers import notes, households, scheduled_notifications
 from garbage_service import dispatch_due
 from scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
+import monitoring_service
 
 # ---------------------------------------------------------------
 # 應用程式的 log
@@ -57,13 +58,35 @@ async def lifespan(app):
             except Exception:
                 logging.getLogger(__name__).exception('Scheduled notification dispatcher failed')
             await asyncio.sleep(20)
-    task = asyncio.create_task(reminders_loop())
+    async def monitor_loop():
+        # 後台監控。獨立一個任務、不跟上面的派送共用迴圈：探測最久要等
+        # 3 秒 × 3 項，塞在同一個迴圈會拖慢通知寄送。
+        #
+        # 每 20 秒一次心跳（第一次就會補記「上次關掉到現在」的停機），
+        # 每 60 秒跑一輪服務檢查，每小時清一次超過 30 天的事件。
+        # 詳見 monitoring_service.py。
+        tick = 0
+        while True:
+            try:
+                await asyncio.to_thread(monitoring_service.heartbeat)
+                if tick % 3 == 0:
+                    await asyncio.to_thread(monitoring_service.run_checks)
+                if tick % 180 == 0:
+                    await asyncio.to_thread(monitoring_service.prune)
+            except Exception:
+                logging.getLogger(__name__).exception('Monitor loop failed')
+            tick += 1
+            await asyncio.sleep(20)
+
+    tasks = [asyncio.create_task(reminders_loop()), asyncio.create_task(monitor_loop())]
     try:
         yield
     finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
 
 app = FastAPI(title="RentMate 租隊友後端核心系統", lifespan=lifespan)
 

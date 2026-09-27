@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
 
+import monitoring_service
 from database import engine, get_db
 from metrics import request_counter
 from models import PendingAdminLogin, User
@@ -65,6 +66,12 @@ def read_metrics(admin: User = Depends(get_current_admin)) -> dict[str, object]:
     return {
         "dbPool": _pool_snapshot(),
         "requests": request_counter.snapshot(),
+        # 以下由後端背景迴圈每 60 秒更新（見 monitoring_service.py），
+        # 這裡只讀不測 —— 前端每 30 秒輪詢一次，不能每次都去戳桌機與 OCR。
+        "services": monitoring_service.service_states(),
+        "queues": monitoring_service.queue_status(),
+        "config": monitoring_service.config_status(),
+        "summary": monitoring_service.summary(),
     }
 
 
@@ -130,6 +137,16 @@ def _row(user: User) -> AdminUserRow:
         createdAt=_iso(user.created_at),
         lastLoginAt=_iso(user.last_login_at),
     )
+
+
+@router.get("/monitoring/events")
+def read_monitoring_events(
+    limit: int = 200,
+    admin: User = Depends(get_current_admin),
+) -> list[dict]:
+    """監控事件紀錄（最近 30 天）。僅限管理員 —— 理由同 /metrics：
+    「什麼時候掛過、多久、為什麼」是攻擊者最想要的情報之一。"""
+    return monitoring_service.list_events(limit=max(1, min(limit, 500)))
 
 
 @router.get("/users", response_model=list[AdminUserRow])
