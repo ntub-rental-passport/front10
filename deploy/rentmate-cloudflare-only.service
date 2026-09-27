@@ -1,0 +1,32 @@
+# 開機自動套用「容器 80/443 只接受 Cloudflare」的防火牆規則
+#
+# 為什麼需要：iptables 規則不會在重開機後保留。
+# 若無此服務，VM 重啟後源站將再次可被直連，形成無聲的資安退化。
+#
+# 安裝方式（在 VM 上）：
+#   sudo cp ~/rentmate/deploy/rentmate-cloudflare-only.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable rentmate-cloudflare-only.service
+#
+# 手動觸發：sudo systemctl start rentmate-cloudflare-only.service
+# 查看狀態：sudo systemctl status rentmate-cloudflare-only.service
+
+[Unit]
+Description=RentMate - 限制容器 80/443 只接受 Cloudflare 來源
+# 必須在 Docker 之後執行：Docker 啟動時會建立 DOCKER-USER 鏈，
+# 太早執行會找不到該鏈而失敗
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/rentmate/rentmate/deploy/docker-cloudflare-only.sh
+# 規則套用後行程即結束，但服務狀態需維持 active 以正確反映「已套用」
+RemainAfterExit=yes
+# 開機時網路可能尚未完全就緒導致抓不到 Cloudflare 清單，失敗後重試
+Restart=on-failure
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target
