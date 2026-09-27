@@ -8,10 +8,6 @@ export interface SystemSettings {
   maintenanceEndsAt: string
   // 換行分隔的 email，維護期間仍可進站
   maintenanceAllowlist: string
-  loginMaxAttempts: number
-  loginLockoutMinutes: number
-  sessionTimeoutMinutes: number
-  passwordMinLength: number
   // 稽核紀錄的保留視窗（天）。0 或負數代表不限制，永久保留。
   auditRetentionDays: number
   // 通報房東後超過幾天未獲回應視為逾期，用來標示待處理清單中拖延過久的工單。
@@ -42,10 +38,6 @@ export function seedSettings(): SystemSettings {
     maintenanceStartsAt: '',
     maintenanceEndsAt: '',
     maintenanceAllowlist: 'admin@rentmate.tw',
-    loginMaxAttempts: 5,
-    loginLockoutMinutes: 15,
-    sessionTimeoutMinutes: 120,
-    passwordMinLength: 8,
     auditRetentionDays: 90,
     maintenanceOverdueDays: 7,
     subscriptionExpiringSoonDays: 14,
@@ -65,5 +57,11 @@ export function seedSettings(): SystemSettings {
  * （vitest 沒有 localStorage，無法測 createAdminCollection 本身）。
  */
 export function migrateSettings(raw: Partial<SystemSettings>): SystemSettings {
-  return { ...seedSettings(), ...raw }
+  const defaults = seedSettings()
+  // 只留認得的欄位：密碼長度、登入有效時間已經搬到後端（backend/platform_settings.py），
+  // 瀏覽器裡的舊值留著只會讓人以為它們還有作用
+  const known = Object.fromEntries(
+    Object.entries(raw).filter(([key]) => key in defaults),
+  ) as Partial<SystemSettings>
+  return { ...defaults, ...known }
 }

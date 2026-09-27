@@ -5,11 +5,8 @@ import {
   TRIAL_PLAN_ID,
   effectivePlanId,
   featureVerdict,
-  impactedUserCount,
   isInTrial,
   isMetered,
-  limitImpacts,
-  newlyImpacted,
   remainingQuota,
   type PlanFeatureKey,
   type PlanFeatureRule,
@@ -100,121 +97,5 @@ describe('試用', () => {
   it('試用到期自動落回原方案，不需要額外的降級動作', () => {
     expect(effectivePlanId('free', '2026-08-10T00:00:00.000Z', now)).toBe('free')
     expect(effectivePlanId('pro', null, now)).toBe('pro')
-  })
-})
-
-describe('limitImpacts', () => {
-  const plans: Record<string, PlanFeatures> = {
-    free: features({ 'contract-analysis': on(3), handover: on(1) }),
-    pro: features({ 'contract-analysis': on(null) }),
-  }
-
-  it('沒有人超額時回傳空陣列', () => {
-    const impacts = limitImpacts(
-      [{ userId: 'a', planId: 'free', used: { 'contract-analysis': 2 } }],
-      plans,
-    )
-    expect(impacts).toEqual([])
-  })
-
-  it('用量超過上限才算超額，剛好等於上限不算', () => {
-    const atLimit = limitImpacts(
-      [{ userId: 'a', planId: 'free', used: { 'contract-analysis': 3 } }],
-      plans,
-    )
-    expect(atLimit).toEqual([])
-
-    const over = limitImpacts(
-      [{ userId: 'a', planId: 'free', used: { 'contract-analysis': 5 } }],
-      plans,
-    )
-    expect(over).toEqual([
-      { userId: 'a', featureKey: 'contract-analysis', used: 5, limit: 3 },
-    ])
-  })
-
-  it('單次加購讓人不算超額', () => {
-    const impacts = limitImpacts(
-      [
-        {
-          userId: 'a',
-          planId: 'free',
-          used: { 'contract-analysis': 5 },
-          extraCredits: { 'contract-analysis': 3 },
-        },
-      ],
-      plans,
-    )
-    expect(impacts).toEqual([])
-  })
-
-  it('無上限的功能永遠不會超額', () => {
-    expect(
-      limitImpacts([{ userId: 'a', planId: 'pro', used: { 'contract-analysis': 9999 } }], plans),
-    ).toEqual([])
-  })
-
-  it('關閉的功能不列入超額 —— 那是不能用，不是用超過', () => {
-    const closed: Record<string, PlanFeatures> = {
-      free: features({ 'contract-analysis': { enabled: false, limit: 3 } }),
-    }
-    expect(
-      limitImpacts([{ userId: 'a', planId: 'free', used: { 'contract-analysis': 9 } }], closed),
-    ).toEqual([])
-  })
-
-  it('查無方案的使用者略過，不會炸開', () => {
-    expect(limitImpacts([{ userId: 'a', planId: '不存在', used: {} }], plans)).toEqual([])
-  })
-
-  it('同一人多項超額只算一個人', () => {
-    const impacts = limitImpacts(
-      [{ userId: 'a', planId: 'free', used: { 'contract-analysis': 9, handover: 4 } }],
-      plans,
-    )
-    expect(impacts).toHaveLength(2)
-    expect(impactedUserCount(impacts)).toBe(1)
-  })
-
-  it('多人超額分別計數', () => {
-    const impacts = limitImpacts(
-      [
-        { userId: 'a', planId: 'free', used: { 'contract-analysis': 9 } },
-        { userId: 'b', planId: 'free', used: { 'contract-analysis': 9 } },
-      ],
-      plans,
-    )
-    expect(impactedUserCount(impacts)).toBe(2)
-  })
-})
-
-describe('newlyImpacted', () => {
-  const impact = (userId: string, featureKey: PlanFeatureKey, used: number, limit: number) => ({
-    userId,
-    featureKey,
-    used,
-    limit,
-  })
-
-  it('本來就超額的人不算在這次調整頭上', () => {
-    const before = [impact('a', 'handover', 5, 1)]
-    const after = [impact('a', 'handover', 5, 1), impact('b', 'contract-analysis', 3, 1)]
-    expect(newlyImpacted(before, after)).toEqual([impact('b', 'contract-analysis', 3, 1)])
-  })
-
-  it('同一人的不同功能分開判斷', () => {
-    const before = [impact('a', 'handover', 5, 1)]
-    const after = [impact('a', 'handover', 5, 1), impact('a', 'contract-analysis', 3, 1)]
-    expect(newlyImpacted(before, after)).toHaveLength(1)
-    expect(impactedUserCount(newlyImpacted(before, after))).toBe(1)
-  })
-
-  it('調整沒有讓任何人新超額時為空', () => {
-    const before = [impact('a', 'handover', 5, 1)]
-    expect(newlyImpacted(before, before)).toEqual([])
-  })
-
-  it('放寬上限不會產生新的超額', () => {
-    expect(newlyImpacted([impact('a', 'handover', 5, 1)], [])).toEqual([])
   })
 })

@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { adminUsersCollection } from './useAdminUsers'
 import { adminMaintenanceCollection } from './useAdminMaintenance'
 import { adminDepositCollection } from './useAdminDeposits'
-import { adminPlansCollection, adminSubscriptionCollection } from './useAdminSubscription'
+import { adminPlans, adminSubscriptionCollection } from './useAdminSubscription'
 import { adminSettings } from './useAdminSettings'
 import {
   fetchAdminAccounts,
@@ -91,7 +91,7 @@ export function useAdminDirectory() {
         tickets: adminMaintenanceCollection.value,
         deposits: adminDepositCollection.value,
         subscriptions: adminSubscriptionCollection.value,
-        plans: adminPlansCollection.value,
+        plans: adminPlans.value,
       },
       adminSettings.value.subscriptionExpiringSoonDays,
     ).map((row) =>
@@ -121,7 +121,7 @@ export function useAdminDirectory() {
   const filteredRows = computed(() => filterUserDirectory(rows.value, filter.value))
 
   // 圖表刻意吃全量 rows，不吃 filteredRows —— 見 planDistribution 的註解
-  const planSegments = computed(() => planDistribution(rows.value, adminPlansCollection.value))
+  const planSegments = computed(() => planDistribution(rows.value, adminPlans.value))
   const adminCounts = computed(() => adminRoleCounts(rows.value))
 
   const filterActive = computed(() => isFilterActive(filter.value))
