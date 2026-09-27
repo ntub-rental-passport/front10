@@ -5,6 +5,15 @@ import { Bell, ListChecks, LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar/index'
 import { Badge } from '@/components/ui/badge/index'
+import { Button } from '@/components/ui/button/index'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog/index'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +32,8 @@ import { useAdminNotificationCenter } from '@/src/composables/admin/useAdminNoti
 import { useAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
+import { useAdminIdleLogout } from '@/src/composables/admin/useAdminIdleLogout'
+import { ADMIN_IDLE_MINUTES } from '@/src/utils/admin-idle'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
 import { adminRoleLabels } from '@/src/utils/admin-rbac'
 import { initialOf } from '@/src/utils/admin-recent-logins'
@@ -95,6 +106,18 @@ async function handleSignOut(): Promise<void> {
   signOut()
   await router.push('/')
 }
+
+/*
+ * 閒置 20 分鐘自動登出。伺服器那邊也會擋（backend/security.py），這裡負責：
+ * 最後一分鐘先提醒、時間到自己登出，並帶回內部登入頁說明原因 ——
+ * 不然管理員只會看到頁面上一堆「讀不到資料」，不知道是登入失效了。
+ */
+const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAdminIdleLogout(
+  async (reason) => {
+    signOut()
+    await router.push({ path: '/staff-login', query: { reason } })
+  },
+)
 </script>
 
 <template>
@@ -302,5 +325,24 @@ async function handleSignOut(): Promise<void> {
         />
       </div>
     </aside>
+
+    <Dialog :open="idleWarning" @update:open="(open: boolean) => { if (!open) stayActive() }">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>你還在嗎？</DialogTitle>
+          <DialogDescription>
+            後台閒置 {{ ADMIN_IDLE_MINUTES }} 分鐘會自動登出，保護管理員帳號不被別人順手使用。
+          </DialogDescription>
+        </DialogHeader>
+        <p class="text-sm">
+          <span class="text-2xl font-bold tabular-nums">{{ idleSecondsLeft }}</span>
+          秒後登出。
+        </p>
+        <DialogFooter>
+          <Button variant="outline" @click="handleSignOut">現在登出</Button>
+          <Button @click="stayActive">繼續使用</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

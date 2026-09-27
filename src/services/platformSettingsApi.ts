@@ -24,6 +24,8 @@ export interface AdminPlatformSettings {
   sessionMinuteOptions: number[]
   /** 管理員的登入期限，固定、不受設定影響 */
   adminSessionMinutes: number
+  /** 管理員閒置多久自動登出（伺服器判斷） */
+  adminIdleMinutes: number
   defaults: { passwordMinLength: number; sessionMinutes: number }
 }
 
