@@ -14,9 +14,13 @@
 代價是時間精度只到分鐘，但「近一小時錯誤率」本來就不需要秒級精度。
 """
 
+import asyncio
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 WINDOW_MINUTES = 60
 
@@ -101,9 +105,35 @@ async def count_requests(request, call_next):
 
     try:
         response = await call_next(request)
-    except Exception:
+    except Exception as error:
         request_counter.record(500)
+        await _record_server_error(request, 500, type(error).__name__)
         raise
 
     request_counter.record(response.status_code)
+    if response.status_code >= 500:
+        await _record_server_error(request, response.status_code, None)
     return response
+
+
+async def _record_server_error(request, status: int, error_type: str | None) -> None:
+    """把 5xx 寫進後台監控的事件紀錄。
+
+    錯誤率只告訴你「近一小時有 2% 失敗」，事件紀錄才告訴你是哪一支、什麼時候。
+
+    只記方法、路徑（不含 query string）、狀態碼、例外的**類別名稱**。
+    不記例外訊息與堆疊：它們常帶著資料庫主機、檔案路徑、甚至連線字串，
+    放上網頁等於把內部構造攤開 —— 那些留在後端的 log 檔。
+    query string 也不記：裡面可能有 token 或個資。
+
+    寫入丟到 thread 去做，不卡住 event loop；寫不進去也絕不能影響回應本身。
+    """
+    detail = f"{request.method} {request.url.path} → {status}"
+    if error_type:
+        detail += f"（{error_type}）"
+    try:
+        import monitoring_service  # 延遲 import，避免啟動順序的循環相依
+
+        await asyncio.to_thread(monitoring_service.record_event, 'backend', 'server-error', detail)
+    except Exception:
+        logger.exception('Could not record server error event')

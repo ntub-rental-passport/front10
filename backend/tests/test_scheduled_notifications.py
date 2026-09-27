@@ -14,6 +14,8 @@ class ScheduledNotificationTests(unittest.TestCase):
         # 這樣每個測試才會拿到自己的暫存 DB，不會互相污染。
         self.env = patch.dict(os.environ, {
             'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
+            # 寄送失敗、錯過會寫進監控事件紀錄 —— 不指到暫存檔的話會寫進真的 monitoring.db
+            'MONITOR_DB': self.temp.name + '/monitoring.db',
             'SMTP_USERNAME': 'sender@example.com',
             'SMTP_APP_PASSWORD': 'app-password',
         })
@@ -219,6 +221,35 @@ class ScheduledNotificationTests(unittest.TestCase):
         self.assertTrue(caps['email'])
         self.assertFalse(caps['inapp'])
         self.assertIn('瀏覽器', caps['unsupportedReason']['inapp'])
+
+
+    # -------------------- 監控事件 --------------------
+
+    def monitor_kinds(self):
+        import monitoring_service
+        return [(e['kind'], e['detail']) for e in reversed(monitoring_service.list_events())]
+
+    def test_missed_schedule_is_recorded_once_in_the_monitor_log(self):
+        self.create(title='凌晨維護公告')
+        late = datetime.now(service.TZ) + self.LEAD + service.MISSED_AFTER + timedelta(minutes=1)
+        self.dispatch(at=late)
+        self.dispatch(at=late)  # 第二輪不會再記一次
+        self.assertEqual(self.monitor_kinds(), [('notification-missed', '「凌晨維護公告」')])
+
+    def test_partial_failure_is_recorded_with_the_count(self):
+        self.create(title='續約提醒')
+
+        def flaky(address, title, body):
+            if address == 'a@example.com':
+                raise RuntimeError('mailbox full')
+
+        self.dispatch(send=flaky)
+        self.assertEqual(self.monitor_kinds(), [('notification-failed', '「續約提醒」：1 人寄送失敗')])
+
+    def test_successful_send_records_nothing(self):
+        self.create()
+        self.dispatch()
+        self.assertEqual(self.monitor_kinds(), [])
 
 
 if __name__ == '__main__':

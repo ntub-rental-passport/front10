@@ -296,11 +296,23 @@ def dispatch_due(now=None, resolve=None, send_email=None) -> int:
     moment = now or datetime.now(TZ)
     timestamp = moment.timestamp()
 
+    # 錯過的逐筆標記，而不是一個整批 UPDATE：要知道「這一輪是我標的」才能記事件，
+    # 否則多個 worker 同時跑時，同一筆錯過會被每個 worker 各記一次。
     with connect() as db:
-        db.execute(
-            "UPDATE scheduled_notifications SET status='missed' WHERE status='pending' AND due < ?",
+        stale = db.execute(
+            "SELECT id, title FROM scheduled_notifications WHERE status='pending' AND due < ?",
             (timestamp - MISSED_AFTER.total_seconds(),),
-        )
+        ).fetchall()
+    for row in stale:
+        with connect() as db:
+            marked = db.execute(
+                "UPDATE scheduled_notifications SET status='missed' WHERE id=? AND status='pending'",
+                (row['id'],),
+            ).rowcount
+        if marked:
+            _record_monitor_event('notification-missed', f"「{row['title']}」")
+
+    with connect() as db:
         rows = db.execute(
             "SELECT * FROM scheduled_notifications WHERE status='pending' AND due <= ? LIMIT 50",
             (timestamp,),
@@ -342,4 +354,24 @@ def dispatch_due(now=None, resolve=None, send_email=None) -> int:
                 'UPDATE scheduled_notifications SET status=?, sent_at=?, result=? WHERE id=?',
                 (status, timestamp, json.dumps(result, ensure_ascii=False), row['id']),
             )
+
+        # 部分失敗也要記 —— 「30 人裡 3 人沒寄到」在排程列表上看得到，
+        # 但沒有人會每天去翻；監控的事件紀錄才是會被看到的地方。
+        failed = result['email']['failed']
+        if status == 'failed' and failed == 0:
+            _record_monitor_event('notification-failed', f"「{row['title']}」：無法取得收件人")
+        elif status == 'failed':
+            _record_monitor_event('notification-failed', f"「{row['title']}」：全部 {failed} 人寄送失敗")
+        elif failed > 0:
+            _record_monitor_event('notification-failed', f"「{row['title']}」：{failed} 人寄送失敗")
     return handled
+
+
+def _record_monitor_event(kind: str, detail: str) -> None:
+    """寫進後台監控的事件紀錄。寫不進去不能影響寄送本身。"""
+    try:
+        import monitoring_service  # 延遲 import：monitoring_service 也會讀這個模組的佇列
+
+        monitoring_service.record_event('scheduled-notification', kind, detail)
+    except Exception:
+        logger.exception('Could not record monitor event %s', kind)

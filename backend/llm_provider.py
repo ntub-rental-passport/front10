@@ -118,6 +118,23 @@ def _disable_thinking(purpose: str) -> bool:
 # ---------------------------------------------------------------
 
 
+def tunnel_headers() -> dict[str, str]:
+    """打桌機（Cloudflare Tunnel）要帶的憑證標頭。
+
+    抽出來是因為後台監控也要探測桌機（monitoring_service.probe_llm_desktop）。
+    探測必須帶**完全一樣**的標頭 —— 少帶一個，Cloudflare Access 在邊緣就會
+    擋掉，監控會顯示「桌機連不上」，但其實只是探測自己沒帶憑證。
+    """
+    headers: dict[str, str] = {}
+    if api_key := _env("LLM_TUNNEL_API_KEY"):
+        headers["X-API-Key"] = api_key
+    cf_id, cf_secret = _env("CF_ACCESS_CLIENT_ID"), _env("CF_ACCESS_CLIENT_SECRET")
+    if cf_id and cf_secret:
+        headers["CF-Access-Client-Id"] = cf_id
+        headers["CF-Access-Client-Secret"] = cf_secret
+    return headers
+
+
 async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, purpose: str) -> str:
     """呼叫 Ollama（本機，或經 Cloudflare Tunnel 連到桌機）。
 
@@ -136,13 +153,7 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, pu
             f"桌機冷卻中（還有 {upstream_state.remaining(_OLLAMA_ENDPOINT):.0f} 秒）"
         )
 
-    headers: dict[str, str] = {}
-    if api_key := _env("LLM_TUNNEL_API_KEY"):
-        headers["X-API-Key"] = api_key
-    cf_id, cf_secret = _env("CF_ACCESS_CLIENT_ID"), _env("CF_ACCESS_CLIENT_SECRET")
-    if cf_id and cf_secret:
-        headers["CF-Access-Client-Id"] = cf_id
-        headers["CF-Access-Client-Secret"] = cf_secret
+    headers = tunnel_headers()
 
     payload: dict = {
         "model": _model_for("ollama", purpose),
