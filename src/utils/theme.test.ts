@@ -1,9 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { runInNewContext } from 'node:vm'
 
 import { describe, expect, it } from 'vitest'
 
-import { nextTheme, parseStoredTheme, resolveTheme, THEME_STORAGE_KEY } from './theme'
+import {
+  nextTheme,
+  parseStoredTheme,
+  resolveTheme,
+  THEME_STORAGE_KEY,
+  themeAllowedOn,
+  themeForPath,
+} from './theme'
 
 describe('parseStoredTheme', () => {
   it('只接受 light 與 dark', () => {
@@ -51,24 +59,101 @@ describe('nextTheme', () => {
   })
 })
 
-describe('THEME_STORAGE_KEY 與 index.html 的啟動腳本', () => {
-  // index.html 的 inline script 必須在 Vue 掛載前就把 .dark 加上去，否則
-  // 每次重新整理都會先閃一下淺色。那段腳本沒辦法 import 這個常數，只能
-  // 各存一份字面值 —— 這裡直接把檔案讀進來比對，是兩份之間唯一的連結。
-  //
-  // 改了常數而沒改 index.html 的症狀是「每次重整閃一下白」，
-  // 不會有任何錯誤訊息，所以一定要有東西擋著。
-  const html = readFileSync(resolve(__dirname, '../../index.html'), 'utf-8')
-
-  it('啟動腳本裡有同一個 key', () => {
-    expect(html).toContain(`'${THEME_STORAGE_KEY}'`)
+describe('themeAllowedOn：只有後台可以深色', () => {
+  it('後台的網址可以', () => {
+    for (const path of ['/admin', '/admin/', '/admin/users', '/admin/users/12', '/admin/settings']) {
+      expect(themeAllowedOn(path), path).toBe(true)
+    }
   })
 
-  it('啟動腳本真的會加上 dark class', () => {
-    expect(html).toMatch(/classList\.add\(['"]dark['"]\)/)
+  it('首頁、登入頁、租客端、房東端都不行', () => {
+    // 這些頁面有大量寫死的白底，深色一套上去就是白底淺字
+    for (const path of [
+      '/',
+      '/login',
+      '/register',
+      '/verify-email',
+      '/welcome',
+      '/staff-login',
+      '/maintenance',
+      '/app',
+      '/app/contract/scanner',
+      '/app/handover/baseline',
+      '/landlord',
+      '/landlord/tenants',
+    ]) {
+      expect(themeAllowedOn(path), path).toBe(false)
+    }
   })
 
-  it('啟動腳本會讀系統偏好當預設', () => {
-    expect(html).toContain('prefers-color-scheme')
+  it('只是開頭像 admin 的網址不算', () => {
+    expect(themeAllowedOn('/administrator')).toBe(false)
+    expect(themeAllowedOn('/adminx/users')).toBe(false)
+  })
+})
+
+describe('themeForPath', () => {
+  it('後台照偏好', () => {
+    expect(themeForPath('/admin', 'dark')).toBe('dark')
+    expect(themeForPath('/admin/users', 'light')).toBe('light')
+  })
+
+  it('其他網址就算偏好深色也是淺色', () => {
+    expect(themeForPath('/login', 'dark')).toBe('light')
+    expect(themeForPath('/app', 'dark')).toBe('light')
+    expect(themeForPath('/landlord', 'dark')).toBe('light')
+  })
+})
+
+describe('public/theme-boot.js 與 TypeScript 的判斷一致', () => {
+  // 啟動腳本要在 Vue 掛載前就跑，沒辦法 import theme.ts，只能各存一份。
+  // 這裡直接在假的瀏覽器物件裡執行那支腳本，跟 themeForPath 逐一比對 ——
+  // 改了一邊沒改另一邊，症狀是「重新整理時閃一下另一個顏色」，不會有任何錯誤訊息。
+  const script = readFileSync(resolve(__dirname, '../../public/theme-boot.js'), 'utf-8')
+
+  function runBoot(path: string, stored: string | null, prefersDark: boolean, storageThrows = false) {
+    const classes = new Set<string>()
+    runInNewContext(script, {
+      window: {
+        location: { pathname: path },
+        matchMedia: (query: string) => ({ matches: query.includes('dark') && prefersDark }),
+      },
+      localStorage: {
+        getItem: (key: string) => {
+          if (storageThrows) throw new Error('blocked')
+          return key === THEME_STORAGE_KEY ? stored : null
+        },
+      },
+      document: { documentElement: { classList: { add: (name: string) => classes.add(name) } } },
+    })
+    return classes.has('dark')
+  }
+
+  it('每種網址、儲存值、系統偏好的組合都跟 themeForPath 一樣', () => {
+    const paths = ['/', '/login', '/staff-login', '/app', '/app/contract/scanner', '/landlord/tenants', '/maintenance', '/admin', '/admin/users', '/administrator']
+    for (const path of paths) {
+      for (const stored of [null, 'dark', 'light', 'junk']) {
+        for (const prefersDark of [true, false]) {
+          const expected = themeForPath(path, resolveTheme(stored, prefersDark)) === 'dark'
+          expect(runBoot(path, stored, prefersDark), `${path} ${stored} ${prefersDark}`).toBe(expected)
+        }
+      }
+    }
+  })
+
+  it('讀不到 localStorage 時維持淺色，不讓整頁掛掉', () => {
+    expect(() => runBoot('/admin', 'dark', true, true)).not.toThrow()
+    expect(runBoot('/admin', 'dark', true, true)).toBe(false)
+  })
+
+  it('用的是同一個 key', () => {
+    expect(script).toContain(`'${THEME_STORAGE_KEY}'`)
+  })
+
+  it('index.html 用外部檔案載入，不是 inline script', () => {
+    // 正式站的 CSP 是 script-src 'self'：inline script 會被擋，外部檔案才會執行
+    const html = readFileSync(resolve(__dirname, '../../index.html'), 'utf-8')
+    expect(html).toContain('<script src="/theme-boot.js"></script>')
+    expect(html).not.toMatch(/classList\.add\(['"]dark['"]\)/)
   })
 })
