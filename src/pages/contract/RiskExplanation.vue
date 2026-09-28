@@ -56,7 +56,7 @@ function candidateLink(value: string) {
     </section>
 
     <section class="risk-explanation-section">
-      <h4>法條依據 <small>重點摘要・點選查看全文</small></h4>
+      <h4>法條依據 </h4>
       <ul v-if="explanation.laws.length" class="risk-citation-list">
         <li v-for="law in explanation.laws" :key="law.label">
           <a :href="law.href" target="_blank" rel="noopener noreferrer">
