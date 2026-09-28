@@ -36,6 +36,14 @@ python -m db.schema_check
 
 結構檢查會讀取設定的資料庫，不會自動升級結構。
 
+若更新後啟動出現 `Missing table: admin_sessions`，請在專案根目錄執行：
+
+```powershell
+python backend/migrations/create_admin_sessions.py
+```
+
+此工具只補建管理員登入工作階段資料表，可重複執行，不重建既有資料庫。
+
 ## 工具的新位置
 
 以下指令在專案根目錄執行：
