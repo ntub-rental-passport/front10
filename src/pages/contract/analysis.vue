@@ -712,6 +712,9 @@ async function exportAnalysisReport(): Promise<void> {
         <Button class="analysis-export-button" @click="openExportDialog">
           <FileDown :size="17" /> 匯出診斷報告
         </Button>
+        <Button variant="outline" @click="router.push('/app/contract/document')">
+          <FileText :size="17" /> 檢視契約內容
+        </Button>
         <Button variant="outline" @click="router.push('/app/contract')">
           重新上傳
         </Button>

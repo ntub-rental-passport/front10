@@ -14,6 +14,12 @@ import {
   type ContractFieldCandidate,
 } from '@/src/utils/contract-field-extraction'
 import {
+  buildRentalPayload,
+  describeMissingFields,
+  type RentalPayloadResult,
+} from '@/src/utils/contract-rental-payload'
+import { finalizeContract, type FinalizeContractResponse } from '@/src/services/contractApi'
+import {
   CONTRACT_FIELD_DEFINITIONS,
   CONTRACT_FIELD_GROUPS,
   detectContractConditions,
@@ -50,6 +56,9 @@ import {
   Info,
   Search,
   X,
+  Database,
+  Lock,
+  Loader2,
 } from 'lucide-vue-next'
 
 interface ContractField {
@@ -1162,9 +1171,72 @@ function clearSearch(): void {
 }
 
 const router = useRouter()
+
+// ── 終版確認 ────────────────────────────────────────────────────────────
+// OCR 與校對的結果原本只活在 sessionStorage，關掉分頁就沒了。
+// 校對完成後先問使用者「這份是不是雙方已簽署的最終版」：
+//   是 → 把欄位寫入 rentals（個資欄位在後端由 AES-GCM 加密落地）
+//   否 → 什麼都不寫，只留在本機工作階段
+// 還在協商中的版本進了資料庫，後面的帳單、繳租提醒、租屋補助
+// 都會照錯誤的條件運作，所以這個選擇不給預設值，也不自動存檔。
+const finalizeDialog = ref<HTMLDialogElement | null>(null)
+const finalizeChoice = ref<'final' | 'draft' | null>(null)
+const contractTag = ref('')
+const finalizeSaving = ref(false)
+const finalizeError = ref('')
+const finalizeResult = ref<FinalizeContractResponse | null>(null)
+const rentalPayload = ref<RentalPayloadResult | null>(null)
+
+const missingRentalLabels = computed(() =>
+  rentalPayload.value ? describeMissingFields(rentalPayload.value.missing) : '',
+)
+const rentalWarnings = computed(() => rentalPayload.value?.warnings ?? [])
+const canPersistToDatabase = computed(() => Boolean(rentalPayload.value?.rental))
+
 function completeReviewAndAnalyze(): void {
   if (!canStartAnalysis.value || !persistContract()) return
+
+  rentalPayload.value = buildRentalPayload(storedOcrResult.value)
+  finalizeChoice.value = null
+  finalizeError.value = ''
+  finalizeResult.value = null
+  contractTag.value = ''
+  finalizeDialog.value?.showModal()
+}
+
+async function saveFinalVersion(): Promise<void> {
+  const payload = rentalPayload.value?.rental
+  if (!payload || finalizeSaving.value) return
+
+  finalizeSaving.value = true
+  finalizeError.value = ''
+  try {
+    finalizeResult.value = await finalizeContract({
+      is_final: true,
+      rental: payload,
+      contract_tag: contractTag.value.trim() || null,
+    })
+  } catch (error) {
+    finalizeError.value =
+      error instanceof Error ? error.message : '契約存檔失敗，請稍後重試。'
+  } finally {
+    finalizeSaving.value = false
+  }
+}
+
+function continueToAnalysis(): void {
+  finalizeDialog.value?.close()
   router.push('/app/contract-analysis')
+}
+
+/** 必填欄位有缺時，讓使用者直接跳到該欄位所屬分組補齊。 */
+function jumpToMissingField(fieldId: string): void {
+  const target = fields.value.find((field) => field.id === fieldId)
+  if (!target) return
+  finalizeDialog.value?.close()
+  activeFieldGroupId.value = target.groupId
+  activeFieldFilter.value = 'all'
+  void revealFieldSource(target)
 }
 
 function returnToOcr(): void {
@@ -1269,7 +1341,7 @@ function returnToOcr(): void {
           <p v-else>所有已辨識欄位皆已確認，可以開始 AI 契約分析。</p>
         </div>
         <Button :disabled="!canStartAnalysis" @click="completeReviewAndAnalyze">
-          完成校對並開始 AI 契約分析
+          完成校對並確認契約版本
           <ArrowRight data-icon="inline-end" />
         </Button>
       </div>
@@ -1757,6 +1829,115 @@ function returnToOcr(): void {
         </Card>
       </div>
     </div>
+
+    <dialog ref="finalizeDialog" class="finalize-dialog" @cancel.prevent>
+      <form class="finalize-form" method="dialog" @submit.prevent>
+        <header class="finalize-header">
+          <h2 class="finalize-title">
+            <Database :size="18" />
+            這份契約是最終簽署版嗎？
+          </h2>
+          <p class="finalize-subtitle">
+            只有最終版才會存入資料庫，供帳單、繳租提醒與點交紀錄使用。
+            還在協商中的版本請選「尚未定版」，校對結果仍會留在本機工作階段。
+          </p>
+        </header>
+
+        <!-- 存檔成功後只保留結果，避免重複送出建立兩筆租約 -->
+        <div v-if="finalizeResult" class="finalize-result" role="status">
+          <CheckCircle class="shrink-0 text-emerald-600" :size="20" />
+          <div>
+            <p class="finalize-result-title">已建立租約 #{{ finalizeResult.rental_id }}</p>
+            <p class="finalize-result-note">
+              共 {{ finalizeResult.encrypted_field_count }} 個個資欄位以 AES-GCM 加密儲存。
+            </p>
+          </div>
+        </div>
+
+        <template v-else>
+          <div class="finalize-options">
+            <label class="finalize-option" :class="{ 'finalize-option--active': finalizeChoice === 'final' }">
+              <input v-model="finalizeChoice" type="radio" value="final" name="finalize-choice" />
+              <span>
+                <strong>是，這是雙方已簽署的最終版</strong>
+                <small>建立租約並將欄位寫入資料庫；個資欄位加密後落地。</small>
+              </span>
+            </label>
+            <label class="finalize-option" :class="{ 'finalize-option--active': finalizeChoice === 'draft' }">
+              <input v-model="finalizeChoice" type="radio" value="draft" name="finalize-choice" />
+              <span>
+                <strong>尚未定版，先看風險分析</strong>
+                <small>不寫入資料庫，校對結果僅保留在這個瀏覽器工作階段。</small>
+              </span>
+            </label>
+          </div>
+
+          <div v-if="finalizeChoice === 'final'" class="finalize-detail">
+            <template v-if="canPersistToDatabase">
+              <label class="finalize-tag">
+                <span>契約別名（選填）</span>
+                <input
+                  v-model="contractTag"
+                  type="text"
+                  maxlength="30"
+                  placeholder="例如：中正路小套房"
+                />
+              </label>
+              <p class="finalize-encrypt-note">
+                <Lock :size="14" />
+                姓名、身分證字號、戶籍與通訊地址、聯絡電話將加密儲存，資料庫中無法直接讀取。
+              </p>
+            </template>
+            <div v-else class="finalize-blocked" role="alert">
+              <AlertTriangle class="shrink-0 text-amber-600" :size="18" />
+              <div>
+                <p v-if="missingRentalLabels">
+                  以下必填欄位還沒有可寫入資料庫的值，請先補齊：
+                  <strong>{{ missingRentalLabels }}</strong>
+                </p>
+                <p v-for="warning in rentalWarnings" :key="warning">{{ warning }}</p>
+                <div v-if="rentalPayload?.missing.length" class="finalize-jump">
+                  <Button
+                    v-for="field in rentalPayload.missing"
+                    :key="field.id"
+                    size="sm"
+                    variant="outline"
+                    @click="jumpToMissingField(field.id)"
+                  >
+                    前往「{{ field.label }}」
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p v-if="finalizeError" class="finalize-error" role="alert">{{ finalizeError }}</p>
+        </template>
+
+        <footer class="finalize-actions">
+          <Button
+            v-if="!finalizeResult && finalizeChoice === 'final'"
+            :disabled="!canPersistToDatabase || finalizeSaving"
+            @click="saveFinalVersion"
+          >
+            <Loader2 v-if="finalizeSaving" data-icon="inline-start" class="animate-spin" />
+            <Save v-else data-icon="inline-start" />
+            {{ finalizeSaving ? '正在加密存檔…' : '確認終版並存入資料庫' }}
+          </Button>
+          <Button
+            variant="outline"
+            :disabled="finalizeSaving || (!finalizeResult && !finalizeChoice)"
+            @click="continueToAnalysis"
+          >
+            前往 AI 風險分析
+            <ArrowRight data-icon="inline-end" />
+          </Button>
+          <Button variant="ghost" :disabled="finalizeSaving" @click="finalizeDialog?.close()">
+            返回繼續校對
+          </Button>
+        </footer>
+      </form>
+    </dialog>
   </div>
 </template>
 

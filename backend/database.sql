@@ -4,7 +4,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- 主要設計決策：
 --   1. users 儲存唯一帳號，user_roles 儲存帳號身分；同一帳號可同時是 tenant 與 landlord
 --   2. Admin 不透過公開註冊入口建立，走獨立 /admin/register 流程
---   3. 合約欄位攤平儲存於 rentals（供拼回契約 + 租補預帶）
+--   3. 合約欄位攤平儲存於 rentals（供拼回契約 + 租補預帶）；
+--      刻意不儲存合約原始檔與 OCR 全文，檢視契約一律由這些欄位回拼
 --   4. 敏感個資採用 VARBINARY 加密儲存（地址放寬至 512 bytes 避免溢位）
 --   5. rentals 為合約快照，bills 為每期實際帳單
 --   6. 維修工單雙向相容：rental_id 或 lease_id 至少具備一個
@@ -109,14 +110,24 @@ CREATE TABLE `rentals` (
   `land_number` VARCHAR(100) DEFAULT NULL COMMENT '基地地號',
   `building_number` VARCHAR(100) DEFAULT NULL COMMENT '專有部分建號，租補輔助',
   `building_area` DECIMAL(8,2) DEFAULT NULL COMMENT '專有部分面積',
+  `tax_id` VARCHAR(100) DEFAULT NULL COMMENT '無門牌者的房屋稅籍編號',
   `has_annex_building` BOOLEAN NOT NULL DEFAULT FALSE,
-  `annex_building_desc` VARCHAR(255) DEFAULT NULL,
+  `annex_building_purpose` VARCHAR(255) DEFAULT NULL COMMENT '陽台、露台、雨遮等',
+  `annex_building_area` DECIMAL(8,2) DEFAULT NULL,
 
   -- 【3】租賃範圍
   `rental_scope` ENUM('entire','partial') NOT NULL DEFAULT 'entire',
-  `rental_scope_details` VARCHAR(255) DEFAULT NULL,
+  `rental_room` VARCHAR(255) DEFAULT NULL COMMENT '部分出租時的樓層、房間或室號',
+  `rental_area` DECIMAL(8,2) DEFAULT NULL COMMENT '部分出租時的實際租賃面積',
   `has_parking` BOOLEAN NOT NULL DEFAULT FALSE,
-  `parking_details` VARCHAR(255) DEFAULT NULL,
+  `car_parking_count` INT DEFAULT NULL,
+  `car_parking_type` VARCHAR(20) DEFAULT NULL COMMENT '平面式或機械式',
+  `car_parking_floor` VARCHAR(30) DEFAULT NULL,
+  `car_parking_number` VARCHAR(50) DEFAULT NULL,
+  `motorcycle_parking_count` INT DEFAULT NULL,
+  `motorcycle_parking_floor` VARCHAR(30) DEFAULT NULL,
+  `motorcycle_parking_number` VARCHAR(100) DEFAULT NULL,
+  `parking_usage_time` VARCHAR(30) DEFAULT NULL COMMENT '全日、日間、夜間或其他',
   `has_equipment` BOOLEAN NOT NULL DEFAULT FALSE,
   `equipment_list` TEXT DEFAULT NULL,
 
@@ -130,6 +141,7 @@ CREATE TABLE `rentals` (
   `payment_interval_months` INT NOT NULL DEFAULT 1,
   `payment_day` INT NOT NULL CHECK (`payment_day` BETWEEN 1 AND 31),
   `payment_method` VARCHAR(50) DEFAULT '轉帳' COMMENT '合約約定預設方式',
+  `bank_account` VARBINARY(512) DEFAULT NULL COMMENT '轉帳帳戶：金融機構、戶名、帳號',
   `total_periods` INT NOT NULL,
 
   -- 【6】押金
@@ -155,15 +167,20 @@ CREATE TABLE `rentals` (
   `landlord_registered_address` VARBINARY(512) DEFAULT NULL,
   `landlord_contact_address` VARBINARY(512) DEFAULT NULL,
   `landlord_phone` VARBINARY(255) DEFAULT NULL,
-  `tenant_name` VARCHAR(100) DEFAULT NULL,
+  `tenant_name` VARBINARY(255) DEFAULT NULL,
   `tenant_national_id` VARBINARY(255) DEFAULT NULL COMMENT '簽約當時的身分證',
   `tenant_registered_address` VARBINARY(512) DEFAULT NULL,
   `tenant_contact_address` VARBINARY(512) DEFAULT NULL,
   `tenant_phone` VARBINARY(255) DEFAULT NULL,
 
+  -- 【10】代理或轉租（偵測到適用情境時才填）
+  `agent_name` VARBINARY(255) DEFAULT NULL,
+  `agent_national_id` VARBINARY(255) DEFAULT NULL,
+  `authorization_document` VARCHAR(255) DEFAULT NULL COMMENT '代理授權證明',
+  `sublease_consent` VARCHAR(255) DEFAULT NULL COMMENT '出租人同意轉租之證明',
+
   -- 系統狀態
   `contract_tag` VARCHAR(30) DEFAULT NULL,
-  `other_info` TEXT DEFAULT NULL,
   `rental_status` VARCHAR(20) NOT NULL DEFAULT 'active',
   `confirmed_at` DATETIME(6) DEFAULT NULL COMMENT '使用者確認這是最終簽署版的時間',
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -190,16 +207,6 @@ CREATE TABLE `bills` (
   FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE CASCADE,
   UNIQUE KEY `uq_bills_rental_period` (`rental_id`, `period_index`),
   INDEX `idx_bills_due_unpaid` (`due_date`, `paid_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `contract_analyses` (
-  `id` INT AUTO_INCREMENT PRIMARY KEY,
-  `rental_id` INT NOT NULL UNIQUE,
-  `contract_file_url` VARCHAR(512) NOT NULL,
-  `ocr_raw_text` LONGTEXT NOT NULL,
-  `risk_report` TEXT NOT NULL,
-  `negotiation_script` LONGTEXT DEFAULT NULL,
-  FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `inspection_records` (

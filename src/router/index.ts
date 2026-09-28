@@ -112,6 +112,7 @@ const router = createRouter({
         { path: 'contract-analysis', component: () => import('@/src/pages/contract/analysis.vue') },
         { path: 'contract/editor', component: () => import('@/src/pages/contract/editor.vue') },
         { path: 'contract/combined', component: () => import('@/src/pages/contract/combined.vue') },
+        { path: 'contract/document', component: () => import('@/src/pages/contract/document.vue') },
         { path: 'subsidy', component: () => import('@/src/pages/subsidy/index.vue') },
         { path: 'subsidy/housing', component: () => import('@/src/pages/subsidy/housing.vue') },
         { path: 'subsidy/recovery', component: () => import('@/src/pages/subsidy/recovery.vue') },

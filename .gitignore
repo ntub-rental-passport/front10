@@ -54,5 +54,14 @@ __pycache__/
 .gstack/
 .claude/
 
+# 憑證與金鑰：用樣式而非單一檔名，避免下一個憑證檔又漏掉
 rentmate-vision-key.json
+client_secret*.json
+*-key.json
+*credentials*.json
+*.pem
+*.p12
+.env
+.env.*
+!.env.example
 backend/uploads/inspection/

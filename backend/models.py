@@ -126,12 +126,22 @@ class Rental(Base):
     land_number = Column(String(100), nullable=True)
     building_number = Column(String(100), nullable=True)
     building_area = Column(DECIMAL(8,2), nullable=True)
+    tax_id = Column(String(100), nullable=True)
     has_annex_building = Column(Boolean, nullable=False, default=False)
-    annex_building_desc = Column(String(255), nullable=True)
+    annex_building_purpose = Column(String(255), nullable=True)
+    annex_building_area = Column(DECIMAL(8,2), nullable=True)
     rental_scope = Column(Enum('entire','partial', validate_strings=True, create_constraint=True), nullable=False, default='entire')
-    rental_scope_details = Column(String(255), nullable=True)
+    rental_room = Column(String(255), nullable=True)
+    rental_area = Column(DECIMAL(8,2), nullable=True)
     has_parking = Column(Boolean, nullable=False, default=False)
-    parking_details = Column(String(255), nullable=True)
+    car_parking_count = Column(Integer, nullable=True)
+    car_parking_type = Column(String(20), nullable=True)
+    car_parking_floor = Column(String(30), nullable=True)
+    car_parking_number = Column(String(50), nullable=True)
+    motorcycle_parking_count = Column(Integer, nullable=True)
+    motorcycle_parking_floor = Column(String(30), nullable=True)
+    motorcycle_parking_number = Column(String(100), nullable=True)
+    parking_usage_time = Column(String(30), nullable=True)
     has_equipment = Column(Boolean, nullable=False, default=False)
     equipment_list = Column(Text, nullable=True)
     start_date = Column(Date, nullable=False)
@@ -141,6 +151,7 @@ class Rental(Base):
     payment_interval_months = Column(Integer, nullable=False, default=1)
     payment_day = Column(Integer, nullable=False)
     payment_method = Column(String(50), nullable=True, default='轉帳')
+    bank_account = Column(EncryptedText(512), nullable=True)
     total_periods = Column(Integer, nullable=False)
     deposit_months = Column(Integer, nullable=False, default=2)
     deposit_amount = Column(Integer, nullable=False)
@@ -158,13 +169,16 @@ class Rental(Base):
     landlord_registered_address = Column(EncryptedText(512), nullable=True)
     landlord_contact_address = Column(EncryptedText(512), nullable=True)
     landlord_phone = Column(EncryptedText(255), nullable=True)
-    tenant_name = Column(String(100), nullable=True)
+    tenant_name = Column(EncryptedText(255), nullable=True)
     tenant_national_id = Column(EncryptedText(255), nullable=True)
     tenant_registered_address = Column(EncryptedText(512), nullable=True)
     tenant_contact_address = Column(EncryptedText(512), nullable=True)
     tenant_phone = Column(EncryptedText(255), nullable=True)
+    agent_name = Column(EncryptedText(255), nullable=True)
+    agent_national_id = Column(EncryptedText(255), nullable=True)
+    authorization_document = Column(String(255), nullable=True)
+    sublease_consent = Column(String(255), nullable=True)
     contract_tag = Column(String(30), nullable=True)
-    other_info = Column(Text, nullable=True)
     rental_status = Column(String(20), nullable=False, default='active')
     confirmed_at = Column(Timestamp, nullable=True)
     created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
@@ -174,13 +188,6 @@ class Rental(Base):
 
     bills = relationship(
         "Bill", back_populates="rental", cascade="all, delete-orphan"
-    )
-
-    contract_analysis = relationship(
-        "ContractAnalysis",
-        uselist=False,
-        back_populates="rental",
-        cascade="all, delete-orphan",
     )
 
     inspection_records = relationship(
@@ -217,17 +224,6 @@ class Bill(Base):
     payment_proof_url = Column(String(512), nullable=True)
 
     rental = relationship("Rental", back_populates="bills")
-
-class ContractAnalysis(Base):
-    __tablename__ = 'contract_analyses'
-    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
-    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='CASCADE'), nullable=False, unique=True)
-    contract_file_url = Column(String(512), nullable=False)
-    ocr_raw_text = Column(Text().with_variant(LONGTEXT(), "mysql"), nullable=False)
-    risk_report = Column(Text, nullable=False)
-    negotiation_script = Column(Text().with_variant(LONGTEXT(), "mysql"), nullable=True)
-
-    rental = relationship("Rental", back_populates="contract_analysis")
 
 class InspectionItem(Base):
     __tablename__ = 'inspection_items'
