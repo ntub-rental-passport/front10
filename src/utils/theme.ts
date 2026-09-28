@@ -42,3 +42,28 @@ export function resolveTheme(stored: string | null, prefersDark: boolean): Theme
 export function nextTheme(current: Theme): Theme {
   return current === 'dark' ? 'light' : 'dark'
 }
+
+/**
+ * 這個網址可不可以用深色。
+ *
+ * ## 為什麼只有後台
+ *
+ * 深色是整站共用的 `<html class="dark">`，但真正照著系統色票寫、設計過深色的
+ * 只有後台（/admin）。首頁、登入頁、租客端、房東端有大量寫死的白底 —— 深色一套上去，
+ * 文字跟著變淺，就成了白底淺字，整段看不見。
+ *
+ * 所以深色的「偏好」照舊記著（後台的開關、作業系統設定），但只在後台的網址套用，
+ * 其他網址一律淺色。員工登入頁 /staff-login 不在 /admin 底下，也是淺色：
+ * 還沒登入的入口頁，不該因為後台的偏好而變色。
+ *
+ * ⚠️ public/theme-boot.js 有一份同樣的判斷（它要在 Vue 掛載前就跑，沒辦法 import）。
+ * theme.test.ts 會實際執行那支腳本比對結果，改了一邊沒改另一邊會被擋下來。
+ */
+export function themeAllowedOn(path: string): boolean {
+  return path === '/admin' || path.startsWith('/admin/')
+}
+
+/** 這個網址實際要顯示的主題：後台跟著偏好，其他網址一律淺色。 */
+export function themeForPath(path: string, preference: Theme): Theme {
+  return themeAllowedOn(path) ? preference : 'light'
+}
