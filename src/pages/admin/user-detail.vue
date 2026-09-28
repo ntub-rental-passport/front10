@@ -408,7 +408,7 @@ function openSendDialog(): void {
         <div class="space-y-5 rounded-3xl border bg-card p-5 shadow-sm">
           <!--
             名字已經在頂部列的麵包屑（useRegisterAdminPageTitle），這裡放的是
-            辨識這個帳號用的資料：Email、暱稱、是不是真實帳號。
+            辨識這個帳號用的資料：Email 與暱稱。
           -->
           <div class="space-y-1">
             <div class="flex items-center gap-1.5">
@@ -423,8 +423,6 @@ function openSendDialog(): void {
               </span>
             </div>
             <p class="text-sm text-muted-foreground">{{ row.user.nickname ?? '沒有暱稱' }}</p>
-            <!-- 跟列表同一個標記：帶這個標記的帳號，停用會讓對方真的登不進來 -->
-            <Badge v-if="isReal" variant="outline" class="mt-1 text-[10px]">真實帳號</Badge>
           </div>
 
           <!--
@@ -499,7 +497,7 @@ function openSendDialog(): void {
             超級管理員只能由能登入伺服器的人用 manage_admin.py 授予（見 admin.py）。
           -->
           <p v-else-if="isReal" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
-            真實帳號的身分與權限角色需要由後端的 manage_admin.py 調整，這裡是唯讀。
+            身分與權限角色在這裡是唯讀，需要由系統管理者在伺服器上調整。
           </p>
 
           <p
@@ -574,13 +572,10 @@ function openSendDialog(): void {
           <CardHeader class="p-5"><CardTitle>訂閱與容量</CardTitle></CardHeader>
           <CardContent class="px-5 pb-5">
             <!--
-              真實帳號永遠沒有訂閱資料。寫「此帳號尚未訂閱」會讓人以為是這個人
-              選擇不訂閱，實際上是後端根本沒有訂閱功能 —— 要把真正的原因講出來。
+              真實帳號永遠沒有訂閱資料（後端沒有訂閱功能），畫面上跟沒訂閱的展示帳號寫法一樣：
+              網站目前不對外開放，後台不再區分真實帳號與展示資料（2026-09-28 決定）。
             -->
-            <p v-if="!row.subscription && isReal" class="text-muted-foreground">
-              真實帳號目前沒有訂閱資料 —— 訂閱只存在於展示資料，後端還沒有訂閱功能。
-            </p>
-            <p v-else-if="!row.subscription" class="text-muted-foreground">此帳號尚未訂閱任何方案。</p>
+            <p v-if="!row.subscription" class="text-muted-foreground">此帳號尚未訂閱任何方案。</p>
 
             <div v-else-if="effectivePlan" class="space-y-4">
               <div class="flex flex-wrap items-start gap-6">
@@ -706,10 +701,8 @@ function openSendDialog(): void {
             </p>
           </CardHeader>
           <CardContent class="space-y-6 px-5 pb-5">
-            <p v-if="row.deposits.length === 0 && isReal" class="text-muted-foreground">
-              真實帳號目前沒有押金資料 —— 押金對帳只存在於展示資料，後端還沒有這個功能。
-            </p>
-            <p v-else-if="row.deposits.length === 0" class="text-muted-foreground">沒有相關的押金記錄。</p>
+            <!-- 真實帳號也沒有押金資料（後端沒有押金對帳），寫法跟展示帳號相同 -->
+            <p v-if="row.deposits.length === 0" class="text-muted-foreground">沒有相關的押金記錄。</p>
 
             <div v-for="group in depositGroups" :key="group.side" class="space-y-2">
               <h3 class="text-xs font-semibold tracking-wide text-foreground/70">
@@ -718,7 +711,7 @@ function openSendDialog(): void {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>地址</TableHead>
+                    <TableHead class="min-w-[10rem]">地址</TableHead>
                     <TableHead class="whitespace-nowrap">月租</TableHead>
                     <TableHead class="whitespace-nowrap">房東聲明已收</TableHead>
                     <TableHead class="whitespace-nowrap">租客聲明已付</TableHead>
@@ -854,16 +847,12 @@ function openSendDialog(): void {
           </CardHeader>
           <CardContent class="space-y-6 px-5 pb-5">
             <!--
-              不能寫「沒有相關的報修工單」—— 這個人可能真的報修過，只是後台看不到。
-              前台（租客端與房東端）的報修都存在瀏覽器的 rentmate-repair-tickets-v1
-              （useRepairTickets），後台工單頁讀的是另一份 adminMaintenanceCollection，
-              兩邊沒有任何程式碼互相讀寫。
+              注意：這裡的「沒有」不代表對方沒報修過。前台（租客端與房東端）的報修存在
+              瀏覽器的 rentmate-repair-tickets-v1（useRepairTickets），後台工單頁讀的是另一份
+              adminMaintenanceCollection，兩邊沒有互相讀寫。網站目前不對外開放，
+              畫面上不再說明這件事（2026-09-28 決定）。
             -->
-            <p v-if="row.tickets.length === 0 && isReal" class="text-muted-foreground">
-              這個帳號在前台（租客端或房東端）送出的報修，目前不會出現在後台 ——
-              前台和後台的工單是兩份分開的資料，還沒有接起來。
-            </p>
-            <p v-else-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
+            <p v-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
 
             <div v-for="group in ticketGroups" :key="group.side" class="space-y-2">
               <h3 class="text-xs font-semibold tracking-wide text-foreground/70">
@@ -873,7 +862,7 @@ function openSendDialog(): void {
                 <TableHeader>
                   <TableRow>
                     <TableHead class="whitespace-nowrap">編號</TableHead>
-                    <TableHead>地址</TableHead>
+                    <TableHead class="min-w-[10rem]">地址</TableHead>
                     <TableHead class="whitespace-nowrap">分類</TableHead>
                     <TableHead class="whitespace-nowrap">狀態</TableHead>
                     <TableHead class="whitespace-nowrap">建立日</TableHead>
@@ -886,12 +875,12 @@ function openSendDialog(): void {
                     class="cursor-pointer"
                     @click="selectedTicketId = ticket.id"
                   >
-                    <TableCell class="font-medium">{{ ticket.id }}</TableCell>
+                    <TableCell class="whitespace-nowrap font-medium">{{ ticket.id }}</TableCell>
                     <TableCell>{{ ticket.address }}</TableCell>
                     <TableCell class="whitespace-nowrap">
                       {{ maintenanceCategoryLabels[ticket.category] }}
                     </TableCell>
-                    <TableCell>
+                    <TableCell class="whitespace-nowrap">
                       <!-- 與工單頁共用同一套顏色對應 -->
                       <StatusDot
                         :tone="maintenanceStatusTone(ticket.status)"
@@ -926,11 +915,7 @@ function openSendDialog(): void {
         <DialogHeader>
           <DialogTitle>停用「{{ row?.user.nickname?.trim() || row?.user.email }}」？</DialogTitle>
           <DialogDescription>
-            {{
-              isReal
-                ? '停用會立刻生效：對方馬上就登不進來，直到你再把這個帳號啟用。'
-                : '這是展示帳號，停用只會改這台瀏覽器裡的資料。'
-            }}
+            停用會立刻生效：對方馬上就登不進來，直到你再把這個帳號啟用。
           </DialogDescription>
         </DialogHeader>
 
@@ -980,7 +965,7 @@ function openSendDialog(): void {
             <Input id="creditAmount" v-model.number="creditAmount" type="number" min="1" />
           </div>
           <p class="text-sm text-muted-foreground">
-            平台尚未接金流，這裡只記權益不記付款；實際收款流程接上後再補金額欄位。
+            這裡只記錄方案權益，不含付款資訊。
           </p>
         </div>
 

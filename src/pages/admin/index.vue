@@ -364,7 +364,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       各自佔一整列緊湊。左邊是真實資料、右邊是展示資料，所以只有左邊有
       data-real——約定見本頁最上方的說明。
     -->
-    <section class="grid items-start gap-4 lg:grid-cols-2">
+    <section class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
       <!--
         最近登入：真實資料，直接用 realAccounts（useAdminDirectory 回傳的原始
         AdminAccount[]，來自後端 /api/admin/users），依 lastLoginAt 排序取前 5。
@@ -374,7 +374,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       <Card data-real="true" class="rounded-3xl">
         <CardHeader class="p-5">
           <CardTitle>最近登入</CardTitle>
-          <CardDescription>真實帳號依最後登入時間排序，最多 5 筆。</CardDescription>
+          <CardDescription>依最後登入時間排序，最多 5 筆。</CardDescription>
         </CardHeader>
         <CardContent class="px-5 pb-5 space-y-2.5">
           <div
@@ -397,7 +397,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           </div>
 
           <p v-if="realAccountsLoading" class="py-6 text-center text-sm text-muted-foreground">
-            真實帳號讀取中…
+            帳號讀取中…
           </p>
           <p
             v-else-if="realAccountsError"

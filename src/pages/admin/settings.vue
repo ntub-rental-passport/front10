@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card } from '@/components/ui/card/index'
 import {
@@ -75,10 +74,13 @@ const { logAction } = useAdminAudit()
 
 type SettingsTab = 'thresholds' | 'security' | 'maintenance'
 
+/** 「重置示範資料」是開發用的工具，正式站不出現 */
+const isDev = import.meta.env.DEV
+
 const TABS: { value: SettingsTab; label: string }[] = [
   { value: 'thresholds', label: '門檻與提醒' },
   { value: 'security', label: '安全性與帳號' },
-  { value: 'maintenance', label: '維護與重置' },
+  { value: 'maintenance', label: isDev ? '維護與重置' : '維護模式' },
 ]
 
 const route = useRoute()
@@ -504,10 +506,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
               <div>
                 <div class="flex flex-wrap items-center gap-2">
                   <h3 class="text-base font-semibold">AI 平台額度</h3>
-                  <Badge variant="outline">展示資料</Badge>
                 </div>
                 <p class="mt-1.5 text-sm text-muted-foreground">
-                  平台向 AI 廠商購買的每月額度與預警門檻，用於系統監控頁的 AI 用量。那一區目前是展示資料。
+                  平台向 AI 廠商購買的每月額度與預警門檻，用於系統監控頁的 AI 用量。
                 </p>
               </div>
               <Button variant="ghost" size="sm" class="-ml-3" :disabled="atDefaults(QUOTA_KEYS)" @click="resetToDefaults(QUOTA_KEYS)">
@@ -604,7 +605,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       <TabsContent value="security" class="mt-6 space-y-4">
         <p class="flex items-center gap-2 text-sm text-foreground/70">
           <Cloud class="h-4 w-4 shrink-0" aria-hidden="true" />
-          密碼與登入存在後端，所有管理員看到同一份，註冊與登入真的照著做。
+          密碼與登入的設定所有管理員共用，會直接套用在註冊與登入。
         </p>
 
         <Card class="rounded-3xl">
@@ -758,7 +759,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       <TabsContent value="maintenance" class="mt-6 space-y-4">
         <p class="flex items-center gap-2 text-sm text-foreground/70">
           <HardDrive class="h-4 w-4 shrink-0" aria-hidden="true" />
-          維護設定只存在這台瀏覽器：開啟後只有這台瀏覽器會看到維護頁，其他裝置上的使用者不受影響。接上後端之前，只能拿來預覽與測試。
+          維護設定只存在這台瀏覽器：開啟後只有這台瀏覽器會看到維護頁，其他裝置上的使用者不受影響。
         </p>
 
         <Card class="rounded-3xl">
@@ -858,8 +859,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           @revert="revert(MAINTENANCE_KEYS)"
         />
 
-        <!-- 危險區：無法復原的操作，框起來跟上面分開 -->
-        <Card class="rounded-3xl border-destructive/40">
+        <!-- 危險區：無法復原的操作，框起來跟上面分開。開發用，正式站不出現 -->
+        <Card v-if="isDev" class="rounded-3xl border-destructive/40">
           <div class="grid gap-6 p-6 md:grid-cols-4 md:gap-8">
             <div class="md:col-span-1">
               <h3 class="flex items-center gap-2 text-base font-semibold text-destructive">

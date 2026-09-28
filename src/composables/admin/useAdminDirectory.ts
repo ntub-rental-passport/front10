@@ -31,8 +31,9 @@ import { dropDemoDuplicates } from '@/src/utils/admin-user-list'
  *             沒有訂閱／押金／工單，因為那些關聯資料只存在於展示資料集。
  *   展示資料  為了呈現各模組而生成的假資料，彼此以固定 id 互相指涉。
  *
- * 兩者併在同一張表裡，所以**每一列都必須看得出自己是哪一種** ——
- * 否則管理員會分不清按下去的「停用」是真的會生效的。
+ * 兩者併在同一張表裡。畫面上原本會標出每一列是哪一種；網站目前不對外開放，
+ * 2026-09-28 決定不再標示（見 src/utils/admin-data-marking.md）。
+ * 列表頁的「停用」只給真實帳號，所以按得到的停用一定會生效。
  * 這件事靠 UserDirectoryRow.realAccountId 表達（有值就是真的）。
  *
  * 篩選狀態與真實帳號都放在模組層級：從詳情頁按返回時
@@ -67,7 +68,7 @@ async function loadRealAccounts(): Promise<void> {
     realRows.value = []
     realAccounts.value = []
     realAccountsError.value =
-      '讀不到真實帳號。請確認後端已啟動，且目前登入的是管理員帳號；以下僅為展示資料。'
+      '讀不到帳號資料。請確認伺服器已啟動，且目前登入的是管理員帳號。'
   } else {
     realRows.value = accounts.map(realAccountToRow)
     realAccounts.value = accounts
@@ -147,7 +148,7 @@ export function useAdminDirectory() {
     reason?: string,
   ): Promise<void> {
     if (row.realAccountId === undefined) {
-      throw new Error('這是展示資料，沒有可以停用的真實帳號。')
+      throw new Error('這個帳號無法停用。')
     }
     const updated = await updateAccountStatus(row.realAccountId, status, reason)
     realRows.value = realRows.value.map((item) =>

@@ -84,7 +84,7 @@ function submitNote(): void {
       那裡同時是計數與篩選入口，比一顆純顯示的徽章有用。
     -->
     <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-      <Tabs :model-value="filter" @update:model-value="(v: string) => (filter = v as NotifFilter)">
+      <Tabs class="min-w-0 max-w-full" :model-value="filter" @update:model-value="(v: string) => (filter = v as NotifFilter)">
         <TabsList :class="ADMIN_TAB_LIST">
           <!-- 「未讀」是跨來源的聚合不是來源，做大並上主色，再用分隔線隔開 -->
           <TabsTrigger

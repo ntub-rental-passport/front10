@@ -510,7 +510,7 @@ const previewAnnouncement = computed<Announcement>(() => ({
                   v-if="draftPlacement.kind === 'landlord-unsupported'"
                   :class="['rounded-lg px-2.5 py-1.5 text-xs font-medium', STATUS_CHIP_CLASS.warn]"
                 >
-                  這則公告目前不會出現在任何地方，因為房東端尚未讀取公告。
+                  這則公告目前不會出現在任何地方：房東端不顯示公告。
                 </p>
               </div>
             </div>

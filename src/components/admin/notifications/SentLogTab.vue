@@ -71,11 +71,11 @@ function openDetail(batch: NotifBatch): void {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>通知</TableHead>
-          <TableHead class="w-24">人數</TableHead>
-          <TableHead class="w-28">已讀</TableHead>
-          <TableHead class="w-72">投遞狀態</TableHead>
-          <TableHead class="w-48">發送時間</TableHead>
+          <TableHead class="min-w-[10rem]">通知</TableHead>
+          <TableHead class="w-24 whitespace-nowrap">人數</TableHead>
+          <TableHead class="w-28 whitespace-nowrap">已讀</TableHead>
+          <TableHead class="w-72 whitespace-nowrap">投遞狀態</TableHead>
+          <TableHead class="w-48 whitespace-nowrap">發送時間</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -89,7 +89,7 @@ function openDetail(batch: NotifBatch): void {
             <span class="font-medium">{{ batch.title }}</span>
             <p class="mt-0.5 text-xs text-muted-foreground">{{ recipientSummary(batch) }}</p>
           </TableCell>
-          <TableCell>{{ batch.recipients.length }} 人</TableCell>
+          <TableCell class="whitespace-nowrap">{{ batch.recipients.length }} 人</TableCell>
 
           <!--
             已讀是真實資料：UserNotification.read 是真欄位，租客端的 markRead
@@ -102,7 +102,7 @@ function openDetail(batch: NotifBatch): void {
             <span class="ml-1 text-xs text-foreground/70">站內</span>
           </TableCell>
 
-          <TableCell>
+          <TableCell class="whitespace-nowrap">
             <div class="flex flex-wrap gap-1">
               <Badge
                 v-for="stat in batchChannelStats(batch)"
@@ -114,7 +114,7 @@ function openDetail(batch: NotifBatch): void {
               </Badge>
             </div>
           </TableCell>
-          <TableCell class="text-sm text-muted-foreground">
+          <TableCell class="whitespace-nowrap text-sm text-muted-foreground">
             {{ formatDateTime(batch.createdAt) }}
           </TableCell>
         </TableRow>

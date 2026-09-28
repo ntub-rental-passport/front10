@@ -172,7 +172,7 @@ const rows = computed<RowView[]>(() =>
     </CardContent>
 
     <Dialog v-model:open="dialogOpen">
-      <DialogContent>
+      <DialogContent class="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {{ dialogIsUpdate ? '更新' : '關閉' }}「{{ dialogKey ? PLAN_FEATURES[dialogKey].label : '' }}」

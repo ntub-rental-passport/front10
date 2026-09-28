@@ -327,7 +327,7 @@ const hasActivePreview = computed(() =>
         :key="item.id"
         draggable="true"
         :class="[
-          'flex items-center gap-4 rounded-2xl border bg-muted/10 p-4 transition-colors',
+          'flex flex-col gap-3 rounded-2xl border bg-muted/10 p-4 transition-colors sm:flex-row sm:items-center sm:gap-4',
           draggingId === item.id && 'opacity-40',
           dropTargetId === item.id && draggingId !== item.id && 'border-primary bg-primary/5',
         ]"
@@ -336,23 +336,26 @@ const hasActivePreview = computed(() =>
         @dragover.prevent="onDragOver(item.id)"
         @drop.prevent="onDrop(index)"
       >
-        <GripVertical class="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
-        <img :src="item.imageUrl" :alt="item.title" class="h-16 w-28 shrink-0 rounded-lg object-cover" />
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <p class="font-medium">{{ item.title }}</p>
-            <StatusBadge :phase="phaseOf(item)" />
+        <!-- 手機上圖片＋標題一行、按鈕另起一行；擠在同一行時標題會被壓到 0 寬 -->
+        <div class="flex min-w-0 flex-1 items-center gap-4">
+          <GripVertical class="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
+          <img :src="item.imageUrl" :alt="item.title" class="h-16 w-28 shrink-0 rounded-lg object-cover" />
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="font-medium">{{ item.title }}</p>
+              <StatusBadge :phase="phaseOf(item)" />
+            </div>
+            <p class="mt-1 truncate text-sm text-muted-foreground">{{ item.linkUrl }}</p>
+            <p class="mt-0.5 text-xs text-muted-foreground">
+              {{ formatDate(item.startAt) }} ～ {{ item.endAt ? formatDate(item.endAt) : '長期' }}
+            </p>
           </div>
-          <p class="mt-1 truncate text-sm text-muted-foreground">{{ item.linkUrl }}</p>
-          <p class="mt-0.5 text-xs text-muted-foreground">
-            {{ formatDate(item.startAt) }} ～ {{ item.endAt ? formatDate(item.endAt) : '長期' }}
-          </p>
         </div>
         <!--
           拖曳是主要的排序方式，但它對鍵盤使用者不可用，所以 ▲▼ 保留當替代路徑，
           並補上 aria-label——原本這兩顆只有圖示，讀螢幕的人完全不知道它們是做什麼的。
         -->
-        <div class="flex shrink-0 items-center gap-1">
+        <div class="flex shrink-0 items-center justify-end gap-1">
           <Button
             variant="ghost"
             size="icon"
@@ -381,7 +384,7 @@ const hasActivePreview = computed(() =>
     </section>
 
     <Dialog v-model:open="dialogOpen">
-      <DialogContent>
+      <DialogContent class="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{{ draft.id ? '編輯輪播' : '新增輪播' }}</DialogTitle>
           <DialogDescription>圖片以外部網址提供，下方即時預覽。</DialogDescription>
