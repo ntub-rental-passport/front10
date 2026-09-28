@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional, Dict, Any
+from fastapi.encoders import jsonable_encoder
+from cryptography.exceptions import InvalidTag
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Any, Dict, List, Literal, Optional
 from sqlalchemy.orm import Session
+from decimal import Decimal
+import datetime
 import os
 import json
 import logging
@@ -11,7 +15,7 @@ import models
 from deidentify import deidentify
 from law_corpus import format_for_prompt, resolve_citations, retrieve
 from llm_provider import LlmUnavailable, generate
-from security import get_current_user
+from security import CurrentUser, get_current_user
 
 router = APIRouter(
     prefix="/api/contract",
@@ -348,3 +352,307 @@ async def contract_chat(req: ChatRequest):
     except Exception:
         logger.exception("Law Chat 發生未預期錯誤")
         raise HTTPException(status_code=500, detail="對話服務發生錯誤，請稍後再試。")
+
+
+# ========================================================
+# 💾 3. 終版契約落地：寫入 rentals 與 contract_analyses
+# ========================================================
+#
+# 校對頁只把辨識結果存在瀏覽器的 sessionStorage，關掉分頁就沒了。
+# 只有使用者親自確認「這是雙方已簽署的最終版」時才寫進資料庫 ——
+# 協商中的版本進了資料庫，後續的帳單、繳租提醒、租屋補助都會以錯誤的
+# 條件運作，所以 is_final 必須為 true，後端不接受預設值。
+#
+# ⚠️ 這裡只收「攤平後的欄位」，不收合約原始檔、不收 OCR 全文、不收風險報告。
+# OCR 全文含所有姓名、身分證字號、地址與電話，把它明文存進資料庫等於
+# 繞過旁邊那些 VARBINARY 欄位的加密。使用者要檢視契約時，由這些欄位
+# 回拼定型化契約（見 shared/contract-document.js），不留全文。
+
+MAX_CONTRACT_TAG_LEN = 30
+
+
+class RentalPayload(BaseModel):
+    """對應 `rentals` 一列。欄位名稱與 backend/database.sql 一致。
+
+    這裡的長度上限是「明文字元數」。個資欄位落地時會經過 EncryptedText
+    （AES-GCM，額外 29 bytes 標頭與 tag），中文一字 3 bytes，
+    因此 VARBINARY(255) 的欄位最多只放得下約 75 個中文字。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # 【1】審閱期
+    review_date: Optional[datetime.date] = None
+    review_days: Optional[int] = Field(default=None, ge=0, le=99)
+    has_landlord_review_signature: bool = False
+    has_tenant_review_signature: bool = False
+
+    # 【2】住宅標示
+    address: str = Field(min_length=1, max_length=255)
+    tax_id: Optional[str] = Field(default=None, max_length=100)
+    land_number: Optional[str] = Field(default=None, max_length=100)
+    building_number: Optional[str] = Field(default=None, max_length=100)
+    building_area: Optional[Decimal] = Field(default=None, gt=0, le=Decimal("999999"))
+    has_annex_building: bool = False
+    annex_building_purpose: Optional[str] = Field(default=None, max_length=255)
+    annex_building_area: Optional[Decimal] = Field(default=None, gt=0, le=Decimal("999999"))
+
+    # 【3】租賃範圍
+    rental_scope: Literal["entire", "partial"] = "entire"
+    rental_room: Optional[str] = Field(default=None, max_length=255)
+    rental_area: Optional[Decimal] = Field(default=None, gt=0, le=Decimal("999999"))
+    has_parking: bool = False
+    car_parking_count: Optional[int] = Field(default=None, ge=0, le=999)
+    car_parking_type: Optional[str] = Field(default=None, max_length=20)
+    car_parking_floor: Optional[str] = Field(default=None, max_length=30)
+    car_parking_number: Optional[str] = Field(default=None, max_length=50)
+    motorcycle_parking_count: Optional[int] = Field(default=None, ge=0, le=999)
+    motorcycle_parking_floor: Optional[str] = Field(default=None, max_length=30)
+    motorcycle_parking_number: Optional[str] = Field(default=None, max_length=100)
+    parking_usage_time: Optional[str] = Field(default=None, max_length=30)
+    has_equipment: bool = False
+    equipment_list: Optional[str] = Field(default=None, max_length=2_000)
+
+    # 【4】租賃期間
+    start_date: datetime.date
+    end_date: datetime.date
+    handover_date: Optional[datetime.date] = None
+
+    # 【5】租金與繳納
+    rent_amount: int = Field(gt=0, le=10_000_000)
+    payment_interval_months: int = Field(default=1, ge=1, le=12)
+    payment_day: int = Field(ge=1, le=31)
+    payment_method: Optional[str] = Field(default=None, max_length=50)
+    bank_account: Optional[str] = Field(default=None, max_length=150)
+    total_periods: int = Field(ge=1, le=600)
+
+    # 【6】押金
+    deposit_months: Optional[int] = Field(default=None, ge=0, le=12)
+    deposit_amount: int = Field(ge=0, le=10_000_000)
+
+    # 【7】費用
+    management_fee_rule: Optional[str] = Field(default=None, max_length=255)
+    water_fee_rule: Optional[str] = Field(default=None, max_length=255)
+    electricity_fee_type: Optional[str] = Field(default=None, max_length=100)
+    electricity_fee_rate: Optional[str] = Field(default=None, max_length=100)
+    gas_fee_rule: Optional[str] = Field(default=None, max_length=255)
+    network_fee_rule: Optional[str] = Field(default=None, max_length=255)
+    other_fees_rule: Optional[str] = Field(default=None, max_length=2_000)
+
+    # 【8】其他條款
+    abandoned_items_rule: Optional[str] = Field(default=None, max_length=2_000)
+    jurisdiction_court: Optional[str] = Field(default=None, max_length=100)
+
+    # 【9】雙方基本資料（加密欄位，見 class docstring 的長度說明）
+    landlord_name: Optional[str] = Field(default=None, max_length=70)
+    landlord_national_id: Optional[str] = Field(default=None, max_length=30)
+    landlord_registered_address: Optional[str] = Field(default=None, max_length=150)
+    landlord_contact_address: Optional[str] = Field(default=None, max_length=150)
+    landlord_phone: Optional[str] = Field(default=None, max_length=50)
+    tenant_name: Optional[str] = Field(default=None, max_length=70)
+    tenant_national_id: Optional[str] = Field(default=None, max_length=30)
+    tenant_registered_address: Optional[str] = Field(default=None, max_length=150)
+    tenant_contact_address: Optional[str] = Field(default=None, max_length=150)
+    tenant_phone: Optional[str] = Field(default=None, max_length=50)
+
+    # 【10】代理或轉租
+    agent_name: Optional[str] = Field(default=None, max_length=70)
+    agent_national_id: Optional[str] = Field(default=None, max_length=30)
+    authorization_document: Optional[str] = Field(default=None, max_length=255)
+    sublease_consent: Optional[str] = Field(default=None, max_length=255)
+
+    @field_validator("end_date")
+    @classmethod
+    def _end_after_start(cls, end_date: datetime.date, info) -> datetime.date:
+        start_date = info.data.get("start_date")
+        if start_date and end_date <= start_date:
+            raise ValueError("租期結束日必須晚於起始日")
+        return end_date
+
+
+class FinalizeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_final: bool
+    rental: RentalPayload
+    contract_tag: Optional[str] = Field(default=None, max_length=MAX_CONTRACT_TAG_LEN)
+
+    @field_validator("is_final")
+    @classmethod
+    def _must_be_final(cls, is_final: bool) -> bool:
+        if not is_final:
+            raise ValueError("只有使用者確認為最終簽署版的契約才會存入資料庫")
+        return is_final
+
+
+def _root_cause(error: BaseException) -> BaseException:
+    """走到例外鏈最底層——SQLAlchemy 會把欄位層的錯誤包進 StatementError。"""
+    seen: set[int] = set()
+    while error.__cause__ is not None and id(error) not in seen:
+        seen.add(id(error))
+        error = error.__cause__
+    return error
+
+
+@router.post("/finalize", status_code=201)
+def finalize_contract(
+    payload: FinalizeRequest,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """把使用者確認過的終版契約寫入 rentals，個資欄位由 ORM 自動加密落地。"""
+    rental_data = payload.rental
+
+    duplicate = (
+        db.query(models.Rental)
+        .filter(
+            models.Rental.user_id == user.id,
+            models.Rental.address == rental_data.address,
+            models.Rental.start_date == rental_data.start_date,
+            models.Rental.end_date == rental_data.end_date,
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"同一地址與租期的契約已存在（租約 #{duplicate.id}），"
+                "如需重新存檔請先刪除舊契約。"
+            ),
+        )
+
+    contract_tag = (payload.contract_tag or "").strip() or None
+
+    try:
+        rental = models.Rental(
+            user_id=user.id,
+            contract_tag=contract_tag,
+            confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+            **rental_data.model_dump(),
+        )
+        db.add(rental)
+        db.commit()
+    except Exception as error:
+        # 半筆資料留在資料庫比寫入失敗更糟，所以整筆回滾。
+        db.rollback()
+        # ⚠️ 只記例外型別，不記例外訊息或 traceback：
+        # SQLAlchemy 的 StatementError 會把整段 INSERT 與其 bind parameters
+        # （也就是姓名、身分證字號、地址、電話的明文）放進字串裡，
+        # logger.exception 等於把剛加密的個資原封不動寫到日誌檔。
+        logger.error("Contract finalize failed: %s", type(error).__name__)
+        # EncryptedText 在金鑰缺失或欄位超長時丟 ValueError，
+        # 但它是在 flush 時觸發的，會被 SQLAlchemy 包成 StatementError。
+        if isinstance(_root_cause(error), ValueError):
+            raise HTTPException(
+                status_code=500,
+                detail="契約個資無法加密儲存，請聯絡系統管理員確認加密金鑰設定。",
+            ) from error
+        raise HTTPException(status_code=500, detail="契約存檔失敗，請稍後重試。") from error
+
+    encrypted_field_count = sum(
+        1
+        for column in (
+            rental_data.landlord_name,
+            rental_data.landlord_national_id,
+            rental_data.landlord_registered_address,
+            rental_data.landlord_contact_address,
+            rental_data.landlord_phone,
+            rental_data.tenant_national_id,
+            rental_data.tenant_registered_address,
+            rental_data.tenant_contact_address,
+            rental_data.tenant_phone,
+            rental_data.tenant_name,
+            rental_data.bank_account,
+            rental_data.agent_name,
+            rental_data.agent_national_id,
+        )
+        if column
+    )
+
+    return {
+        "rental_id": rental.id,
+        "confirmed_at": rental.confirmed_at.isoformat(),
+        "encrypted_field_count": encrypted_field_count,
+    }
+
+
+# ========================================================
+# 📄 4. 回讀終版契約：解密欄位供前端回拼定型化契約
+# ========================================================
+#
+# 我們不存合約原始檔也不存 OCR 全文，所以「檢視合約」唯一的資料來源
+# 就是這裡：把 rentals 的欄位讀出來（個資欄位由 ORM 解密），
+# 前端以 shared/contract-document.js 逐格填回範本。
+
+# 回拼契約需要的欄位；rental_status、confirmed_at 等系統欄位不在其中。
+_DOCUMENT_COLUMNS = tuple(RentalPayload.model_fields)
+
+
+@router.get("/rentals")
+def list_stored_contracts(
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """列出這個使用者已存檔的終版契約，供「檢視合約」挑選。"""
+    # ⚠️ 只選明文欄位。查詢整個 Rental entity 會在「載入列」的當下就解密
+    # 全部加密欄位（EncryptedText.process_result_value 是 row-level 的，
+    # 不是取屬性時才跑），金鑰一有問題連清單都列不出來。
+    rows = (
+        db.query(
+            models.Rental.id,
+            models.Rental.contract_tag,
+            models.Rental.address,
+            models.Rental.start_date,
+            models.Rental.end_date,
+            models.Rental.confirmed_at,
+        )
+        .filter(models.Rental.user_id == user.id)
+        .order_by(models.Rental.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "rental_id": row.id,
+            "contract_tag": row.contract_tag,
+            "address": row.address,
+            "start_date": row.start_date.isoformat(),
+            "end_date": row.end_date.isoformat(),
+            "confirmed_at": row.confirmed_at.isoformat() if row.confirmed_at else None,
+        }
+        for row in rows
+    ]
+
+
+@router.get("/rentals/{rental_id}/document")
+def read_contract_document(
+    rental_id: int,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """回傳單一契約的欄位（含解密後的個資），給前端回拼契約用。"""
+    # 解密在 SQLAlchemy 載入列時就發生，所以查詢本身要包在 try 裡面。
+    try:
+        rental = (
+            db.query(models.Rental)
+            .filter(models.Rental.id == rental_id, models.Rental.user_id == user.id)
+            .first()
+        )
+        if not rental:
+            raise HTTPException(status_code=404, detail="找不到這份契約，或它不屬於你的帳號。")
+        fields = {column: getattr(rental, column) for column in _DOCUMENT_COLUMNS}
+    except InvalidTag as error:
+        # 金鑰換過了：密文還在，但用現在這把解不開。這種情況必須說清楚，
+        # 不能把欄位當成空白回傳——使用者會以為契約內容遺失。
+        logger.error("Contract document decryption failed for rental %s", rental_id)
+        raise HTTPException(
+            status_code=500,
+            detail="契約個資無法解密，加密金鑰可能已變更。請聯絡系統管理員核對金鑰。",
+        ) from error
+
+    return {
+        "rental_id": rental.id,
+        "contract_tag": rental.contract_tag,
+        "confirmed_at": rental.confirmed_at.isoformat() if rental.confirmed_at else None,
+        "rental": jsonable_encoder(fields),
+    }
