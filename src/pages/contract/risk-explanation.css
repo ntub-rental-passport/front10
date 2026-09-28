@@ -1,0 +1,181 @@
+.risk-explanation {
+  display: grid;
+  gap: 24px;
+  margin-top: 18px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+.risk-explanation h4 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+.risk-explanation h4 small {
+  display: inline-block;
+  margin-left: 6px;
+  color: #686879;
+  font-size: 12px;
+  font-weight: 400;
+}
+.risk-explanation p {
+  margin: 8px 0 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+.risk-problem-list,
+.risk-citation-list,
+.risk-evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.risk-problem-list {
+  display: grid;
+  gap: 10px;
+}
+.risk-problem-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-left: 3px solid #e57272;
+  padding: 10px 12px;
+  background: #fff2f2;
+  color: #b42318;
+}
+.risk-problem-list blockquote {
+  margin: 0;
+  white-space: pre-wrap;
+  font-weight: 600;
+}
+.risk-explanation.is-caution .risk-problem-list li {
+  color: #664f1b;
+  background: #fff9ed;
+  border-color: #c8993f;
+}
+.risk-citation-list {
+  display: grid;
+  gap: 16px;
+}
+.risk-citation-list a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  border: 1px solid #cbdcff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: #eff5ff;
+  color: #1d4ed8;
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.risk-citation-list a:hover {
+  text-decoration: underline;
+  background: #e4eeff;
+}
+.risk-citation-list a:focus-visible,
+.risk-explanation button:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 3px;
+}
+.risk-citation-list svg {
+  flex-shrink: 0;
+}
+.risk-candidate-citations small {
+  display: block;
+  color: #766335;
+}
+.risk-reason {
+  white-space: pre-line;
+}
+.risk-next-steps {
+  margin: 0;
+  padding-left: 22px;
+}
+.risk-next-steps li + li {
+  margin-top: 10px;
+}
+.risk-negotiation-example {
+  border: 1px solid #e2dcfb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: #f7f5ff;
+}
+.risk-negotiation-example h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #4939a5;
+}
+.risk-evidence-section h4 {
+  background: #f3f3f6;
+  border-left: 3px solid #c7c7d0;
+  padding: 7px 10px;
+}
+.risk-evidence-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1px dashed #e2e2ea;
+  padding: 12px 0;
+}
+.risk-evidence-list li p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 14px;
+}
+.risk-evidence-list li small {
+  flex-shrink: 0;
+  color: #686879;
+}
+.risk-evidence-list .risk-page-button {
+  margin-top: 3px;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+.risk-evidence-section .risk-meta {
+  margin-top: 12px;
+}
+.risk-page-button {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #eee9ff;
+  color: #5840d8;
+  cursor: pointer;
+  font-weight: 650;
+}
+.risk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.risk-meta span {
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #f0ecff;
+  color: #5840d8;
+  font-size: 11px;
+}
+@media (max-width: 640px) {
+  .risk-explanation {
+    font-size: 14px;
+    gap: 20px;
+  }
+  .risk-evidence-list li {
+    flex-wrap: wrap;
+  }
+  .risk-evidence-list li p {
+    flex-basis: 100%;
+  }
+  .risk-negotiation-example {
+    padding: 12px;
+  }
+}
