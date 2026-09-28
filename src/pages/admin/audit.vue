@@ -126,7 +126,7 @@ function exportCsv(): void {
           </Button>
           <p class="whitespace-nowrap text-sm text-muted-foreground">
             共 {{ filteredRows.length }} 筆
-            <span v-if="loading">（後端紀錄讀取中…）</span>
+            <span v-if="loading">（伺服器紀錄讀取中…）</span>
           </p>
           <!--
             三種來源講清楚：停用真實帳號、排程通知、管理員登入、斷線這幾類
@@ -134,7 +134,7 @@ function exportCsv(): void {
             這台瀏覽器 —— 換一台電腦就看不到，這件事不能讓人自己猜。
           -->
           <p class="ml-auto text-xs text-muted-foreground">
-            停用帳號、排程通知、管理員登入與服務狀態由後端記錄；其他模組的操作只存在這台瀏覽器。
+            停用帳號、排程通知、管理員登入與服務狀態的紀錄保存在伺服器，所有管理員看到同一份；其他操作只存在這台瀏覽器。
           </p>
         </div>
 
@@ -170,10 +170,6 @@ function exportCsv(): void {
               <TableCell>{{ row.target }}</TableCell>
               <TableCell class="text-muted-foreground">
                 {{ row.detail }}
-                <!-- 種子資料從來沒發生過，不標的話看起來跟真的操作一模一樣 -->
-                <Badge v-if="row.source === 'demo'" variant="outline" class="ml-1.5 text-[10px]">
-                  展示資料
-                </Badge>
               </TableCell>
             </TableRow>
             <TableRow v-if="pageData.total === 0">

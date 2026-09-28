@@ -213,11 +213,11 @@ function openSend(item: NotifTemplate): void {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>名稱</TableHead>
-          <TableHead>分類</TableHead>
-          <TableHead>管道</TableHead>
-          <TableHead>狀態</TableHead>
-          <TableHead>更新時間</TableHead>
+          <TableHead class="min-w-[10rem]">名稱</TableHead>
+          <TableHead class="whitespace-nowrap">分類</TableHead>
+          <TableHead class="whitespace-nowrap">管道</TableHead>
+          <TableHead class="whitespace-nowrap">狀態</TableHead>
+          <TableHead class="whitespace-nowrap">更新時間</TableHead>
           <TableHead class="text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
@@ -236,20 +236,20 @@ function openSend(item: NotifTemplate): void {
                 <span>{{ item.name }}</span>
               </div>
             </TableCell>
-            <TableCell class="text-sm text-muted-foreground">{{ item.category }}</TableCell>
-            <TableCell>
-              <div class="flex flex-wrap gap-1">
+            <TableCell class="whitespace-nowrap text-sm text-muted-foreground">{{ item.category }}</TableCell>
+            <TableCell class="whitespace-nowrap">
+              <div class="flex gap-1">
                 <Badge v-for="ch in item.channels" :key="ch" variant="secondary">
                   {{ channelLabels[ch] }}
                 </Badge>
               </div>
             </TableCell>
-            <TableCell>
+            <TableCell class="whitespace-nowrap">
               <Badge :variant="item.enabled ? 'default' : 'secondary'">
                 {{ item.enabled ? '已啟用' : '已停用' }}
               </Badge>
             </TableCell>
-            <TableCell class="text-sm text-muted-foreground">
+            <TableCell class="whitespace-nowrap text-sm text-muted-foreground">
               {{ formatDateTime(item.updatedAt) }}
             </TableCell>
             <TableCell class="text-right" @click.stop>
@@ -345,7 +345,7 @@ function openSend(item: NotifTemplate): void {
 
     <!-- 編輯 / 新增 Dialog -->
     <Dialog v-model:open="dialogOpen">
-      <DialogContent>
+      <DialogContent class="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{{ draft.id ? '編輯模板' : '新增模板' }}</DialogTitle>
           <DialogDescription>以雙大括號包住欄位名稱即可標記標題與內文中的動態變數。</DialogDescription>

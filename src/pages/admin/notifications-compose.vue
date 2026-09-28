@@ -460,7 +460,7 @@ const blockingIssue = computed<string | null>(() => {
     // 排程由後端寄 Email，站內與推播後端送不出去（收件匣在瀏覽器裡）
     if (!channels.value.includes('email')) return '排程只送得出 Email，請把 Email 管道打開。'
     if (channels.value.some((item) => item !== 'email')) {
-      return '排程不支援站內與推播：站內收件匣存在瀏覽器，後端在排程時間寫不進去。'
+      return '排程只能寄 Email，站內通知與推播不支援排程。'
     }
     if (scheduledAt.value === '') return '請選擇預定時間。'
     if (audienceUnavailable.value) return '讀不到後端的帳號清單，無法確認會送給誰。'
@@ -783,20 +783,20 @@ const confirmCount = computed(() =>
           -->
           <div class="rounded-xl bg-muted/40 p-3 text-xs leading-relaxed text-foreground/70">
             <template v-if="isSchedule">
-              <span class="font-medium text-foreground">排程由後端執行</span>，到時間會自己寄出，
-              不需要開著後台。收件人是<span class="font-medium text-foreground">資料庫裡真正註冊過的帳號</span>，
-              而且在送出當下才計算。只送得出 Email：站內收件匣存在瀏覽器，後端寫不進去。
+              <span class="font-medium text-foreground">排程由系統執行</span>，到時間會自己寄出，
+              不需要開著後台。收件人是<span class="font-medium text-foreground">已註冊的帳號</span>，
+              而且在送出當下才計算。排程只會寄 Email。
             </template>
             <template v-else>
-              <span class="font-medium text-foreground">立即發送寫進瀏覽器的收件匣</span>，
-              收件人是後台這份示範資料。站內會立刻出現；Email 與推播後端還沒接，會標成「待接通」。
+              <span class="font-medium text-foreground">立即發送的站內通知只存在這台瀏覽器</span>，
+              其他裝置上看不到；Email 與推播會標成「待接通」。
             </template>
           </div>
 
           <div v-if="isSchedule" class="space-y-2">
             <Label for="c-at">預定時間</Label>
             <Input id="c-at" v-model="scheduledAt" type="datetime-local" :min="minValue" :max="maxValue" />
-            <p class="text-xs text-foreground/70">後端每 20 秒檢查一次，實際寄出會落在預定時間之後幾十秒內。</p>
+            <p class="text-xs text-foreground/70">系統每 20 秒檢查一次，實際寄出會落在預定時間之後幾十秒內。</p>
           </div>
         </section>
       </div>

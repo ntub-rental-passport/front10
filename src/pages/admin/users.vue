@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent } from '@/components/ui/card/index'
 import { Checkbox } from '@/components/ui/checkbox/index'
@@ -418,7 +417,7 @@ function displayName(row: UserDirectoryRow): string {
       data-real 的約定見 src/pages/admin/index.vue 最上方。
     -->
     <div data-real="true" class="grid grid-cols-2 gap-x-2 gap-y-1 lg:grid-cols-4">
-      <InlineStat :icon="Users" label="真實帳號" :value="accountStats.total" hero />
+      <InlineStat :icon="Users" label="註冊帳號" :value="accountStats.total" hero />
       <InlineStat :icon="UserPlus" label="本週新增" :value="accountStats.newThisWeek" />
       <InlineStat :icon="UserX" label="停用中" :value="accountStats.suspended" />
       <InlineStat :icon="MailWarning" label="未驗證信箱" :value="accountStats.unverified" />
@@ -492,7 +491,7 @@ function displayName(row: UserDirectoryRow): string {
 
             <p class="whitespace-nowrap text-sm text-muted-foreground">
               共 {{ filteredRows.length }} 人
-              <span v-if="realAccountsLoading">（真實帳號讀取中…）</span>
+              <span v-if="realAccountsLoading">（帳號讀取中…）</span>
             </p>
 
             <!-- 從原本的頁面副標搬過來的操作提示 -->
@@ -510,7 +509,7 @@ function displayName(row: UserDirectoryRow): string {
             class="flex flex-wrap items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-4 py-2.5 text-sm"
           >
             <span class="font-medium">已選 {{ selectedRows.length }} 位</span>
-            <span class="text-xs text-muted-foreground">只有真實、非管理員的帳號可以批次操作</span>
+            <span class="text-xs text-muted-foreground">管理員帳號不能批次操作</span>
             <div class="ml-auto flex flex-wrap gap-2">
               <Button size="sm" variant="outline" @click="bulkSend">
                 <Send class="mr-1.5 h-3.5 w-3.5" />
@@ -644,10 +643,6 @@ function displayName(row: UserDirectoryRow): string {
                   </div>
                   <div class="flex items-center gap-1.5">
                     <p class="text-sm text-muted-foreground">{{ row.user.nickname ?? '—' }}</p>
-                    <!-- 只有真實帳號帶標記：帶標記的列，停用會讓對方真的登不進來 -->
-                    <Badge v-if="row.realAccountId !== undefined" variant="outline" class="text-[10px]">
-                      真實帳號
-                    </Badge>
                   </div>
                 </TableCell>
 
@@ -784,7 +779,7 @@ function displayName(row: UserDirectoryRow): string {
       v-if="sourceSegments.length"
       data-real="true"
       title="註冊來源"
-      description="真實帳號的登入方式分布。「兩者皆有」是先用密碼註冊後再綁定 Google。"
+      description="帳號的登入方式分布。「兩者皆有」是先用密碼註冊後再綁定 Google。"
       :items="sourceSegments"
     />
 
@@ -811,7 +806,7 @@ function displayName(row: UserDirectoryRow): string {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {{ bulkAction === 'suspend' ? '停用' : '啟用' }} {{ bulkTargets.length }} 個真實帳號？
+            {{ bulkAction === 'suspend' ? '停用' : '啟用' }} {{ bulkTargets.length }} 個帳號？
           </DialogTitle>
           <DialogDescription>
             <template v-if="bulkAction === 'suspend'">

@@ -19,11 +19,16 @@ import type { MonitorEvent } from './admin-monitoring-report'
 
 export type AuditSource = 'server' | 'local' | 'demo'
 
-/** 匯出 CSV 的「來源」欄。CSV 沒有畫面上的標籤，不寫出來就分不出哪幾筆是假的 */
+/**
+ * 匯出 CSV 的「來源」欄。
+ *
+ * 種子資料跟 logAction 寫的一樣存在瀏覽器裡，所以也標「本機」——
+ * 畫面與匯出都不另外標示展示資料（網站目前不對外開放，2026-09-28 決定）。
+ */
 export const AUDIT_SOURCE_LABELS: Record<AuditSource, string> = {
   server: '後端',
   local: '本機',
-  demo: '展示資料',
+  demo: '本機',
 }
 
 export interface AuditRow extends AuditEvent {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
 import {
@@ -528,10 +527,9 @@ function daysLeftText(usage: ProviderUsage): string {
       <div>
         <div class="flex flex-wrap items-center gap-2">
           <h2 id="monitor-ai-usage" class="text-lg font-bold tracking-tight">AI 額度用量</h2>
-          <Badge variant="outline">展示資料</Badge>
         </div>
         <p class="text-sm text-foreground/70">
-          這一區還沒接上真實用量，數字是範例，之後接上會直接替換。上限與門檻在系統設定頁調整。
+          上限與門檻在系統設定頁調整。
         </p>
       </div>
 

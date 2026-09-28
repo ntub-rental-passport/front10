@@ -168,7 +168,7 @@ function clearFilters(): void {
       約定見 src/utils/admin-data-marking.md。
     -->
     <div class="flex flex-wrap items-center justify-between gap-x-10 gap-y-4">
-      <Tabs :model-value="statusTab" @update:model-value="handleStatusTabChange">
+      <Tabs class="min-w-0 max-w-full" :model-value="statusTab" @update:model-value="handleStatusTabChange">
         <TabsList :class="ADMIN_TAB_LIST">
         <!--
           「待處理」不是工單狀態，是跨狀態的聚合（送出＋通報＋逾期＋爭議）。
@@ -263,12 +263,12 @@ function clearFilters(): void {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>工單編號</TableHead>
-              <TableHead>地址</TableHead>
-              <TableHead>租客</TableHead>
-              <TableHead>房東</TableHead>
-              <TableHead>分類</TableHead>
-              <TableHead>狀態</TableHead>
+              <TableHead class="whitespace-nowrap">工單編號</TableHead>
+              <TableHead class="min-w-[12rem]">地址</TableHead>
+              <TableHead class="whitespace-nowrap">租客</TableHead>
+              <TableHead class="whitespace-nowrap">房東</TableHead>
+              <TableHead class="whitespace-nowrap">分類</TableHead>
+              <TableHead class="whitespace-nowrap">狀態</TableHead>
               <TableHead class="whitespace-nowrap">建立日</TableHead>
               <TableHead class="whitespace-nowrap">已經過天數</TableHead>
               <TableHead class="whitespace-nowrap">最後更新</TableHead>
@@ -281,12 +281,12 @@ function clearFilters(): void {
               class="cursor-pointer"
               @click="selectedId = ticket.id"
             >
-              <TableCell class="font-medium">{{ ticket.id }}</TableCell>
+              <TableCell class="whitespace-nowrap font-medium">{{ ticket.id }}</TableCell>
               <TableCell>{{ ticket.address }}</TableCell>
               <TableCell class="whitespace-nowrap">{{ ticket.tenantName }}</TableCell>
               <TableCell class="whitespace-nowrap">{{ ticket.landlordName }}</TableCell>
-              <TableCell>{{ maintenanceCategoryLabels[ticket.category] }}</TableCell>
-              <TableCell>
+              <TableCell class="whitespace-nowrap">{{ maintenanceCategoryLabels[ticket.category] }}</TableCell>
+              <TableCell class="whitespace-nowrap">
                 <!--
                   狀態用圓點不用徽章：圓點＝會變的狀態、徽章＝不會變的分類
                   （這一列左邊的「問題類型」仍然是徽章）。顏色對應與四分的
