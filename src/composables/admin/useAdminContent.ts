@@ -12,6 +12,7 @@ import {
   seedBanners,
   migrateBannerImages,
   migrateBannerSchedule,
+  migrateHandoverRelaunch,
   type Announcement,
   type Banner,
 } from '@/src/mocks/admin-seed'
@@ -22,10 +23,10 @@ const announcements = createAdminCollection<Announcement[]>(
   migrateAnnouncements,
 )
 
-// 兩支舊資料遷移各自處理一件事（圖片網址／排期欄位），互不相依，
+// 三支舊資料遷移各自處理一件事（圖片網址／點交存證重新上架／排期欄位），互不相依，
 // 在這裡合成單一 migrate 函式餵給 createAdminCollection——它一次只接受一個。
 function migrateBanners(list: Banner[]): Banner[] {
-  return migrateBannerSchedule(migrateBannerImages(list))
+  return migrateBannerSchedule(migrateHandoverRelaunch(migrateBannerImages(list)))
 }
 
 const banners = createAdminCollection<Banner[]>('content-banners', seedBanners, migrateBanners)
