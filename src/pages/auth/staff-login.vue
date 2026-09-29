@@ -132,7 +132,11 @@ function restart(): void {
 <template>
   <AuthShell content-width-class="max-w-lg" footer-note="此入口僅供經授權的 RentMate 內部人員使用。">
     <div>
-      <p class="text-sm font-semibold uppercase tracking-[0.3em] text-primary/70">Internal Access</p>
+      <!--
+        眉標原本是 text-primary/70：疊在登入頁的淺色漸層上實測只有 3.57，
+        14px 小字要 4.5。/80 最差的一段漸層是 4.42 仍不夠，/85 是 4.95。
+      -->
+      <p class="text-sm font-semibold uppercase tracking-[0.3em] text-primary/85">Internal Access</p>
       <h1 class="mt-3 text-4xl font-black tracking-tight">內部人員登入</h1>
       <p class="mt-3 text-muted-foreground">
         帳號、角色、內容與系統維護。登入需通過密碼與信箱驗證碼兩道驗證。
