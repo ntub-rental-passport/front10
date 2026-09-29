@@ -114,11 +114,14 @@ function onImageError(item: Banner): void {
       class="block"
     >
       <div class="relative">
+        <!-- 從偏右（70%）裁而不是正中間：輪播圖都是「標題在左下、主角在右邊」的構圖，
+             手機上只看得到中間大約一半的寬度，從正中間裁會把右邊的人物切掉。
+             電腦版是左右塞滿、只裁上下，不受這個設定影響。 -->
         <img
           v-if="!hasImageFailed(item)"
           :src="item.imageUrl"
           :alt="item.title"
-          class="h-48 w-full object-cover sm:h-64 lg:h-72"
+          class="h-48 w-full object-cover object-[70%_50%] sm:h-64 lg:h-72"
           @error="onImageError(item)"
         />
         <!-- 圖床失效、防盜連、網址打錯都會落到這裡。高度跟正常圖片一樣，
