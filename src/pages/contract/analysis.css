@@ -647,7 +647,7 @@
   justify-content: space-between;
 }
 
-.risk-card-title-row strong {
+.risk-card-title-row h3 {
   font-size: 0.8rem;
 }
 
@@ -1744,9 +1744,13 @@ textarea:focus-visible {
   color: var(--coral);
 }
 
-.risk-card-title-row strong {
+.risk-card-title-row h3 {
   color: var(--ink);
-  font-size: 0.84rem;
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 0;
+  flex: 1 1 240px;
+  overflow-wrap: anywhere;
   line-height: 1.45;
 }
 
@@ -2302,6 +2306,15 @@ textarea:focus-visible {
 .contract-analysis-page .ai-analysis-alert { padding: 10px 16px; font-size: 12px; }
 .risk-impact, .risk-advice { display: block; margin-top: 10px; font-size: 14px; line-height: 1.65; }
 .risk-advice { color: #4939a5; }
+.risk-card.is-active .risk-card-title-row h3 { font-size: 1.5rem; line-height: 1.45; }
+.risk-card-title-row { align-items: flex-start; gap: 12px; }
+.risk-contract-section { font-size: 0.85em; }
+@media (max-width: 640px) {
+  .risk-card.is-active .risk-card-title-row h3 { font-size: 1.25rem; }
+  .risk-card-title-row h3 { font-size: 1.125rem; flex-basis: 180px; }
+  .risk-card.is-active .risk-card-main { gap: 10px; padding: 16px 12px; }
+  .risk-card.is-active .risk-icon { display: none; }
+}
 .contract-analysis-page .risk-detail-list li, .contract-analysis-page .risk-clause { font-weight: 400; line-height: 1.7; }
 .contract-analysis-page .risk-actions { flex-wrap: wrap; gap: 12px; }
 .risk-legal-basis a { overflow-wrap: anywhere; }

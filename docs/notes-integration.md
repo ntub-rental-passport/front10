@@ -9,8 +9,8 @@
 - `src/services/notesApi.ts`：同源 API proxy、現有租客 Bearer token、錯誤處理。
 - `backend/routers/notes.py`：個人記事 CRUD，以 user_id 隔離。
 - `backend/routers/households.py`：群組、邀請、成員、任務；每次存取檢查成員資格。
-- `backend/models.py`：Note 模型。
-- `backend/notes_models.py`：群組、成員、任務模型，使用現有 users 帳號。
+- `backend/db/models.py`：Note 模型。
+- `backend/db/notes_models.py`：群組、成員、任務模型，使用現有 users 帳號。
 - `backend/tests/test_notes_api.py`：真實 HTTP 路由、隔離 SQLite、外鍵及 Bearer 驗證測試。
 
 ## 啟動與資料

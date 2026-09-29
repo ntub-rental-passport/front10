@@ -2,7 +2,7 @@
  * 系統設定頁的管理員名單（唯讀）。純邏輯。
  *
  * 回答的問題是「現在誰能進後台」。新增或移除管理員刻意不開放從網頁做：
- * 要在伺服器上用 backend/manage_admin.py —— 網頁被攻破也拿不到管理員。
+ * 要在伺服器上用 backend/scripts/manage_admin.py —— 網頁被攻破也拿不到管理員。
  */
 
 import type { StatusDotTone } from '@/src/components/admin/status-dot'

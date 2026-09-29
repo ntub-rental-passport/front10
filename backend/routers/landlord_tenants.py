@@ -10,8 +10,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, joinedload
 
-from database import get_db
-from models import (
+from db.database import get_db
+from db.models import (
     LandlordLease,
     LandlordMoveOut,
     LandlordProperty,
@@ -20,7 +20,7 @@ from models import (
     LandlordTenantActivity,
     User,
 )
-from security import get_current_landlord
+from auth.security import get_current_landlord
 
 router = APIRouter(prefix="/api/landlord/tenants", tags=["Landlord tenants"])
 ACTIVE_LEASE_STATUSES = ("active", "pending")

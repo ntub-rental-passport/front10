@@ -53,8 +53,8 @@ import os
 
 import httpx
 
-import upstream_state
-from http_retry import with_retry
+from common import upstream_state
+from common.http_retry import with_retry
 
 logger = logging.getLogger(__name__)
 

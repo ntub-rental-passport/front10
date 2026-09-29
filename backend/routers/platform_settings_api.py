@@ -8,9 +8,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-import platform_settings
-from models import User
-from security import get_current_admin
+from admin import platform_settings
+from db.models import User
+from auth.security import get_current_admin
 
 router = APIRouter(tags=['Settings'])
 

@@ -10,9 +10,9 @@ import unittest
 from unittest.mock import patch
 
 from sqlalchemy import create_engine, select, text
-from database import Base
+from db.database import Base
 from migrations.upgrade_local_sqlite_v3 import migrate, plan, read_source
-from schema_check import schema_problems
+from db.schema_check import schema_problems
 
 
 class UpgradeTests(unittest.TestCase):

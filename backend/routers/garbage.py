@@ -7,8 +7,8 @@ from urllib.parse import urlparse
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from security import get_current_tenant
-from garbage_service import capabilities, connect, create_reminder, public_reminder, TZ
+from auth.security import get_current_tenant
+from notifications.garbage_service import capabilities, connect, create_reminder, public_reminder, TZ
 
 router = APIRouter(prefix='/api/garbage', tags=['Taipei garbage'])
 _cache = {'expires': 0, 'data': None}

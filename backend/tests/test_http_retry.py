@@ -3,7 +3,7 @@ import unittest
 
 import httpx
 
-from http_retry import is_transient, with_retry
+from common.http_retry import is_transient, with_retry
 
 
 def _status_error(code: int) -> httpx.HTTPStatusError:
@@ -43,7 +43,7 @@ class RetryBehaviourTest(unittest.TestCase):
         self.original_sleep = asyncio.sleep
 
     def _run(self, operation, patched_sleep=True):
-        import http_retry
+        from common import http_retry
 
         async def instant(_seconds):
             return None

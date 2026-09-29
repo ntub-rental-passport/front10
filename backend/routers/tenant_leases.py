@@ -3,9 +3,9 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 
-from database import get_db
-from models import LandlordLease, LandlordTenant, User
-from security import get_current_tenant
+from db.database import get_db
+from db.models import LandlordLease, LandlordTenant, User
+from auth.security import get_current_tenant
 
 
 router = APIRouter(prefix="/api/tenant/leases", tags=["Tenant leases"])

@@ -6,15 +6,15 @@
 
 ## 用法
 
-    python check_llm.py              # 檢查設定 + 跑一份範例合約
-    python check_llm.py --config     # 只檢查設定，不呼叫 LLM（不燒額度）
-    python check_llm.py --chat       # 試打 Law Chat（用 chat 專用模型）
-    python check_llm.py --models     # 列出 NVIDIA 上可用的模型代號
-    python check_llm.py --models qwen  # 只列出名稱含 qwen 的
+    python scripts/check_llm.py              # 檢查設定 + 跑一份範例合約
+    python scripts/check_llm.py --config     # 只檢查設定，不呼叫 LLM（不燒額度）
+    python scripts/check_llm.py --chat       # 試打 Law Chat（用 chat 專用模型）
+    python scripts/check_llm.py --models     # 列出 NVIDIA 上可用的模型代號
+    python scripts/check_llm.py --models qwen  # 只列出名稱含 qwen 的
 
 正式機（容器內）：
 
-    docker compose exec fastapi python check_llm.py
+    docker compose exec fastapi python scripts/check_llm.py
 
 ## 注意
 
@@ -32,12 +32,12 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import embeddings  # noqa: E402
-import law_corpus  # noqa: E402
-import llm_provider  # noqa: E402
-import upstream_state  # noqa: E402
+from ai import embeddings  # noqa: E402
+from ai import law_corpus  # noqa: E402
+from ai import llm_provider  # noqa: E402
+from common import upstream_state  # noqa: E402
 
 # 開 INFO：這支程式的重點就是「實際上發生了什麼」。
 #
@@ -48,8 +48,8 @@ import upstream_state  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="  · %(message)s", force=True)
 # httpx 每次請求都印一行，會把上面那些訊息淹掉
 logging.getLogger("httpx").setLevel(logging.WARNING)
-from deidentify import deidentify  # noqa: E402
-from law_corpus import format_for_prompt, resolve_citations, retrieve, stats  # noqa: E402
+from ai.deidentify import deidentify  # noqa: E402
+from ai.law_corpus import format_for_prompt, resolve_citations, retrieve, stats  # noqa: E402
 
 SAMPLE_CONTRACT = """住宅租賃契約書
 承租人：王小明  身分證字號：A123456789  電話：0912345678
@@ -156,7 +156,7 @@ def show_embedding_config() -> None:
     spaces = law_corpus.stats()["spaces"]
     if not spaces:
         print("  ❌ 語料沒有任何可用的向量空間 —— 一律退回「全部給」")
-        print("     請執行：python build_vectors.py --provider all")
+        print("     請執行：python scripts/build_vectors.py --provider all")
         print()
         return
 
@@ -171,7 +171,7 @@ def show_embedding_config() -> None:
         wanted = embeddings.model_for(provider)
         if space is None:
             print(f"  ❌ {provider}：語料沒有這個空間的向量")
-            print(f"     建一份：python build_vectors.py --provider {provider}")
+            print(f"     建一份：python scripts/build_vectors.py --provider {provider}")
         elif not embeddings.is_configured(provider):
             hint = ("設定 NVIDIA_API_KEY" if provider == "nvidia"
                     else "設定 OLLAMA_URL 或 LOCAL_EMBEDDING_URL")
@@ -179,7 +179,7 @@ def show_embedding_config() -> None:
         elif wanted != space["model"]:
             print(f"  ❌ {provider}：語料用 {space['model']} 建，但設定要用 {wanted}")
             print("     這個空間會被跳過 —— 混用不同模型的向量會算出無意義的相似度。")
-            print(f"     重建：python build_vectors.py --provider {provider}")
+            print(f"     重建：python scripts/build_vectors.py --provider {provider}")
         else:
             print(f"  ✅ {provider}：{wanted}（{space['dim']} 維）")
             usable += 1

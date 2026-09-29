@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from database import engine
-from models import InspectionItem
+from db.database import engine
+from db.models import InspectionItem
 
 
 def upgrade(target_engine):

@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 import jwt
 from fastapi import HTTPException, Response
 
-import audit_service
-import platform_settings as settings
-import security
+from admin import audit_service
+from admin import platform_settings as settings
+from auth import security
 
 
 class PlatformSettingsTestCase(unittest.TestCase):

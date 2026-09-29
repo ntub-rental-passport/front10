@@ -1,4 +1,4 @@
-// Schema v3: generated from backend/database.sql (ca00945).
+// Schema v3: generated from backend/db/database.sql (ca00945).
 // SQL is authoritative for defaults, checks, collation, and indexes.
 
 Table users {

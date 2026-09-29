@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator, field_valida
 from sqlalchemy.orm import Session
 from typing import Literal
 
-from database import get_db
-from models import Note, User
-from security import get_current_tenant as get_current_user
+from db.database import get_db
+from db.models import Note, User
+from auth.security import get_current_tenant as get_current_user
 
 router = APIRouter(prefix="/api/notes", tags=["Notes"])
 

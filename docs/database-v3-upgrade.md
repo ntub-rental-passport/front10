@@ -4,7 +4,7 @@
 
 # 新資料庫結構對應（schema v3）
 
-基準為 `ca00945` 的 `backend/database.sql`，共 27 張表，另依確認後的需求調整帳號唯一限制：每個帳號只有一個角色，同一個 email 可以各有一個租客與房東帳號。
+基準為 `ca00945` 的 `backend/db/database.sql`，共 27 張表，另依確認後的需求調整帳號唯一限制：每個帳號只有一個角色，同一個 email 可以各有一個租客與房東帳號。
 
 ## 同信箱、不同角色
 
@@ -17,7 +17,7 @@
 
 ## 程式對應
 
-- `backend/models.py` 對應全部 27 張表的欄位、型別、可空值、外鍵與索引。
+- `backend/db/models.py` 對應全部 27 張表的欄位、型別、可空值、外鍵與索引。
 - 單一帳號角色讀寫 `users.role`；密碼雜湊讀寫 `users.password_hash` 與 `password_changed_at`。Google 綁定繼續使用 `user_identities`。
 - 登入、管理員兩階段驗證、使用者清單、Bearer 權限及 cookie session 都會核對帳號現有角色與停用狀態。
 - `pending_registrations.invite_code` 已移除，註冊畫面不再收集該欄位。共居邀請仍由 `households.invite_code` 處理，長度不超過 20。
@@ -41,9 +41,9 @@ python -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)
 
 ## 新環境啟動
 
-1. 在選定的新 MySQL 資料庫套用 `backend/database.sql`。檔案指定 `USE 115-RentMate`；執行前確認目標資料庫，不要將它當成既有庫的 ALTER migration。
+1. 在選定的新 MySQL 資料庫套用 `backend/db/database.sql`。檔案指定 `USE 115-RentMate`；執行前確認目標資料庫，不要將它當成既有庫的 ALTER migration。
 2. 設定 `DATABASE_URL`、`PII_ENCRYPTION_KEY` 與既有登入／郵件環境變數，安裝 `backend/requirements.txt`。
-3. 執行 `python backend/schema_check.py`，只讀檢查表格、欄位、型別與帳號唯一限制。
+3. 執行 `python -m db.schema_check (from backend/)`，只讀檢查表格、欄位、型別與帳號唯一限制。
 4. 執行 `npm run dev:all`。後端啟動不再呼叫 `create_all`，遇到舊結構會明確拒絕啟動，不會產生新舊混用的表格。
 
 管理員維持既有 CLI 建立／授權流程，不開放公開註冊取得 admin。`manage_admin.py grant` 將帳號唯一角色設為 admin；若信箱同時有租客與房東帳號，CLI 會拒絕任意挑選其中一個，請使用獨立管理員信箱。`revoke` 停用管理員帳號，既有兩階段驗證仍保留。

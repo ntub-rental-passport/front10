@@ -7,9 +7,9 @@ from datetime import date, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database import Base
-from models import UserRole
-from models import LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, User
+from db.database import Base
+from db.models import UserRole
+from db.models import LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, User
 from routers.tenant_leases import list_tenant_leases
 
 

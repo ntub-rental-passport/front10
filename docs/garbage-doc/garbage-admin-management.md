@@ -307,6 +307,6 @@ garbage.records.exported
 - [後台管理系統功能總覽](../後台管理系統-功能總覽.md)
 - [目前管理員角色與導覽](../../src/utils/admin-rbac.ts)
 - [現有租客清運 API](../../backend/routers/garbage.py)
-- [提醒資料表與發送服務](../../backend/garbage_service.py)
+- [提醒資料表與發送服務](../../backend/notifications/garbage_service.py)
 
 本文件沒有建立後台頁面、資料表、管理員 API 或新權限；以上新增項目均為交接與實作規劃。

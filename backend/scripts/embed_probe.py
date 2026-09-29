@@ -13,8 +13,8 @@
 
 ## 用法
 
-    python embed_probe.py                     # 測所有候選模型
-    python embed_probe.py nvidia/embed-qa-4   # 只測指定的
+    python scripts/embed_probe.py                     # 測所有候選模型
+    python scripts/embed_probe.py nvidia/embed-qa-4   # 只測指定的
 """
 
 import asyncio
@@ -22,11 +22,11 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx  # noqa: E402
 
-from law_corpus import CHUNKS  # noqa: E402
+from ai.law_corpus import CHUNKS  # noqa: E402
 
 CANDIDATES = [
     "nvidia/llama-3.2-nv-embedqa-1b-v1",

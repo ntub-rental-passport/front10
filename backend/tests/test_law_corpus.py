@@ -1,8 +1,8 @@
 import asyncio
 import unittest
 
-import law_corpus
-from law_corpus import format_for_prompt, resolve_citations, retrieve, stats
+from ai import law_corpus
+from ai.law_corpus import format_for_prompt, resolve_citations, retrieve, stats
 
 
 class CorpusLoadTest(unittest.TestCase):
@@ -103,7 +103,7 @@ class RetrievalTest(unittest.TestCase):
 
     def test_embedding_failure_falls_back_to_all(self):
         """embedding 掛掉時退回全部給，不可讓整個分析功能不能用。"""
-        import embeddings
+        from ai import embeddings
 
         async def boom(*args, **kwargs):
             raise embeddings.EmbeddingUnavailable("測試用")

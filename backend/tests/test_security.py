@@ -9,10 +9,10 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-import platform_settings
-from database import Base
-from models import AdminSession, User, UserRole
-from security import ADMIN_IDLE_DETAIL, create_access_token, get_current_admin, read_access_token
+from admin import platform_settings
+from db.database import Base
+from db.models import AdminSession, User, UserRole
+from auth.security import ADMIN_IDLE_DETAIL, create_access_token, get_current_admin, read_access_token
 
 
 class AccessTokenTest(unittest.TestCase):

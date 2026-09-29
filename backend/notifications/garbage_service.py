@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # `sqlite3.OperationalError: unable to open database file`。
 #
 # 預設值維持原本的 repo 佈局（開發機行為不變），容器由 compose 設環境變數覆寫。
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # ⚠️ 這兩個一定要在**呼叫時**才讀環境變數，不能做成模組層級常數。
 # tests/test_garbage.py 在 setUp() 裡 patch GARBAGE_REMINDER_DB 指向暫存檔，

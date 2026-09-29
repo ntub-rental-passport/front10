@@ -26,15 +26,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-import audit_service
-import platform_settings
-from database import get_db
-from email_service import (
+from admin import audit_service
+from admin import platform_settings
+from db.database import get_db
+from notifications.email_service import (
     EmailConfigurationError,
     send_admin_login_code,
     send_verification_email,
 )
-from models import (
+from db.models import (
     AdminSession,
     PendingAdminLogin,
     PendingRegistration,
@@ -42,7 +42,7 @@ from models import (
     UserIdentity,
     UserRole,
 )
-from security import (
+from auth.security import (
     CurrentUser,
     admin_session_from,
     clear_auth_cookie,
@@ -51,7 +51,7 @@ from security import (
     get_current_user,
     set_auth_cookie,
 )
-from verification import (
+from auth.verification import (
     generate_verification_code,
     hash_verification_code,
     verification_code_matches,

@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session, joinedload
 
-from database import get_db
-from models import LandlordLease, LandlordProperty, LandlordRoom, User
-from security import get_current_landlord
+from db.database import get_db
+from db.models import LandlordLease, LandlordProperty, LandlordRoom, User
+from auth.security import get_current_landlord
 
 
 router = APIRouter(prefix="/api/landlord/properties", tags=["Landlord properties"])

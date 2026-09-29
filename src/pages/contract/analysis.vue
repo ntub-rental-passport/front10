@@ -10,6 +10,8 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/
 import { loadContractOcrResult, saveContractOcrResult } from '@/src/utils/contract-ocr'
 import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'
 import { buildContractAssessments, gateRemoteAssessments, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
+import { contractSectionLabel, explainContractRisk } from '@/src/utils/contract-risk-explanation'
+import RiskExplanation from './RiskExplanation.vue'
 import { Button } from '@/components/ui/button/index'
 import {
   AlertTriangle,
@@ -77,30 +79,26 @@ const legalSourceScopes = [
   {
     id: 'civil-lease',
     title: '民法・租賃',
-    range: '第 421 條至第 463-1 條',
     description: '租賃成立、修繕、稅捐、返還與終止',
     href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=B0000001',
   },
   {
     id: 'civil-contract',
     title: '民法・契約效力',
-    range: '第 245-1 條至第 270 條',
     description: '締約責任、履行抗辯與契約效力',
     href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=B0000001',
   },
   {
     id: 'consumer-contract',
     title: '消保法・定型化契約',
-    range: '第 11 條至第 17-1 條',
     description: '審閱期、解釋原則與不公平條款',
-    href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=I0050001',
+    href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=J0170001',
   },
   {
     id: 'rental-housing',
-    title: '住宅租賃專法與契約規範',
-    range: '租賃住宅條例＋應記載／不得記載事項',
+    title: '租賃住宅市場發展及管理條例',
     description: '住宅租賃關係、租賃服務業與強制規範',
-    href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=D0130038',
+    href: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=D0060125',
   },
 ] as const
 
@@ -354,16 +352,6 @@ async function saveProcess() {
   if (record.action === 'correct') openFieldEditor(risk)
 }
 function filterSeverity(severity: string) { severityFilter.value = severity; activeRiskTab.value = 'risk' }
-function legalLink(basis: string) { return basis.match(/https?:\/\/[^\s]+/)?.[0] }
-function legalTitle(risk: RiskItem) {
-  const titles: Record<string, string> = {
-    'deposit-limit': '押金約定及返還', 'deposit-return-delay': '押金返還與住宅點交',
-    'review-waiver': '契約審閱期', 'electricity-objection': '費用約定與出租人義務',
-    'electricity-reference': '電費計收', 'internet-adjustment': '租金與費用約定',
-    'termination-deposit-forfeit': '提前終止與違約金',
-  }
-  return titles[risk.ruleId || ''] || '相關契約規範'
-}
 function riskImpact(risk: RiskItem) {
   const excess = risk.metrics?.find(metric => metric.label === '超出兩個月部分')
   return risk.ruleId === 'deposit-limit' && risk.status === 'confirmed' && excess
@@ -380,7 +368,6 @@ function moveRiskTab(event: KeyboardEvent, id: RiskTab) {
   severityFilter.value = null
   void nextTick(() => document.getElementById(`review-tab-${activeRiskTab.value}`)?.focus())
 }
-function legalLabel(basis: string) { return basis.replace(/https?:\/\/[^\s]+/g, '').replace(/：$/, '') }
 const highRiskCount = computed(() => assessmentSummary.value.high)
 const mediumRiskCount = computed(() => assessmentSummary.value.medium)
 const lowRiskCount = computed(() => assessmentSummary.value.low)
@@ -529,11 +516,12 @@ function openFieldEditor(risk: RiskItem): void {
 function startNegotiation(risk: RiskItem): void {
   focusRisk(risk)
   chatOpen.value = true
+  const explanation = explainContractRisk(risk)
   chatMessages.value.push({
     id: nextMessageId.value++,
     role: 'assistant',
-    text: `已帶入「${risk.title}」的契約脈絡。${risk.advice}\n\n你希望我整理成溫和、正式，還是強調法律依據的版本？`,
-    sources: [risk.sourceLabel, risk.groupLabel, ...(risk.legalBasis ?? [])],
+    text: `關於「${risk.title}」，可以先這樣向房東說明：\n\n${explanation.message}\n\n你希望我整理成溫和、正式，還是強調法律依據的版本？`,
+    sources: [risk.sourceLabel, ...explanation.laws.map(law => `${law.label} ${law.href}`)],
   })
   void nextTick(() => {
     positionChatWindow()
@@ -606,6 +594,7 @@ async function fetchAiChatResponse(
   activeRisk: RiskItem | undefined
 ): Promise<void> {
   try {
+    const explanation = activeRisk ? explainContractRisk(activeRisk) : null
     const response = await fetch(`${API_BASE_URL}/contract/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -613,7 +602,11 @@ async function fetchAiChatResponse(
       body: JSON.stringify({
         message: userMessage,
         contract_text: ocrResult?.text ?? '',
-        active_risk: activeRisk ?? null,
+        active_risk: activeRisk && explanation ? {
+          ...activeRisk,
+          advice: [explanation.reason, ...explanation.steps, explanation.message,
+            ...explanation.laws.map(law => `${law.label}：${law.summary} ${law.href}`)].join('\n'),
+        } : null,
       }),
     })
 
@@ -865,7 +858,6 @@ async function exportAnalysisReport(): Promise<void> {
         >
           <span>
             <strong>{{ source.title }}</strong>
-            <small>{{ source.range }}</small>
           </span>
           <span>{{ source.description }}</span>
           <ExternalLink :size="13" aria-hidden="true" />
@@ -1016,27 +1008,18 @@ async function exportAnalysisReport(): Promise<void> {
                   <Database v-else-if="risk.source === 'rag'" :size="17" />
                   <Sparkles v-else :size="17" />
                 </span>
-                <span class="risk-card-copy">
-                  <span class="risk-card-title-row">
-                    <strong>{{ risk.priority ? '優先核對 · ' : '' }}{{ risk.title }}</strong>
+                <div class="risk-card-copy">
+                  <div class="risk-card-title-row">
+                    <h3>{{ risk.priority ? '優先核對 · ' : '' }}{{ risk.title }}<span v-if="contractSectionLabel(risk, pages)" class="risk-contract-section">（{{ contractSectionLabel(risk, pages) }}）</span></h3>
                     <span class="risk-severity">{{ risk.status === 'confirmed' ? (risk.severity === 'high' ? '高風險' : risk.severity === 'medium' ? '中風險' : '低風險') : assessmentLabels[risk.status] }}</span>
-                  </span>
-                  <span class="risk-impact">{{ riskImpact(risk) }}</span>
-                  <span v-if="risk.metrics?.length" class="risk-metrics"><span v-for="metric in risk.metrics" :key="metric.label">{{ metric.label }}<strong>{{ metric.value.toLocaleString() }} 元</strong></span></span>
-                  <span class="risk-advice"><b>建議：</b>{{ risk.advice }}</span>
-                  <template v-if="activeRiskId === risk.id">
-                    <span class="risk-meta"><span>{{ risk.sourceLabel }}</span><span>{{ risk.groupLabel }}</span></span>
-                    <ul v-if="risk.details?.length" class="risk-detail-list">
-                      <li v-for="(detail, index) in risk.details" :key="index">
-                        <span>{{ detail.focusText }}</span>
-                        <button v-if="detail.pageIndex !== null" class="risk-page-button" @click="focusRiskDetail(detail)">第 {{ detail.pageIndex + 1 }} 頁 ↗</button>
-                        <small v-else>來源未定位</small>
-                      </li>
-                    </ul>
-                    <span v-else class="risk-clause">{{ risk.clause }}</span>
-                    <span class="risk-legal-basis"><template v-for="basis in risk.legalBasis" :key="basis"><a v-if="legalLink(basis)" :href="legalLink(basis)" target="_blank" rel="noopener noreferrer">查看依據：{{ legalTitle(risk) }} <ExternalLink :size="13" aria-hidden="true" /></a><small v-if="legalLink(basis)">{{ legalLabel(basis) }}</small><span v-else>{{ basis }}</span></template></span>
+                  </div>
+                  <template v-if="activeRiskId !== risk.id">
+                    <span class="risk-impact">{{ riskImpact(risk) }}</span>
+                    <span v-if="risk.metrics?.length" class="risk-metrics"><span v-for="metric in risk.metrics" :key="metric.label">{{ metric.label }}<strong>{{ metric.value.toLocaleString() }} 元</strong></span></span>
+                    <span class="risk-advice"><b>建議：</b>{{ explainContractRisk(risk).summary }}</span>
                   </template>
-                </span>
+                  <RiskExplanation v-else :id="`risk-explanation-${risk.id}`" :risk="risk" @locate="focusRiskDetail" />
+                </div>
               </div>
               <div class="risk-actions">
                 <button type="button" class="risk-primary-action" @click="focusRisk(risk)">{{ risk.details?.length ? `查看 ${risk.details.length} 處原文` : '查看原文' }}</button>
@@ -1045,6 +1028,7 @@ async function exportAnalysisReport(): Promise<void> {
                   type="button"
                   class="risk-summary-button"
                   :aria-expanded="activeRiskId === risk.id"
+                  :aria-controls="activeRiskId === risk.id ? `risk-explanation-${risk.id}` : undefined"
                   @click="toggleRiskDetails(risk)"
                 >
                   {{ activeRiskId === risk.id ? '收合判斷依據' : '查看判斷依據' }}

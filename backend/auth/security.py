@@ -34,10 +34,10 @@ from fastapi import Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import get_db
-from models import AdminSession, User
+from db.database import get_db
+from db.models import AdminSession, User
 
-ROOT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(ROOT_ENV_FILE)
 
 
@@ -56,7 +56,7 @@ def session_seconds(role: str) -> int:
     一般使用者的期限設錯時，管理員必須還進得來改回去（見 platform_settings.py）。
     延遲 import：platform_settings 會用到稽核紀錄，不讓這裡在啟動時就牽一串。
     """
-    import platform_settings
+    from admin import platform_settings
 
     if role == "admin":
         return platform_settings.ADMIN_SESSION_MINUTES * 60
@@ -117,7 +117,7 @@ def _seconds_until_exp(token: str) -> int | None:
 
 def set_auth_cookie(response: Response, token: str) -> None:
     """把 JWT 放進 HttpOnly cookie 回給瀏覽器，之後的請求會自動帶上。"""
-    import platform_settings
+    from admin import platform_settings
 
     max_age = _seconds_until_exp(token)
     response.set_cookie(
@@ -322,7 +322,7 @@ def admin_session_from(authorization: str | None, db: Session) -> tuple[User, Ad
        人走開了也永遠不會閒置。更新只走 POST /api/auth/admin/activity，
        由前端在偵測到滑鼠、鍵盤操作時回報。
     """
-    import platform_settings
+    from admin import platform_settings
 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="請先登入管理員帳號。")

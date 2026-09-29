@@ -14,7 +14,7 @@
 
 ### 新建
 - `backend/main.py`
-- `backend/models.py`
+- `backend/db/models.py`
 - `backend/requirements.txt`
 - `backend/.env.example`
 - `backend/routes/__init__.py`
@@ -72,7 +72,7 @@ pytest
 httpx
 ```
 
-- [ ] **Step 3: 建立 `backend/models.py`**
+- [ ] **Step 3: 建立 `backend/db/models.py`**
 
 ```python
 from pydantic import BaseModel

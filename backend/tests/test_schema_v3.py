@@ -16,19 +16,19 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from database import Base, get_db
-from encrypted_fields import EncryptedText
-from models import UserRole
-from models import User, UserIdentity, PendingRegistration, LandlordTenant, Rental, Bill, InspectionRecord
+from db.database import Base, get_db
+from db.encrypted_fields import EncryptedText
+from db.models import UserRole
+from db.models import User, UserIdentity, PendingRegistration, LandlordTenant, Rental, Bill, InspectionRecord
 from routers import auth, admin
-from schema_check import schema_problems
-from security import create_access_token
-from verification import hash_verification_code
+from db.schema_check import schema_problems
+from auth.security import create_access_token
+from auth.verification import hash_verification_code
 
 
 class SchemaContractTests(unittest.TestCase):
     def test_every_table_column_type_nullability_and_foreign_key_matches_sql(self):
-        sql = (Path(__file__).parents[1] / 'database.sql').read_text(encoding='utf-8')
+        sql = (Path(__file__).parents[1] / 'db' / 'database.sql').read_text(encoding='utf-8')
         tables = dict(re.findall(r'CREATE TABLE `([^`]+)`\s*\((.*?)\) ENGINE', sql, re.S))
         self.assertEqual(len(tables), 29)
         self.assertEqual(set(tables), set(Base.metadata.tables))

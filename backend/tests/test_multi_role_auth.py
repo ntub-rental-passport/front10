@@ -6,12 +6,12 @@ from unittest.mock import patch
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-import manage_admin
-from models import PendingRegistration, User, UserIdentity, UserRole
+from scripts import manage_admin
+from db.models import PendingRegistration, User, UserIdentity, UserRole
 from routers import auth
-from security import get_current_landlord, get_current_tenant
+from auth.security import get_current_landlord, get_current_tenant
 import test_schema_v3 as schema_tests
-from verification import hash_verification_code
+from auth.verification import hash_verification_code
 
 
 class MultiRoleAuthTests(unittest.TestCase):

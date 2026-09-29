@@ -10,10 +10,10 @@ from fastapi import HTTPException, Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-import audit_service
-from database import Base
-from models import PendingAdminLogin, User, UserRole
-from verification import hash_verification_code
+from admin import audit_service
+from db.database import Base
+from db.models import PendingAdminLogin, User, UserRole
+from auth.verification import hash_verification_code
 
 T0 = 1_790_000_000.0
 
@@ -139,7 +139,7 @@ class ScheduleAuditTests(AuditTestCase):
         )
 
     def test_create_and_cancel_are_recorded_with_the_scheduled_time(self):
-        import scheduled_notification_service as service
+        from notifications import scheduled_notification_service as service
         from routers.scheduled_notifications import cancel_schedule, create_schedule
 
         due = (datetime.now(service.TZ) + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
@@ -153,7 +153,7 @@ class ScheduleAuditTests(AuditTestCase):
         ])
 
     def test_rejected_schedule_leaves_no_record(self):
-        import scheduled_notification_service as service
+        from notifications import scheduled_notification_service as service
         from routers.scheduled_notifications import create_schedule
 
         past = datetime.now(service.TZ) - timedelta(minutes=5)
@@ -215,9 +215,9 @@ class AdminLoginAuditTests(AuditTestCase):
         self.assertEqual(self.logins(), [('管理員登入', '203.0.113.7')])
 
     def test_login_creates_a_server_session_that_logout_removes(self):
-        from models import AdminSession
+        from db.models import AdminSession
         from routers.auth import logout
-        from security import AUTH_COOKIE_NAME, create_cookie_token, read_access_token
+        from auth.security import AUTH_COOKIE_NAME, create_cookie_token, read_access_token
 
         result = self.verify(self.CODE)
         session = self.db.query(AdminSession).one()
@@ -232,9 +232,9 @@ class AdminLoginAuditTests(AuditTestCase):
     def test_page_reload_keeps_the_session_id_and_the_original_expiry(self):
         # 合併 main 時抓到的：get_current_user 重新組 CurrentUser 時丟掉了 exp 與 sid，
         # 結果每次重新整理，/me 發的新憑證都沒有 sid（管理員立刻被擋）、期限也被延長
-        from models import AdminSession
+        from db.models import AdminSession
         from routers.auth import get_me
-        from security import AUTH_COOKIE_NAME, create_cookie_token, get_current_user, read_access_token
+        from auth.security import AUTH_COOKIE_NAME, create_cookie_token, get_current_user, read_access_token
 
         self.verify(self.CODE)
         session = self.db.query(AdminSession).one()

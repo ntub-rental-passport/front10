@@ -86,7 +86,7 @@
 | 資料規則 | [garbage.ts](../src/utils/garbage.ts) | 兩市解析、資料型別、ID、座標、距離、時間 |
 | 狀態／班表／路線 | `garbage-status.ts`、`garbage-countdown.ts`、`garbage-routes.ts` | 15 分鐘提示、下一班、週期、跨日、路線分组 |
 | 後端路由 | [routers/garbage.py](../backend/routers/garbage.py) | 公開能力與 GPS API、受保護的提醒 CRUD |
-| 後端服務 | [garbage_service.py](../backend/garbage_service.py) | 班表快取、SQLite、提醒驗證、通知派送與狀態 |
+| 後端服務 | [garbage_service.py](../backend/notifications/garbage_service.py) | 班表快取、SQLite、提醒驗證、通知派送與狀態 |
 | 推播接收 | [garbage-sw.js](../public/garbage-sw.js) | 背景通知、點擊後開啟清運頁 |
 | 問題回報範本 | [.github/ISSUE_TEMPLATE/garbage-data.yml](../.github/ISSUE_TEMPLATE/garbage-data.yml) | GitHub 清運資料問題表單 |
 | 靜態資料 | `public/data/` 下兩市快照與兩份 source JSON | 原始班次資料、來源與版本摘要 |
@@ -395,7 +395,7 @@ GitHub Actions 每月 1 日臺北時間 10:17 排程，亦可手動觸發。流�
 
 - [前端資料與計算型別](../src/utils/garbage.ts)
 - [狀態判定](../src/utils/garbage-status.ts)、[下一班計算](../src/utils/garbage-countdown.ts)、[路線分組](../src/utils/garbage-routes.ts)
-- [前端 API](../src/services/garbageApi.ts)、[後端 API](../backend/routers/garbage.py)、[提醒服務與 schema](../backend/garbage_service.py)
+- [前端 API](../src/services/garbageApi.ts)、[後端 API](../backend/routers/garbage.py)、[提醒服務與 schema](../backend/notifications/garbage_service.py)
 - [臺北來源摘要](../public/data/taipei-garbage-source.json)、[新北來源摘要](../public/data/new-taipei-garbage-source.json)
 - [既有臺北說明](taipei-garbage.md)、[既有新北說明](new-taipei-garbage.md)：包含開發歷程，部分舊版文字仍為手動 500 公尺或虛線；目前行為以本報告及程式為準。
 - [臺北資料集](https://data.gov.tw/dataset/136515)、[新北資料集 API](https://data.ntpc.gov.tw/api/datasets/edc3ad26-8ae7-4916-a00b-bc6048d19bf8/json)：依本地來源紀錄列示。

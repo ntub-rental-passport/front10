@@ -1,8 +1,8 @@
 """Read-only compatibility check; application startup never migrates a database."""
 from sqlalchemy import inspect, UniqueConstraint
 from sqlalchemy.types import Boolean, Integer
-from database import Base
-import models  # Register all mapped tables.
+from db.database import Base
+from db import models  # Register all mapped tables.
 
 
 def schema_problems(engine) -> list[str]:
@@ -56,7 +56,7 @@ def require_current_schema(engine) -> None:
 
 
 if __name__ == '__main__':
-    from database import engine
+    from db.database import engine
     if engine is None:
         raise SystemExit('DATABASE_URL is not configured')
     issues = schema_problems(engine)
