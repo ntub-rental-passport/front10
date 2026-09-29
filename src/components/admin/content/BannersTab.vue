@@ -27,7 +27,7 @@ import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import StatusBadge from '@/src/components/admin/StatusBadge.vue'
 import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 import { useAdminContent } from '@/src/composables/admin/useAdminContent'
-import { isValidImageUrl } from '@/src/utils/banner-url'
+import { BUILTIN_BANNER_IMAGES, isValidImageUrl } from '@/src/utils/banner-url'
 import { resolvePhase } from '@/src/utils/phase'
 import { TENANT_ROUTE_GROUPS, TENANT_ROUTE_OPTIONS, isDeadRoute } from '@/src/utils/tenant-route-link'
 import { formatDate } from '@/src/utils/admin-format'
@@ -387,7 +387,7 @@ const hasActivePreview = computed(() =>
       <DialogContent class="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{{ draft.id ? '編輯輪播' : '新增輪播' }}</DialogTitle>
-          <DialogDescription>圖片以外部網址提供，下方即時預覽。</DialogDescription>
+          <DialogDescription>可以直接選用網站內建的圖片，或填外部圖片網址，下方即時預覽。</DialogDescription>
         </DialogHeader>
         <div class="space-y-4">
           <div class="space-y-2">
@@ -397,8 +397,23 @@ const hasActivePreview = computed(() =>
           <div class="space-y-2">
             <Label for="ban-image">圖片網址</Label>
             <Input id="ban-image" v-model="draft.imageUrl" placeholder="https://..." />
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs text-muted-foreground">內建圖片</span>
+              <Button
+                v-for="image in BUILTIN_BANNER_IMAGES"
+                :key="image.url"
+                type="button"
+                size="sm"
+                :variant="draft.imageUrl === image.url ? 'default' : 'outline'"
+                :aria-pressed="draft.imageUrl === image.url"
+                class="h-7 px-2.5 text-xs"
+                @click="draft.imageUrl = image.url"
+              >
+                {{ image.label }}
+              </Button>
+            </div>
             <p v-if="showUrlFormatWarning" class="text-xs text-destructive">
-              網址格式不正確，請確認是否為完整的 http(s) 連結。
+              網址格式不正確，請填完整的 http(s) 連結，或點選上面的內建圖片。
             </p>
           </div>
           <div v-if="draft.imageUrl" class="overflow-hidden rounded-xl border">
