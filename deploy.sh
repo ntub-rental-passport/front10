@@ -40,11 +40,21 @@ rsync -avz \
 # 上面的 rsync 不會刪檔：本機刪掉或改名的前端檔會一直留在 VM 上，
 # 而 web 映像的 npm run build（vue-tsc -b）會檢查整個目錄，
 # 殘留檔 import 已經刪掉的東西，build 就失敗。
-# src/ 只放前端原始碼、VM 上沒有該保留的獨有檔案，所以只對它做完整鏡像。
+# src/ 只放前端原始碼、VM 上沒有該保留的獨有檔案，所以對它做完整鏡像（backend/ 同理，見下方）。
 # ⚠️ 不可以改成對整個專案 --delete：VM 上有只存在那邊的東西
 #    （data/ 的正式環境 SQLite、deploy/ 的部分腳本），會被一起刪掉。
 rsync -az --delete --itemize-changes "$SRC/src/" "$VM:~/rentmate/src/" \
   | awk '/^\*deleting/ {print "  刪除 VM 上的殘留檔 src/" $2}'
+
+# backend/ 也要完整鏡像（2026-09-29 加）：組員把後端檔案搬進子資料夾後，VM 上留了
+# 28 個舊位置的 .py，會被一起打包進 fastapi 映像。程式不會用到它們，但舊的
+# manage_admin.py、schema_check.py 還能執行，跑到的是過時的程式。
+# backend/ 在 VM 上沒有獨有的檔案：正式環境的 SQLite 在 data/garbage/，點交照片在
+# 容器裡。下面排除的檔案 rsync 不會刪（沒有 --delete-excluded）。
+rsync -az --delete --itemize-changes \
+  --exclude '__pycache__' --exclude '*.db' --exclude '*.db-*' --exclude .env \
+  "$SRC/backend/" "$VM:~/rentmate/backend/" \
+  | awk '/^\*deleting/ {print "  刪除 VM 上的殘留檔 backend/" $2}'
 
 # ---------- 2. 套用 Nginx 設定 ----------
 # nginx.conf 是由 nginx-tls.conf.example 複製而來（設定的真正來源是後者）
