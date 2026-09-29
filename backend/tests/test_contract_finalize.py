@@ -11,10 +11,10 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from database import Base, get_db
-from models import Rental, User, UserRole
+from db.database import Base, get_db
+from db.models import Rental, User, UserRole
 from routers import contract
-from security import CurrentUser, get_current_user
+from auth.security import CurrentUser, get_current_user
 
 
 def rental_payload(**overrides):
