@@ -27,7 +27,7 @@ import {
   type RepairStatus,
   type RepairUrgency,
 } from '@/src/composables/useRepairTickets'
-import { fetchTenantLeases, type TenantLeaseOption } from '@/src/services/tenantLeaseApi'
+import { fetchRepairTargets, type RepairTarget } from '@/src/services/repairApi'
 import {
   getRepairPhotoUrl,
   removeRepairPhoto,
@@ -37,31 +37,16 @@ import {
 
 const session = getAuthSession()
 const tenantUserId = getAuthenticatedUserId(session)
-const { tickets, createTicket, updateTicket, claimDemoTenantTickets } = useRepairTickets()
-claimDemoTenantTickets(tenantUserId)
-const tenantTickets = computed(() =>
-  tickets.value.filter((item) => item.tenantUserId === tenantUserId),
-)
+// 伺服器依登入身分只回傳自己的工單，不必再在前端過濾
+const { tickets, error: repairError, createTicket, updateTicket } = useRepairTickets()
+const tenantTickets = computed(() => tickets.value)
 const selectedId = ref(tenantTickets.value[0]?.id ?? '')
 const selected = computed(
   () => tenantTickets.value.find((item) => item.id === selectedId.value) ?? tenantTickets.value[0],
 )
 
-const demoLease: TenantLeaseOption = {
-  leaseId: 'lease-demo-101',
-  propertyId: 'property-demo-1',
-  roomId: 'room-demo-101',
-  property: '我的出租物件',
-  address: '臺北市中山區松江路 88 號',
-  room: '101',
-  tenant: session?.nickname || '王小明',
-  phone: '0912-345-678',
-  startDate: '2026-05-01',
-  endDate: '2027-04-30',
-  status: 'active',
-  effective: true,
-}
-const leases = ref<TenantLeaseOption[]>([])
+// 可報修的對象：房東平台上的租約，加上自己存檔的終版契約（房東不在平台上時，工單即為存證紀錄）
+const leases = ref<RepairTarget[]>([])
 const leaseLoadError = ref('')
 const leasesLoading = ref(true)
 const activeLeases = computed(() => leases.value.filter((lease) => lease.effective))
@@ -69,7 +54,7 @@ const leaseNotice = computed(() => {
   if (leasesLoading.value) return '正在讀取租約資料…'
   if (leaseLoadError.value) return leaseLoadError.value
   if (!leases.value.length)
-    return '尚未找到與此帳號連結的租約。請房東在租客管理確認租客 Email 與你的登入信箱相同，再重新讀取租約。'
+    return '尚未找到可報修的租約。你可以先在「契約辨識」存檔一份終版契約，或請房東在租客管理確認租客 Email 與你的登入信箱相同。'
   if (!activeLeases.value.length)
     return '目前沒有有效租約可供報修。請房東確認租約已啟用、在租期內且尚未退租，再重新讀取租約。'
   return ''
@@ -279,13 +264,12 @@ async function loadLeases(): Promise<void> {
   leasesLoading.value = true
   leaseLoadError.value = ''
   try {
-    const remoteLeases = await fetchTenantLeases()
-    leases.value = remoteLeases.length || session?.accessToken ? remoteLeases : [demoLease]
-  } catch {
-    leaseLoadError.value = session?.accessToken
-      ? '租約服務暫時無法連線，為避免送錯物件，目前先停用新增報修。'
-      : '目前使用本機示範租約；串接正式帳號後會自動載入有效租約。'
-    leases.value = session?.accessToken ? [] : [demoLease]
+    leases.value = await fetchRepairTargets()
+  } catch (cause) {
+    // 讀不到就停用新增報修，不以示範租約代替 —— 會送錯物件
+    leaseLoadError.value =
+      cause instanceof Error ? cause.message : '租約服務暫時無法連線，為避免送錯物件，目前先停用新增報修。'
+    leases.value = []
   }
   selectedLeaseId.value = activeLeases.value[0]?.leaseId ?? ''
   form.value.phone = selectedLease.value?.phone || ''
@@ -312,11 +296,21 @@ watch(
   },
 )
 watch(
-  () => selected.value?.photos,
-  async (photos) => {
-    Object.values(photoUrls.value).forEach((url) => URL.revokeObjectURL(url))
+  () => selected.value,
+  async (ticket) => {
+    if (!ticket) {
+      photoUrls.value = {}
+      return
+    }
+    const all = [
+      ...ticket.photos,
+      ...ticket.supplements.flatMap((item) => item.photos),
+      ...ticket.completionPhotos,
+      ...ticket.unresolvedPhotos,
+      ...(ticket.receipt ? [ticket.receipt] : []),
+    ]
     const entries = await Promise.all(
-      (photos ?? []).map(async (photo) => [photo.id, await getRepairPhotoUrl(photo.id)] as const),
+      all.map(async (photo) => [photo.id, await getRepairPhotoUrl(photo.id, ticket.id)] as const),
     )
     photoUrls.value = Object.fromEntries(entries)
   },
@@ -348,7 +342,10 @@ async function processPhotos(
   }
   uploadBusy.value = true
   try {
-    const saved = await Promise.all(accepted.map(saveRepairPhoto))
+    const saved = await Promise.all(accepted.map(saveRepairPhoto)).catch((cause) => {
+      uploadError.value = cause instanceof Error ? cause.message : '照片讀取失敗。'
+      return []
+    })
     current.push(...saved)
     if (target === 'form') {
       form.value.photos = [...current]
@@ -397,10 +394,10 @@ function reviewForm(): void {
   summaryOpen.value = true
 }
 
-function submitRepair(): void {
+async function submitRepair(): Promise<void> {
   const lease = selectedLease.value
   if (!lease) return
-  const ticket = createTicket({
+  const ticket = await createTicket({
     ...form.value,
     tenantUserId,
     leaseId: lease.leaseId,
@@ -412,13 +409,14 @@ function submitRepair(): void {
     tenant: lease.tenant,
     phone: form.value.phone || lease.phone,
   })
+  if (!ticket) return // 錯誤訊息由 repairError 顯示，表單內容保留讓使用者重試
   selectedId.value = ticket.id
   summaryOpen.value = false
   createOpen.value = false
   formPhotos.value = []
   formPhotoUrls.value = {}
   form.value = emptyForm()
-  notify('報修已送出，房東收到新案件通知')
+  notify(lease.kind === 'rental' ? '報修已存證，可隨時補充照片與進度' : '報修已送出，房東收到新案件通知')
 }
 
 function closeRepairDialogs(): void {
@@ -426,9 +424,9 @@ function closeRepairDialogs(): void {
   createOpen.value = false
 }
 
-function acceptSchedule(): void {
+async function acceptSchedule(): Promise<void> {
   if (!selected.value) return
-  updateTicket(
+  const saved = await updateTicket(
     selected.value.id,
     { tenantScheduleReply: 'accepted', rescheduleRequest: null },
     {
@@ -437,10 +435,10 @@ function acceptSchedule(): void {
       actorRole: 'tenant',
     },
   )
-  notify('已確認維修時段並通知房東')
+  if (saved) notify('已確認維修時段並通知房東')
 }
 
-function submitReschedule(): void {
+async function submitReschedule(): Promise<void> {
   if (
     !selected.value ||
     !reschedule.value.date ||
@@ -452,7 +450,7 @@ function submitReschedule(): void {
     reschedule.value.alternativeEnabled && reschedule.value.alternativeDate
       ? `${reschedule.value.alternativeDate} ${reschedule.value.alternativeStartTime}–${reschedule.value.alternativeEndTime}`
       : ''
-  updateTicket(
+  const saved = await updateTicket(
     selected.value.id,
     {
       tenantScheduleReply: 'reschedule',
@@ -473,44 +471,34 @@ function submitReschedule(): void {
       actorRole: 'tenant',
     },
   )
+  if (!saved) return
   rescheduleOpen.value = false
   notify('改期需求已送給房東')
 }
 
-function submitSupplement(): void {
+async function submitSupplement(): Promise<void> {
   if (!selected.value || (!supplementNote.value.trim() && !supplementPhotos.value.length)) return
-  const at = new Date().toISOString()
-  updateTicket(
+  // 補充說明與照片一起寫進同一筆時間軸事件，事後無法被抽掉
+  const saved = await updateTicket(
     selected.value.id,
-    {
-      supplementRequested: false,
-      supplementRequestNote: '',
-      supplements: [
-        ...selected.value.supplements,
-        {
-          id: `sup-${Date.now()}`,
-          at,
-          note: supplementNote.value.trim(),
-          photoNames: supplementPhotos.value.map((photo) => photo.name),
-          photos: [...supplementPhotos.value],
-        },
-      ],
-    },
+    { supplementRequested: false, supplementRequestNote: '' },
     {
       title: '租客已補充報修資料',
-      detail: `${supplementNote.value.trim()}${supplementPhotos.value.length ? `（新增 ${supplementPhotos.value.length} 張照片）` : ''}`,
+      detail: supplementNote.value.trim() || `新增 ${supplementPhotos.value.length} 張照片`,
       actorRole: 'tenant',
     },
+    { stage: 'supplement', photos: supplementPhotos.value },
   )
+  if (!saved) return
   supplementNote.value = ''
   supplementPhotos.value = []
   supplementOpen.value = false
   notify('補充資料已送出')
 }
 
-function cancelTicket(): void {
+async function cancelTicket(): Promise<void> {
   if (!selected.value || !window.confirm('確定要取消這筆報修嗎？原始紀錄仍會保留。')) return
-  updateTicket(
+  const saved = await updateTicket(
     selected.value.id,
     { status: 'canceled' },
     {
@@ -519,42 +507,59 @@ function cancelTicket(): void {
       actorRole: 'tenant',
     },
   )
-  notify('報修已取消')
+  if (saved) notify('報修已取消')
 }
 
-function agreeResponsibility(): void {
+async function agreeResponsibility(): Promise<void> {
   if (!selected.value) return
-  updateTicket(
+  const saved = await updateTicket(
     selected.value.id,
     { responsibilityAgreement: 'agreed', responsibilityQuestion: '' },
     { title: '租客已確認費用與責任說明', actorRole: 'tenant' },
   )
-  notify('確認紀錄已保存')
+  if (saved) notify('確認紀錄已保存')
 }
 
-function submitQuestion(): void {
+async function submitQuestion(): Promise<void> {
   if (!selected.value || !questionNote.value.trim()) return
-  updateTicket(
+  const saved = await updateTicket(
     selected.value.id,
     { responsibilityAgreement: 'questioned', responsibilityQuestion: questionNote.value.trim() },
     { title: '租客對責任或金額提出疑問', detail: questionNote.value.trim(), actorRole: 'tenant' },
   )
+  if (!saved) return
   questionOpen.value = false
   questionNote.value = ''
   notify('疑問已送給房東')
 }
 
-function resolveInspection(): void {
+async function resolveInspection(): Promise<void> {
   if (!selected.value) return
-  updateTicket(
+  const saved = await updateTicket(
     selected.value.id,
     { inspectionResult: 'resolved', status: 'completed' },
     { title: '租客驗收通過，案件完成', actorRole: 'tenant' },
   )
-  notify('驗收完成，案件紀錄已保存')
+  if (saved) notify('驗收完成，案件紀錄已保存')
 }
 
-function submitUnresolved(): void {
+/**
+ * 房東不在平台上的報修（對自己存檔的租約），由租客在與房東處理完後自行結案。
+ * 否則工單會永遠停在「待處理」—— 沒有房東端可以接手。
+ */
+async function closeSelfManaged(): Promise<void> {
+  if (!selected.value?.selfManaged) return
+  const note = window.prompt('記錄處理結果（例如：房東 10/2 已派人更換水管）', '')
+  if (note === null) return
+  const saved = await updateTicket(
+    selected.value.id,
+    { status: 'completed', inspectionResult: 'resolved' },
+    { title: '租客記錄已處理完成', detail: note.trim() || undefined, actorRole: 'tenant' },
+  )
+  if (saved) notify('已結案，完整紀錄會保留作為存證')
+}
+
+async function submitUnresolved(): Promise<void> {
   if (
     !selected.value ||
     !unresolved.value.note.trim() ||
@@ -562,13 +567,12 @@ function submitUnresolved(): void {
   )
     return
   const revisit = `${unresolved.value.date} ${unresolved.value.startTime}–${unresolved.value.endTime}`
-  updateTicket(
+  const saved = await updateTicket(
     selected.value.id,
     {
       inspectionResult: 'unresolved',
       status: 'processing',
       unresolvedNote: unresolved.value.note.trim(),
-      unresolvedPhotoNames: unresolvedPhotos.value.map((photo) => photo.name),
       unresolvedSafetyConcern: unresolved.value.safetyConcern,
       revisitAvailableTime: revisit,
     },
@@ -577,7 +581,9 @@ function submitUnresolved(): void {
       detail: `${unresolved.value.note.trim()}；可再次維修 ${revisit}${unresolved.value.safetyConcern ? '；仍有安全疑慮' : ''}`,
       actorRole: 'tenant',
     },
+    { stage: 'unresolved', photos: unresolvedPhotos.value },
   )
+  if (!saved) return
   unresolvedOpen.value = false
   unresolvedPhotos.value = []
   notify('已通知房東再次處理')
@@ -598,6 +604,9 @@ function submitUnresolved(): void {
         <Plus />建立報修單
       </button>
     </header>
+    <div v-if="repairError" class="service-note" role="alert">
+      <p>{{ repairError }}</p>
+    </div>
     <div v-if="leaseNotice" class="service-note" role="status" aria-live="polite">
       <p>{{ leaseNotice }}</p>
       <button v-if="!leasesLoading" class="btn secondary" @click="loadLeases">
@@ -653,7 +662,7 @@ function submitUnresolved(): void {
               }}</span>
             </div>
             <p>{{ item.description }}</p>
-            <small>{{ formatShortDateTime(item.createdAt) }} · {{ item.id }}</small>
+            <small>{{ formatShortDateTime(item.createdAt) }} · {{ item.code }}</small>
           </button>
           <button class="new-card" :disabled="!activeLeases.length" @click="createOpen = true">
             <Plus />回報新的問題
@@ -664,7 +673,7 @@ function submitUnresolved(): void {
       <article v-if="selected" class="panel overflow-hidden">
         <header class="panel-head">
           <div>
-            <p>{{ selected.id }}</p>
+            <p>{{ selected.code }}</p>
             <h2>{{ selected.location }}／{{ selected.equipment }}</h2>
           </div>
           <span class="badge" :class="statusMeta[selected.status].cls">{{
@@ -848,8 +857,34 @@ function submitUnresolved(): void {
                 ><FileImage />{{ name }}</span
               >
             </div>
-            <div v-if="selected.status === 'pending'" class="sub-actions">
+            <div v-if="selected.supplements.length" class="mt-4 space-y-3">
+              <h4 class="text-sm font-bold">補充資料</h4>
+              <article v-for="item in selected.supplements" :key="item.id" class="notice">
+                <b>{{ formatShortDateTime(item.at) }}</b>
+                <p>{{ item.note }}</p>
+                <div v-if="item.photos.length" class="photo-grid">
+                  <a
+                    v-for="photo in item.photos"
+                    :key="photo.id"
+                    :href="photoUrls[photo.id]"
+                    target="_blank"
+                    ><img v-if="photoUrls[photo.id]" :src="photoUrls[photo.id]" :alt="photo.name" /><span>{{
+                      photo.name
+                    }}</span></a
+                  >
+                </div>
+              </article>
+            </div>
+            <p v-if="selected.selfManaged" class="service-note mt-4">
+              這份租約的房東不在平台上，這筆報修是你的存證紀錄：照片與每一次補充都附上時間且無法刪除。
+              與房東處理完後，可以自行記錄結果並結案。
+            </p>
+            <div
+              v-if="selected.status === 'pending' || (selected.selfManaged && selected.status === 'processing')"
+              class="sub-actions"
+            >
               <button @click="supplementOpen = true">補充說明或照片</button
+              ><button v-if="selected.selfManaged" @click="closeSelfManaged">記錄已處理完成</button
               ><button class="danger-link" @click="cancelTicket">取消報修</button>
             </div>
           </section>
@@ -885,7 +920,16 @@ function submitUnresolved(): void {
               </div>
               <div>
                 <dt>憑證</dt>
-                <dd>{{ selected.receiptName || selected.quoteName || '尚未提供' }}</dd>
+                <dd>
+                  <a
+                    v-if="selected.receipt && photoUrls[selected.receipt.id]"
+                    :href="photoUrls[selected.receipt.id]"
+                    target="_blank"
+                    class="underline"
+                    >{{ selected.receipt.name }}</a
+                  >
+                  <template v-else>{{ selected.receiptName || '尚未提供' }}</template>
+                </dd>
               </div>
             </dl>
             <div v-if="selected.responsibilityAgreement !== 'agreed'" class="sub-actions">
@@ -908,7 +952,16 @@ function submitUnresolved(): void {
               </div>
               <div>
                 <dt>收據／發票</dt>
-                <dd>{{ selected.receiptName || '尚未提供' }}</dd>
+                <dd>
+                  <a
+                    v-if="selected.receipt && photoUrls[selected.receipt.id]"
+                    :href="photoUrls[selected.receipt.id]"
+                    target="_blank"
+                    class="underline"
+                    >{{ selected.receipt.name }}</a
+                  >
+                  <template v-else>{{ selected.receiptName || '尚未提供' }}</template>
+                </dd>
               </div>
               <div>
                 <dt>完修照片</dt>

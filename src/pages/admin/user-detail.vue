@@ -909,10 +909,11 @@ function openSendDialog(): void {
           </CardHeader>
           <CardContent class="space-y-6 px-5 pb-5">
             <!--
-              注意：這裡的「沒有」不代表對方沒報修過。前台（租客端與房東端）的報修存在
-              瀏覽器的 rentmate-repair-tickets-v1（useRepairTickets），後台工單頁讀的是另一份
-              adminMaintenanceCollection，兩邊沒有互相讀寫。網站目前不對外開放，
-              畫面上不再說明這件事（2026-09-28 決定）。
+              注意：這裡的「沒有」不代表對方沒報修過。前台（租客端與房東端）的報修
+              自 2026-09-30 起存在資料庫（repair_tickets／repair_ticket_events／
+              repair_ticket_photos，API 見 backend/routers/repairs.py），但後台工單頁讀的
+              仍是另一份 adminMaintenanceCollection，兩邊還沒接起來。
+              畫面上不說明這件事（2026-09-28 決定）。
             -->
             <p v-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
 
