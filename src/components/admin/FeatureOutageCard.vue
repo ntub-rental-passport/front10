@@ -20,8 +20,10 @@ import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Textarea } from '@/components/ui/textarea/index'
 import { AlertTriangle } from 'lucide-vue-next'
+import ActionError from '@/src/components/admin/ActionError.vue'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
-import { useAdminFeatureOutages } from '@/src/composables/admin/useAdminFeatureOutages'
+import { loadAdminFeatureOutages, useAdminFeatureOutages } from '@/src/composables/admin/useAdminFeatureOutages'
 import { useTickingNow } from '@/src/composables/useTickingNow'
 import { PLAN_FEATURES, PLAN_FEATURE_KEYS, type PlanFeatureKey } from '@/src/utils/admin-entitlements'
 import {
@@ -34,7 +36,7 @@ import {
 } from '@/src/utils/admin-feature-status'
 import { formatDateTime } from '@/src/utils/admin-format'
 
-const { outages, closeFeature, reopenFeature } = useAdminFeatureOutages()
+const { outages, loadState, closeFeature, reopenFeature } = useAdminFeatureOutages()
 
 // 「已關閉多久」與「預計時間過了沒」都跟現在幾點有關，見 useTickingNow 註解
 const now = useTickingNow()
@@ -68,17 +70,44 @@ function openDialog(key: PlanFeatureKey): void {
   draft.internalReason = existing?.internalReason ?? ''
   draft.publicNote = existing?.publicNote ?? ''
   draft.etaAtLocal = toLocalInput(existing?.etaAt ?? null)
+  dialogError.value = ''
   dialogOpen.value = true
 }
 
-const canConfirm = computed(() => draft.internalReason.trim() !== '')
+/** 對話框裡的錯誤（關閉、更新）留在對話框；恢復的錯誤顯示在卡片頂端 */
+const closing = ref(false)
+const dialogError = ref('')
+const actionError = ref('')
 
-function confirmClose(): void {
+const canConfirm = computed(() => draft.internalReason.trim() !== '' && !closing.value)
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : '操作失敗，請稍後再試。'
+}
+
+async function confirmClose(): Promise<void> {
   if (!dialogKey.value || !canConfirm.value) return
   const etaAt = draft.etaAtLocal === '' ? null : new Date(draft.etaAtLocal).toISOString()
-  closeFeature(dialogKey.value, draft.internalReason, draft.publicNote, etaAt)
-  dialogOpen.value = false
-  dialogKey.value = null
+  closing.value = true
+  dialogError.value = ''
+  try {
+    await closeFeature(dialogKey.value, draft.internalReason, draft.publicNote, etaAt)
+    dialogOpen.value = false
+    dialogKey.value = null
+  } catch (error) {
+    dialogError.value = messageOf(error)
+  } finally {
+    closing.value = false
+  }
+}
+
+async function reopen(key: PlanFeatureKey): Promise<void> {
+  actionError.value = ''
+  try {
+    await reopenFeature(key)
+  } catch (error) {
+    actionError.value = messageOf(error)
+  }
 }
 
 interface RowView {
@@ -133,6 +162,20 @@ const rows = computed<RowView[]>(() =>
     </CardHeader>
 
     <CardContent class="grid gap-3 px-5 pb-5 md:grid-cols-2">
+      <!-- 讀不到的時候六項看起來都是「正常」，會讓人以為沒有功能被停用 -->
+      <AdminLoadNotice
+        v-if="loadState !== 'ready'"
+        class="md:col-span-2"
+        :state="loadState"
+        what="功能停用狀態"
+        @retry="loadAdminFeatureOutages"
+      />
+      <ActionError
+        v-if="actionError"
+        class="md:col-span-2"
+        :message="actionError"
+        @dismiss="actionError = ''"
+      />
       <div
         v-for="row in rows"
         :key="row.key"
@@ -164,7 +207,7 @@ const rows = computed<RowView[]>(() =>
         <div class="flex shrink-0 gap-2">
           <template v-if="row.closed">
             <Button variant="outline" @click="openDialog(row.key)">更新</Button>
-            <Button @click="reopenFeature(row.key)">恢復</Button>
+            <Button @click="reopen(row.key)">恢復</Button>
           </template>
           <Button v-else variant="outline" @click="openDialog(row.key)">關閉功能</Button>
         </div>
@@ -205,6 +248,8 @@ const rows = computed<RowView[]>(() =>
             <p class="text-xs text-muted-foreground">僅供顯示，時間到不會自動恢復。</p>
           </div>
         </div>
+
+        <ActionError v-if="dialogError" :message="dialogError" @dismiss="dialogError = ''" />
 
         <DialogFooter>
           <Button variant="outline" @click="dialogOpen = false">取消</Button>

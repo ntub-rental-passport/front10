@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { validateSettings } from './settings-validate'
-import { migrateSettings } from '@/src/mocks/admin/settings'
+import { seedSettings } from '@/src/mocks/admin/settings'
 import type { SystemSettings } from '@/src/mocks/admin/settings'
 
 // 直接沿用種子值，新增設定欄位時這份 fixture 會自動跟上，不必手動補。
 function baseSettings(): SystemSettings {
-  return migrateSettings({})
+  return seedSettings()
 }
 
 describe('validateSettings', () => {
@@ -80,32 +80,6 @@ describe('AI 平台額度驗證', () => {
       quotaCriticalPercent: 90,
     })
     expect(errors.quotaWarnPercent).toBeTruthy()
-  })
-})
-
-describe('migrateSettings', () => {
-  it('舊資料缺少額度欄位時補回預設值，不產生 NaN', () => {
-    const legacy = {
-      siteName: '舊站名',
-      supportEmail: 'old@rentmate.tw',
-      maintenanceMode: false,
-      maintenanceMessage: '維護中',
-    }
-
-    const migrated = migrateSettings(legacy)
-
-    expect(migrated.platformGeminiTokenQuota).toBe(2_000_000)
-    expect(migrated.platformVisionPageQuota).toBe(3_000)
-    expect(migrated.quotaWarnPercent).toBe(80)
-    expect(migrated.quotaCriticalPercent).toBe(95)
-    expect(migrated.auditRetentionDays).toBe(90)
-    expect(migrated.maintenanceOverdueDays).toBe(7)
-    expect(migrated.subscriptionExpiringSoonDays).toBe(14)
-    expect(migrated.aiQuotaCriticalDays).toBe(3)
-    expect(migrated.responseOkMs).toBe(300)
-    expect(migrated.responseDegradedMs).toBe(1000)
-    // 使用者原本的設定不可被預設值覆蓋
-    expect(migrated.siteName).toBe('舊站名')
   })
 })
 

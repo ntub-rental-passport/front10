@@ -33,12 +33,12 @@ import {
 } from '@/src/utils/rent-format'
 import AnnouncementBanner from '@/src/components/content/AnnouncementBanner.vue'
 import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
-import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { usePublicContent } from '@/src/composables/usePublicContent'
 import { useAnnouncementDismissal } from '@/src/composables/useAnnouncementDismissal'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'
 import { isDashboardAnnouncementLevel } from '@/src/utils/announcement'
 
-const { tenantAnnouncements } = useAdminContent()
+const { tenantAnnouncements } = usePublicContent()
 const { isDismissed, dismiss } = useAnnouncementDismissal()
 
 // 首頁只放最緊急的訊息（urgent／warning），一般公告仍在通知中心看得到；

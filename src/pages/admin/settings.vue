@@ -27,17 +27,17 @@ import {
   AlertTriangle,
   Cloud,
   Eye,
-  HardDrive,
   RotateCcw,
   ShieldAlert,
   ShieldOff,
   Undo2,
 } from 'lucide-vue-next'
+import ActionError from '@/src/components/admin/ActionError.vue'
 import MaintenancePreview from '@/src/components/admin/MaintenancePreview.vue'
 import SettingsSaveBar from '@/src/components/admin/SettingsSaveBar.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
 import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
-import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
+import { loadAdminSettings, useAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { adminMaintenanceCollection } from '@/src/composables/admin/useAdminMaintenance'
 import { adminSubscriptionCollection } from '@/src/composables/admin/useAdminSubscription'
@@ -100,7 +100,7 @@ function clock(): string {
   return new Date().toLocaleTimeString('zh-TW', { hour12: false })
 }
 
-/* -------------------- 存在瀏覽器的設定（門檻、維護） -------------------- */
+/* -------------------- 門檻與維護（存在後端，所有管理員共用） -------------------- */
 
 const AUDIT_KEYS = ['auditRetentionDays'] as const
 const REMINDER_KEYS = ['maintenanceOverdueDays', 'subscriptionExpiringSoonDays'] as const
@@ -155,19 +155,54 @@ function revert(keys: readonly SettingsKey[]): void {
   for (const key of keys) copyField(draft.value, settings.value, key)
 }
 
+/**
+ * 伺服器上的設定讀好之前不能存：草稿還是預設值，一存就會把伺服器上的值蓋回預設。
+ * 讀好時逐欄合併：讀取期間管理員已經改了的欄位保留他打的，其他欄位換成伺服器上的值。
+ * 不能整份覆蓋（會吃掉他打的字），也不能整份保留（沒改的欄位會帶著預設值被存回去）。
+ */
+const siteState = ref<'loading' | 'ready' | 'error'>('loading')
+
+async function loadSite(): Promise<void> {
+  siteState.value = 'loading'
+  const before = { ...draft.value }
+  const ok = await loadAdminSettings()
+  if (ok) {
+    const merged: SystemSettings = { ...settings.value }
+    for (const key of Object.keys(before) as SettingsKey[]) {
+      if (draft.value[key] !== before[key]) copyField(merged, draft.value, key)
+    }
+    draft.value = merged
+  }
+  siteState.value = ok ? 'ready' : 'error'
+}
+
+type SiteTab = 'thresholds' | 'maintenance'
+const siteSaving = reactive<Record<SiteTab, boolean>>({ thresholds: false, maintenance: false })
+const siteError = reactive<Record<SiteTab, string>>({ thresholds: '', maintenance: '' })
+
 /** 只存這個頁籤的欄位，另一個頁籤還沒存的修改留在草稿裡 */
-function saveKeys(keys: readonly SettingsKey[]): void {
+async function saveKeys(keys: readonly SettingsKey[], tab: SiteTab): Promise<void> {
   const next: SystemSettings = { ...settings.value }
   for (const key of keys) copyField(next, draft.value, key)
-  saveSettings(next)
+  siteSaving[tab] = true
+  siteError[tab] = ''
+  try {
+    await saveSettings(next)
+    // 伺服器會修剪前後空白，存完以伺服器的值為準，不然畫面會一直說「有未儲存的變更」
+    for (const key of keys) copyField(draft.value, settings.value, key)
+    savedAt[tab] = clock()
+  } catch (error) {
+    siteError[tab] = error instanceof Error ? error.message : '儲存失敗，請稍後再試。'
+  } finally {
+    siteSaving[tab] = false
+  }
 }
 
 const thresholdsDirty = computed(() => differs(THRESHOLD_KEYS))
 const maintenanceDirty = computed(() => differs(MAINTENANCE_KEYS))
 
-function saveThresholds(): void {
-  saveKeys(THRESHOLD_KEYS)
-  savedAt.thresholds = clock()
+function saveThresholds(): Promise<void> {
+  return saveKeys(THRESHOLD_KEYS, 'thresholds')
 }
 
 /* -------------------- 門檻的即時預覽 -------------------- */
@@ -326,14 +361,13 @@ const maintenanceStatusText = computed(() => {
 const maintenanceBanner = computed(() => {
   if (!settings.value.maintenanceMode) return null
   return isMaintenanceActive(settings.value)
-    ? '維護模式開啟中：這台瀏覽器目前會被導到維護頁'
+    ? '維護模式開啟中：一般頁面目前都會被導到維護頁'
     : '維護模式已開啟，依排程此刻尚未生效'
 })
 
-function saveMaintenance(): void {
+function saveMaintenance(): Promise<void> {
   confirmMaintenanceOpen.value = false
-  saveKeys(MAINTENANCE_KEYS)
-  savedAt.maintenance = clock()
+  return saveKeys(MAINTENANCE_KEYS, 'maintenance')
 }
 
 function requestSaveMaintenance(): void {
@@ -348,16 +382,23 @@ function requestSaveMaintenance(): void {
  * 緊急出口：不經確認對話框，直接關閉維護模式並清掉排程。
  * 維護中誤設排程時，多一道確認就多一次點錯的機會。
  */
-function liftMaintenanceNow(): void {
+const liftError = ref('')
+
+async function liftMaintenanceNow(): Promise<void> {
   const next: SystemSettings = {
     ...settings.value,
     maintenanceMode: false,
     maintenanceStartsAt: '',
     maintenanceEndsAt: '',
   }
-  saveSettings(next)
-  for (const key of MAINTENANCE_STATE_KEYS) copyField(draft.value, next, key)
-  savedAt.maintenance = clock()
+  liftError.value = ''
+  try {
+    await saveSettings(next)
+    for (const key of MAINTENANCE_STATE_KEYS) copyField(draft.value, next, key)
+    savedAt.maintenance = clock()
+  } catch (error) {
+    liftError.value = error instanceof Error ? error.message : '解除失敗，請稍後再試。'
+  }
 }
 
 /**
@@ -393,6 +434,7 @@ function warnBeforeUnload(event: BeforeUnloadEvent): void {
 
 onMounted(() => {
   window.addEventListener('beforeunload', warnBeforeUnload)
+  void loadSite()
   void loadPlatform()
   void loadRoster()
 })
@@ -412,6 +454,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         立即解除維護
       </Button>
     </div>
+    <ActionError v-if="liftError" :message="liftError" @dismiss="liftError = ''" />
 
     <Tabs :model-value="activeTab" @update:model-value="selectTab">
       <TabsList :class="ADMIN_TAB_LIST">
@@ -426,8 +469,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       <!-- ==================== 門檻與提醒 ==================== -->
       <TabsContent value="thresholds" class="mt-6 space-y-4">
         <p class="flex items-center gap-2 text-sm text-foreground/70">
-          <HardDrive class="h-4 w-4 shrink-0" aria-hidden="true" />
-          這一頁的設定只存在這台瀏覽器，只影響你在這台電腦上看到的後台畫面。
+          <Cloud class="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span v-if="siteState === 'loading'">正在讀取伺服器上的設定…</span>
+          <span v-else-if="siteState === 'error'" class="text-destructive">
+            讀不到伺服器上的設定，重新整理後再試；讀到之前不能儲存。
+          </span>
+          <span v-else>這一頁的設定存在伺服器，所有管理員看到同一份。</span>
         </p>
 
         <Card class="rounded-3xl">
@@ -594,7 +641,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
 
         <SettingsSaveBar
           :dirty="thresholdsDirty"
-          :invalid="hasErrors(THRESHOLD_KEYS)"
+          :invalid="hasErrors(THRESHOLD_KEYS) || siteState !== 'ready'"
+          :saving="siteSaving.thresholds"
+          :error="siteError.thresholds"
           :saved-at="savedAt.thresholds"
           @save="saveThresholds"
           @revert="revert(THRESHOLD_KEYS)"
@@ -758,8 +807,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       <!-- ==================== 維護與重置 ==================== -->
       <TabsContent value="maintenance" class="mt-6 space-y-4">
         <p class="flex items-center gap-2 text-sm text-foreground/70">
-          <HardDrive class="h-4 w-4 shrink-0" aria-hidden="true" />
-          維護設定只存在這台瀏覽器：開啟後只有這台瀏覽器會看到維護頁，其他裝置上的使用者不受影響。
+          <Cloud class="h-4 w-4 shrink-0" aria-hidden="true" />
+          開啟後，所有裝置的一般頁面都會導到維護頁；已經開著的頁面，換頁時才會跳過去。
         </p>
 
         <Card class="rounded-3xl">
@@ -853,7 +902,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
 
         <SettingsSaveBar
           :dirty="maintenanceDirty"
-          :invalid="hasErrors(MAINTENANCE_KEYS)"
+          :invalid="hasErrors(MAINTENANCE_KEYS) || siteState !== 'ready'"
+          :saving="siteSaving.maintenance"
+          :error="siteError.maintenance"
           :saved-at="savedAt.maintenance"
           @save="requestSaveMaintenance"
           @revert="revert(MAINTENANCE_KEYS)"
@@ -871,7 +922,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             </div>
             <div class="space-y-3 md:col-span-3">
               <p class="text-sm text-muted-foreground">
-                把所有後台模組（使用者、工單、押金、這台瀏覽器裡的設定…）復原成初始的示範狀態。後端的資料（真實帳號、稽核紀錄、密碼與登入設定）不受影響。
+                把還存在瀏覽器裡的後台示範資料（使用者、工單、押金…）復原成初始狀態。存在後端的資料（真實帳號、稽核紀錄、系統設定、公告與輪播、通知模板）不受影響。
               </p>
               <Button variant="destructive" @click="resetOpen = true">
                 <RotateCcw class="mr-1 h-4 w-4" />
@@ -911,7 +962,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <div class="flex gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm">
           <AlertTriangle class="h-5 w-5 shrink-0 text-destructive" aria-hidden="true" />
           <p>
-            這台瀏覽器的一般頁面會被導向維護頁。管理後台（/admin）不受影響，你可以隨時回到這裡關閉。
+            所有使用者的一般頁面都會被導向維護頁（最慢一分鐘內生效）。管理後台（/admin）不受影響，你可以隨時回到這裡關閉。
           </p>
         </div>
         <DialogFooter>
@@ -926,7 +977,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <DialogHeader>
           <DialogTitle>重置示範資料</DialogTitle>
           <DialogDescription>
-            所有後台模組會回到初始的示範狀態，包含使用者、工單、押金與這台瀏覽器裡的設定。此操作無法復原。
+            瀏覽器裡的後台示範資料會回到初始狀態，包含使用者、工單與押金；存在後端的資料不受影響。此操作無法復原。
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

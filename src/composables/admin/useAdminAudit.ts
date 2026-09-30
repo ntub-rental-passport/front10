@@ -1,21 +1,11 @@
 import { computed } from 'vue'
 import { createAdminCollection, newId } from './useAdminStore'
+import { adminSettings as settings } from './useAdminSettings'
 import { getAuthSession } from '@/src/composables/useAuth'
 import { filterByRetention } from '@/src/utils/admin-audit-retention'
-import {
-  migrateSettings,
-  seedAuditEvents,
-  seedSettings,
-  type AuditActionType,
-  type AuditEvent,
-  type SystemSettings,
-} from '@/src/mocks/admin-seed'
+import { seedAuditEvents, type AuditActionType, type AuditEvent } from '@/src/mocks/admin-seed'
 
 const rawEvents = createAdminCollection<AuditEvent[]>('audit', seedAuditEvents)
-// 用同一個 collection 名稱重新取得設定 ref，而不是 import useAdminSettings ——
-// 那邊的 useAdminSettings() 又會呼叫 useAdminAudit()，兩個檔案互相 import 會形成循環依賴。
-// createAdminCollection 本身有 registry 去重，重複呼叫拿到的是同一份 ref，不會重新 seed。
-const settings = createAdminCollection<SystemSettings>('settings', seedSettings, migrateSettings)
 
 export function useAdminAudit() {
   /**

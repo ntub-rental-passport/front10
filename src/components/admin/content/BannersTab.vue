@@ -25,8 +25,10 @@ import {
 import { ChevronDown, ChevronUp, GripVertical, ImageOff } from 'lucide-vue-next'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import StatusBadge from '@/src/components/admin/StatusBadge.vue'
+import ActionError from '@/src/components/admin/ActionError.vue'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
-import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { loadAdminContent, useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { BUILTIN_BANNER_IMAGES, isValidImageUrl } from '@/src/utils/banner-url'
 import { resolvePhase } from '@/src/utils/phase'
 import { TENANT_ROUTE_GROUPS, TENANT_ROUTE_OPTIONS, isDeadRoute } from '@/src/utils/tenant-route-link'
@@ -35,7 +37,7 @@ import { dateKey } from '@/src/utils/date-key'
 import type { Banner } from '@/src/mocks/admin/content'
 
 const router = useRouter()
-const { banners, saveBanner, removeBanner, moveBanner, reorderBanner } = useAdminContent()
+const { banners, loadState, saveBanner, removeBanner, moveBanner, reorderBanner } = useAdminContent()
 
 const ordered = computed(() => [...banners.value].sort((a, b) => a.order - b.order))
 
@@ -62,8 +64,27 @@ function onDragEnd(): void {
   dropTargetId.value = null
 }
 
+/** 排序、刪除的錯誤顯示在清單上方；新增、編輯的錯誤留在對話框裡 */
+const listError = ref('')
+const dialogError = ref('')
+const saving = ref(false)
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : '操作失敗，請稍後再試。'
+}
+
+async function run(action: () => Promise<void>): Promise<void> {
+  listError.value = ''
+  try {
+    await action()
+  } catch (error) {
+    listError.value = messageOf(error)
+  }
+}
+
 function onDrop(targetIndex: number): void {
-  if (draggingId.value) reorderBanner(draggingId.value, targetIndex)
+  const id = draggingId.value
+  if (id) void run(() => reorderBanner(id, targetIndex))
   onDragEnd()
 }
 
@@ -134,6 +155,7 @@ function openCreate(): void {
   draft.value = emptyDraft()
   previewFailed.value = false
   imageCheckState.value = 'idle'
+  dialogError.value = ''
   dialogOpen.value = true
 }
 
@@ -149,6 +171,7 @@ function openEdit(item: Banner): void {
   }
   previewFailed.value = false
   imageCheckState.value = 'idle'
+  dialogError.value = ''
   dialogOpen.value = true
 }
 
@@ -235,13 +258,22 @@ async function submit(force = false): Promise<void> {
   }
 
   imageCheckState.value = 'idle'
-  saveBanner(buildBannerInput())
-  dialogOpen.value = false
+  saving.value = true
+  dialogError.value = ''
+  try {
+    await saveBanner(buildBannerInput())
+    dialogOpen.value = false
+  } catch (error) {
+    dialogError.value = messageOf(error)
+  } finally {
+    saving.value = false
+  }
 }
 
 function confirmDelete(): void {
-  if (deleteTarget.value) removeBanner(deleteTarget.value.id)
+  const target = deleteTarget.value
   deleteTarget.value = null
+  if (target) void run(() => removeBanner(target.id))
 }
 
 const canSubmit = () =>
@@ -249,7 +281,8 @@ const canSubmit = () =>
   draft.value.imageUrl.trim() !== '' &&
   draft.value.linkUrl !== '' &&
   linkIssue.value === null &&
-  imageCheckState.value !== 'checking'
+  imageCheckState.value !== 'checking' &&
+  !saving.value
 
 // 只在使用者已經有輸入內容時才提示格式錯誤，避免新增輪播一開對話框就先罵人。
 const showUrlFormatWarning = computed(
@@ -318,7 +351,10 @@ const hasActivePreview = computed(() =>
         <Button @click="openCreate">新增輪播</Button>
       </div>
 
-      <div v-if="ordered.length === 0" class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+      <ActionError v-if="listError" :message="listError" @dismiss="listError = ''" />
+      <AdminLoadNotice :state="loadState" what="輪播" @retry="loadAdminContent" />
+
+      <div v-if="ordered.length === 0 && loadState === 'ready'" class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
         尚無輪播圖。
       </div>
 
@@ -361,7 +397,7 @@ const hasActivePreview = computed(() =>
             size="icon"
             aria-label="往前移一位"
             :disabled="index === 0"
-            @click="moveBanner(item.id, 'up')"
+            @click="run(() => moveBanner(item.id, 'up'))"
           >
             <ChevronUp class="h-4 w-4" />
           </Button>
@@ -370,7 +406,7 @@ const hasActivePreview = computed(() =>
             size="icon"
             aria-label="往後移一位"
             :disabled="index === ordered.length - 1"
-            @click="moveBanner(item.id, 'down')"
+            @click="run(() => moveBanner(item.id, 'down'))"
           >
             <ChevronDown class="h-4 w-4" />
           </Button>
@@ -476,13 +512,15 @@ const hasActivePreview = computed(() =>
             <Switch v-model="draft.published" />
           </div>
         </div>
+        <ActionError v-if="dialogError" :message="dialogError" @dismiss="dialogError = ''" />
+
         <DialogFooter>
           <Button variant="outline" @click="dialogOpen = false">取消</Button>
-          <Button v-if="imageCheckState === 'failed'" variant="outline" @click="submit(true)">
+          <Button v-if="imageCheckState === 'failed'" variant="outline" :disabled="saving" @click="submit(true)">
             仍要儲存
           </Button>
           <Button :disabled="!canSubmit()" @click="submit()">
-            {{ imageCheckState === 'checking' ? '確認圖片中…' : '儲存' }}
+            {{ imageCheckState === 'checking' ? '確認圖片中…' : saving ? '儲存中…' : '儲存' }}
           </Button>
         </DialogFooter>
       </DialogContent>

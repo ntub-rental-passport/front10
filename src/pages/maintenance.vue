@@ -2,11 +2,12 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Wrench } from 'lucide-vue-next'
-import { adminSettings } from '@/src/composables/admin/useAdminSettings'
+import { publicSettings } from '@/src/composables/usePublicSettings'
 
-const message = computed(() => adminSettings.value.maintenanceMessage)
-const siteName = computed(() => adminSettings.value.siteName)
-const supportEmail = computed(() => adminSettings.value.supportEmail)
+// router 導到這裡之前已經讀過公開設定，不用再讀一次
+const message = computed(() => publicSettings.value.maintenance.message)
+const siteName = computed(() => publicSettings.value.siteName)
+const supportEmail = computed(() => publicSettings.value.supportEmail)
 
 function formatSchedule(value: string): string {
   if (value.trim() === '') return ''
@@ -22,7 +23,7 @@ function formatSchedule(value: string): string {
 }
 
 // 只顯示結束時間：使用者關心的是什麼時候能用，不是什麼時候開始維護的
-const resumesAt = computed(() => formatSchedule(adminSettings.value.maintenanceEndsAt))
+const resumesAt = computed(() => formatSchedule(publicSettings.value.maintenance.endsAt))
 </script>
 
 <template>

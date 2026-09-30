@@ -126,10 +126,15 @@ class RegistrationPasswordTests(PlatformSettingsTestCase):
 class ApiTests(PlatformSettingsTestCase):
     admin = MagicMock(email='admin@example.com')
 
-    def test_public_settings_expose_only_what_the_register_page_needs(self):
+    def test_public_settings_expose_only_what_pages_need(self):
         from routers.platform_settings_api import read_public_settings
 
-        self.assertEqual(set(read_public_settings()), {'passwordMinLength', 'passwordMaxLength'})
+        # 註冊頁要密碼長度；換頁要維護模式與停用中的功能。門檻、白名單等不在這裡
+        self.assertEqual(
+            set(read_public_settings(MagicMock(cookies={}))),
+            {'passwordMinLength', 'passwordMaxLength', 'siteName', 'supportEmail', 'maintenance',
+             'maintenanceBypass', 'featureOutages'},
+        )
 
     def test_update_rejects_invalid_values_with_400(self):
         from routers.platform_settings_api import SettingsUpdate, update_admin_settings

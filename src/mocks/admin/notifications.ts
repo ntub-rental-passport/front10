@@ -59,61 +59,6 @@ export interface UserNotification {
   read: boolean
 }
 
-export function seedNotifTemplates(): NotifTemplate[] {
-  return [
-    {
-      id: 'nt-1',
-      name: '租約到期提醒',
-      category: '租約',
-      channels: ['inapp', 'email'],
-      title: '您的租約將於 {{到期日}} 到期',
-      body: '{{姓名}} 您好，您位於 {{地址}} 的租約即將於 {{到期日}} 到期，請儘早與房東確認續約意願。',
-      enabled: true,
-      updatedAt: daysAgo(3),
-    },
-    {
-      id: 'nt-2',
-      name: '補貼審核通過',
-      category: '補貼',
-      channels: ['inapp', 'push'],
-      title: '租金補貼審核通過',
-      body: '{{姓名}} 您好，您申請的租金補貼已審核通過，每月核定金額為 {{金額}} 元，將於 {{撥款日}} 起撥款。',
-      enabled: true,
-      updatedAt: daysAgo(7),
-    },
-    {
-      id: 'nt-3',
-      name: '帳單待繳提醒',
-      category: '帳務',
-      channels: ['inapp', 'email', 'push'],
-      title: '本期帳單 {{金額}} 元待繳',
-      body: '您的本期帳單金額為 {{金額}} 元，應繳日為 {{應繳日}}，逾期將產生滯納金。',
-      enabled: true,
-      updatedAt: daysAgo(1),
-    },
-    {
-      id: 'nt-4',
-      name: '系統維護預告',
-      category: '系統',
-      channels: ['inapp'],
-      title: '系統維護預告',
-      body: '本平台將於 {{維護時間}} 進行系統維護，屆時暫停服務，造成不便敬請見諒。',
-      enabled: true,
-      updatedAt: daysAgo(5),
-    },
-    {
-      id: 'nt-5',
-      name: '合約分析完成',
-      category: '系統',
-      channels: ['inapp'],
-      title: '合約分析完成',
-      body: '您上傳的「{{檔名}}」已完成 AI 分析，可至合約專區查看結果。',
-      enabled: false,
-      updatedAt: daysAgo(20),
-    },
-  ]
-}
-
 export function seedUserNotifications(): UserNotification[] {
   return [
     {

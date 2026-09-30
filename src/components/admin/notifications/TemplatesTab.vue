@@ -33,9 +33,11 @@ import {
   TableRow,
 } from '@/components/ui/table/index'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import ActionError from '@/src/components/admin/ActionError.vue'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import { useExpandedRows } from '@/src/composables/admin/useExpandedRows'
-import { useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
+import { loadTemplates, useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
 import { extractVariables, renderTemplate } from '@/src/utils/notif-template'
 import { groupIntoBatches } from '@/src/utils/notif-batch'
 import {
@@ -48,7 +50,7 @@ import { formatDateTime } from '@/src/utils/admin-format'
 import type { NotifCategory, NotifChannel, NotifTemplate } from '@/src/mocks/admin-seed'
 
 const router = useRouter()
-const { templates, messages, saveTemplate, removeTemplate, toggleTemplate } =
+const { templates, templatesState, messages, saveTemplate, removeTemplate, toggleTemplate } =
   useAdminNotifications()
 const { isExpanded, toggle } = useExpandedRows()
 
@@ -147,8 +149,27 @@ function setChannel(channel: NotifChannel, on: boolean): void {
 
 const draftVariables = computed(() => extractVariables(`${draft.value.title} ${draft.value.body}`))
 
+/** 啟用切換、刪除的錯誤顯示在清單上方；新增、編輯的錯誤留在對話框裡 */
+const listError = ref('')
+const dialogError = ref('')
+const saving = ref(false)
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : '操作失敗，請稍後再試。'
+}
+
+async function run(action: () => Promise<void>): Promise<void> {
+  listError.value = ''
+  try {
+    await action()
+  } catch (error) {
+    listError.value = messageOf(error)
+  }
+}
+
 function openCreate(): void {
   draft.value = emptyDraft()
+  dialogError.value = ''
   dialogOpen.value = true
 }
 
@@ -164,11 +185,16 @@ function openEdit(item: NotifTemplate): void {
     actionLabel: item.actionLabel ?? '',
     enabled: item.enabled,
   }
+  dialogError.value = ''
   dialogOpen.value = true
 }
 
-function submit(): void {
-  saveTemplate({
+async function submit(): Promise<void> {
+  if (!canSubmit()) return
+  saving.value = true
+  dialogError.value = ''
+  try {
+    await saveTemplate({
     id: draft.value.id,
     name: draft.value.name,
     category: draft.value.category,
@@ -179,19 +205,26 @@ function submit(): void {
     actionUrl: draft.value.actionUrl || undefined,
     actionLabel: draft.value.actionUrl ? draft.value.actionLabel || undefined : undefined,
     enabled: draft.value.enabled,
-  })
-  dialogOpen.value = false
+    })
+    dialogOpen.value = false
+  } catch (error) {
+    dialogError.value = messageOf(error)
+  } finally {
+    saving.value = false
+  }
 }
 
 const canSubmit = () =>
   draft.value.name.trim() !== '' &&
   draft.value.title.trim() !== '' &&
   draft.value.body.trim() !== '' &&
-  draft.value.channels.length > 0
+  draft.value.channels.length > 0 &&
+  !saving.value
 
 function confirmDelete(): void {
-  if (deleteTarget.value) removeTemplate(deleteTarget.value.id)
+  const target = deleteTarget.value
   deleteTarget.value = null
+  if (target) void run(() => removeTemplate(target.id))
 }
 
 /* -------------------- 發送 -------------------- */
@@ -209,6 +242,9 @@ function openSend(item: NotifTemplate): void {
       <span />
       <Button @click="openCreate">新增模板</Button>
     </div>
+
+    <ActionError v-if="listError" :message="listError" @dismiss="listError = ''" />
+    <AdminLoadNotice :state="templatesState" what="通知模板" @retry="loadTemplates" />
 
     <Table>
       <TableHeader>
@@ -256,7 +292,7 @@ function openSend(item: NotifTemplate): void {
               <AdminRowActions
                 :actions="[
                   { label: '編輯', onSelect: () => openEdit(item) },
-                  { label: item.enabled ? '停用' : '啟用', onSelect: () => toggleTemplate(item.id) },
+                  { label: item.enabled ? '停用' : '啟用', onSelect: () => void run(() => toggleTemplate(item.id)) },
                   { label: '刪除', danger: true, onSelect: () => (deleteTarget = item) },
                 ]"
               >
@@ -337,7 +373,7 @@ function openSend(item: NotifTemplate): void {
           </TableRow>
         </template>
 
-        <TableRow v-if="templates.length === 0">
+        <TableRow v-if="templates.length === 0 && templatesState === 'ready'">
           <TableCell colspan="6" class="py-8 text-center text-muted-foreground">尚無通知模板。</TableCell>
         </TableRow>
       </TableBody>
@@ -437,9 +473,11 @@ function openSend(item: NotifTemplate): void {
             <Switch v-model="draft.enabled" />
           </div>
         </div>
+        <ActionError v-if="dialogError" :message="dialogError" @dismiss="dialogError = ''" />
+
         <DialogFooter>
           <Button variant="outline" @click="dialogOpen = false">取消</Button>
-          <Button :disabled="!canSubmit()" @click="submit">儲存</Button>
+          <Button :disabled="!canSubmit()" @click="submit">{{ saving ? '儲存中…' : '儲存' }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

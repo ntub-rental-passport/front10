@@ -1,127 +1,126 @@
-import { computed } from 'vue'
-import { createAdminCollection, newId } from './useAdminStore'
-import { useAdminAudit } from './useAdminAudit'
+/**
+ * 後台的公告與首頁輪播，存在後端（backend/admin/content_service.py），
+ * 所有管理員、所有裝置看同一份。稽核由後端記。
+ *
+ * 前台（公開首頁、租客首頁、通知中心）讀的是 usePublicContent，只有生效中的；
+ * 這裡是後台用的完整清單與增刪改。每個操作失敗時丟出後端的理由，畫面原樣顯示。
+ */
+import { ref } from 'vue'
+import { refreshPublicContent } from '@/src/composables/usePublicContent'
 import {
-  isAnnouncementActive,
-  isAnnouncementVisibleToTenant,
-  migrateAnnouncements,
-} from '@/src/utils/announcement'
+  createAnnouncement,
+  createBanner,
+  deleteAnnouncement,
+  deleteBanner,
+  fetchAdminContent,
+  reorderBanners,
+  updateAnnouncement,
+  updateBanner,
+  type AnnouncementInput,
+  type BannerInput,
+} from '@/src/services/contentApi'
 import { reorderByIndex } from '@/src/utils/reorder'
-import {
-  seedAnnouncements,
-  seedBanners,
-  migrateBannerImages,
-  migrateBannerSchedule,
-  migrateHandoverRelaunch,
-  type Announcement,
-  type Banner,
-} from '@/src/mocks/admin-seed'
+import type { Announcement, Banner } from '@/src/mocks/admin/content'
 
-const announcements = createAdminCollection<Announcement[]>(
-  'content-announcements',
-  seedAnnouncements,
-  migrateAnnouncements,
-)
+const announcements = ref<Announcement[]>([])
+const banners = ref<Banner[]>([])
+const loadState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 
-// 三支舊資料遷移各自處理一件事（圖片網址／點交存證重新上架／排期欄位），互不相依，
-// 在這裡合成單一 migrate 函式餵給 createAdminCollection——它一次只接受一個。
-function migrateBanners(list: Banner[]): Banner[] {
-  return migrateBannerSchedule(migrateHandoverRelaunch(migrateBannerImages(list)))
+export async function loadAdminContent(): Promise<void> {
+  loadState.value = 'loading'
+  const result = await fetchAdminContent()
+  if (!result) {
+    loadState.value = 'error'
+    return
+  }
+  announcements.value = result.announcements
+  banners.value = result.banners
+  loadState.value = 'ready'
 }
 
-const banners = createAdminCollection<Banner[]>('content-banners', seedBanners, migrateBanners)
-
-function nowIso(): string {
-  return new Date().toISOString()
+/** 改完之後，這台瀏覽器的首頁與租客畫面馬上看到，不等公開內容的快取過期 */
+function afterChange(): void {
+  void refreshPublicContent({ force: true })
 }
 
-function move<T extends { id: string; order: number }>(list: T[], id: string, direction: 'up' | 'down'): void {
-  const sorted = [...list].sort((a, b) => a.order - b.order)
-  const index = sorted.findIndex((item) => item.id === id)
-  if (index === -1) return
-  const swapWith = direction === 'up' ? index - 1 : index + 1
-  if (swapWith < 0 || swapWith >= sorted.length) return
-  const a = sorted[index]
-  const b = sorted[swapWith]
-  const temp = a.order
-  a.order = b.order
-  b.order = temp
+/** 目前的順序（照 order 排）的 id 清單 */
+function orderedIds(): string[] {
+  return [...banners.value].sort((a, b) => a.order - b.order).map((item) => item.id)
 }
 
 export function useAdminContent() {
-  const { logAction } = useAdminAudit()
-
-  const activeAnnouncements = computed(() => {
-    const now = new Date()
-    return announcements.value
-      .filter((item) => isAnnouncementActive(item, now))
-      .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
-  })
-
-  // 後台管理頁要看得到全部生效中公告（不分受眾），租客端（首頁、通知中心）
-  // 則只該看到跟自己身分有關的，所以另外導出一份過濾過的清單而不是改掉上面那個。
-  const tenantAnnouncements = computed(() =>
-    activeAnnouncements.value.filter((item) => isAnnouncementVisibleToTenant(item)),
-  )
+  if (loadState.value === 'idle') void loadAdminContent()
 
   // --- 公告 ---
-  function saveAnnouncement(input: Omit<Announcement, 'id' | 'updatedAt'> & { id?: string }): void {
-    if (input.id) {
-      const target = announcements.value.find((item) => item.id === input.id)
-      if (!target) return
-      Object.assign(target, input, { updatedAt: nowIso() })
-      logAction('內容管理', '公告', `更新公告「${input.title}」`)
-    } else {
-      announcements.value.unshift({ ...input, id: newId('an'), updatedAt: nowIso() })
-      logAction('內容管理', '公告', `新增公告「${input.title}」`)
+  /** 回傳存好的那一筆：新增時才知道後端給的 id */
+  async function saveAnnouncement(input: AnnouncementInput & { id?: string }): Promise<Announcement> {
+    const { id, ...fields } = input
+    if (id) {
+      const saved = await updateAnnouncement(id, fields)
+      announcements.value = announcements.value.map((item) => (item.id === id ? saved : item))
+      afterChange()
+      return saved
     }
+    const created = await createAnnouncement(fields)
+    announcements.value = [created, ...announcements.value]
+    afterChange()
+    return created
   }
 
-  function removeAnnouncement(id: string): void {
-    const target = announcements.value.find((item) => item.id === id)
-    if (!target) return
+  async function removeAnnouncement(id: string): Promise<void> {
+    await deleteAnnouncement(id)
     announcements.value = announcements.value.filter((item) => item.id !== id)
-    logAction('內容管理', '公告', `刪除公告「${target.title}」`)
+    afterChange()
   }
 
-  // --- Banner ---
-  function saveBanner(input: Omit<Banner, 'id' | 'updatedAt' | 'order'> & { id?: string; order?: number }): void {
-    if (input.id) {
-      const target = banners.value.find((item) => item.id === input.id)
-      if (!target) return
-      Object.assign(target, input, { updatedAt: nowIso() })
-      logAction('內容管理', 'Banner', `更新輪播「${input.title}」`)
-    } else {
-      const maxOrder = banners.value.reduce((max, item) => Math.max(max, item.order), -1)
-      banners.value.push({ ...input, order: maxOrder + 1, id: newId('ban'), updatedAt: nowIso() })
-      logAction('內容管理', 'Banner', `新增輪播「${input.title}」`)
+  // --- 輪播 ---
+  async function saveBanner(input: BannerInput & { id?: string }): Promise<Banner> {
+    const { id, ...fields } = input
+    if (id) {
+      const saved = await updateBanner(id, fields)
+      banners.value = banners.value.map((item) => (item.id === id ? saved : item))
+      afterChange()
+      return saved
     }
+    const created = await createBanner(fields)
+    banners.value = [...banners.value, created]
+    afterChange()
+    return created
   }
 
-  function removeBanner(id: string): void {
-    const target = banners.value.find((item) => item.id === id)
-    if (!target) return
+  async function removeBanner(id: string): Promise<void> {
+    await deleteBanner(id)
     banners.value = banners.value.filter((item) => item.id !== id)
-    logAction('內容管理', 'Banner', `刪除輪播「${target.title}」`)
+    afterChange()
   }
 
-  function moveBanner(id: string, direction: 'up' | 'down'): void {
-    move(banners.value, id, direction)
+  async function applyOrder(ids: string[], movedId: string): Promise<void> {
+    banners.value = await reorderBanners(ids, movedId)
+    afterChange()
   }
 
-  /** 拖曳排序用：一次跨越多個位置，相鄰交換的 move() 做不到。 */
-  function reorderBanner(id: string, targetIndex: number): void {
-    const target = banners.value.find((item) => item.id === id)
-    if (!target) return
-    reorderByIndex(banners.value, id, targetIndex)
-    logAction('內容管理', 'Banner', `調整輪播「${target.title}」的順序`)
+  async function moveBanner(id: string, direction: 'up' | 'down'): Promise<void> {
+    const ids = orderedIds()
+    const index = ids.indexOf(id)
+    const swapWith = direction === 'up' ? index - 1 : index + 1
+    if (index === -1 || swapWith < 0 || swapWith >= ids.length) return
+    ;[ids[index], ids[swapWith]] = [ids[swapWith], ids[index]]
+    await applyOrder(ids, id)
+  }
+
+  /** 拖曳排序用：一次跨越多個位置，相鄰交換的 moveBanner 做不到。 */
+  async function reorderBanner(id: string, targetIndex: number): Promise<void> {
+    const draft = banners.value.map((item) => ({ ...item }))
+    reorderByIndex(draft, id, targetIndex)
+    const ids = draft.sort((a, b) => a.order - b.order).map((item) => item.id)
+    if (ids.join() === orderedIds().join()) return
+    await applyOrder(ids, id)
   }
 
   return {
     announcements,
     banners,
-    activeAnnouncements,
-    tenantAnnouncements,
+    loadState,
     saveAnnouncement,
     removeAnnouncement,
     saveBanner,

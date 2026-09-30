@@ -50,18 +50,3 @@ export function seedSettings(): SystemSettings {
     responseDegradedMs: 1000,
   }
 }
-
-/**
- * 舊版 localStorage 沒有新增的額度欄位，缺欄位會讓百分比算出 NaN 而整頁失效。
- * 寫成具名函式而非 inline 箭頭函式，才能在 node 環境下直接單元測試
- * （vitest 沒有 localStorage，無法測 createAdminCollection 本身）。
- */
-export function migrateSettings(raw: Partial<SystemSettings>): SystemSettings {
-  const defaults = seedSettings()
-  // 只留認得的欄位：密碼長度、登入有效時間已經搬到後端（backend/platform_settings.py），
-  // 瀏覽器裡的舊值留著只會讓人以為它們還有作用
-  const known = Object.fromEntries(
-    Object.entries(raw).filter(([key]) => key in defaults),
-  ) as Partial<SystemSettings>
-  return { ...defaults, ...known }
-}
