@@ -527,7 +527,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
                     <SelectItem value="landlord">房東</SelectItem>
                   </SelectContent>
                 </Select>
-                <p class="text-xs text-foreground/70">「全部」目前只有租客端會顯示公告。</p>
                 <!--
                   房東端目前沒有任何一行程式碼讀公告（見 announcementPlacement 的說明），
                   選了「房東」要當場講清楚，不能等存檔後才在列表發現公告根本沒送出去。
