@@ -143,7 +143,7 @@ const usageBars = computed<QuotaProgressItem[]>(() =>
       ? '尚未設定額度上限'
       : usage.daysLeft === null
         ? `剩餘 ${usage.remaining.toLocaleString('zh-TW')}・目前無消耗`
-        : `剩餘 ${usage.remaining.toLocaleString('zh-TW')}・預估可撐 ${usage.daysLeft} 天`,
+        : `剩餘 ${usage.remaining.toLocaleString('zh-TW')}・預估可撐 ${usage.daysLeft === 0 ? '不到 1' : usage.daysLeft} 天`,
   })),
 )
 

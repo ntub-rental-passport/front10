@@ -79,7 +79,7 @@ const router = createRouter({
         { path: 'notifications/:batchId', component: () => import('@/src/pages/admin/notifications-detail.vue') },
         { path: 'monitoring', component: () => import('@/src/pages/admin/monitoring.vue') },
         // AI 使用量已擴充為系統監控，保留舊路徑避免既有書籤 404
-        { path: 'ai-usage', redirect: '/admin/monitoring' },
+        { path: 'ai-usage', redirect: '/admin/monitoring#ai-usage' },
         // 已改名為 AI 使用量，保留舊路徑避免既有書籤 404
         { path: 'ai-quality', redirect: '/admin/monitoring' },
         // 訂閱與容量已併入使用者詳情，保留舊路徑避免既有書籤 404

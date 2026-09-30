@@ -125,14 +125,16 @@ def _check_quota(provider: str, ts: float) -> None:
     if quota <= 0:
         return  # 沒設額度就沒有門檻可言
     used = month_to_date(provider, ts)
-    percent = used * 100 // quota
     warn, critical = settings['quotaWarnPercent'], settings['quotaCriticalPercent']
-    if percent >= critical:
+    # 門檻跟畫面（src/utils/admin-ai-usage.ts 的 quotaStatus）一樣用精確比例比
+    if used * 100 >= critical * quota:
         level, threshold, word = 'critical', critical, '告急'
-    elif percent >= warn:
+    elif used * 100 >= warn * quota:
         level, threshold, word = 'warn', warn, '預警'
     else:
         return
+    # 顯示的百分比跟畫面一樣四捨五入、最多 100%，通知跟監控頁的數字才對得起來
+    percent = min(100, (used * 200 + quota) // (2 * quota))
 
     month = _local(ts).strftime('%Y-%m')
     with _open() as db:
@@ -150,6 +152,6 @@ def _check_quota(provider: str, ts: float) -> None:
         f'Google Vision 本月額度已用 {percent}%',
         f'本月已用 {used:,} 頁，額度 {quota:,} 頁，已超過{word}門檻（{threshold}%）。'
         '額度與門檻可以在系統設定調整。',
-        action_url='/admin/monitoring',
+        action_url='/admin/monitoring#ai-usage',
         action_label='查看 AI 用量',
     )
