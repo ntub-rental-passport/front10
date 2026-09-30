@@ -143,6 +143,13 @@ server {
         proxy_read_timeout 300s;
     }
 
+    # 容器之間專用的端點（OCR 服務回報 Vision 用量，見 backend/routers/ai_usage_api.py）：
+    # OCR 容器直接連 fastapi:8000，不經過這裡，所以從外面進來的一律擋掉。
+    # 端點本身也要服務憑證，這裡是多一層。
+    location ^~ /api/internal/ {
+        return 404;
+    }
+
     location /api/ {
         limit_req zone=api_limit burst=20 nodelay;
         proxy_pass http://fastapi:8000;
