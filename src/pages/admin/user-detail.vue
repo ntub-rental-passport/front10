@@ -48,16 +48,24 @@ import {
 import { ADMIN_ROLES, adminRoleLabels as rbacRoleLabels, type AdminRole } from '@/src/utils/admin-rbac'
 import {
   caseSideLabels,
+  type UserDepositView,
 } from '@/src/utils/admin-user-directory'
 import { depositMatchLabels } from '@/src/utils/admin-deposit'
 import { useAdminHandover } from '@/src/composables/admin/useAdminHandover'
 import {
-  handoverAgreementLabels,
-  handoverAgreementOf,
-  handoverVerdictLabels,
-  overallAgreement,
-  summarizeHandover,
+  handoverItemLabel,
+  handoverOutcome,
+  handoverOutcomeLabels,
+  type HandoverItem,
 } from '@/src/utils/admin-handover'
+import {
+  demoHandoverViews,
+  realDepositView,
+  type HandoverView,
+  type UserRecords,
+} from '@/src/utils/admin-user-records'
+import { fetchUserRecords } from '@/src/services/adminUserRecordsApi'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import {
   maintenanceCategoryLabels,
   maintenanceStatusLabels,
@@ -69,7 +77,8 @@ import { NO_LOGIN_RECORD_HINT, lastLoginText } from '@/src/utils/admin-user-list
 import {
   accountStatusTone,
   depositMatchTone,
-  handoverAgreementTone,
+  handoverOutcomeTone,
+  handoverResultTone,
   subscriptionFlags,
 } from '@/src/utils/admin-user-detail'
 import { useNow } from '@/src/composables/useNow'
@@ -134,10 +143,49 @@ const subscriptionStatusFlags = computed(() => {
   })
 })
 
+// ── 押金對帳、點交存證 ─────────────────────────────────────────────
+//
+// 真實帳號讀後端：房東的租約對上租客的合約、租客點交的 AI 比對結果（見
+// backend/admin/user_records.py）。展示帳號用瀏覽器裡的示範資料。兩種整理成
+// 同一種形狀（admin-user-records.ts），下面的畫面只有一條路徑。
+const realRecords = ref<UserRecords | null>(null)
+const recordsState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+
+async function loadRecords(): Promise<void> {
+  const id = row.value?.realAccountId
+  if (id === undefined) {
+    realRecords.value = null
+    recordsState.value = 'idle'
+    return
+  }
+  // 先清掉：從一個人的頁面切到另一個人時，讀到之前不能還顯示上一個人的押金與點交
+  realRecords.value = null
+  recordsState.value = 'loading'
+  const result = await fetchUserRecords(id)
+  // 讀的途中換到別人的頁面，這份結果就不是現在這個人的
+  if (row.value?.realAccountId !== id) return
+  realRecords.value = result
+  recordsState.value = result ? 'ready' : 'error'
+}
+
+// 放在 row 之後：immediate 的 watcher 在 setup 當下就會執行
+watch(() => row.value?.realAccountId, () => void loadRecords(), { immediate: true })
+
+/** 真實帳號還沒讀到（或讀不到）時不能顯示「0 筆」，那會看起來像真的沒有 */
+const recordsReady = computed(() => !isReal.value || recordsState.value === 'ready')
+
+const depositViews = computed<UserDepositView[]>(() =>
+  isReal.value ? (realRecords.value?.deposits.map(realDepositView) ?? []) : (row.value?.deposits ?? []),
+)
+
+const mismatchedDepositCount = computed(
+  () => depositViews.value.filter((deposit) => deposit.match === 'mismatched').length,
+)
+
 // 同一筆案件會同時掛在房東與租客兩邊，詳情頁依身分拆成兩區，空的那區不顯示
 const depositGroups = computed(() =>
   (['tenant', 'landlord'] as const)
-    .map((side) => ({ side, items: row.value?.deposits.filter((d) => d.side === side) ?? [] }))
+    .map((side) => ({ side, items: depositViews.value.filter((d) => d.side === side) }))
     .filter((group) => group.items.length > 0),
 )
 
@@ -147,28 +195,26 @@ const ticketGroups = computed(() =>
     .filter((group) => group.items.length > 0),
 )
 
+const handoverViews = computed<HandoverView[]>(() =>
+  isReal.value
+    ? (realRecords.value?.handovers ?? [])
+    : demoHandoverViews(handoverRecords.value, userId.value),
+)
+
 // 點交紀錄同樣兩造都掛，依這個人是房東還是租客分開列
 const handoverGroups = computed(() =>
   (['tenant', 'landlord'] as const)
-    .map((side) => ({
-      side,
-      items: handoverRecords.value.filter((record) =>
-        side === 'tenant'
-          ? record.tenantUserId === userId.value
-          : record.landlordUserId === userId.value,
-      ),
-    }))
+    .map((side) => ({ side, items: handoverViews.value.filter((record) => record.side === side) }))
     .filter((group) => group.items.length > 0),
 )
 
-const handoverDisputedCount = computed(
-  () =>
-    handoverRecords.value.filter(
-      (record) =>
-        (record.tenantUserId === userId.value || record.landlordUserId === userId.value) &&
-        overallAgreement(record.items) === 'disputed',
-    ).length,
+const handoverDamagedCount = computed(
+  () => handoverViews.value.filter((record) => handoverOutcome(record.items) === 'damaged').length,
 )
+
+function confidenceText(item: HandoverItem): string {
+  return item.confidence === null ? '' : `AI 信心 ${Math.round(item.confidence * 100)}%`
+}
 
 
 const selectedTicketId = ref<string | null>(null)
@@ -551,9 +597,12 @@ function openSendDialog(): void {
           </div>
           <div class="space-y-1">
             <dt class="text-xs text-foreground/70">押金對帳</dt>
-            <dd class="font-semibold tabular-nums">{{ row.deposits.length }} 筆</dd>
-            <dd v-if="row.mismatchedDepositCount > 0">
-              <StatusDot tone="danger" :label="`${row.mismatchedDepositCount} 筆不符`" emphasize />
+            <dd class="font-semibold tabular-nums">
+              <template v-if="recordsReady">{{ depositViews.length }} 筆</template>
+              <span v-else class="font-normal text-muted-foreground">—</span>
+            </dd>
+            <dd v-if="mismatchedDepositCount > 0">
+              <StatusDot tone="danger" :label="`${mismatchedDepositCount} 筆不符`" emphasize />
             </dd>
           </div>
           <div class="space-y-1">
@@ -692,17 +741,25 @@ function openSendDialog(): void {
           </CardContent>
         </Card>
 
-        <!-- 押金對帳 -->
-        <Card class="rounded-3xl">
+        <!--
+          押金對帳：真實帳號是真實資料（/api/admin/users/{id}/records），展示帳號是示範資料。
+          讀不到時換成提示，不顯示「沒有相關的押金記錄」。
+        -->
+        <Card :data-real="isReal ? 'true' : undefined" class="rounded-3xl">
           <CardHeader class="p-5">
             <CardTitle>押金對帳</CardTitle>
             <p class="text-sm text-muted-foreground">
-              平台不經手押金，這裡只比對租約雙方各自聲明的金額。
+              平台不經手押金，只比對兩邊寫的金額：房東在 RentMate 建的租約，對上租客自己存的合約。
             </p>
           </CardHeader>
           <CardContent class="space-y-6 px-5 pb-5">
-            <!-- 真實帳號也沒有押金資料（後端沒有押金對帳），寫法跟展示帳號相同 -->
-            <p v-if="row.deposits.length === 0" class="text-muted-foreground">沒有相關的押金記錄。</p>
+            <AdminLoadNotice
+              v-if="!recordsReady"
+              :state="recordsState"
+              what="押金與點交資料"
+              @retry="loadRecords"
+            />
+            <p v-else-if="depositViews.length === 0" class="text-muted-foreground">沒有相關的押金記錄。</p>
 
             <div v-for="group in depositGroups" :key="group.side" class="space-y-2">
               <h3 class="text-xs font-semibold tracking-wide text-foreground/70">
@@ -752,20 +809,23 @@ function openSendDialog(): void {
           </CardContent>
         </Card>
 
-        <!-- 點交存證：與押金對帳同一種「兩造各自認定、比對是否一致」的模式 -->
-        <Card v-if="handoverGroups.length > 0" class="rounded-3xl">
+        <!--
+          點交存證：租客拍的入住、退租照片由 AI 逐項比對（backend/routers/inspection.py）。
+          真實帳號是真實資料，展示帳號是示範資料。後台只顯示比對結果，不顯示照片（2026-09-30 決定）。
+        -->
+        <Card v-if="handoverGroups.length > 0" :data-real="isReal ? 'true' : undefined" class="rounded-3xl">
           <CardHeader class="p-5">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <CardTitle>點交存證</CardTitle>
               <StatusDot
-                v-if="handoverDisputedCount > 0"
+                v-if="handoverDamagedCount > 0"
                 tone="danger"
-                :label="`${handoverDisputedCount} 份有爭議`"
+                :label="`${handoverDamagedCount} 份有損壞`"
                 emphasize
               />
             </div>
             <p class="text-sm text-muted-foreground">
-              比對房東與租客對每個品項的認定。存證照片留在使用者端，後台不顯示。
+              租客拍的入住、退租照片由 AI 逐項比對。這裡只顯示比對結果，不顯示照片。
             </p>
           </CardHeader>
 
@@ -786,13 +846,12 @@ function openSendDialog(): void {
                   <div class="min-w-0">
                     <p class="truncate font-medium">{{ record.address }}</p>
                     <p class="text-xs text-muted-foreground">
-                      點交於 {{ formatDate(record.inspectedAt) }}・共
-                      {{ summarizeHandover(record.items).total }} 項
+                      最後更新 {{ formatDate(record.updatedAt) }}・共 {{ record.items.length }} 項
                     </p>
                   </div>
                   <StatusDot
-                    :tone="handoverAgreementTone(overallAgreement(record.items))"
-                    :label="handoverAgreementLabels[overallAgreement(record.items)]"
+                    :tone="handoverOutcomeTone(handoverOutcome(record.items))"
+                    :label="handoverOutcomeLabels[handoverOutcome(record.items)]"
                     emphasize
                   />
                 </div>
@@ -801,29 +860,32 @@ function openSendDialog(): void {
                   <TableHeader>
                     <TableRow>
                       <TableHead class="whitespace-nowrap">位置</TableHead>
-                      <TableHead>品項</TableHead>
-                      <TableHead class="whitespace-nowrap">房東認定</TableHead>
-                      <TableHead class="whitespace-nowrap">租客認定</TableHead>
-                      <TableHead class="whitespace-nowrap">比對</TableHead>
+                      <TableHead class="whitespace-nowrap">品項</TableHead>
+                      <TableHead class="whitespace-nowrap">AI 比對</TableHead>
+                      <TableHead class="min-w-[12rem]">說明</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     <TableRow v-for="item in record.items" :key="item.id">
                       <TableCell class="whitespace-nowrap text-muted-foreground">{{ item.room }}</TableCell>
-                      <TableCell>{{ item.name }}</TableCell>
-                      <TableCell class="whitespace-nowrap">
-                        {{ handoverVerdictLabels[item.landlordVerdict] }}
-                      </TableCell>
-                      <TableCell class="whitespace-nowrap">
-                        <span v-if="item.tenantVerdict === null" class="text-muted-foreground">未確認</span>
-                        <span v-else>{{ handoverVerdictLabels[item.tenantVerdict] }}</span>
-                      </TableCell>
+                      <!-- 品項名稱都很短，讓說明欄去換行；不然窄的時候「冷氣」會被擠成一字一行 -->
+                      <TableCell class="whitespace-nowrap">{{ item.name }}</TableCell>
+                      <!-- 跟押金一樣開 emphasize：只有損壞、無法判斷會變實心，一欄裡偶爾幾顆才跳得出來 -->
                       <TableCell class="whitespace-nowrap">
                         <StatusDot
-                          :tone="handoverAgreementTone(handoverAgreementOf(item.landlordVerdict, item.tenantVerdict))"
-                          :label="handoverAgreementLabels[handoverAgreementOf(item.landlordVerdict, item.tenantVerdict)]"
+                          :tone="handoverResultTone(item.result)"
+                          :label="handoverItemLabel(item)"
                           emphasize
                         />
+                      </TableCell>
+                      <TableCell>
+                        <template v-if="item.summary">
+                          <p>{{ item.summary }}</p>
+                          <p v-if="item.confidence !== null" class="text-xs text-muted-foreground">
+                            {{ confidenceText(item) }}
+                          </p>
+                        </template>
+                        <span v-else class="text-muted-foreground">—</span>
                       </TableCell>
                     </TableRow>
                   </TableBody>

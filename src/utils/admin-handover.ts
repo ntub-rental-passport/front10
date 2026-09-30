@@ -1,74 +1,102 @@
 /**
- * 點交存證的雙方判定比對。純邏輯，不依賴 Vue。
+ * 點交存證的 AI 比對結果。純邏輯，不依賴 Vue。
  *
- * 刻意只保留「房東怎麼認、租客怎麼認、兩邊合不合」這三件事：
+ * 真實流程只有租客拍照、AI 比對（backend/routers/inspection.py 的 compare_photos）：
+ * 每個品項拿入住、退租兩張照片給看圖模型比，得到五種結果之一。沒有「房東認定」
+ * 「租客認定」—— 原本那兩欄是示範資料虛構的，2026-09-30 改成 AI 比對結果。
  *
- * - **不含照片**：照片存在使用者自己的瀏覽器裡，後台根本讀不到，
- *   放上來只能是佔位圖，那是假的。
- * - **不含 AI 差異判定**：使用者端那個 diff 本身就是假資料，
- *   把假的判定當成第三方意見放進爭議畫面，只會誤導判斷。
- *
- * 結構與押金對帳同構（兩造各自聲明 → 比對），所以兩塊放在使用者詳情頁很自然。
+ * 後台只顯示比對結果與 AI 的說明，不顯示照片（2026-09-30 決定）。
  */
 
-export type HandoverVerdict = 'intact' | 'damaged'
+export type HandoverResult = 'unchanged' | 'degraded' | 'new_damage' | 'missing' | 'uncertain'
 
-export const handoverVerdictLabels: Record<HandoverVerdict, string> = {
-  intact: '完好',
-  damaged: '有損壞',
+export const handoverResultLabels: Record<HandoverResult, string> = {
+  unchanged: '無變化',
+  degraded: '使用痕跡',
+  new_damage: '新增損壞',
+  missing: '物品不見',
+  uncertain: 'AI 無法判斷',
 }
 
-export type HandoverAgreement = 'agreed' | 'disputed' | 'pending'
+/** 還沒比對的品項缺哪張照片。照片齊了、只是還沒比對時是 null */
+export type MissingPhoto = 'baseline' | 'checkout' | 'both'
 
-export const handoverAgreementLabels: Record<HandoverAgreement, string> = {
-  agreed: '雙方一致',
-  disputed: '意見不一致',
-  pending: '租客未確認',
+const MISSING_PHOTO_LABELS: Record<MissingPhoto, string> = {
+  baseline: '缺入住照片',
+  checkout: '缺退租照片',
+  both: '還沒拍照',
 }
 
-/**
- * 比對兩造判定。
- *
- * 租客還沒表示視為 pending 而非不一致 —— 那是還沒填，不是對不起來，
- * 跟押金對帳把「未聲明」與「金額不符」分開是同一個道理。
- */
-export function handoverAgreementOf(
-  landlordVerdict: HandoverVerdict,
-  tenantVerdict: HandoverVerdict | null,
-): HandoverAgreement {
-  if (tenantVerdict === null) return 'pending'
-  return landlordVerdict === tenantVerdict ? 'agreed' : 'disputed'
+export interface HandoverItem {
+  id: string
+  room: string
+  name: string
+  /** 還沒比對時為 null */
+  result: HandoverResult | null
+  /** AI 對前後差異的說明，還沒比對時為 null */
+  summary: string | null
+  /** AI 自評的信心，0 到 1 */
+  confidence: number | null
+  missingPhoto: MissingPhoto | null
 }
 
-export interface HandoverItemLike {
-  landlordVerdict: HandoverVerdict
-  tenantVerdict: HandoverVerdict | null
+/** 一個品項在表格上的文字：比對過就是結果，還沒比對就說卡在哪 */
+export function handoverItemLabel(item: Pick<HandoverItem, 'result' | 'missingPhoto'>): string {
+  if (item.result !== null) return handoverResultLabels[item.result]
+  return item.missingPhoto === null ? '還沒比對' : MISSING_PHOTO_LABELS[item.missingPhoto]
+}
+
+/** 新增損壞、物品不見：可能牽涉押金扣抵，是管理員會被找來協調的那種 */
+export function isHandoverDamage(result: HandoverResult | null): boolean {
+  return result === 'new_damage' || result === 'missing'
 }
 
 export interface HandoverSummary {
   total: number
-  agreed: number
-  disputed: number
+  /** 新增損壞、物品不見 */
+  damaged: number
+  /** AI 無法判斷，要人看照片 */
+  uncertain: number
+  /** 還沒比對 */
   pending: number
+  /** 無變化、使用痕跡（一般磨損不算租客的責任） */
+  clear: number
 }
 
-export function summarizeHandover(items: HandoverItemLike[]): HandoverSummary {
-  const summary: HandoverSummary = { total: items.length, agreed: 0, disputed: 0, pending: 0 }
-  for (const item of items) {
-    summary[handoverAgreementOf(item.landlordVerdict, item.tenantVerdict)] += 1
+export function summarizeHandover(items: Pick<HandoverItem, 'result'>[]): HandoverSummary {
+  const summary: HandoverSummary = {
+    total: items.length,
+    damaged: 0,
+    uncertain: 0,
+    pending: 0,
+    clear: 0,
+  }
+  for (const { result } of items) {
+    if (result === null) summary.pending += 1
+    else if (isHandoverDamage(result)) summary.damaged += 1
+    else if (result === 'uncertain') summary.uncertain += 1
+    else summary.clear += 1
   }
   return summary
 }
 
+export type HandoverOutcome = 'damaged' | 'uncertain' | 'incomplete' | 'clear'
+
+export const handoverOutcomeLabels: Record<HandoverOutcome, string> = {
+  damaged: '有損壞',
+  uncertain: '需要人工確認',
+  incomplete: '還沒比對完',
+  clear: '無異狀',
+}
+
 /**
- * 整份點交紀錄的結論。
- *
- * 只要有任何一項不一致，整份就是有爭議 —— 管理員關心的是「要不要介入」，
- * 而一項爭議就足以構成介入的理由。
+ * 整份點交的結論，取最需要注意的那一項：有損壞 > AI 無法判斷 > 還沒比對完 > 無異狀。
+ * 有一項損壞就足以讓管理員注意，不必等其他項目比對完。
  */
-export function overallAgreement(items: HandoverItemLike[]): HandoverAgreement {
+export function handoverOutcome(items: Pick<HandoverItem, 'result'>[]): HandoverOutcome {
   const summary = summarizeHandover(items)
-  if (summary.disputed > 0) return 'disputed'
-  if (summary.pending > 0) return 'pending'
-  return 'agreed'
+  if (summary.damaged > 0) return 'damaged'
+  if (summary.uncertain > 0) return 'uncertain'
+  if (summary.pending > 0) return 'incomplete'
+  return 'clear'
 }

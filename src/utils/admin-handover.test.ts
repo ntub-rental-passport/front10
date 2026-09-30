@@ -1,78 +1,69 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  handoverAgreementOf,
-  overallAgreement,
+  handoverItemLabel,
+  handoverOutcome,
   summarizeHandover,
-  type HandoverItemLike,
+  type HandoverResult,
 } from './admin-handover'
 
-function item(
-  landlordVerdict: HandoverItemLike['landlordVerdict'],
-  tenantVerdict: HandoverItemLike['tenantVerdict'],
-): HandoverItemLike {
-  return { landlordVerdict, tenantVerdict }
+function item(result: HandoverResult | null) {
+  return { result }
 }
 
-describe('handoverAgreementOf', () => {
-  it('兩造判定相同視為一致', () => {
-    expect(handoverAgreementOf('intact', 'intact')).toBe('agreed')
-    expect(handoverAgreementOf('damaged', 'damaged')).toBe('agreed')
+describe('handoverItemLabel', () => {
+  it('比對過就顯示結果', () => {
+    expect(handoverItemLabel({ result: 'new_damage', missingPhoto: null })).toBe('新增損壞')
+    expect(handoverItemLabel({ result: 'uncertain', missingPhoto: null })).toBe('AI 無法判斷')
   })
 
-  it('判定相反視為不一致，不分是誰說有損壞', () => {
-    expect(handoverAgreementOf('damaged', 'intact')).toBe('disputed')
-    expect(handoverAgreementOf('intact', 'damaged')).toBe('disputed')
-  })
-
-  it('租客未確認是待補，不是不一致', () => {
-    expect(handoverAgreementOf('intact', null)).toBe('pending')
-    expect(handoverAgreementOf('damaged', null)).toBe('pending')
-    expect(handoverAgreementOf('damaged', null)).not.toBe('disputed')
+  it('還沒比對時說卡在哪一張照片', () => {
+    expect(handoverItemLabel({ result: null, missingPhoto: 'checkout' })).toBe('缺退租照片')
+    expect(handoverItemLabel({ result: null, missingPhoto: 'baseline' })).toBe('缺入住照片')
+    expect(handoverItemLabel({ result: null, missingPhoto: 'both' })).toBe('還沒拍照')
+    expect(handoverItemLabel({ result: null, missingPhoto: null })).toBe('還沒比對')
   })
 })
 
 describe('summarizeHandover', () => {
-  it('分別計三種結果', () => {
+  it('使用痕跡跟無變化一樣算沒事：一般磨損不是租客的責任', () => {
     expect(
       summarizeHandover([
-        item('intact', 'intact'),
-        item('damaged', 'damaged'),
-        item('damaged', 'intact'),
-        item('intact', null),
+        item('unchanged'),
+        item('degraded'),
+        item('new_damage'),
+        item('missing'),
+        item('uncertain'),
+        item(null),
       ]),
-    ).toEqual({ total: 4, agreed: 2, disputed: 1, pending: 1 })
+    ).toEqual({ total: 6, damaged: 2, uncertain: 1, pending: 1, clear: 2 })
   })
 
   it('沒有品項時全部為 0', () => {
-    expect(summarizeHandover([])).toEqual({ total: 0, agreed: 0, disputed: 0, pending: 0 })
+    expect(summarizeHandover([])).toEqual({
+      total: 0,
+      damaged: 0,
+      uncertain: 0,
+      pending: 0,
+      clear: 0,
+    })
   })
 })
 
-describe('overallAgreement', () => {
-  it('全部一致才算一致', () => {
-    expect(overallAgreement([item('intact', 'intact'), item('damaged', 'damaged')])).toBe('agreed')
+describe('handoverOutcome', () => {
+  it('有一項損壞或不見，整份就是有損壞，不必等其他項目比對完', () => {
+    expect(handoverOutcome([item('unchanged'), item(null), item('missing')])).toBe('damaged')
   })
 
-  it('只要有一項不一致，整份就是有爭議', () => {
-    expect(
-      overallAgreement([
-        item('intact', 'intact'),
-        item('intact', 'intact'),
-        item('damaged', 'intact'),
-      ]),
-    ).toBe('disputed')
+  it('沒有損壞但 AI 有看不準的，要人工確認', () => {
+    expect(handoverOutcome([item('unchanged'), item('uncertain'), item(null)])).toBe('uncertain')
   })
 
-  it('爭議優先於待確認 —— 有爭議就該介入，不必等租客補完', () => {
-    expect(overallAgreement([item('damaged', 'intact'), item('intact', null)])).toBe('disputed')
+  it('其餘都沒事但還有沒比對的，是還沒比對完', () => {
+    expect(handoverOutcome([item('degraded'), item(null)])).toBe('incomplete')
   })
 
-  it('沒有爭議但有人沒確認，結論是待確認', () => {
-    expect(overallAgreement([item('intact', 'intact'), item('intact', null)])).toBe('pending')
-  })
-
-  it('空清單視為一致，避免把「還沒點交」誤標成爭議', () => {
-    expect(overallAgreement([])).toBe('agreed')
+  it('全部比對過且沒事才是無異狀', () => {
+    expect(handoverOutcome([item('unchanged'), item('degraded')])).toBe('clear')
   })
 })
