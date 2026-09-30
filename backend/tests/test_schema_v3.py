@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 import os
 from pathlib import Path
 import re
+import tempfile
 import unittest
 from unittest.mock import patch
 from cryptography.exceptions import InvalidTag
@@ -63,7 +64,14 @@ class SchemaContractTests(unittest.TestCase):
 
 class NewSchemaApiTests(unittest.TestCase):
     def setUp(self):
-        env = patch.dict(os.environ, {'AUTH_TOKEN_SECRET': 'schema-test-secret', 'PII_ENCRYPTION_KEY': base64.b64encode(b'x' * 32).decode()})
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        # 管理員登入會寫稽核紀錄；不導到暫存檔，本機後台就會多出假的「admin@example.com 登入」
+        env = patch.dict(os.environ, {
+            'AUTH_TOKEN_SECRET': 'schema-test-secret',
+            'PII_ENCRYPTION_KEY': base64.b64encode(b'x' * 32).decode(),
+            'ADMIN_AUDIT_DB': temp.name + '/audit.db',
+        })
         env.start()
         self.addCleanup(env.stop)
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
