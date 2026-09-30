@@ -6,6 +6,7 @@ import {
   formatAnnouncementShortDate,
   isAnnouncementActive,
   isAnnouncementDismissed,
+  matchesAudience,
   isAnnouncementVisibleToTenant,
   isDashboardAnnouncementLevel,
   resolveAnnouncementPhase,
@@ -407,5 +408,19 @@ describe('formatAnnouncementShortDate', () => {
   it('不補零、不帶年份的 M/D', () => {
     expect(formatAnnouncementShortDate('2026-09-30T00:00:00.000Z')).toBe('9/30')
     expect(formatAnnouncementShortDate('2026-01-05T00:00:00.000Z')).toBe('1/5')
+  })
+})
+
+describe('matchesAudience', () => {
+  it('全部：兩端都看得到', () => {
+    expect(matchesAudience('all', 'tenant')).toBe(true)
+    expect(matchesAudience('all', 'landlord')).toBe(true)
+  })
+
+  it('指定對象：只有那一端看得到', () => {
+    expect(matchesAudience('tenant', 'tenant')).toBe(true)
+    expect(matchesAudience('tenant', 'landlord')).toBe(false)
+    expect(matchesAudience('landlord', 'landlord')).toBe(true)
+    expect(matchesAudience('landlord', 'tenant')).toBe(false)
   })
 })

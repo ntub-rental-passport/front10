@@ -109,7 +109,7 @@ const {
 
 <template>
   <div class="flex min-h-full min-w-0 flex-col gap-5 pb-6">
-    <BannerCarousel />
+    <BannerCarousel audience="tenant" />
 
     <div v-if="dashboardAnnouncements.length > 0" class="flex flex-col gap-3">
       <AnnouncementBanner

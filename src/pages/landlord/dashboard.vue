@@ -15,6 +15,7 @@ import RentalCenterPopover from '@/src/components/landlord/RentalCenterPopover.v
 import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import { useLandlordFinance } from '@/src/composables/useLandlordFinance'
 import { useRepairTickets } from '@/src/composables/useRepairTickets'
+import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 
 const { rooms, tenants } = useLandlordWorkspace()
 const { payments, total, received, awaiting, rate, monthLabel } = useLandlordFinance()
@@ -99,6 +100,9 @@ const toneClasses: Record<string, string> = {
         ><RentalCenterPopover />
       </div>
     </header>
+
+    <!-- 後台維護的輪播，只顯示對象是房東或全部的那些（見 BannerCarousel） -->
+    <BannerCarousel audience="landlord" />
 
     <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <article

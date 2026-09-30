@@ -1,4 +1,4 @@
-import type { Announcement, AnnouncementLevel } from '@/src/mocks/admin/content'
+import type { Announcement, AnnouncementAudience, AnnouncementLevel } from '@/src/mocks/admin/content'
 import { resolvePhase, type Phase } from './phase'
 
 export function isAnnouncementActive(a: Announcement, now: Date): boolean {
@@ -25,9 +25,17 @@ export function resolveAnnouncementPhase(a: Announcement, now: Date): Announceme
   return resolvePhase(a, now)
 }
 
+/**
+ * 這則內容該不該出現在某一端。公告與輪播共用同一組對象（全部／租客／房東），
+ * 所以判斷也共用一份：`all` 兩邊都看得到，其餘只給指定的那一端。
+ */
+export function matchesAudience(audience: AnnouncementAudience, side: 'tenant' | 'landlord'): boolean {
+  return audience === 'all' || audience === side
+}
+
 /** 租客端（首頁、通知中心）只該看到跟自己身分有關的公告，房東專屬的公告不該混進來。 */
 export function isAnnouncementVisibleToTenant(a: Announcement): boolean {
-  return a.audience === 'all' || a.audience === 'tenant'
+  return matchesAudience(a.audience, 'tenant')
 }
 
 /**

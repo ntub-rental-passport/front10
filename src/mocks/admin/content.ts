@@ -25,6 +25,8 @@ export interface Banner {
   title: string
   imageUrl: string
   linkUrl: string
+  /** 跟公告共用同一組對象：全部／只給租客／只給房東 */
+  audience: AnnouncementAudience
   order: number
   published: boolean
   /** 跟公告對齊：published 只是總開關，實際生不生效還要看這組起訖時間。 */

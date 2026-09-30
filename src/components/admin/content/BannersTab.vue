@@ -32,10 +32,10 @@ import { loadAdminContent, useAdminContent } from '@/src/composables/admin/useAd
 import { BUILTIN_BANNER_IMAGES, isValidImageUrl } from '@/src/utils/banner-url'
 import { fetchBannerImages, uploadBannerImage, type BannerImage } from '@/src/services/bannerImageApi'
 import { resolvePhase } from '@/src/utils/phase'
-import { TENANT_ROUTE_GROUPS, TENANT_ROUTE_OPTIONS, isDeadRoute } from '@/src/utils/tenant-route-link'
+import { isDeadRoute, routeOptionsFor } from '@/src/utils/tenant-route-link'
 import { formatDate } from '@/src/utils/admin-format'
 import { dateKey } from '@/src/utils/date-key'
-import type { Banner } from '@/src/mocks/admin/content'
+import type { AnnouncementAudience, Banner } from '@/src/mocks/admin/content'
 
 const router = useRouter()
 const { banners, loadState, saveBanner, removeBanner, moveBanner, reorderBanner } = useAdminContent()
@@ -97,6 +97,7 @@ interface DraftState {
   title: string
   imageUrl: string
   linkUrl: string
+  audience: AnnouncementAudience
   published: boolean
   startAt: string
   endAt: string
@@ -126,11 +127,28 @@ function emptyDraft(): DraftState {
     title: '',
     imageUrl: '',
     linkUrl: '',
+    audience: 'all',
     published: true,
     startAt: toDateInput(new Date().toISOString()),
     endAt: '',
   }
 }
+
+/*
+ * 連結清單跟著對象走：給房東看的輪播只能連房東端的頁，不然他點進去會看到
+ * 租客的介面。換對象時把不在新清單裡的連結清掉，否則會存到一個對方打不開的頁。
+ */
+const linkOptions = computed(() => routeOptionsFor(draft.value.audience))
+const linkGroups = computed(() => [...new Set(linkOptions.value.map((item) => item.group))])
+
+watch(
+  () => draft.value.audience,
+  () => {
+    if (draft.value.linkUrl && !linkOptions.value.some((item) => item.url === draft.value.linkUrl)) {
+      draft.value.linkUrl = ''
+    }
+  },
+)
 
 // 圖片載入失敗時要換成佔位樣式而不是瀏覽器預設的破圖示；
 // 網址改變就重置，否則換了網址但還沒重新載入完成前會誤顯示上一張的失敗狀態。
@@ -201,6 +219,7 @@ function openEdit(item: Banner): void {
     title: item.title,
     imageUrl: item.imageUrl,
     linkUrl: item.linkUrl,
+    audience: item.audience,
     published: item.published,
     startAt: toDateInput(item.startAt),
     endAt: item.endAt ? toDateInput(item.endAt) : '',
@@ -264,6 +283,7 @@ function buildBannerInput(): Omit<Banner, 'id' | 'updatedAt' | 'order'> & { id?:
     title: draft.value.title,
     imageUrl: draft.value.imageUrl,
     linkUrl: draft.value.linkUrl,
+    audience: draft.value.audience,
     published: draft.value.published,
     startAt: fromDateInput(draft.value.startAt),
     endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
@@ -347,6 +367,7 @@ const previewItems = computed<Banner[]>(() => {
     title: draft.value.title.trim() || '（尚未輸入標題）',
     imageUrl: draft.value.imageUrl,
     linkUrl: draft.value.linkUrl,
+    audience: draft.value.audience,
     published: draft.value.published,
     startAt: draft.value.startAt ? fromDateInput(draft.value.startAt) : new Date().toISOString(),
     endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
@@ -565,14 +586,28 @@ const hasActivePreview = computed(() =>
             </p>
           </div>
           <div class="space-y-2">
+            <Label>對象</Label>
+            <Select v-model="draft.audience">
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="tenant">租客</SelectItem>
+                <SelectItem value="landlord">房東</SelectItem>
+              </SelectContent>
+            </Select>
+            <p class="text-xs text-muted-foreground">
+              決定這張圖出現在誰的首頁。連結頁面的清單會跟著換。
+            </p>
+          </div>
+          <div class="space-y-2">
             <Label>連結頁面</Label>
             <Select v-model="draft.linkUrl">
               <SelectTrigger><SelectValue placeholder="選擇這則輪播要連到哪一頁" /></SelectTrigger>
               <SelectContent>
-                <SelectGroup v-for="group in TENANT_ROUTE_GROUPS" :key="group">
+                <SelectGroup v-for="group in linkGroups" :key="group">
                   <SelectLabel>{{ group }}</SelectLabel>
                   <SelectItem
-                    v-for="option in TENANT_ROUTE_OPTIONS.filter((o) => o.group === group)"
+                    v-for="option in linkOptions.filter((o) => o.group === group)"
                     :key="option.url"
                     :value="option.url"
                   >

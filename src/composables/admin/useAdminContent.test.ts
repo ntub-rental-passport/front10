@@ -3,7 +3,7 @@ import type { Announcement, Banner } from '@/src/mocks/admin/content'
 
 function banner(id: string, order: number): Banner {
   return {
-    id, title: id, imageUrl: '/banners/subsidy.webp', linkUrl: '/app/subsidy', order,
+    id, title: id, imageUrl: '/banners/subsidy.webp', linkUrl: '/app/subsidy', audience: 'all', order,
     published: true, startAt: '2026-09-01T00:00:00.000Z', endAt: null, updatedAt: '2026-09-01T00:00:00.000Z',
   }
 }
