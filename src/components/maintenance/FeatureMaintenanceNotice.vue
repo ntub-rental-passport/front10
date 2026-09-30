@@ -11,11 +11,11 @@
 import { computed } from 'vue'
 import { PauseCircle } from 'lucide-vue-next'
 import { useTickingNow } from '@/src/composables/useTickingNow'
-import { publicEtaAt, publicNoteOf, type FeatureOutage } from '@/src/utils/admin-feature-status'
+import { publicEtaAt, publicNoteOf, type PublicFeatureOutage } from '@/src/utils/admin-feature-status'
 import { PLAN_FEATURES } from '@/src/utils/admin-entitlements'
 import { formatDateTime } from '@/src/utils/admin-format'
 
-const props = defineProps<{ outage: FeatureOutage }>()
+const props = defineProps<{ outage: PublicFeatureOutage }>()
 
 // 預計恢復時間是否已過期會隨時間推移改變，需要一個會走動的 now 當依賴，
 // 否則使用者把頁面開著不動，過期判定會凍結在剛進頁面的那一刻。

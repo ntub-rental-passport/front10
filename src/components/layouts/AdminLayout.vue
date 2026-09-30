@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { Bell, ListChecks, LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
 
@@ -33,6 +33,7 @@ import { useAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { useAdminIdleLogout } from '@/src/composables/admin/useAdminIdleLogout'
+import { loadAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { ADMIN_IDLE_MINUTES } from '@/src/utils/admin-idle'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
 import { adminRoleLabels } from '@/src/utils/admin-rbac'
@@ -42,6 +43,11 @@ const route = useRoute()
 const router = useRouter()
 
 const { visibleNavGroups, currentAdminRole } = useAdminRbac()
+
+// 後台各頁直接讀 adminSettings（門檻、額度），進後台時向後端讀一次
+onMounted(() => {
+  void loadAdminSettings()
+})
 const { unreadCount: adminUnread } = useAdminNotificationCenter()
 const { count: queueCount } = useAdminQueue()
 

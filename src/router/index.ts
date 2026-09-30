@@ -11,11 +11,11 @@ import {
   signOut,
   type AuthRole,
 } from '@/src/composables/useAuth'
-import { adminSettings } from '@/src/composables/admin/useAdminSettings'
 import { canAdminAccessPath } from '@/src/utils/admin-rbac'
 import { getCurrentAdminRole } from '@/src/composables/admin/useAdminRbac'
 import { syncSessionWithServer } from '@/src/composables/useAuth'
-import { isMaintenanceActive, isMaintenanceBypassPath } from '@/src/utils/maintenance'
+import { isMaintenanceBypassPath } from '@/src/utils/maintenance'
+import { isMaintenanceBlocking, publicSettings, refreshPublicSettings } from '@/src/composables/usePublicSettings'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -215,7 +215,10 @@ router.beforeEach(async (to) => {
     session = null
   }
 
-  const maintenanceOn = isMaintenanceActive(adminSettings.value, new Date(), session?.email)
+  // 維護模式存在後端：一分鐘內換頁只讀一次（見 usePublicSettings）。
+  // 白名單由後端看登入的 cookie 判斷，名單本身不會送到瀏覽器
+  await refreshPublicSettings()
+  const maintenanceOn = isMaintenanceBlocking(publicSettings.value)
   if (maintenanceOn && !isMaintenanceBypassPath(to.path)) {
     return '/maintenance'
   }

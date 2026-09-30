@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
-import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { usePublicContent } from '@/src/composables/usePublicContent'
 import { resolvePhase } from '@/src/utils/phase'
 import type { Banner } from '@/src/mocks/admin/content'
 
@@ -13,14 +13,14 @@ const props = defineProps<{
    */
   public?: boolean
   /**
-   * 後台預覽用。不傳就維持原本行為（自己去 useAdminContent() 拿目前已存檔的
+   * 後台預覽用。不傳就讀公開的輪播（usePublicContent，後端只給生效中的
    * 資料）；傳了就用傳進來的這份——BannersTab 需要在使用者按下「儲存」之前，
    * 把正在編輯的草稿也顯示在預覽裡，這件事不能靠這個元件自己讀 store 做到。
    */
   items?: Banner[]
 }>()
 
-const { banners } = useAdminContent()
+const { banners } = usePublicContent()
 
 const sourceBanners = computed(() => props.items ?? banners.value)
 

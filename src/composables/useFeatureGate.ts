@@ -13,20 +13,20 @@ import { useRoute } from 'vue-router'
 import { getAuthSession } from '@/src/composables/useAuth'
 import { useFeatureOutages } from '@/src/composables/useFeatureOutages'
 import { featureKeyForPath } from '@/src/utils/feature-routes'
-import type { FeatureOutage } from '@/src/utils/admin-feature-status'
+import type { PublicFeatureOutage } from '@/src/utils/admin-feature-status'
 
 export function useFeatureGate(): {
   /** 目前路由對應的功能被維護關閉，且當前使用者不是管理員 */
   blocked: ComputedRef<boolean>
   /** 被擋住時的維護紀錄，供說明畫面顯示 */
-  outage: ComputedRef<FeatureOutage | null>
+  outage: ComputedRef<PublicFeatureOutage | null>
   /** 指定的導覽路徑是否處於維護中（導覽列灰掉用，管理員也會看到灰掉） */
   isPathUnderMaintenance: (path: string) => boolean
 } {
   const route = useRoute()
   const { outageOf } = useFeatureOutages()
 
-  const outage = computed<FeatureOutage | null>(() => {
+  const outage = computed<PublicFeatureOutage | null>(() => {
     const key = featureKeyForPath(route.path)
     if (!key) return null
     return outageOf(key)

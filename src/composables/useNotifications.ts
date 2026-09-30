@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { notifMessagesCollection } from './admin/useAdminNotifications'
 import { createAdminCollection } from './admin/useAdminStore'
-import { useAdminContent } from './admin/useAdminContent'
+import { usePublicContent } from './usePublicContent'
 import { getAuthSession } from './useAuth'
 import type { AnnouncementLevel, NotifChannel, NotifSourceType } from '@/src/mocks/admin-seed'
 
@@ -34,7 +34,7 @@ export interface InboxItem {
 
 export function useNotifications() {
   // 通知中心是租客端的收件匣，只該收到跟租客身分有關的公告（audience 為 tenant 或 all）。
-  const { tenantAnnouncements } = useAdminContent()
+  const { tenantAnnouncements } = usePublicContent()
 
   const currentEmail = computed(() => getAuthSession()?.email ?? '')
 

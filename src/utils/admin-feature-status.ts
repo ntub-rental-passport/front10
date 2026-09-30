@@ -15,10 +15,9 @@
 
 import { PLAN_FEATURE_KEYS, type PlanFeatureKey } from './admin-entitlements'
 
-export interface FeatureOutage {
+/** 使用者端拿得到的部分。公開設定 API 只送這幾個欄位，沒有內部原因（見上面第 3 點）。 */
+export interface PublicFeatureOutage {
   featureKey: PlanFeatureKey
-  /** 內部原因：只給管理員看，進稽核紀錄與後台橫幅，不對使用者顯示 */
-  internalReason: string
   /** 對外說明：顯示在使用者端；留白時改用制式文案 */
   publicNote: string
   closedAt: string
@@ -26,26 +25,31 @@ export interface FeatureOutage {
   etaAt: string | null
 }
 
+export interface FeatureOutage extends PublicFeatureOutage {
+  /** 內部原因：只給管理員看，進稽核紀錄與後台橫幅，不對使用者顯示 */
+  internalReason: string
+}
+
 export const DEFAULT_PUBLIC_NOTE = '此功能正在維護中，造成不便敬請見諒。'
 
 /** 這個功能目前是否有生效中的維護紀錄；沒有就回 null。 */
-export function outageOf(outages: FeatureOutage[], key: PlanFeatureKey): FeatureOutage | null {
+export function outageOf<T extends PublicFeatureOutage>(outages: readonly T[], key: PlanFeatureKey): T | null {
   return outages.find((outage) => outage.featureKey === key) ?? null
 }
 
 /** 這個功能現在是不是被維護關閉。 */
-export function isFeatureClosed(outages: FeatureOutage[], key: PlanFeatureKey): boolean {
+export function isFeatureClosed(outages: readonly PublicFeatureOutage[], key: PlanFeatureKey): boolean {
   return outageOf(outages, key) !== null
 }
 
 /** 對外顯示的說明文字。留白（含只有空白）視同沒填，退回制式文案，避免畫面開天窗。 */
-export function publicNoteOf(outage: FeatureOutage): string {
+export function publicNoteOf(outage: PublicFeatureOutage): string {
   const trimmed = outage.publicNote.trim()
   return trimmed === '' ? DEFAULT_PUBLIC_NOTE : trimmed
 }
 
 /** 有沒有填預計恢復時間，而且那個時間已經過了。沒填一律回 false —— 沒有承諾就談不上過期。 */
-export function isEtaPassed(outage: FeatureOutage, now: Date = new Date()): boolean {
+export function isEtaPassed(outage: PublicFeatureOutage, now: Date = new Date()): boolean {
   if (!outage.etaAt) return false
   return new Date(outage.etaAt).getTime() <= now.getTime()
 }
@@ -58,7 +62,7 @@ export function isEtaPassed(outage: FeatureOutage, now: Date = new Date()): bool
  * 使用者看到過期的 ETA 只會覺得平台自己都忘了要恢復，或乾脆放著不管。
  * 沒過期就照樣回傳；沒填也回 null（沒有可公布的東西）。
  */
-export function publicEtaAt(outage: FeatureOutage, now: Date = new Date()): string | null {
+export function publicEtaAt(outage: PublicFeatureOutage, now: Date = new Date()): string | null {
   if (!outage.etaAt) return null
   if (isEtaPassed(outage, now)) return null
   return outage.etaAt
@@ -79,7 +83,7 @@ const DAY_MS = 24 * HOUR_MS
  * 級距切換的原因：關注的精細度會隨關閉時間拉長而變粗——剛關閉時分鐘數才有意義，
  * 拖過一天就只需要知道大概天數。
  */
-export function outageDurationLabel(outage: FeatureOutage, now: Date = new Date()): string {
+export function outageDurationLabel(outage: PublicFeatureOutage, now: Date = new Date()): string {
   const elapsed = Math.max(0, now.getTime() - new Date(outage.closedAt).getTime())
 
   if (elapsed < MINUTE_MS) return '不到 1 分鐘'
@@ -101,7 +105,7 @@ export function outageDurationLabel(outage: FeatureOutage, now: Date = new Date(
 }
 
 /** 目前被關閉的功能 key，依 PLAN_FEATURE_KEYS 的順序排列，讓畫面順序穩定。 */
-export function closedFeatureKeys(outages: FeatureOutage[]): PlanFeatureKey[] {
+export function closedFeatureKeys(outages: readonly PublicFeatureOutage[]): PlanFeatureKey[] {
   const closed = new Set(outages.map((outage) => outage.featureKey))
   return PLAN_FEATURE_KEYS.filter((key) => closed.has(key))
 }

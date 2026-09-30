@@ -14,11 +14,11 @@
  * 條件式渲染：沒有任何要顯示的內容時整個元件不渲染。常駐橫幅的話 99%
  * 時間顯示「一切正常」，那格就變成沒人看的空氣，真的出事時反而不顯眼。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
 import { AlertTriangle, PauseCircle } from 'lucide-vue-next'
-import { useFeatureOutages } from '@/src/composables/useFeatureOutages'
+import ActionError from '@/src/components/admin/ActionError.vue'
 import { useAdminFeatureOutages } from '@/src/composables/admin/useAdminFeatureOutages'
 import { useTickingNow } from '@/src/composables/useTickingNow'
 import { PLAN_FEATURES, type PlanFeatureKey } from '@/src/utils/admin-entitlements'
@@ -37,8 +37,19 @@ const props = defineProps<{
   featureKey?: PlanFeatureKey
 }>()
 
-const { outages } = useFeatureOutages()
-const { reopenFeature } = useAdminFeatureOutages()
+// 後台版：有內部原因。前台那份（useFeatureOutages）刻意沒有
+const { outages, reopenFeature } = useAdminFeatureOutages()
+
+const actionError = ref('')
+
+async function reopen(key: PlanFeatureKey): Promise<void> {
+  actionError.value = ''
+  try {
+    await reopenFeature(key)
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : '恢復失敗，請稍後再試。'
+  }
+}
 
 // 時長與過期判定都跟現在幾點有關，見 useTickingNow 註解
 const now = useTickingNow()
@@ -100,6 +111,8 @@ const visible = computed(() => overviewRows.value.length > 0 || singleRow.value 
         </RouterLink>
       </div>
 
+      <ActionError v-if="actionError" :message="actionError" @dismiss="actionError = ''" />
+
       <div
         v-for="row in overviewRows"
         :key="row.key"
@@ -119,7 +132,7 @@ const visible = computed(() => overviewRows.value.length > 0 || singleRow.value 
           </p>
         </div>
 
-        <Button size="sm" class="shrink-0" @click="reopenFeature(row.key)">恢復</Button>
+        <Button size="sm" class="shrink-0" @click="reopen(row.key)">恢復</Button>
       </div>
     </template>
 

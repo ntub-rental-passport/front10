@@ -21,10 +21,12 @@ import {
   SelectValue,
 } from '@/components/ui/select/index'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import ActionError from '@/src/components/admin/ActionError.vue'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import LevelBadge from '@/src/components/admin/LevelBadge.vue'
 import AnnouncementBanner from '@/src/components/content/AnnouncementBanner.vue'
 import { STATUS_CHIP_CLASS } from '@/src/components/admin/status-dot'
-import { useAdminContent } from '@/src/composables/admin/useAdminContent'
+import { loadAdminContent, useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { useNow } from '@/src/composables/useNow'
 import {
   announcementPlacement,
@@ -37,7 +39,7 @@ import {
 import { dateKey } from '@/src/utils/date-key'
 import type { Announcement, AnnouncementAudience, AnnouncementLevel } from '@/src/mocks/admin/content'
 
-const { announcements, saveAnnouncement, removeAnnouncement } = useAdminContent()
+const { announcements, loadState, saveAnnouncement, removeAnnouncement } = useAdminContent()
 
 // 狀態與排序一律靠這個「現在」算，不要在別處各自 new Date()——否則頁面開著
 // 跨過整點時，生效中／已過期的分組不會跟著動，直到使用者重新整理才會發現。
@@ -263,10 +265,23 @@ function canSubmit(): boolean {
   return draft.value.title.trim() !== '' && draft.value.body.trim() !== '' && draft.value.startAt !== ''
 }
 
-function save(): void {
-  if (!canSubmit()) return
+/** 存檔的錯誤顯示在編輯面板；刪除的錯誤顯示在清單上方 */
+const saving = ref(false)
+const saveError = ref('')
+const listError = ref('')
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : '操作失敗，請稍後再試。'
+}
+
+async function save(): Promise<void> {
+  if (!canSubmit() || saving.value) return
   const creating = panelMode.value === 'create'
-  saveAnnouncement({
+  saving.value = true
+  saveError.value = ''
+  let saved: Announcement
+  try {
+    saved = await saveAnnouncement({
     id: creating ? undefined : draft.value.id,
     title: draft.value.title,
     body: draft.value.body,
@@ -275,17 +290,19 @@ function save(): void {
     published: draft.value.published,
     startAt: fromDateInput(draft.value.startAt),
     endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
-  })
+    })
+  } catch (error) {
+    saveError.value = messageOf(error)
+    return
+  } finally {
+    saving.value = false
+  }
 
   if (creating) {
-    // saveAnnouncement 新增時把新項目 unshift 進 announcements 最前面（見
-    // useAdminContent.ts），它本身不回傳新 id——存檔後讀 [0] 就是剛剛建立
-    // 的那一筆，這是唯一能拿到產生出來的 id 的辦法，面板才能切到編輯模式
-    // 並讓清單裡正確反白選中它。
-    const created = announcements.value[0]
-    selectedId.value = created.id
+    // 新增完切到編輯模式，id 是後端給的，清單裡才能正確反白選中它
+    selectedId.value = saved.id
     panelMode.value = 'edit'
-    draft.value = { ...draft.value, id: created.id }
+    draft.value = { ...draft.value, id: saved.id }
   }
   originalDraft.value = { ...draft.value }
 }
@@ -299,15 +316,21 @@ function requestDelete(): void {
   if (current) deleteTarget.value = current
 }
 
-function confirmDelete(): void {
+async function confirmDelete(): Promise<void> {
   if (!deleteTarget.value) return
   const removedId = deleteTarget.value.id
-  removeAnnouncement(removedId)
+  deleteTarget.value = null
+  listError.value = ''
+  try {
+    await removeAnnouncement(removedId)
+  } catch (error) {
+    listError.value = messageOf(error)
+    return
+  }
   if (selectedId.value === removedId) {
     selectedId.value = null
     panelMode.value = 'empty'
   }
-  deleteTarget.value = null
 }
 
 /* ---------------------------------------------------------------------- *
@@ -380,8 +403,11 @@ const previewAnnouncement = computed<Announcement>(() => ({
           <Button @click="startCreate">新增公告</Button>
         </div>
 
+        <ActionError v-if="listError" :message="listError" @dismiss="listError = ''" />
+        <AdminLoadNotice :state="loadState" what="公告" @retry="loadAdminContent" />
+
         <div
-          v-if="announcements.length === 0"
+          v-if="announcements.length === 0 && loadState === 'ready'"
           class="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground"
         >
           <p>尚無公告。</p>
@@ -529,8 +555,10 @@ const previewAnnouncement = computed<Announcement>(() => ({
               </div>
             </div>
 
+            <ActionError v-if="saveError" :message="saveError" @dismiss="saveError = ''" />
+
             <div class="flex justify-end">
-              <Button :disabled="!canSubmit()" @click="save">儲存</Button>
+              <Button :disabled="!canSubmit() || saving" @click="save">{{ saving ? '儲存中…' : '儲存' }}</Button>
             </div>
           </section>
 

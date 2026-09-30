@@ -7,6 +7,8 @@
 畫面上不區分，匯出 CSV 時由「來源」欄區分。
 
 - 停用／啟用真實帳號（routers/admin.py），停用可以附原因
+- 系統設定與功能停用（site_settings.py）、安全設定（platform_settings.py）
+- 公告、首頁輪播、通知模板的增刪改（content_service.py）
 - 建立／取消排程通知（routers/scheduled_notifications.py），
   以及系統寄送的結果：寄出幾人、幾人失敗、錯過（scheduled_notification_service.py）
 - 管理員登入成功；帳密正確但驗證碼錯誤、試滿次數被作廢（routers/auth.py）

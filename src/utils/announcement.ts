@@ -30,11 +30,6 @@ export function isAnnouncementVisibleToTenant(a: Announcement): boolean {
   return a.audience === 'all' || a.audience === 'tenant'
 }
 
-/** 舊資料沒有 audience 欄位，一律視為原本的行為：對所有人顯示。 */
-export function migrateAnnouncements(list: Announcement[]): Announcement[] {
-  return list.map((item) => (item.audience ? item : { ...item, audience: 'all' }))
-}
-
 /**
  * 首頁只放得下最緊急的訊息——一般公告仍在通知中心看得到，
  * 不需要在租客一登入就霸佔最上方的版面。

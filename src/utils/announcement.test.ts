@@ -8,7 +8,6 @@ import {
   isAnnouncementDismissed,
   isAnnouncementVisibleToTenant,
   isDashboardAnnouncementLevel,
-  migrateAnnouncements,
   resolveAnnouncementPhase,
   type AnnouncementPlacement,
 } from './announcement'
@@ -72,23 +71,6 @@ describe('isAnnouncementVisibleToTenant', () => {
 
   it('audience 為 landlord 對租客不可見', () => {
     expect(isAnnouncementVisibleToTenant(make({ audience: 'landlord' }))).toBe(false)
-  })
-})
-
-describe('migrateAnnouncements', () => {
-  it('缺少 audience 的舊資料補上 all', () => {
-    const legacy = [make({ audience: undefined as unknown as Announcement['audience'] })]
-    expect(migrateAnnouncements(legacy)[0].audience).toBe('all')
-  })
-
-  it('已經有 audience 的資料維持原值', () => {
-    const current = [make({ audience: 'landlord' })]
-    expect(migrateAnnouncements(current)[0].audience).toBe('landlord')
-  })
-
-  it('不會動到其他欄位', () => {
-    const legacy = [make({ id: 'an-x', audience: undefined as unknown as Announcement['audience'] })]
-    expect(migrateAnnouncements(legacy)[0].id).toBe('an-x')
   })
 })
 

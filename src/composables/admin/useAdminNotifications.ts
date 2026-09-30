@@ -1,16 +1,34 @@
-import { createAdminCollection, newId } from './useAdminStore'
+import { ref } from 'vue'
 import { useAdminAudit } from './useAdminAudit'
 import { adminUsersCollection } from './useAdminUsers'
-import { renderTemplate } from '@/src/utils/notif-template'
 import { notifMessagesCollection, sendNotification } from '@/src/services/notificationApi'
 import {
-  seedNotifTemplates,
-  type NotifCategory,
-  type NotifChannel,
-  type NotifTemplate,
-} from '@/src/mocks/admin-seed'
+  createTemplate,
+  deleteTemplate,
+  fetchTemplates,
+  setTemplateEnabled,
+  updateTemplate,
+  type TemplateInput,
+} from '@/src/services/contentApi'
+import type { NotifCategory, NotifChannel, NotifTemplate } from '@/src/mocks/admin-seed'
 
-const templates = createAdminCollection<NotifTemplate[]>('notif-templates', seedNotifTemplates)
+/**
+ * 通知模板存在後端（backend/admin/content_service.py），所有管理員看同一份，
+ * 稽核由後端記。發送（立即發送、收件匣）目前仍在瀏覽器，見 notificationApi.ts。
+ */
+const templates = ref<NotifTemplate[]>([])
+const templatesState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+
+export async function loadTemplates(): Promise<void> {
+  templatesState.value = 'loading'
+  const result = await fetchTemplates()
+  if (result) {
+    templates.value = result
+    templatesState.value = 'ready'
+  } else {
+    templatesState.value = 'error'
+  }
+}
 
 // 通知中心（useNotifications.ts）沿用這條匯入路徑讀取發送紀錄，
 // 實際的集合定義搬到 notificationApi.ts 之後在這裡重新導出，呼叫端不用跟著改路徑。
@@ -64,40 +82,31 @@ export function describeRecipient(recipient: NotifRecipient): string {
   return recipient.kind === 'users' ? '指定使用者' : ROLE_LABELS[recipient.role]
 }
 
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
 export function useAdminNotifications() {
   const { logAction } = useAdminAudit()
+  if (templatesState.value === 'idle') void loadTemplates()
 
-  function saveTemplate(
-    input: Omit<NotifTemplate, 'id' | 'updatedAt'> & { id?: string },
-  ): void {
-    if (input.id) {
-      const target = templates.value.find((item) => item.id === input.id)
-      if (!target) return
-      Object.assign(target, input, { updatedAt: nowIso() })
-      logAction('通知管理', '模板', `更新模板「${input.name}」`)
+  /** 失敗時丟出後端給的理由，畫面原樣顯示 */
+  async function saveTemplate(input: TemplateInput & { id?: string }): Promise<void> {
+    const { id, ...fields } = input
+    if (id) {
+      const saved = await updateTemplate(id, fields)
+      templates.value = templates.value.map((item) => (item.id === id ? saved : item))
     } else {
-      templates.value.unshift({ ...input, id: newId('nt'), updatedAt: nowIso() })
-      logAction('通知管理', '模板', `新增模板「${input.name}」`)
+      templates.value = [await createTemplate(fields), ...templates.value]
     }
   }
 
-  function removeTemplate(id: string): void {
-    const target = templates.value.find((item) => item.id === id)
-    if (!target) return
+  async function removeTemplate(id: string): Promise<void> {
+    await deleteTemplate(id)
     templates.value = templates.value.filter((item) => item.id !== id)
-    logAction('通知管理', '模板', `刪除模板「${target.name}」`)
   }
 
-  function toggleTemplate(id: string): void {
+  async function toggleTemplate(id: string): Promise<void> {
     const target = templates.value.find((item) => item.id === id)
     if (!target) return
-    target.enabled = !target.enabled
-    target.updatedAt = nowIso()
-    logAction('通知管理', '模板', `${target.enabled ? '啟用' : '停用'}模板「${target.name}」`)
+    const saved = await setTemplateEnabled(id, !target.enabled)
+    templates.value = templates.value.map((item) => (item.id === id ? saved : item))
   }
 
   function resolveRecipients(recipient: NotifRecipient): string[] {
@@ -139,6 +148,7 @@ export function useAdminNotifications() {
 
   return {
     templates,
+    templatesState,
     messages: notifMessagesCollection,
     saveTemplate,
     removeTemplate,
