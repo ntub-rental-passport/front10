@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import PlanBenefits from '@/src/components/PlanBenefits.vue'
 import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import { BadgeCheck, Check, ChevronDown, CreditCard, Crown, ShieldCheck, Sparkles, X } from 'lucide-vue-next'
 
@@ -92,6 +93,7 @@ function formatExpiry() { const value = expiry.value.replace(/\D/g, '').slice(0,
         </article>
       </div>
     </section>
+    <PlanBenefits :current-plan="currentPlan" />
     <section id="available-plans" class="plan-options-heading" aria-labelledby="available-plans-heading">
       <div><h2 id="available-plans-heading" class="text-xl font-black">探索其他方案</h2><p class="mt-1 text-sm text-[#778078]">比較管理規模與功能，找到適合你的選擇。</p></div>
       <div class="billing-toggle" role="group" aria-label="價格計費週期"><button :aria-pressed="billingCycle === 'monthly'" :class="{ active: billingCycle === 'monthly' }" @click="billingCycle = 'monthly'">月繳</button><button :aria-pressed="billingCycle === 'yearly'" :class="{ active: billingCycle === 'yearly' }" @click="billingCycle = 'yearly'">年繳 <b>省約 17%</b></button></div>
