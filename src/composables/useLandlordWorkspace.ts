@@ -25,6 +25,7 @@ const initialized = ref(false)
 const propertyDataReady = ref(false)
 const tenantDataReady = ref(false)
 const error = ref('')
+const propertyError = ref('')
 const lastSyncedAt = ref('')
 let activeRequest: Promise<void> | null = null
 let listenersReady = false
@@ -43,6 +44,7 @@ export async function refreshLandlordWorkspace(): Promise<void> {
 
   loading.value = true
   error.value = ''
+  propertyError.value = ''
   activeRequest = (async () => {
     const [propertyResult, tenantResult] = await Promise.allSettled([
       fetchProperties(),
@@ -54,7 +56,8 @@ export async function refreshLandlordWorkspace(): Promise<void> {
       properties.value = propertyResult.value.items
       propertyDataReady.value = true
     } else {
-      messages.push(propertyResult.reason instanceof Error ? propertyResult.reason.message : '房務資料同步失敗')
+      propertyError.value = propertyResult.reason instanceof Error ? propertyResult.reason.message : '房務資料同步失敗'
+      messages.push(propertyError.value)
     }
 
     if (tenantResult.status === 'fulfilled') {
@@ -116,6 +119,7 @@ export function useLandlordWorkspace() {
     propertyDataReady: readonly(propertyDataReady),
     tenantDataReady: readonly(tenantDataReady),
     error: readonly(error),
+    propertyError: readonly(propertyError),
     lastSyncedAt: readonly(lastSyncedAt),
     refresh: refreshLandlordWorkspace,
   }

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import Base, engine
-from routers import auth, contract, notes
+from routers import auth, contract, notes, landlord_properties, landlord_tenants
 
 if engine is not None:
     Base.metadata.create_all(bind=engine)
@@ -26,6 +26,8 @@ app.add_middleware(
 app.include_router(contract.router)
 app.include_router(auth.router)
 app.include_router(notes.router)
+app.include_router(landlord_properties.router)
+app.include_router(landlord_tenants.router)
 
 
 @app.get("/")
