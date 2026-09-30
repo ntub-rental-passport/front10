@@ -63,7 +63,17 @@ const demoLease: TenantLeaseOption = {
 }
 const leases = ref<TenantLeaseOption[]>([])
 const leaseLoadError = ref('')
+const leasesLoading = ref(true)
 const activeLeases = computed(() => leases.value.filter((lease) => lease.effective))
+const leaseNotice = computed(() => {
+  if (leasesLoading.value) return '正在讀取租約資料…'
+  if (leaseLoadError.value) return leaseLoadError.value
+  if (!leases.value.length)
+    return '尚未找到與此帳號連結的租約。請房東在租客管理確認租客 Email 與你的登入信箱相同，再重新讀取租約。'
+  if (!activeLeases.value.length)
+    return '目前沒有有效租約可供報修。請房東確認租約已啟用、在租期內且尚未退租，再重新讀取租約。'
+  return ''
+})
 const selectedLeaseId = ref('')
 const selectedLease = computed(
   () =>
@@ -265,7 +275,9 @@ const unresolved = ref({
 })
 const unresolvedPhotos = ref<RepairPhotoRef[]>([])
 
-onMounted(async () => {
+async function loadLeases(): Promise<void> {
+  leasesLoading.value = true
+  leaseLoadError.value = ''
   try {
     const remoteLeases = await fetchTenantLeases()
     leases.value = remoteLeases.length || session?.accessToken ? remoteLeases : [demoLease]
@@ -277,7 +289,10 @@ onMounted(async () => {
   }
   selectedLeaseId.value = activeLeases.value[0]?.leaseId ?? ''
   form.value.phone = selectedLease.value?.phone || ''
-})
+  leasesLoading.value = false
+}
+
+onMounted(loadLeases)
 
 watch(repairStartTime, () => {
   if (!endTimeOptions.value.includes(repairEndTime.value))
@@ -583,7 +598,12 @@ function submitUnresolved(): void {
         <Plus />建立報修單
       </button>
     </header>
-    <p v-if="leaseLoadError" class="service-note">{{ leaseLoadError }}</p>
+    <div v-if="leaseNotice" class="service-note" role="status" aria-live="polite">
+      <p>{{ leaseNotice }}</p>
+      <button v-if="!leasesLoading" class="btn secondary" @click="loadLeases">
+        重新讀取租約
+      </button>
+    </div>
     <section class="grid gap-3 sm:grid-cols-3">
       <article class="metric">
         <span><Clock3 /></span>
