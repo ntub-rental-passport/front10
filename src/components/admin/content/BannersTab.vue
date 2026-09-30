@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select/index'
-import { ChevronDown, ChevronUp, GripVertical, ImageOff } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, GripVertical, ImageOff, Upload } from 'lucide-vue-next'
 import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import StatusBadge from '@/src/components/admin/StatusBadge.vue'
 import ActionError from '@/src/components/admin/ActionError.vue'
@@ -30,6 +30,7 @@ import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 import { loadAdminContent, useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { BUILTIN_BANNER_IMAGES, isValidImageUrl } from '@/src/utils/banner-url'
+import { fetchBannerImages, uploadBannerImage, type BannerImage } from '@/src/services/bannerImageApi'
 import { resolvePhase } from '@/src/utils/phase'
 import { TENANT_ROUTE_GROUPS, TENANT_ROUTE_OPTIONS, isDeadRoute } from '@/src/utils/tenant-route-link'
 import { formatDate } from '@/src/utils/admin-format'
@@ -139,6 +140,39 @@ const previewFailed = ref(false)
 type ImageCheckState = 'idle' | 'checking' | 'failed'
 const imageCheckState = ref<ImageCheckState>('idle')
 
+/*
+ * 上傳圖片：檔案存在伺服器上（backend/admin/banner_images.py），所有管理員與
+ * 所有裝置看到的是同一批。上傳完直接填進「圖片網址」，不用自己複製貼上。
+ */
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+const uploadError = ref('')
+const uploadedImages = ref<BannerImage[]>([])
+
+async function loadUploadedImages(): Promise<void> {
+  const items = await fetchBannerImages()
+  if (items) uploadedImages.value = items
+}
+
+async function onPickFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 選完就清掉 input：同一個檔案再選一次才會再觸發 change
+  input.value = ''
+  if (!file) return
+  uploadError.value = ''
+  uploading.value = true
+  try {
+    const image = await uploadBannerImage(file)
+    draft.value.imageUrl = image.url
+    uploadedImages.value = [image, ...uploadedImages.value.filter((item) => item.name !== image.name)]
+  } catch (error) {
+    uploadError.value = error instanceof Error ? error.message : '上傳失敗，請稍後再試。'
+  } finally {
+    uploading.value = false
+  }
+}
+
 watch(
   () => draft.value.imageUrl,
   () => {
@@ -156,7 +190,9 @@ function openCreate(): void {
   previewFailed.value = false
   imageCheckState.value = 'idle'
   dialogError.value = ''
+  uploadError.value = ''
   dialogOpen.value = true
+  void loadUploadedImages()
 }
 
 function openEdit(item: Banner): void {
@@ -172,7 +208,9 @@ function openEdit(item: Banner): void {
   previewFailed.value = false
   imageCheckState.value = 'idle'
   dialogError.value = ''
+  uploadError.value = ''
   dialogOpen.value = true
+  void loadUploadedImages()
 }
 
 /**
@@ -448,6 +486,54 @@ const hasActivePreview = computed(() =>
                 {{ image.label }}
               </Button>
             </div>
+
+            <!--
+              上傳的圖片存在伺服器上（/api/admin/banner-images），所有管理員與所有
+              裝置看到的是同一批；選過的圖再用不必重傳。
+            -->
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs text-muted-foreground">自己的圖片</span>
+              <input
+                ref="fileInput"
+                type="file"
+                accept="image/webp,image/png,image/jpeg"
+                class="hidden"
+                @change="onPickFile"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                class="h-7 px-2.5 text-xs"
+                :disabled="uploading"
+                @click="fileInput?.click()"
+              >
+                <Upload class="mr-1 h-3 w-3" />
+                {{ uploading ? '上傳中…' : '上傳圖片' }}
+              </Button>
+              <button
+                v-for="image in uploadedImages"
+                :key="image.name"
+                type="button"
+                :aria-pressed="draft.imageUrl === image.url"
+                :title="image.name"
+                :class="[
+                  'h-10 w-16 overflow-hidden rounded border transition',
+                  draft.imageUrl === image.url ? 'border-primary ring-2 ring-primary/40' : 'border-border',
+                ]"
+                @click="draft.imageUrl = image.url"
+              >
+                <img :src="image.url" alt="" class="h-full w-full object-cover" />
+              </button>
+              <span v-if="uploadedImages.length === 0 && !uploading" class="text-xs text-muted-foreground">
+                還沒有上傳過圖片
+              </span>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              建議 2400×800、WebP 格式；上限 5 MB。圖片存在伺服器上，重新部署不會消失。
+            </p>
+            <ActionError v-if="uploadError" :message="uploadError" @dismiss="uploadError = ''" />
+
             <p v-if="showUrlFormatWarning" class="text-xs text-destructive">
               網址格式不正確，請填完整的 http(s) 連結，或點選上面的內建圖片。
             </p>
