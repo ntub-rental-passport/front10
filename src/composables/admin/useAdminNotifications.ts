@@ -1,7 +1,9 @@
 import { ref } from 'vue'
-import { useAdminAudit } from './useAdminAudit'
-import { adminUsersCollection } from './useAdminUsers'
-import { notifMessagesCollection, sendNotification } from '@/src/services/notificationApi'
+import {
+  fetchAdminMessages,
+  sendAdminNotification,
+  type NotifRecipient,
+} from '@/src/services/inboxApi'
 import {
   createTemplate,
   deleteTemplate,
@@ -10,11 +12,13 @@ import {
   updateTemplate,
   type TemplateInput,
 } from '@/src/services/contentApi'
-import type { NotifCategory, NotifChannel, NotifTemplate } from '@/src/mocks/admin-seed'
+import type { NotifCategory, NotifChannel, NotifTemplate, UserNotification } from '@/src/mocks/admin-seed'
+
+export type { NotifRecipient }
 
 /**
- * 通知模板存在後端（backend/admin/content_service.py），所有管理員看同一份，
- * 稽核由後端記。發送（立即發送、收件匣）目前仍在瀏覽器，見 notificationApi.ts。
+ * 通知模板、立即發送與發送紀錄都在後端（backend/admin/content_service.py、
+ * backend/notifications/inbox_service.py），所有管理員看同一份，稽核由後端記。
  */
 const templates = ref<NotifTemplate[]>([])
 const templatesState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -30,13 +34,38 @@ export async function loadTemplates(): Promise<void> {
   }
 }
 
-// 通知中心（useNotifications.ts）沿用這條匯入路徑讀取發送紀錄，
-// 實際的集合定義搬到 notificationApi.ts 之後在這裡重新導出，呼叫端不用跟著改路徑。
-export { notifMessagesCollection }
+/** 發送紀錄：每位收件人一筆，發送紀錄頁與詳情頁依 batchId 分組成批次 */
+const messages = ref<UserNotification[]>([])
+const messagesState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 
-export type NotifRecipient =
-  | { kind: 'role'; role: 'user' | 'landlord' | 'all' }
-  | { kind: 'users'; emails: string[] }
+export async function loadMessages(): Promise<void> {
+  messagesState.value = 'loading'
+  const result = await fetchAdminMessages()
+  if (result) {
+    messages.value = result
+    messagesState.value = 'ready'
+  } else {
+    messagesState.value = 'error'
+  }
+}
+
+const FOLLOW_UP_MS = 3000
+const FOLLOW_UP_LIMIT = 10
+let followUpTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * Email 由後端在背景寄：發送完馬上讀，看到的是「寄送中」。還有寄送中的就每 3 秒
+ * 再讀一次，寄完就停；最多追 10 次，萬一後端卡住也不會一直打下去。
+ */
+export function followPendingEmails(attempt = 0): void {
+  if (followUpTimer) clearTimeout(followUpTimer)
+  followUpTimer = null
+  const pending = messages.value.some((item) => item.deliveryStatus?.email === 'pending')
+  if (!pending || attempt >= FOLLOW_UP_LIMIT) return
+  followUpTimer = setTimeout(() => {
+    void loadMessages().then(() => followPendingEmails(attempt + 1))
+  }, FOLLOW_UP_MS)
+}
 
 /** 自由撰寫（不套模板）發送時要填的欄位，與模板發送共用同一套收件人／確認流程 */
 /**
@@ -83,8 +112,8 @@ export function describeRecipient(recipient: NotifRecipient): string {
 }
 
 export function useAdminNotifications() {
-  const { logAction } = useAdminAudit()
   if (templatesState.value === 'idle') void loadTemplates()
+  if (messagesState.value === 'idle') void loadMessages()
 
   /** 失敗時丟出後端給的理由，畫面原樣顯示 */
   async function saveTemplate(input: TemplateInput & { id?: string }): Promise<void> {
@@ -109,28 +138,18 @@ export function useAdminNotifications() {
     templates.value = templates.value.map((item) => (item.id === id ? saved : item))
   }
 
-  function resolveRecipients(recipient: NotifRecipient): string[] {
-    if (recipient.kind === 'users') return recipient.emails
-    const nonAdmins = adminUsersCollection.value.filter((user) => user.role !== 'admin')
-    if (recipient.role === 'all') return nonAdmins.map((user) => user.email)
-    return nonAdmins.filter((user) => user.role === recipient.role).map((user) => user.email)
-  }
-
   /**
-   * 送出一則已經組好的通知。
+   * 送出一則已經組好的通知，回傳實際送給幾人。
    *
-   * 收件人在這裡才解析成 email —— 編輯器顯示的人數與這裡算的必須是同一套
-   * 規則（resolveRecipients），否則畫面說 128 人、實際送給 130 人。
+   * 收件人由後端從真實帳號解析（跟排程同一套規則），編輯器上的人數用的是
+   * 同一份帳號清單（GET /api/admin/users）算出來的，兩邊才會一致。
    */
   async function sendComposed(
     message: ComposedNotification,
     recipient: NotifRecipient,
   ): Promise<number> {
-    const emails = resolveRecipients(recipient)
-    if (emails.length === 0) return 0
-
-    const result = await sendNotification({
-      emails,
+    const result = await sendAdminNotification({
+      recipient,
       title: message.title,
       body: message.body,
       category: message.category,
@@ -142,18 +161,18 @@ export function useAdminNotifications() {
       actionLabel: message.actionUrl?.trim() ? message.actionLabel?.trim() || undefined : undefined,
     })
 
-    logAction('通知管理', message.sourceLabel, `發送給 ${emails.length} 位使用者`)
-    return result.successCount
+    void loadMessages().then(() => followPendingEmails())
+    return result.recipientCount
   }
 
   return {
     templates,
     templatesState,
-    messages: notifMessagesCollection,
+    messages,
+    messagesState,
     saveTemplate,
     removeTemplate,
     toggleTemplate,
     sendComposed,
-    resolveRecipients,
   }
 }

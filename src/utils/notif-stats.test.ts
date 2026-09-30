@@ -188,8 +188,10 @@ describe('channelBadgeText / channelBadgeClass', () => {
     expect(channelBadgeText(stat({ sent: 30, total: 30 }))).toBe('Email · 30 已送')
   })
 
-  it('全部待送時寫「待接通」而不是假裝送出去了', () => {
-    expect(channelBadgeText(stat({ pending: 30, total: 30 }))).toBe('Email · 待接通')
+  it('全部待送時講清楚還沒送到，而不是假裝送出去了', () => {
+    // Email 由後端在背景寄，是「寄送中」；推播還沒接後端，是「待接通」
+    expect(channelBadgeText(stat({ pending: 30, total: 30 }))).toBe('Email · 寄送中')
+    expect(channelBadgeText(stat({ channel: 'push', pending: 30, total: 30 }))).toBe('推播 · 待接通')
   })
 
   it('部分失敗時以失敗數為主，不會顯示成全部已送', () => {

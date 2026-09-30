@@ -45,7 +45,7 @@ const actionText = computed(() => props.actionLabel?.trim() || DEFAULT_ACTION_LA
     </div>
 
     <div class="mt-2 flex flex-wrap items-center gap-1.5">
-      <!-- 後台送出的通知，sourceType 一律是 admin（見 notificationApi 的預設值） -->
+      <!-- 後台送出的通知，sourceType 一律是 admin（見 backend/notifications/inbox_service.py） -->
       <Badge variant="secondary">管理員</Badge>
     </div>
 

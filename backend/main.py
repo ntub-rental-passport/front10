@@ -9,7 +9,7 @@ from sqlalchemy import text
 from db.database import engine, Base
 from admin.metrics import count_requests
 from routers import admin, auth, contract, garbage, landlord_properties, landlord_tenants, inspection, tenant_leases, outage
-from routers import notes, households, scheduled_notifications, platform_settings_api, content_api
+from routers import notes, households, scheduled_notifications, platform_settings_api, content_api, inbox_api
 from notifications.garbage_service import dispatch_due
 from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
 from admin import monitoring_service
@@ -121,6 +121,7 @@ app.include_router(households.router)
 app.include_router(scheduled_notifications.router)
 app.include_router(platform_settings_api.router)
 app.include_router(content_api.router)
+app.include_router(inbox_api.router)
 
 @app.get("/")
 def root():

@@ -10,18 +10,27 @@ import {
 } from './notif-audience'
 
 function candidate(over: Partial<AudienceCandidate> = {}): AudienceCandidate {
-  return { email: 'a@example.com', name: '王小明', roles: ['user'], active: true, ...over }
+  return { email: 'a@example.com', name: '王小明', roles: ['tenant'], active: true, ...over }
 }
 
 const people: AudienceCandidate[] = [
-  candidate({ email: 't1@example.com', name: '王小明', roles: ['user'] }),
-  candidate({ email: 't2@example.com', name: '李小美', roles: ['user'] }),
+  candidate({ email: 't1@example.com', name: '王小明', roles: ['tenant'] }),
+  candidate({ email: 't2@example.com', name: '李小美', roles: ['tenant'] }),
   candidate({ email: 'l1@example.com', name: '陳房東', roles: ['landlord'] }),
   candidate({ email: 'a1@example.com', name: '系統管理員', roles: ['admin'] }),
-  candidate({ email: 'x1@example.com', name: '停用者', roles: ['user'], active: false }),
+  candidate({ email: 'x1@example.com', name: '停用者', roles: ['tenant'], active: false }),
 ]
 
 describe('matchesAudience', () => {
+  it('「全部租客」對到帳號上的 tenant（以前拿 user 比對，永遠是 0 人）', () => {
+    expect(matchesAudience(candidate({ roles: ['tenant'] }), 'user')).toBe(true)
+    expect(matchesAudience(candidate({ roles: ['landlord'] }), 'user')).toBe(false)
+  })
+
+  it('「全部使用者」只算有租客或房東身分的帳號', () => {
+    expect(matchesAudience(candidate({ roles: [] }), 'all')).toBe(false)
+  })
+
   it('停用的帳號不算 —— 後端 _default_resolve 也是這樣濾的', () => {
     expect(matchesAudience(candidate({ active: false }), 'user')).toBe(false)
     expect(matchesAudience(candidate({ active: false }), 'all')).toBe(false)
@@ -33,8 +42,8 @@ describe('matchesAudience', () => {
   })
 
   it('角色要對得上', () => {
-    expect(matchesAudience(candidate({ roles: ['user'] }), 'user')).toBe(true)
-    expect(matchesAudience(candidate({ roles: ['user'] }), 'landlord')).toBe(false)
+    expect(matchesAudience(candidate({ roles: ['tenant'] }), 'user')).toBe(true)
+    expect(matchesAudience(candidate({ roles: ['tenant'] }), 'landlord')).toBe(false)
     expect(matchesAudience(candidate({ roles: ['landlord'] }), 'landlord')).toBe(true)
   })
 

@@ -7,12 +7,10 @@ import type { NotifBatch } from './notif-batch'
  * ## 為什麼不能看第一個收件者就好
  *
  * 發送紀錄原本是 `batch.recipients[0].deliveryStatus[ch]` —— 拿第一個人的
- * 狀態代表整批。今天所有收件者的狀態必然相同（computeDeliveryStatus 只看
- * 管道不看人），所以畫面沒說謊。
+ * 狀態代表整批。當時收件匣在瀏覽器裡，所有收件者的狀態必然相同，畫面沒說謊。
  *
- * 但它**沒有能力表達部分失敗**。哪天 Email 真的接上後端，50 人裡 3 人失敗，
- * 這張表還是會顯示「全部已送」—— 而且不會有任何地方報錯。等到真的漏報時
- * 才修，代價是那時候沒人知道畫面在說謊。
+ * 但它**沒有能力表達部分失敗**。2026-09-30 起 Email 由後端寄，每個人各自記
+ * 寄出或失敗：50 人裡 3 人失敗時，拿第一個人代表整批就會顯示「全部已送」。
  */
 export interface ChannelStat {
   channel: NotifChannel
@@ -47,7 +45,7 @@ export interface ReadStat {
  * useNotifications.markRead 真的會寫入 —— 使用者在自己的通知頁點開一則，
  * 這個數字就會動。
  *
- * 只有站內通知能算已讀。Email 與推播沒有開信追蹤，而且後端根本還沒接，
+ * 只有站內通知能算已讀。Email 沒有開信追蹤、推播還沒接，
  * 所以這個數字講的是「站內看過的人數」，呼叫端的文案要說清楚。
  */
 export function batchReadStat(batch: NotifBatch): ReadStat {
@@ -135,8 +133,8 @@ export const CHANNEL_LABELS: Record<NotifChannel, string> = {
 }
 
 /**
- * pending 代表後端還沒接、實際上沒寄出去，樣式必須跟真的送達明顯不同，
- * 否則管道標籤等於在說謊。
+ * pending 代表還沒送達，樣式必須跟真的送達明顯不同，否則管道標籤等於在說謊。
+ * 推播是「後端還沒接」（待接通）；Email 是「後端正在背景寄」（寄送中）。
  *
  * 發送紀錄和批次詳情共用這兩個函式，兩頁才不會對同一批資料給出不同說法。
  */
@@ -154,7 +152,9 @@ export function channelBadgeText(stat: ChannelStat): string {
   const name = CHANNEL_LABELS[stat.channel]
   if (stat.failed > 0) return `${name} · ${stat.failed} 失敗`
   if (stat.sent === stat.total && stat.total > 0) return `${name} · ${stat.sent} 已送`
-  if (stat.pending === stat.total && stat.total > 0) return `${name} · 待接通`
+  if (stat.pending === stat.total && stat.total > 0) {
+    return `${name} · ${stat.channel === 'push' ? '待接通' : '寄送中'}`
+  }
   // 混合狀態：把兩個數字都講出來，不要挑一個代表
   return `${name} · 已送 ${stat.sent}／待送 ${stat.pending}`
 }
