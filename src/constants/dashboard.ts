@@ -1,4 +1,4 @@
-import type { AccentKey } from '@/src/mocks/dashboard-seed'
+import type { AccentKey } from '@/src/utils/dashboard-contract'
 
 type AccentStyleConfig = {
   badgeTextClass: string

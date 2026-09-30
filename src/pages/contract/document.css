@@ -95,14 +95,15 @@
 
 .doc-section {
   margin-bottom: 1.5rem;
-  /* 列印時盡量不讓一條條文被切成兩頁 */
-  break-inside: avoid;
 }
 
 .doc-section h2 {
   margin: 0 0 0.5rem;
   font-size: 1rem;
   font-weight: 700;
+  /* 標題不可單獨留在頁尾。不對整節用 break-inside: avoid ——
+     第十六條有十四行，比一頁還長，強制不分頁只會擠出一頁空白。 */
+  break-after: avoid;
 }
 
 .doc-subtitle {
@@ -179,6 +180,13 @@
     border-radius: 0;
     font-size: 11pt;
     line-height: 1.9;
+  }
+
+  /* 段落不要只剩一行被拆到下一頁 */
+  .doc-line,
+  .doc-note {
+    orphans: 2;
+    widows: 2;
   }
 
   /* 提醒文字在紙本上一樣要看得到，不能只靠背景色 */

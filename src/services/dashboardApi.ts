@@ -1,0 +1,54 @@
+import { getAuthSession } from '@/src/composables/useAuth'
+import type { PaymentMethod, RentalContract } from '@/src/utils/dashboard-contract'
+
+const API_BASE = import.meta.env.DEV
+  ? '/api'
+  : (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+
+export interface PaymentRecordPayload {
+  paid_at: string
+  payment_method: PaymentMethod
+  payment_note: string
+  payment_proof_name: string | null
+}
+
+async function dashboardRequest<T>(path: string, method = 'GET', data?: unknown): Promise<T> {
+  const token = getAuthSession()?.accessToken
+  if (!token) throw new Error('請先登入後再查看租約。')
+
+  const response = await fetch(`${API_BASE}/dashboard${path}`, {
+    method,
+    credentials: 'include',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(
+      typeof body?.detail === 'string'
+        ? body.detail
+        : `讀取租約資料失敗（${response.status}），請稍後重試。`,
+    )
+  }
+  return response.json() as Promise<T>
+}
+
+/** 使用者已存檔的終版租約與每期帳單。沒有租約時回空陣列。 */
+export function fetchDashboardContracts(): Promise<RentalContract[]> {
+  return dashboardRequest<RentalContract[]>('/contracts')
+}
+
+export function recordBillPayment(
+  billId: string,
+  payload: PaymentRecordPayload,
+): Promise<RentalContract['cycles'][number]> {
+  return dashboardRequest(`/bills/${billId}/payment`, 'PUT', payload)
+}
+
+export function undoBillPayment(billId: string): Promise<RentalContract['cycles'][number]> {
+  return dashboardRequest(`/bills/${billId}/payment`, 'DELETE')
+}

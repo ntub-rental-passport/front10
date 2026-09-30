@@ -12,6 +12,7 @@ import logging
 
 from db.database import get_db
 from db import models
+from db.billing import build_bill_rows
 from ai.deidentify import deidentify
 from ai.law_corpus import format_for_prompt, resolve_citations, retrieve
 from ai.llm_provider import LlmUnavailable, generate
@@ -532,6 +533,21 @@ def finalize_contract(
             **rental_data.model_dump(),
         )
         db.add(rental)
+        db.flush()
+
+        # 每期帳單在存檔當下一次建好：期間與應繳日在契約定版時就已確定。
+        # 水電金額留 NULL —— 那要等實際帳單才知道，不是契約內容，
+        # 填 0 會讓儀表板顯示「這期水電 0 元」而不是「尚未收到」。
+        for row in build_bill_rows(
+            start_date=rental_data.start_date,
+            end_date=rental_data.end_date,
+            total_periods=rental_data.total_periods,
+            payment_interval_months=rental_data.payment_interval_months,
+            payment_day=rental_data.payment_day,
+            rent_amount=rental_data.rent_amount,
+        ):
+            db.add(models.Bill(rental_id=rental.id, **row))
+
         db.commit()
     except Exception as error:
         # 半筆資料留在資料庫比寫入失敗更糟，所以整筆回滾。

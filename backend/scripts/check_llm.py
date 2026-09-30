@@ -34,6 +34,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# ⚠️ 明確載入專案根目錄的 .env。
+#
+# 不做這件事時，這支腳本會報「NVIDIA 金鑰：未設定」而實際上是有設的：
+# 它匯入的 llm_provider / embeddings 自己不載 .env，而 database.py 的
+# load_dotenv() 是從 cwd 往上找，從 backend/ 執行時找的是 backend/.env
+# （不存在）。結果診斷工具說 NVIDIA 不可用、分析悄悄退到 Ollama，
+# 看起來像「備援很好用」，實際上是主線根本沒被試過。2026-09-29 踩到。
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
 from ai import embeddings  # noqa: E402
 from ai import law_corpus  # noqa: E402
 from ai import llm_provider  # noqa: E402
