@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import { BadgeCheck, Check, ChevronDown, CreditCard, Crown, ShieldCheck, Sparkles, X } from 'lucide-vue-next'
 
 type PlanKey = 'free' | 'plus' | 'pro'
-interface Plan { key: PlanKey; name: string; monthlyPrice: number; description: string; features: string[]; featured?: boolean }
+interface Plan { key: PlanKey; name: string; monthlyPrice: number; description: string; features: string[]; propertyLimit: number | null; roomLimit: number | null; featured?: boolean }
 
+const { properties, rooms, loading, error, propertyDataReady, refresh } = useLandlordWorkspace()
 const billingCycle = ref<'monthly' | 'yearly'>('monthly')
 const currentPlan = ref<PlanKey>('free')
 const selectedPlan = ref<PlanKey | null>(null)
@@ -16,9 +19,9 @@ const agreed = ref(false)
 const paymentSuccess = ref<PlanKey | null>(null)
 const showComparison = ref(true)
 const plans: Plan[] = [
-  { key: 'free', name: 'Free', monthlyPrice: 0, description: '剛開始管理出租物件所需要的基本工具。', features: ['最多 1 個物件', '最多 5 間房間', '租客與租約管理', '基本收支紀錄'] },
-  { key: 'plus', name: 'Plus', monthlyPrice: 299, description: '讓日常管理更省時，適合成長中的房東。', features: ['最多 5 個物件', '最多 30 間房間', '租金到期提醒', '維修工單與進度追蹤', '匯出收支報表'], featured: true },
-  { key: 'pro', name: 'Pro', monthlyPrice: 599, description: '完整的營運協作功能，專為專業出租管理而設。', features: ['不限物件與房間數', '多人團隊協作', '自訂通知與權限', '進階營運報表', '優先客服支援'] },
+  { key: 'free', propertyLimit: 1, roomLimit: 5, name: 'Free', monthlyPrice: 0, description: '剛開始管理出租物件所需要的基本工具。', features: ['最多 1 個物件', '最多 5 間房間', '租客與租約管理', '基本收支紀錄'] },
+  { key: 'plus', propertyLimit: 5, roomLimit: 30, name: 'Plus', monthlyPrice: 299, description: '讓日常管理更省時，適合成長中的房東。', features: ['最多 5 個物件', '最多 30 間房間', '租金到期提醒', '維修工單與進度追蹤', '匯出收支報表'], featured: true },
+  { key: 'pro', propertyLimit: null, roomLimit: null, name: 'Pro', monthlyPrice: 599, description: '完整的營運協作功能，專為專業出租管理而設。', features: ['不限物件與房間數', '多人團隊協作', '自訂通知與權限', '進階營運報表', '優先客服支援'] },
 ]
 const comparisonRows = [
   { label: '可管理物件', free: '最多 1 個', plus: '最多 5 個', pro: '不限' },
@@ -30,6 +33,11 @@ const comparisonRows = [
   { label: '團隊協作與權限', free: '—', plus: '—', pro: '包含' },
   { label: '客服支援', free: '一般支援', plus: '優先支援', pro: '專屬優先支援' },
 ]
+const currentPlanInfo = computed(() => plans.find(plan => plan.key === currentPlan.value)!)
+const usage = computed(() => [
+  { label: '管理物件', used: properties.value.length, limit: currentPlanInfo.value.propertyLimit, unit: '個' },
+  { label: '管理房間', used: rooms.value.length, limit: currentPlanInfo.value.roomLimit, unit: '間' },
+])
 const selectedPlanInfo = computed(() => plans.find(plan => plan.key === selectedPlan.value))
 const price = (plan: Plan) => billingCycle.value === 'yearly' ? Math.round(plan.monthlyPrice * 0.83) : plan.monthlyPrice
 const cycleLabel = computed(() => billingCycle.value === 'yearly' ? '年繳（每月）' : '月繳')
@@ -44,7 +52,7 @@ const isExpiryValid = computed(() => {
 })
 const isCvcValid = computed(() => /^\d{3,4}$/.test(cvc.value))
 const canPay = computed(() => Boolean(cardHolder.value.trim() && isCardNumberValid.value && isExpiryValid.value && isCvcValid.value && agreed.value))
-function choosePlan(plan: Plan) { paymentSuccess.value = null; if (plan.key === 'free') { currentPlan.value = 'free'; selectedPlan.value = null; return }; selectedPlan.value = plan.key }
+function choosePlan(plan: Plan) { if (plan.key === currentPlan.value) return; paymentSuccess.value = null; if (plan.key === 'free') { currentPlan.value = 'free'; selectedPlan.value = null; return }; selectedPlan.value = plan.key }
 function completePayment() { if (selectedPlan.value && canPay.value) { currentPlan.value = selectedPlan.value; paymentSuccess.value = selectedPlan.value; selectedPlan.value = null; cardHolder.value = ''; cardNumber.value = ''; expiry.value = ''; cvc.value = ''; agreed.value = false } }
 function formatCardNumber() { cardNumber.value = cardNumber.value.replace(/\D/g, '').slice(0, 16).replace(/(\d{4})(?=\d)/g, '$1 ') }
 function formatExpiry() { const value = expiry.value.replace(/\D/g, '').slice(0, 4); expiry.value = value.length > 2 ? `${value.slice(0, 2)}/${value.slice(2)}` : value }
@@ -52,12 +60,35 @@ function formatExpiry() { const value = expiry.value.replace(/\D/g, '').slice(0,
 
 <template>
   <div class="subscription-page mx-auto max-w-[1440px] space-y-6">
-    <div v-if="paymentSuccess" class="payment-success" role="status"><BadgeCheck class="h-5 w-5" /><span><b>{{ plans.find(plan => plan.key === paymentSuccess)?.name }} 方案已啟用</b><small>新功能現在即可使用；你可以隨時在此頁調整方案。</small></span><button aria-label="關閉成功提示" @click="paymentSuccess = null"><X class="h-4 w-4" /></button></div>
-    <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p class="mb-2 text-xs font-bold uppercase tracking-[.18em] text-[#68846d]">Plan & billing</p><h1 class="text-3xl font-black tracking-tight sm:text-4xl">方案與訂閱</h1><p class="mt-2 text-sm text-[#778078]">選擇最適合目前出租規模的方案，隨時可以升級或調整。</p></div><div class="current-plan-card"><span><BadgeCheck class="h-5 w-5" /></span><div><small>目前方案</small><strong>{{ plans.find(plan => plan.key === currentPlan)?.name }}</strong></div><em>啟用中</em></div></header>
-    <section class="hero"><div><span class="eyebrow"><Sparkles class="h-3.5 w-3.5" /> RentMate for landlords</span><h2>把繁瑣管理，留給更聰明的工具。</h2><p>所有方案都包含安全的資料保存與租客管理功能。年繳可節省約 17%，方案升級即時生效。</p></div><div class="billing-toggle"><button :class="{ active: billingCycle === 'monthly' }" @click="billingCycle = 'monthly'">月繳</button><button :class="{ active: billingCycle === 'yearly' }" @click="billingCycle = 'yearly'">年繳 <b>省 17%</b></button></div></section>
-    <section class="grid gap-5 lg:grid-cols-3"><article v-for="plan in plans" :key="plan.key" class="plan-card" :class="{ featured: plan.featured, current: currentPlan === plan.key }"><div v-if="plan.featured" class="popular"><Crown class="h-3.5 w-3.5" /> 最受歡迎</div><div class="flex items-start justify-between gap-3"><div><h2>{{ plan.name }}</h2><p>{{ plan.description }}</p></div><span class="plan-icon" :class="plan.key"><Sparkles v-if="plan.key !== 'free'" class="h-4 w-4" /><ShieldCheck v-else class="h-4 w-4" /></span></div><div class="price"><strong>{{ plan.monthlyPrice ? `NT$ ${price(plan).toLocaleString()}` : '免費' }}</strong><span v-if="plan.monthlyPrice">／月</span></div><p class="yearly-note">{{ plan.monthlyPrice && billingCycle === 'yearly' ? `年繳 NT$ ${(price(plan) * 12).toLocaleString()}，已含優惠` : plan.monthlyPrice ? cycleLabel : '永久免費使用' }}</p><button class="plan-action" :class="{ selected: currentPlan === plan.key }" @click="choosePlan(plan)"><Check v-if="currentPlan === plan.key" class="h-4 w-4" />{{ currentPlan === plan.key ? '目前使用中' : plan.key === 'free' ? '切換至 Free' : `選擇 ${plan.name}` }}</button><ul><li v-for="feature in plan.features" :key="feature"><Check class="h-4 w-4" />{{ feature }}</li></ul></article></section>
-    <section class="overflow-hidden rounded-[1.5rem] border border-[#e2dccf] bg-white/80 shadow-[0_8px_22px_rgba(66,72,60,.04)]"><button class="flex w-full items-center justify-between gap-4 px-5 py-5 text-left sm:px-6" type="button" @click="showComparison = !showComparison"><span><b class="block text-lg font-black text-[#29372e]">方案功能比較</b><small class="mt-1 block text-sm text-[#788079]">依管理規模與所需功能，快速選出適合的方案。</small></span><ChevronDown class="h-5 w-5 shrink-0 text-[#56795d] transition-transform" :class="{ 'rotate-180': showComparison }" /></button><div v-if="showComparison" class="overflow-x-auto border-t border-[#ece7dc]"><table class="min-w-[640px] w-full text-sm"><thead class="bg-[#f5f7f1] text-[#526057]"><tr><th class="px-5 py-3.5 text-left font-bold sm:px-6">功能</th><th class="px-4 py-3.5 text-center font-bold">Free</th><th class="px-4 py-3.5 text-center font-bold text-[#52775a]">Plus</th><th class="px-4 py-3.5 text-center font-bold text-[#8b6328]">Pro</th></tr></thead><tbody><tr v-for="row in comparisonRows" :key="row.label" class="border-t border-[#eee9df] text-[#59655c]"><th class="px-5 py-3.5 text-left font-semibold sm:px-6">{{ row.label }}</th><td class="px-4 py-3.5 text-center">{{ row.free }}</td><td class="px-4 py-3.5 text-center">{{ row.plus }}</td><td class="px-4 py-3.5 text-center">{{ row.pro }}</td></tr></tbody></table></div></section>
-    <section class="included-card"><div><ShieldCheck /><span><b>所有方案均受保護</b><small>採用加密傳輸與安全付款機制，保障帳務與出租資料。</small></span></div><button>常見問題 <ChevronDown class="inline h-4 w-4" /></button></section>
+    <div v-if="paymentSuccess" class="payment-success" role="status"><BadgeCheck class="h-5 w-5" /><span><b>{{ plans.find(plan => plan.key === paymentSuccess)?.name }} 方案示範已切換</b><small>僅預覽方案權益，本次操作不會扣款或變更正式訂閱。</small></span><button aria-label="關閉成功提示" @click="paymentSuccess = null"><X class="h-4 w-4" /></button></div>
+    <RouterLink to="/landlord/settings" class="inline-flex text-sm font-bold text-[#56795d] hover:underline">← 返回設定</RouterLink>
+    <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p class="mb-2 text-xs font-bold uppercase tracking-[.18em] text-[#68846d]">Plan & billing</p><h1 class="text-3xl font-black tracking-tight sm:text-4xl">方案與權益</h1><p class="mt-2 text-sm text-[#778078]">選擇最適合目前出租規模的方案，隨時可以升級或調整。</p></div><div class="current-plan-card"><span><BadgeCheck class="h-5 w-5" /></span><div><small>目前方案</small><strong>{{ plans.find(plan => plan.key === currentPlan)?.name }}</strong></div><em>啟用中</em></div></header>
+    <section class="rounded-3xl border border-[#e2dccf] bg-white/80 p-5 sm:p-6" aria-labelledby="usage-heading" :aria-busy="loading">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div><h2 id="usage-heading" class="text-lg font-black">目前方案與使用額度</h2><p class="mt-1 text-sm text-[#778078]">{{ currentPlanInfo.name }} · 依工作區的物件與房間數計算，刪除後釋出額度。</p></div>
+        <button class="rounded-xl border border-[#d9dfd4] px-4 py-2 text-sm disabled:opacity-50" :disabled="loading" @click="refresh">{{ loading ? '更新中…' : '重新整理' }}</button>
+      </div>
+      <p v-if="error" role="alert" class="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">資料更新失敗，請重試。{{ propertyDataReady ? '以下為最近一次成功載入的資料。' : '目前無法取得使用額度。' }}</p>
+      <p v-if="!propertyDataReady && !error" role="status" class="py-6 text-sm text-[#778078]">正在載入使用額度…</p>
+      <div v-if="propertyDataReady" class="mt-5 grid gap-4 sm:grid-cols-2">
+        <article v-for="item in usage" :key="item.label" class="rounded-2xl bg-[#f5f7f1] p-4">
+          <h3 class="text-sm font-bold">{{ item.label }}</h3>
+          <p class="mt-3"><strong class="text-2xl">{{ item.used }}</strong><span class="ml-2 text-sm text-[#637166]">/ {{ item.limit === null ? '不限' : item.limit }} {{ item.unit }}</span></p>
+          <template v-if="item.limit !== null">
+            <progress class="mt-4 h-2 w-full accent-[#5b8263]" :aria-label="item.label + '使用額度'" :max="item.limit" :value="Math.min(item.used, item.limit)" />
+            <p class="mt-2 text-xs" :class="item.used >= item.limit ? 'text-amber-800' : 'text-[#637166]'">{{ item.used > item.limit ? `已超出 ${item.used - item.limit} ${item.unit}，可比較下方方案` : item.used === item.limit ? '額度已用完，可比較下方方案' : `剩餘 ${item.limit - item.used} ${item.unit}` }}</p>
+          </template>
+          <p v-else class="mt-4 text-xs text-[#637166]">此方案無數量上限</p>
+        </article>
+      </div>
+      <h3 class="mt-6 text-sm font-bold">目前方案包含</h3>
+      <ul class="mt-3 grid gap-3 sm:grid-cols-2"><li v-for="feature in currentPlanInfo.features" :key="feature" class="flex items-center gap-2 text-sm text-[#58645b]"><Check class="h-4 w-4 shrink-0 text-[#5b8263]" />{{ feature }}</li></ul>
+    </section>
+    <p class="rounded-xl bg-[#f2eee4] px-4 py-3 text-sm text-[#77694f]">目前為方案展示，預設顯示 Free；付費方案與切換操作僅供示範，正式訂閱尚未串接。</p>
+    <section class="hero"><div><span class="eyebrow"><Sparkles class="h-3.5 w-3.5" /> RentMate for landlords</span><h2>把繁瑣管理，留給更聰明的工具。</h2><p>所有方案都包含安全的資料保存與租客管理功能。年繳可節省約 17%，可在下方比較各方案提供的能力。</p></div><div class="billing-toggle"><button :class="{ active: billingCycle === 'monthly' }" @click="billingCycle = 'monthly'">月繳</button><button :class="{ active: billingCycle === 'yearly' }" @click="billingCycle = 'yearly'">年繳 <b>省 17%</b></button></div></section>
+    <section class="grid gap-5 lg:grid-cols-3"><article v-for="plan in plans" :key="plan.key" class="plan-card" :class="{ featured: plan.featured, current: currentPlan === plan.key }"><div v-if="plan.featured" class="popular"><Crown class="h-3.5 w-3.5" /> 最受歡迎</div><div class="flex items-start justify-between gap-3"><div><h2>{{ plan.name }}</h2><p>{{ plan.description }}</p></div><span class="plan-icon" :class="plan.key"><Sparkles v-if="plan.key !== 'free'" class="h-4 w-4" /><ShieldCheck v-else class="h-4 w-4" /></span></div><div class="price"><strong>{{ plan.monthlyPrice ? `NT$ ${price(plan).toLocaleString()}` : '免費' }}</strong><span v-if="plan.monthlyPrice">／月</span></div><p class="yearly-note">{{ plan.monthlyPrice && billingCycle === 'yearly' ? `年繳 NT$ ${(price(plan) * 12).toLocaleString()}，已含優惠` : plan.monthlyPrice ? cycleLabel : '永久免費使用' }}</p><button class="plan-action" :class="{ selected: currentPlan === plan.key }" :disabled="currentPlan === plan.key" @click="choosePlan(plan)"><Check v-if="currentPlan === plan.key" class="h-4 w-4" />{{ currentPlan === plan.key ? '目前使用中' : plan.key === 'free' ? '切換至 Free' : `選擇 ${plan.name}` }}</button><ul><li v-for="feature in plan.features" :key="feature"><Check class="h-4 w-4" />{{ feature }}</li></ul></article></section>
+    <section class="overflow-hidden rounded-[1.5rem] border border-[#e2dccf] bg-white/80 shadow-[0_8px_22px_rgba(66,72,60,.04)]"><button class="flex w-full items-center justify-between gap-4 px-5 py-5 text-left sm:px-6" type="button" :aria-expanded="showComparison" aria-controls="plan-comparison" @click="showComparison = !showComparison"><span><b class="block text-lg font-black text-[#29372e]">方案功能比較</b><small class="mt-1 block text-sm text-[#788079]">依管理規模與所需功能，快速選出適合的方案。</small></span><ChevronDown class="h-5 w-5 shrink-0 text-[#56795d] transition-transform" :class="{ 'rotate-180': showComparison }" /></button><div id="plan-comparison" v-if="showComparison" class="overflow-x-auto border-t border-[#ece7dc]"><table class="min-w-[640px] w-full text-sm"><thead class="bg-[#f5f7f1] text-[#526057]"><tr><th class="px-5 py-3.5 text-left font-bold sm:px-6">功能</th><th class="px-4 py-3.5 text-center font-bold">Free</th><th class="px-4 py-3.5 text-center font-bold text-[#52775a]">Plus</th><th class="px-4 py-3.5 text-center font-bold text-[#8b6328]">Pro</th></tr></thead><tbody><tr v-for="row in comparisonRows" :key="row.label" class="border-t border-[#eee9df] text-[#59655c]"><th class="px-5 py-3.5 text-left font-semibold sm:px-6">{{ row.label }}</th><td class="px-4 py-3.5 text-center">{{ row.free }}</td><td class="px-4 py-3.5 text-center">{{ row.plus }}</td><td class="px-4 py-3.5 text-center">{{ row.pro }}</td></tr></tbody></table></div></section>
+    <section class="included-card"><div><ShieldCheck /><span><b>所有方案均受保護</b><small>採用加密傳輸與安全付款機制，保障帳務與出租資料。</small></span></div><RouterLink to="/landlord/settings/support" class="text-sm font-bold text-[#56795d] hover:underline">常見問題 →</RouterLink></section>
     <div v-if="selectedPlan && selectedPlanInfo" class="fixed inset-0 z-50 grid place-items-center bg-[#233129]/45 p-4" @click.self="selectedPlan = null"><section class="payment-dialog"><button class="close-button" aria-label="關閉付款視窗" @click="selectedPlan = null"><X class="h-5 w-5" /></button><div class="payment-heading"><span><CreditCard class="h-5 w-5" /></span><div><p>安全付款</p><h2>訂閱 {{ selectedPlanInfo.name }} 方案</h2></div></div><div class="payment-summary"><span>{{ selectedPlanInfo.name }} · {{ cycleLabel }}</span><strong>NT$ {{ price(selectedPlanInfo).toLocaleString() }}<small>／月</small></strong></div><form class="space-y-4" @submit.prevent="completePayment"><label>持卡人姓名<input v-model="cardHolder" autocomplete="cc-name" placeholder="王小明" /></label><label>卡號<div class="input-icon"><CreditCard class="h-4 w-4" /><input v-model="cardNumber" inputmode="numeric" autocomplete="cc-number" maxlength="19" placeholder="1234 5678 9012 3456" @input="formatCardNumber" /></div></label><div class="grid grid-cols-2 gap-3"><label>有效期限<input v-model="expiry" inputmode="numeric" autocomplete="cc-exp" maxlength="5" placeholder="MM/YY" @input="formatExpiry" /></label><label>安全碼<input v-model="cvc" inputmode="numeric" autocomplete="cc-csc" maxlength="3" placeholder="CVC" /></label></div><label class="agreement"><input v-model="agreed" type="checkbox" />我同意服務條款與自動續訂規則。</label><button class="pay-button" type="submit" :disabled="!canPay">確認付款 NT$ {{ price(selectedPlanInfo).toLocaleString() }}</button></form><p class="payment-note"><ShieldCheck class="h-3.5 w-3.5" /> 此為付款介面示範，不會實際扣款。</p></section></div>
   </div>
 </template>

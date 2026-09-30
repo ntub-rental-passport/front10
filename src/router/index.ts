@@ -42,7 +42,9 @@ const router = createRouter({
         { path: 'subscription', component: () => import('@/src/pages/landlord/subscription.vue') },
         { path: 'maintenance', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '報修管理', description: '追蹤租客報修、處理狀態、費用與完成紀錄。' } },
         { path: 'contracts', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '合約管理', description: '管理租約、附件、到期提醒與續約進度。' } },
-        { path: 'settings', component: () => import('@/src/pages/management-placeholder.vue'), meta: { title: '房東設定', description: '設定收款提醒、通知方式與房東帳號偏好。' } },
+        { path: 'settings', component: () => import('@/src/pages/landlord/settings.vue') },
+        { path: 'settings/plan', component: () => import('@/src/pages/landlord/subscription.vue') },
+        { path: 'settings/:section(account|team|notifications|data|activity|support|legal|security)', component: () => import('@/src/pages/landlord/settings-detail.vue') },
       ],
     },
     {

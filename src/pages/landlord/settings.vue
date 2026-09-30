@@ -50,7 +50,7 @@ const categories: Array<{ key: SettingsCategory; label: string; icon: typeof Use
 const items = computed<SettingsItem[]>(() => [
   { key: 'account', category: 'workspace', title: '帳號資料', description: '更新名稱、聯絡手機與工作區名稱。', path: '/landlord/settings/account', icon: UserRound, badge: completeness.value === 100 ? '完整' : `${completeness.value}%`, tone: completeness.value === 100 ? 'success' : 'warning' },
   { key: 'team', category: 'workspace', title: '團隊成員', description: '邀請夥伴並設定管理、帳務或檢視權限。', path: '/landlord/settings/team', icon: Users, badge: `${state.members.length + 1} 位` },
-  { key: 'plan', category: 'workspace', title: '方案權益與功能', description: '查看目前方案、管理規模與可用功能。', path: '/landlord/subscription', icon: Crown, badge: '免費方案', tone: 'success' },
+  { key: 'plan', category: 'workspace', title: '方案與權益', description: '查看目前方案、使用額度，以及其他方案提供的能力。', path: '/landlord/settings/plan', icon: Crown, badge: '免費方案', tone: 'success' },
   { key: 'notifications', category: 'notifications', title: '通知偏好', description: '設定租金、合約與報修通知的提醒方式。', path: '/landlord/settings/notifications', icon: Bell, badge: state.lineBound ? 'LINE 已綁定' : 'LINE 未綁定', tone: state.lineBound ? 'success' : 'warning' },
   { key: 'data', category: 'data', title: '資料匯出與備份', description: '匯出房務、租客及租約資料，方便備份交接。', path: '/landlord/settings/data', icon: Download, badge: '可使用', tone: 'success' },
   { key: 'activity', category: 'data', title: '操作紀錄', description: '查看設定、租客及房務資料的重要異動。', path: '/landlord/settings/activity', icon: Activity, badge: `${state.audit.length} 筆` },
