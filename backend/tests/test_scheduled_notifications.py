@@ -18,6 +18,8 @@ class ScheduledNotificationTests(unittest.TestCase):
             'MONITOR_DB': self.temp.name + '/monitoring.db',
             # 寄送結果也會寫進稽核紀錄，同理
             'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
+            # 寄送失敗、錯過也會通知管理員，同理
+            'ADMIN_NOTIFICATIONS_DB': self.temp.name + '/admin-notifications.db',
             'SMTP_USERNAME': 'sender@example.com',
             'SMTP_APP_PASSWORD': 'app-password',
         })

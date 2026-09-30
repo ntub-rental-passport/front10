@@ -400,10 +400,23 @@ def _record_audit(row, detail: str) -> None:
 
 
 def _record_monitor_event(kind: str, detail: str) -> None:
-    """寫進後台監控的事件紀錄。寫不進去不能影響寄送本身。"""
+    """寫進後台監控的事件紀錄，同時通知管理員。寫不進去不能影響寄送本身。"""
     try:
         from admin import monitoring_service  # 延遲 import：monitoring_service 也會讀這個模組的佇列
 
         monitoring_service.record_event('scheduled-notification', kind, detail)
     except Exception:
         logger.exception('Could not record monitor event %s', kind)
+
+    from admin import admin_notifications  # record_alert 自己會接住錯誤
+
+    if kind == 'notification-missed':
+        admin_notifications.record_alert(
+            '排程通知錯過預定時間', f'{detail}：後端當時沒有在執行，沒有寄出。',
+            action_url='/admin/notifications?tab=schedule', action_label='查看排程',
+        )
+    else:
+        admin_notifications.record_alert(
+            '排程通知寄送失敗', f'{detail}。',
+            action_url='/admin/notifications?tab=schedule', action_label='查看排程',
+        )
