@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   accountStatusTone,
   depositMatchTone,
-  handoverAgreementTone,
+  handoverOutcomeTone,
+  handoverResultTone,
   subscriptionFlags,
 } from './admin-user-detail'
 
@@ -19,16 +20,27 @@ describe('狀態的輕重：沒事的安靜，要動手的才上色', () => {
     expect(depositMatchTone('mismatched')).toBe('danger')
   })
 
-  it('點交：跟押金同一套 —— 在等租客確認不是管理員的事', () => {
-    expect(handoverAgreementTone('agreed')).toBe('ok')
-    expect(handoverAgreementTone('pending')).toBe('idle')
-    expect(handoverAgreementTone('disputed')).toBe('danger')
+  it('點交品項：損壞、不見才要協調，AI 無法判斷要人看照片，使用痕跡是一般磨損', () => {
+    expect(handoverResultTone('new_damage')).toBe('danger')
+    expect(handoverResultTone('missing')).toBe('danger')
+    expect(handoverResultTone('uncertain')).toBe('warn')
+    expect(handoverResultTone('degraded')).toBe('ok')
+    expect(handoverResultTone('unchanged')).toBe('ok')
+    expect(handoverResultTone(null)).toBe('idle')
+  })
+
+  it('整份點交的結論跟品項同一套顏色', () => {
+    expect(handoverOutcomeTone('damaged')).toBe('danger')
+    expect(handoverOutcomeTone('uncertain')).toBe('warn')
+    expect(handoverOutcomeTone('incomplete')).toBe('idle')
+    expect(handoverOutcomeTone('clear')).toBe('ok')
   })
 
   it('「在等別人」的狀態不會被塗成 warn／danger', () => {
     // warn／danger 在這個後台代表「你必須動手」
     expect(['warn', 'danger']).not.toContain(depositMatchTone('pending'))
-    expect(['warn', 'danger']).not.toContain(handoverAgreementTone('pending'))
+    expect(['warn', 'danger']).not.toContain(handoverResultTone(null))
+    expect(['warn', 'danger']).not.toContain(handoverOutcomeTone('incomplete'))
   })
 })
 

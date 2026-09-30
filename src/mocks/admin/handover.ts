@@ -1,30 +1,19 @@
 import { createRandom, daysAgo, intBetween, pick, weightedPick } from './helpers'
 import { seedRentals, type Rental } from './rentals'
 import { seedAdminUsers, type AdminUser } from './users'
-import type { HandoverVerdict } from '@/src/utils/admin-handover'
+import type { HandoverItem, HandoverResult, MissingPhoto } from '@/src/utils/admin-handover'
 
 /**
- * 點交存證的雙方判定。
- *
- * 不存照片：照片在使用者自己的瀏覽器裡，後台讀不到，放佔位圖只是假裝有。
- * 也不存 AI 判定：那個在使用者端本來就是假的，當第三方意見會誤導管理員。
+ * 展示帳號的點交存證，形狀跟真實帳號從後端讀到的一樣（backend/admin/user_records.py）：
+ * 每個品項一個 AI 比對結果，不含照片。真實帳號不用這份資料。
  */
-export interface HandoverItem {
-  id: string
-  room: string
-  name: string
-  landlordVerdict: HandoverVerdict
-  /** 租客尚未確認時為 null */
-  tenantVerdict: HandoverVerdict | null
-}
-
 export interface HandoverRecord {
   id: string
   address: string
   landlordUserId: string
   tenantUserId: string
-  /** 退租點交的日期 */
-  inspectedAt: string
+  /** 最後一次拍照或比對的時間 */
+  updatedAt: string
   items: HandoverItem[]
 }
 
@@ -35,6 +24,50 @@ const ROOM_ITEMS: { room: string; names: string[] }[] = [
   { room: '浴室', names: ['熱水器', '馬桶', '洗手臺', '排風扇'] },
   { room: '陽台', names: ['洗衣機', '曬衣架'] },
 ]
+
+const SUMMARIES: Record<HandoverResult, string[]> = {
+  unchanged: ['入住與退租照片看起來狀態相同。', '沒有看到明顯差異。'],
+  degraded: ['表面有輕微使用痕跡，屬一般磨損。', '顏色略為褪色，沒有破損。'],
+  new_damage: ['退租照片可見入住時沒有的刮痕。', '邊角有新的缺損。'],
+  missing: ['退租照片中找不到這件物品。'],
+  uncertain: ['兩張照片的角度不同，無法確定是否有差異。', '退租照片太暗，看不清楚細節。'],
+}
+
+function demoItem(random: () => number, id: string, room: string, name: string): HandoverItem {
+  // 多數品項比對過而且沒事；少數還沒比對（多半是還沒拍退租照）
+  if (random() < 0.08) {
+    const missingPhoto = weightedPick<'checkout' | 'baseline' | 'ready'>(random, {
+      checkout: 70,
+      baseline: 10,
+      ready: 20,
+    })
+    return {
+      id,
+      room,
+      name,
+      result: null,
+      summary: null,
+      confidence: null,
+      missingPhoto: missingPhoto === 'ready' ? null : (missingPhoto as MissingPhoto),
+    }
+  }
+  const result = weightedPick<HandoverResult>(random, {
+    unchanged: 70,
+    degraded: 14,
+    new_damage: 9,
+    missing: 2,
+    uncertain: 5,
+  })
+  return {
+    id,
+    room,
+    name,
+    result,
+    summary: pick(random, SUMMARIES[result]),
+    confidence: intBetween(random, 60, 95) / 100,
+    missingPhoto: null,
+  }
+}
 
 export function seedHandoverRecords(
   users: AdminUser[] = seedAdminUsers(),
@@ -52,25 +85,7 @@ export function seedHandoverRecords(
       for (const group of rooms.length > 0 ? rooms : [ROOM_ITEMS[0]]) {
         const names = group.names.filter(() => random() < 0.7)
         for (const name of names.length > 0 ? names : [group.names[0]]) {
-          // 多數品項雙方都認為完好；少數房東認為有損壞，租客未必同意
-          const landlordVerdict = weightedPick<HandoverVerdict>(random, {
-            intact: 74,
-            damaged: 26,
-          })
-          const tenantVerdict =
-            random() < 0.12
-              ? null
-              : landlordVerdict === 'damaged' && random() < 0.45
-                ? 'intact'
-                : landlordVerdict
-
-          items.push({
-            id: `hi-${index + 1}-${items.length + 1}`,
-            room: group.room,
-            name,
-            landlordVerdict,
-            tenantVerdict,
-          })
+          items.push(demoItem(random, `hi-${index + 1}-${items.length + 1}`, group.room, name))
         }
       }
 
@@ -79,7 +94,7 @@ export function seedHandoverRecords(
         address: rental.address,
         landlordUserId: rental.landlordUserId,
         tenantUserId: rental.tenantUserId,
-        inspectedAt: daysAgo(intBetween(random, 3, 120)),
+        updatedAt: daysAgo(intBetween(random, 3, 120)),
         items,
       }
     })

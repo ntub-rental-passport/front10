@@ -1,6 +1,6 @@
 import type { StatusDotTone } from '@/src/components/admin/status-dot'
 import type { DepositMatch } from './admin-deposit'
-import type { HandoverAgreement } from './admin-handover'
+import { isHandoverDamage, type HandoverOutcome, type HandoverResult } from './admin-handover'
 
 /**
  * 使用者詳情頁的狀態 → 顏色。
@@ -17,7 +17,7 @@ import type { HandoverAgreement } from './admin-handover'
  * ## 為什麼「在等別人」是 idle 不是 warn
  *
  * warn／danger 在這個後台的意思是「你必須動手」。「租客未聲明押金」
- * 「租客未確認點交」都是在等租客，管理員能做的只有等 —— 給它們琥珀色，
+ * 「點交還沒比對」都是在等租客，管理員能做的只有等 —— 給它們琥珀色，
  * 管理員會以為有事要處理，點進去卻發現無事可做。租補頁的政府審核步驟
  * 也是同一個原則（見 governmentStepVisual）。
  */
@@ -36,10 +36,23 @@ export function depositMatchTone(match: DepositMatch): StatusDotTone {
   return 'ok'
 }
 
-/** 點交存證。與押金同一種「兩造各自認定、比對是否一致」的模式，顏色也一致。 */
-export function handoverAgreementTone(agreement: HandoverAgreement): StatusDotTone {
-  if (agreement === 'disputed') return 'danger'
-  if (agreement === 'pending') return 'idle'
+/**
+ * 點交的單一品項。新增損壞、物品不見可能要協調押金扣抵，是 danger；AI 無法判斷
+ * 要有人看照片，是 warn；還沒比對是在等租客拍照或比對，是 idle。使用痕跡是一般
+ * 磨損，不算租客的責任，跟無變化一樣安靜。
+ */
+export function handoverResultTone(result: HandoverResult | null): StatusDotTone {
+  if (result === null) return 'idle'
+  if (isHandoverDamage(result)) return 'danger'
+  if (result === 'uncertain') return 'warn'
+  return 'ok'
+}
+
+/** 整份點交的結論，顏色規則同上 */
+export function handoverOutcomeTone(outcome: HandoverOutcome): StatusDotTone {
+  if (outcome === 'damaged') return 'danger'
+  if (outcome === 'uncertain') return 'warn'
+  if (outcome === 'incomplete') return 'idle'
   return 'ok'
 }
 

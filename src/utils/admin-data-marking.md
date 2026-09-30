@@ -28,6 +28,7 @@ grep -rn 'data-real' src/pages/admin/ src/components/admin/
 | `pages/admin/index.vue` | 系統健康條（`/api/admin/metrics`）、最近登入、AI 額度（`/api/admin/ai-usage`） |
 | `pages/admin/monitoring.vue` | AI 額度用量（`/api/admin/ai-usage`，OCR 服務回報的 Vision 頁數） |
 | `pages/admin/users.vue` | 四格真實帳號 KPI、註冊來源分布 |
+| `pages/admin/user-detail.vue` | 押金對帳、點交存證：只有真實帳號才標（`/api/admin/users/{id}/records`），展示帳號是示範資料 |
 
 其餘所有後台頁面目前都是展示資料，**照約定不需要標記**。新增區塊時只要
 問一句：這個數字是從後端來的嗎？是才加 `data-real`。
