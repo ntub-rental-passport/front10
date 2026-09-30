@@ -7,8 +7,8 @@ describe('describeSettingChange', () => {
   it('數字欄位：中文名稱、前後值、單位', () => {
     expect(describeSettingChange('maintenanceOverdueDays', 7, 10)).toBe('報修逾期提醒門檻：7 → 10 天')
     expect(describeSettingChange('quotaWarnPercent', 80, 90)).toBe('額度預警門檻：80 → 90%')
-    expect(describeSettingChange('platformGeminiTokenQuota', 2_000_000, 1_500_000)).toBe(
-      'Gemini 每月 token 上限：2,000,000 → 1,500,000',
+    expect(describeSettingChange('platformVisionPageQuota', 3_000, 5_000)).toBe(
+      'Vision 每月頁數上限：3,000 → 5,000 頁',
     )
   })
 

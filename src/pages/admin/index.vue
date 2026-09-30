@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
 import { AlertTriangle, ArrowUpRight, ListChecks, Megaphone, Send, Users, Wrench } from 'lucide-vue-next'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import AiQuotaRing from '@/src/components/admin/AiQuotaRing.vue'
 import CategoryBarCard from '@/src/components/admin/CategoryBarCard.vue'
 import DonutStatCard from '@/src/components/admin/DonutStatCard.vue'
@@ -16,7 +17,7 @@ import StatusDot from '@/src/components/admin/StatusDot.vue'
 import InlineStat from '@/src/components/admin/InlineStat.vue'
 import TrendAreaCard from '@/src/components/admin/TrendAreaCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
-import { useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
+import { loadAiUsage, useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { activeWindowDays, countActiveUsers } from '@/src/utils/admin-activity'
@@ -42,7 +43,9 @@ import { chartColor } from '@/src/constants/admin-chart'
 import type { AdminUserRole } from '@/src/mocks/admin-seed'
 
 const { users } = useAdminUsers()
-const { usages, alerts, alertCount } = useAdminAiUsage()
+const { usages, alerts, alertCount, loadState: aiUsageState } = useAdminAiUsage()
+// 每次打開首頁都重讀一次 AI 用量（見 useAdminAiUsage 的說明）
+void loadAiUsage()
 const { events } = useAdminAudit()
 const { settings } = useAdminSettings()
 const { canAccessPath } = useAdminRbac()
@@ -331,11 +334,17 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
     </section>
 
     <!--
-      展示資料：AI 額度一覽的進度環。百分比來自 useAdminAiUsage()
-      （src/mocks/admin/ai-usage.ts 產生的每日用量種子資料，對照系統設定的
-      額度上限算出來），不是真的 API 呼叫量統計。
+      AI 額度：真實資料。百分比來自 useAdminAiUsage()——OCR 服務回報的 Google Vision
+      頁數（/api/admin/ai-usage），對照系統設定的額度上限算出來。讀不到時換成提示，
+      不顯示 0%、額度充足。
     -->
-    <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+    <AdminLoadNotice
+      v-if="aiUsageState !== 'ready'"
+      :state="aiUsageState"
+      what="AI 用量"
+      @retry="loadAiUsage"
+    />
+    <section v-else data-real="true" class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <Card class="flex h-full flex-col rounded-3xl">
         <CardHeader class="p-5 pb-2">
           <CardTitle class="text-sm font-medium">AI 額度一覽</CardTitle>

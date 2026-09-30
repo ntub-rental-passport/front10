@@ -33,7 +33,8 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       environment: 'node',
-      include: ['src/**/*.test.ts'],
+      // server/ 是 Node 的 OCR 服務，純邏輯的部分也在這裡測
+      include: ['src/**/*.test.ts', 'server/**/*.test.js'],
     },
   };
 });

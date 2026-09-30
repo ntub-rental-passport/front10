@@ -1,9 +1,8 @@
-import { computed, type Ref } from 'vue'
-import { createAdminCollection } from './useAdminStore'
+import { computed, ref, type Ref } from 'vue'
 import { adminSettings } from './useAdminSettings'
+import { fetchAiUsage } from '@/src/services/aiUsageApi'
 import {
   AI_PROVIDERS,
-  seedAiUsage,
   type AiProvider,
   type AiProviderId,
   type AiUsageDaily,
@@ -18,7 +17,34 @@ import {
 } from '@/src/utils/admin-ai-usage'
 import { dateKey } from '@/src/utils/date-key'
 
-const records = createAdminCollection<AiUsageDaily[]>('ai-usage', seedAiUsage)
+/**
+ * 每日用量存在後端（backend/admin/ai_usage.py），由 OCR 服務每次呼叫 Google Vision
+ * 時回報。這裡只負責讀：第一次用到時讀一次（頂部列的待辦徽章），監控頁與後台
+ * 首頁每次打開再重讀，拿最新的。
+ */
+const records = ref<AiUsageDaily[]>([])
+const loadState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+let inflight: Promise<void> | null = null
+
+/**
+ * 同一時間好幾處要讀（徽章跟頁面同時掛上）只送一次。已經有資料時重讀失敗就
+ * 留著舊的，不把畫面打回「讀不到」。
+ */
+export function loadAiUsage(): Promise<void> {
+  inflight ??= (async () => {
+    if (loadState.value !== 'ready') loadState.value = 'loading'
+    const result = await fetchAiUsage()
+    if (result) {
+      records.value = result.daily
+      loadState.value = 'ready'
+    } else if (loadState.value !== 'ready') {
+      loadState.value = 'error'
+    }
+  })().finally(() => {
+    inflight = null
+  })
+  return inflight
+}
 
 export const quotaLevelLabels: Record<QuotaLevel, string> = {
   ok: '正常',
@@ -41,11 +67,7 @@ export interface ProviderUsage {
 
 type QuotaSettings = Pick<
   SystemSettings,
-  | 'platformGeminiTokenQuota'
-  | 'platformVisionPageQuota'
-  | 'quotaWarnPercent'
-  | 'quotaCriticalPercent'
-  | 'aiQuotaCriticalDays'
+  'platformVisionPageQuota' | 'quotaWarnPercent' | 'quotaCriticalPercent' | 'aiQuotaCriticalDays'
 >
 
 /**
@@ -53,10 +75,10 @@ type QuotaSettings = Pick<
  * 才能在按下儲存之前就看到「照這個門檻，現在是什麼等級」。
  */
 export function useAdminAiUsage(settingsSource: Ref<QuotaSettings> = adminSettings) {
-  function quotaFor(provider: AiProviderId): number {
-    return provider === 'gemini'
-      ? settingsSource.value.platformGeminiTokenQuota
-      : settingsSource.value.platformVisionPageQuota
+  if (loadState.value === 'idle') void loadAiUsage()
+
+  function quotaFor(_provider: AiProviderId): number {
+    return settingsSource.value.platformVisionPageQuota
   }
 
   const usages = computed<ProviderUsage[]>(() => {
@@ -111,5 +133,5 @@ export function useAdminAiUsage(settingsSource: Ref<QuotaSettings> = adminSettin
     })
   }
 
-  return { records, usages, alerts, alertCount, trendDates, seriesFor }
+  return { records, loadState, usages, alerts, alertCount, trendDates, seriesFor }
 }

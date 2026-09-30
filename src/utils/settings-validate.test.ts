@@ -62,8 +62,8 @@ describe('AI 平台額度驗證', () => {
   })
 
   it('額度為負數時報錯', () => {
-    const errors = validateSettings({ ...baseSettings(), platformGeminiTokenQuota: -1 })
-    expect(errors.platformGeminiTokenQuota).toBeTruthy()
+    const errors = validateSettings({ ...baseSettings(), platformVisionPageQuota: -1 })
+    expect(errors.platformVisionPageQuota).toBeTruthy()
   })
 
   it('門檻超出 1 到 100 時報錯', () => {

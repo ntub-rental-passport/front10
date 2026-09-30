@@ -71,9 +71,9 @@ describe('quotaPreview', () => {
   it('每個供應商一段；沒設額度就直說', () => {
     expect(
       quotaPreview([
-        { label: 'Gemini API', percent: 40, levelLabel: '正常', unset: false },
-        { label: 'Google Cloud Vision', percent: 0, levelLabel: '正常', unset: true },
+        { label: 'Google Cloud Vision', percent: 40, levelLabel: '正常', unset: false },
+        { label: 'NVIDIA API', percent: 0, levelLabel: '正常', unset: true },
       ]),
-    ).toBe('照這個值：Gemini API 40%（正常）、Google Cloud Vision 未設定額度')
+    ).toBe('照這個值：Google Cloud Vision 40%（正常）、NVIDIA API 未設定額度')
   })
 })

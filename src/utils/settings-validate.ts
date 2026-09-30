@@ -31,9 +31,6 @@ export function validateSettings(settings: SystemSettings): SettingsErrors {
     errors.supportEmail = '請輸入有效的 Email'
   }
 
-  if (!Number.isFinite(settings.platformGeminiTokenQuota) || settings.platformGeminiTokenQuota < 0) {
-    errors.platformGeminiTokenQuota = 'Gemini token 額度不可為負數'
-  }
 
   if (!Number.isFinite(settings.platformVisionPageQuota) || settings.platformVisionPageQuota < 0) {
     errors.platformVisionPageQuota = 'Vision 頁數額度不可為負數'

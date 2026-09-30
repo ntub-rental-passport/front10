@@ -25,7 +25,8 @@ grep -rn 'data-real' src/pages/admin/ src/components/admin/
 
 | 位置 | 內容 |
 |---|---|
-| `pages/admin/index.vue` | 系統健康條（`/api/admin/metrics`）、最近登入 |
+| `pages/admin/index.vue` | 系統健康條（`/api/admin/metrics`）、最近登入、AI 額度（`/api/admin/ai-usage`） |
+| `pages/admin/monitoring.vue` | AI 額度用量（`/api/admin/ai-usage`，OCR 服務回報的 Vision 頁數） |
 | `pages/admin/users.vue` | 四格真實帳號 KPI、註冊來源分布 |
 
 其餘所有後台頁面目前都是展示資料，**照約定不需要標記**。新增區塊時只要

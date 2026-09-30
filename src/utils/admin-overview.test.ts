@@ -246,7 +246,7 @@ describe('buildQueueGroups', () => {
   it('AI 額度告急獨立成一組，排在工單之後', () => {
     const groups = buildQueueGroups(
       [qt('a', 'disputed')],
-      [{ id: 'gemini', label: 'Gemini API 額度告急' }],
+      [{ id: 'vision', label: 'Google Cloud Vision 額度告急' }],
     )
     expect(groups.map((group) => group.kind)).toEqual(['ticket-disputed', 'quota-alert'])
     expect(groups[1].to).toBe('/admin/ai-usage')
