@@ -87,6 +87,13 @@ class QuotaAlertTests(UsageTestCase):
         self.assertEqual(self.alerts(), ['Google Vision 本月額度已用 99%'])
         self.assertIn('告急', admin_notifications.list_for(None)[0]['body'])
 
+    def test_alert_shows_the_same_percent_as_the_page(self):
+        # 95.5%：監控頁用 Math.round 顯示 96%，通知不能寫 95%
+        self.set_quota(200)
+        ai_usage.record('vision', 191, 1, now=at('2026-09-10 10:00'))
+        self.assertEqual(self.alerts(), ['Google Vision 本月額度已用 96%'])
+        self.assertIn('告急門檻（95%）', admin_notifications.list_for(None)[0]['body'])
+
     def test_no_quota_means_no_alert(self):
         self.set_quota(0)
         ai_usage.record('vision', 500, 1, now=at('2026-09-10 10:00'))

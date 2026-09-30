@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, type Component } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, ref, watch, type Component } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
 import {
@@ -229,6 +229,19 @@ const { records, loadState: aiUsageState, usages, trendDates, seriesFor } = useA
 // 每次打開都重讀：用量是 OCR 服務一直在回報的，上次讀到的可能已經舊了
 void loadAiUsage()
 
+// 從額度通知的「查看 AI 用量」、首頁的 AI 額度卡點進來會帶 #ai-usage。這一區在頁面
+// 很下面，要等上面的監控數據與事件紀錄也讀完再捲（不然捲完上面才長出來，又被推走）。
+// 路由沒有全站的 scrollBehavior（加了會動到租客端），所以在這頁自己處理。
+const route = useRoute()
+const aiUsageSection = ref<HTMLElement | null>(null)
+watch(
+  () => route.hash === '#ai-usage' && aiUsageState.value === 'ready' && metricsLoaded.value,
+  (ready) => {
+    if (ready) aiUsageSection.value?.scrollIntoView({ block: 'start' })
+  },
+  { immediate: true, flush: 'post' },
+)
+
 const showAllDays = ref(false)
 
 const unitLabels = { token: 'tokens', page: '頁' } as const
@@ -275,6 +288,8 @@ function formatNumber(value: number): string {
 function daysLeftText(usage: ProviderUsage): string {
   if (usage.unset) return '—'
   if (usage.daysLeft === null) return '目前無消耗'
+  // 向下取整後是 0：剩的不夠一天的平均用量，寫「0 天」像是已經用完
+  if (usage.daysLeft === 0) return '不到 1 天'
   return `${usage.daysLeft} 天`
 }
 </script>
@@ -532,7 +547,12 @@ function daysLeftText(usage: ProviderUsage): string {
       五、AI 額度用量：真實資料。OCR 服務每次呼叫 Google Vision 都會回報頁數
       （backend/admin/ai_usage.py）。讀不到時整區換成提示，不顯示 0 頁、正常。
     -->
-    <section data-real="true" class="space-y-3" aria-labelledby="monitor-ai-usage">
+    <section
+      ref="aiUsageSection"
+      data-real="true"
+      class="scroll-mt-24 space-y-3"
+      aria-labelledby="monitor-ai-usage"
+    >
       <div>
         <div class="flex flex-wrap items-center gap-2">
           <h2 id="monitor-ai-usage" class="text-lg font-bold tracking-tight">AI 額度用量</h2>
