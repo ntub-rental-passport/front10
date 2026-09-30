@@ -1,15 +1,7 @@
 import { computed } from 'vue'
-import { notifMessagesCollection } from './admin/useAdminNotifications'
-import { createAdminCollection } from './admin/useAdminStore'
 import { usePublicContent } from './usePublicContent'
-import { getAuthSession } from './useAuth'
+import { refreshInbox, useInbox } from './useInbox'
 import type { AnnouncementLevel, NotifChannel, NotifSourceType } from '@/src/mocks/admin-seed'
-
-/** 公告是廣播內容，本身沒有收件人；已讀狀態改以「email → 已讀公告 id」記錄 */
-const readAnnouncements = createAdminCollection<Record<string, string[]>>(
-  'read-announcements',
-  () => ({}),
-)
 
 export interface InboxItem {
   /** 跨來源唯一，避免公告與通知 id 相撞 */
@@ -32,15 +24,17 @@ export interface InboxItem {
   actionLabel?: string
 }
 
+/**
+ * 通知中心的收件匣：公告與站內通知合在一起。
+ *
+ * 站內通知與已讀狀態都存在後端（見 useInbox），換一台裝置看到的是同一份。
+ * 公告是廣播內容、本身沒有收件人，已讀記的是「這個人讀過哪幾則公告」。
+ */
 export function useNotifications() {
   // 通知中心是租客端的收件匣，只該收到跟租客身分有關的公告（audience 為 tenant 或 all）。
   const { tenantAnnouncements } = usePublicContent()
-
-  const currentEmail = computed(() => getAuthSession()?.email ?? '')
-
-  const readAnnouncementIds = computed<string[]>(
-    () => readAnnouncements.value[currentEmail.value] ?? [],
-  )
+  const { state, markMessageRead, markAnnouncementRead, markAllRead: markEverythingRead } = useInbox()
+  void refreshInbox()
 
   const announcementItems = computed<InboxItem[]>(() =>
     tenantAnnouncements.value.map((item) => ({
@@ -52,31 +46,28 @@ export function useNotifications() {
       category: '公告',
       channels: [],
       createdAt: item.startAt,
-      read: readAnnouncementIds.value.includes(item.id),
+      read: state.value.readAnnouncementIds.includes(item.id),
       level: item.level,
       sourceType: 'system' as NotifSourceType,
     })),
   )
 
-  const notificationItems = computed<InboxItem[]>(() => {
-    if (!currentEmail.value) return []
-    return notifMessagesCollection.value
-      .filter((item) => item.userEmail === currentEmail.value)
-      .map((item) => ({
-        key: `nm:${item.id}`,
-        sourceId: item.id,
-        source: 'notification' as const,
-        title: item.title,
-        body: item.body,
-        category: item.category,
-        channels: item.channels,
-        createdAt: item.createdAt,
-        read: item.read,
-        sourceType: item.sourceType,
-        actionUrl: item.actionUrl,
-        actionLabel: item.actionLabel,
-      }))
-  })
+  const notificationItems = computed<InboxItem[]>(() =>
+    state.value.messages.map((item) => ({
+      key: `nm:${item.id}`,
+      sourceId: item.id,
+      source: 'notification' as const,
+      title: item.title,
+      body: item.body,
+      category: item.category,
+      channels: item.channels,
+      createdAt: item.createdAt,
+      read: item.read,
+      sourceType: item.sourceType,
+      actionUrl: item.actionUrl,
+      actionLabel: item.actionLabel,
+    })),
+  )
 
   /** 公告與通知合併成單一收件匣，新到舊排序 */
   const inboxItems = computed<InboxItem[]>(() =>
@@ -87,29 +78,14 @@ export function useNotifications() {
 
   const unreadCount = computed(() => inboxItems.value.filter((item) => !item.read).length)
 
-  function markAnnouncementRead(id: string): void {
-    const email = currentEmail.value
-    if (!email) return
-    const current = readAnnouncements.value[email] ?? []
-    if (current.includes(id)) return
-    readAnnouncements.value = {
-      ...readAnnouncements.value,
-      [email]: [...current, id],
-    }
-  }
-
   function markRead(item: InboxItem): void {
     if (item.read) return
-    if (item.source === 'announcement') {
-      markAnnouncementRead(item.sourceId)
-      return
-    }
-    const target = notifMessagesCollection.value.find((entry) => entry.id === item.sourceId)
-    if (target) target.read = true
+    if (item.source === 'announcement') markAnnouncementRead(item.sourceId)
+    else markMessageRead(item.sourceId)
   }
 
   function markAllRead(): void {
-    for (const item of inboxItems.value) markRead(item)
+    markEverythingRead(announcementItems.value.map((item) => item.sourceId))
   }
 
   return { inboxItems, unreadCount, markRead, markAllRead }

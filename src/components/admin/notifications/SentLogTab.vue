@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Label } from '@/components/ui/label/index'
@@ -12,7 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { useAdminNotifications, TEST_SOURCE_LABEL } from '@/src/composables/admin/useAdminNotifications'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
+import {
+  followPendingEmails,
+  loadMessages,
+  useAdminNotifications,
+  TEST_SOURCE_LABEL,
+} from '@/src/composables/admin/useAdminNotifications'
 import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { groupIntoBatches, singleRecipientOf, type NotifBatch } from '@/src/utils/notif-batch'
 import { formatDateTime } from '@/src/utils/admin-format'
@@ -26,7 +32,12 @@ import {
 } from '@/src/utils/notif-stats'
 
 const router = useRouter()
-const { messages } = useAdminNotifications()
+const { messages, messagesState } = useAdminNotifications()
+
+// Email 在後端背景寄，每次打開都重讀一次，才看得到「待送」變成「已寄出」或「失敗」
+onMounted(() => {
+  if (messagesState.value === 'ready') void loadMessages().then(() => followPendingEmails())
+})
 const { users } = useAdminUsers()
 
 // 一次發送一列。逐筆展開會讓一次 57 人的群發塞滿整頁，把先前的紀錄推出視野；
@@ -60,6 +71,7 @@ function openDetail(batch: NotifBatch): void {
 
 <template>
   <div class="space-y-4">
+    <AdminLoadNotice :state="messagesState" what="發送紀錄" @retry="loadMessages" />
     <!-- 有測試發送才出現這一行；平常不要多一個永遠用不到的開關 -->
     <div v-if="testCount > 0" class="flex items-center justify-end gap-2 text-sm">
       <Label for="show-tests" class="mb-0 text-foreground/70">
@@ -119,7 +131,7 @@ function openDetail(batch: NotifBatch): void {
           </TableCell>
         </TableRow>
 
-        <TableRow v-if="batches.length === 0">
+        <TableRow v-if="batches.length === 0 && messagesState === 'ready'">
           <TableCell colspan="5" class="py-8 text-center text-foreground/70">
             尚無發送紀錄。
           </TableCell>

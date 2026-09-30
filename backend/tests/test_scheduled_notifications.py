@@ -90,9 +90,9 @@ class ScheduledNotificationTests(unittest.TestCase):
             self.create(body='')
 
     def test_channels_the_backend_cannot_deliver_are_rejected(self):
-        # 站內與推播後端送不出去。悄悄收下再不送，就是這個功能要避免的謊。
+        # 推播後端送不出去。悄悄收下再不送，就是這個功能要避免的謊。
         with self.assertRaises(ValueError):
-            self.create(channels=['inapp'])
+            self.create(channels=['push'])
         with self.assertRaises(ValueError):
             self.create(channels=['email', 'push'])
         with self.assertRaises(ValueError):
@@ -216,13 +216,67 @@ class ScheduledNotificationTests(unittest.TestCase):
         self.dispatch(emails=['new-tenant@example.com'])
         self.assertEqual([address for address, _, _ in self.sent], ['new-tenant@example.com'])
 
+    # -------------------- 站內（2026-09-30 起） --------------------
+
+    ACCOUNTS = [
+        {'id': 1, 'email': 'a@example.com', 'status': 'active', 'roles': {'tenant'}},
+        {'id': 2, 'email': 'b@example.com', 'status': 'active', 'roles': {'landlord'}},
+        {'id': 3, 'email': 'admin@example.com', 'status': 'active', 'roles': {'admin', 'tenant'}},
+    ]
+
+    def test_all_tenants_really_finds_the_tenants(self):
+        # 前端送 user，資料庫存 tenant。以前直接拿 user 比對，「全部租客」永遠是 0 人
+        from notifications import inbox_service
+
+        with patch.object(inbox_service, '_load_accounts', return_value=self.ACCOUNTS):
+            self.assertEqual(service._default_resolve({'kind': 'role', 'role': 'user'}), ['a@example.com'])
+            self.assertEqual(service._default_resolve({'kind': 'role', 'role': 'all'}), ['a@example.com', 'b@example.com'])
+
+    def test_inapp_schedule_lands_in_the_inbox_with_the_email_results(self):
+        from notifications import inbox_service
+
+        with patch.dict(os.environ, {'NOTIFICATION_INBOX_DB': self.temp.name + '/inbox.db'}), \
+                patch.object(inbox_service, '_load_accounts', return_value=self.ACCOUNTS):
+            item = self.create(channels=['inapp', 'email'])
+
+            def fail_for_b(address, title, body):
+                if address == 'b@example.com':
+                    raise OSError('mailbox unavailable')
+
+            self.dispatch(send=fail_for_b)
+            messages = inbox_service.list_messages()
+            row = next(r for r in service.list_all() if r['id'] == item['id'])
+
+        self.assertEqual(
+            sorted((m['userEmail'], m['deliveryStatus']['inapp'], m['deliveryStatus']['email']) for m in messages),
+            [('a@example.com', 'sent', 'sent'), ('b@example.com', 'sent', 'failed')],
+        )
+        self.assertEqual({m['batchId'] for m in messages}, {f"sched-{item['id']}"})
+        self.assertEqual(row['status'], 'sent')
+        self.assertEqual(row['result']['inapp'], {'sent': 2})
+
+    def test_inapp_only_schedule_is_audited_by_inbox_count(self):
+        from admin import audit_service
+
+        self.create(channels=['inapp'])
+        service.dispatch_due(
+            now=datetime.now(service.TZ) + self.LEAD + timedelta(minutes=1),
+            resolve=lambda recipient: ['a@example.com'],
+            send_email=self.fake_send,
+            deliver_inapp=lambda emails, row, states: len(emails),
+        )
+        self.assertEqual(self.sent, [])
+        self.assertIn('站內送到 1 人', [e['detail'] for e in audit_service.list_events()])
+
     # -------------------- capabilities --------------------
 
     def test_capabilities_says_why_a_channel_is_unavailable(self):
         caps = service.capabilities()
         self.assertTrue(caps['email'])
-        self.assertFalse(caps['inapp'])
-        self.assertIn('瀏覽器', caps['unsupportedReason']['inapp'])
+        # 收件匣搬到後端之後，站內排程也送得到了
+        self.assertTrue(caps['inapp'])
+        self.assertFalse(caps['push'])
+        self.assertIn('訂閱', caps['unsupportedReason']['push'])
 
 
     # -------------------- 監控事件 --------------------

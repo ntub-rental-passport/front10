@@ -1,9 +1,8 @@
 /**
  * 後台排程通知的 API。
  *
- * 這是整個通知功能裡**唯一真的打後端**的部分。立即發送仍然寫 localStorage
- * （見 notificationApi.ts），但排程不行 —— 排程的重點就是「沒人開著瀏覽器
- * 的時候也要送出去」，那件事只有後端做得到。
+ * 排程的重點是「沒人開著瀏覽器的時候也要送出去」，所以由後端到時間寄出。
+ * 立即發送走另一支 API（inboxApi.ts），兩者的收件人規則相同。
  *
  * 後端：backend/scheduled_notification_service.py（SQLite 佇列 + 每 20 秒
  * 醒來的 dispatcher），端點在 backend/routers/scheduled_notifications.py。
@@ -51,7 +50,7 @@ function authHeaders(): Record<string, string> {
  * 吞掉換成「操作失敗」等於要他自己猜。
  */
 async function failureOf(response: Response): Promise<Error> {
-  let detail = ''
+  let detail: string
   try {
     detail = ((await response.json()) as { detail?: string }).detail ?? ''
   } catch {

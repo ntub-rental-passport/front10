@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/i
 import { Input } from '@/components/ui/input/index'
 import { Progress } from '@/components/ui/progress/index'
 import { ArrowLeft } from 'lucide-vue-next'
-import { useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
+import { followPendingEmails, loadMessages, useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
 import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { groupIntoBatches } from '@/src/utils/notif-batch'
 import { formatDateTime } from '@/src/utils/admin-format'
@@ -22,7 +23,12 @@ import { useRegisterAdminPageTitle } from '@/src/composables/admin/useAdminPageT
 const route = useRoute()
 const router = useRouter()
 
-const { messages } = useAdminNotifications()
+const { messages, messagesState } = useAdminNotifications()
+
+// Email 在後端背景寄，每次打開都重讀一次，才看得到「待送」變成「已寄出」或「失敗」
+onMounted(() => {
+  if (messagesState.value === 'ready') void loadMessages().then(() => followPendingEmails())
+})
 const { users } = useAdminUsers()
 
 const batchId = computed(() => String(route.params.batchId ?? ''))
@@ -178,6 +184,11 @@ const filteredRecipients = computed(() => {
         </div>
       </CardContent>
     </Card>
+  </div>
+
+  <!-- 直接打開詳情頁時，發送紀錄還在讀：讀完之前不能說「找不到」 -->
+  <div v-else-if="messagesState !== 'ready'" class="py-16">
+    <AdminLoadNotice :state="messagesState" what="發送紀錄" @retry="loadMessages" />
   </div>
 
   <div v-else class="space-y-4 py-16 text-center">

@@ -27,7 +27,6 @@ import {
 import { ArrowLeft, ChevronDown, ChevronRight, Send, X } from 'lucide-vue-next'
 import NotifPreviewCard from '@/src/components/admin/notifications/NotifPreviewCard.vue'
 import { useAdminNotifications, TEST_SOURCE_LABEL, ONE_OFF_SOURCE_LABEL, type NotifRecipient } from '@/src/composables/admin/useAdminNotifications'
-import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { useNow } from '@/src/composables/useNow'
 import { useRegisterAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import { getAuthSession } from '@/src/composables/useAuth'
@@ -80,8 +79,7 @@ const route = useRoute()
 const router = useRouter()
 const now = useNow()
 
-const { templates, sendComposed, resolveRecipients } = useAdminNotifications()
-const { users } = useAdminUsers()
+const { templates, sendComposed } = useAdminNotifications()
 
 const CATEGORY_OPTIONS: NotifCategory[] = ['系統', '租約', '補貼', '帳務']
 const CHANNEL_OPTIONS: { key: NotifChannel; label: string }[] = [
@@ -220,12 +218,12 @@ const realUsers = ref<AdminAccount[] | null>(null)
 const realUsersLoading = ref(false)
 let realUsersController: AbortController | undefined
 
-// 排程的收件人由後端從 users 表算，所以排程模式必須用真實帳號那份名單。
-// 只在切到排程時才去拉，立即發送用不到。
+// 立即發送與排程的收件人都由後端從 users 表算（2026-09-30 以前立即發送用的是
+// 瀏覽器裡的示範帳號），所以兩種模式都用真實帳號那份名單，畫面上的人數才對得上。
 watch(
   when,
   async (value) => {
-    if (value !== 'schedule' || realUsers.value !== null) return
+    if (realUsers.value !== null) return
     realUsersLoading.value = true
     realUsersController?.abort()
     realUsersController = new AbortController()
@@ -239,27 +237,17 @@ onBeforeUnmount(() => realUsersController?.abort())
 
 const isSchedule = computed(() => when.value === 'schedule')
 
-/** 目前這個模式下「候選人」是誰。兩份名單欄位不同，統一轉成同一種格式。 */
-const candidates = computed<AudienceCandidate[]>(() => {
-  if (isSchedule.value) {
-    return (realUsers.value ?? []).map((row) => ({
-      email: row.email,
-      name: row.displayName,
-      roles: row.roles,
-      active: row.status === 'active',
-    }))
-  }
-  return users.value.map((user) => ({
-    email: user.email,
-    name: user.nickname,
-    roles: [user.role],
-    active: user.status === 'active',
-  }))
-})
-
-const audienceUnavailable = computed(
-  () => isSchedule.value && realUsers.value === null && !realUsersLoading.value,
+/** 候選人：後端的真實帳號，轉成 notif-audience 認得的格式 */
+const candidates = computed<AudienceCandidate[]>(() =>
+  (realUsers.value ?? []).map((row) => ({
+    email: row.email,
+    name: row.displayName,
+    roles: row.roles,
+    active: row.status === 'active',
+  })),
 )
+
+const audienceUnavailable = computed(() => realUsers.value === null && !realUsersLoading.value)
 
 const audience = computed(() => {
   if (recipientKind.value === 'users') {
@@ -456,17 +444,13 @@ const blockingIssue = computed<string | null>(() => {
     return '標題與內文都要填。'
   }
   if (actionIssue.value) return actionIssue.value
+  if (channels.value.length === 0) return '請至少選擇一種管道。'
   if (isSchedule.value) {
-    // 排程由後端寄 Email，站內與推播後端送不出去（收件匣在瀏覽器裡）
-    if (!channels.value.includes('email')) return '排程只送得出 Email，請把 Email 管道打開。'
-    if (channels.value.some((item) => item !== 'email')) {
-      return '排程只能寄 Email，站內通知與推播不支援排程。'
-    }
+    // 推播需要每位使用者的裝置訂閱，後端到時間送不出去
+    if (channels.value.includes('push')) return '排程不支援推播，請把推播管道關掉。'
     if (scheduledAt.value === '') return '請選擇預定時間。'
-    if (audienceUnavailable.value) return '讀不到後端的帳號清單，無法確認會送給誰。'
-  } else if (channels.value.length === 0) {
-    return '請至少選擇一種管道。'
   }
+  if (audienceUnavailable.value) return '讀不到後端的帳號清單，無法確認會送給誰。'
   if (audience.value.total === 0) return '目前沒有符合條件的收件人。'
   return null
 })
@@ -563,11 +547,7 @@ async function performSend(): Promise<void> {
 }
 
 const confirmCount = computed(() =>
-  recipientKind.value === 'users'
-    ? recipientEmails.value.length
-    : isSchedule.value
-      ? audience.value.total
-      : resolveRecipients(currentRecipient.value).length,
+  recipientKind.value === 'users' ? recipientEmails.value.length : audience.value.total,
 )
 </script>
 
@@ -778,18 +758,18 @@ const confirmCount = computed(() =>
           </div>
 
           <!--
-            這段是整頁最重要的一句話。兩種送法走的是完全不同的路徑，
-            連「收件人是誰」都不一樣 —— 不寫出來的話管理員不可能知道。
+            這段是整頁最重要的一句話：兩種送法能用的管道不一樣，
+            不寫出來的話管理員不可能知道。
           -->
           <div class="rounded-xl bg-muted/40 p-3 text-xs leading-relaxed text-foreground/70">
             <template v-if="isSchedule">
               <span class="font-medium text-foreground">排程由系統執行</span>，到時間會自己寄出，
               不需要開著後台。收件人是<span class="font-medium text-foreground">已註冊的帳號</span>，
-              而且在送出當下才計算。排程只會寄 Email。
+              而且在送出當下才計算。排程可以送站內與 Email，不能送推播。
             </template>
             <template v-else>
-              <span class="font-medium text-foreground">立即發送的站內通知只存在這台瀏覽器</span>，
-              其他裝置上看不到；Email 與推播會標成「待接通」。
+              <span class="font-medium text-foreground">立即發送會馬上送進收件人的站內收件匣</span>，
+              勾了 Email 的話後端會接著寄信。推播還沒接通，會標成「待接通」。
             </template>
           </div>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupIntoBatches, inferBatchId, migrateNotifBatches, singleRecipientOf } from './notif-batch'
+import { groupIntoBatches, inferBatchId, singleRecipientOf } from './notif-batch'
 import type { UserNotification } from '@/src/mocks/admin/notifications'
 
 function make(overrides: Partial<UserNotification> = {}): UserNotification {
@@ -37,30 +37,6 @@ describe('inferBatchId', () => {
     const a = make({ createdAt: '2026-08-01T10:00:00.000Z' })
     const b = make({ createdAt: '2026-08-01T10:00:01.000Z' })
     expect(inferBatchId(a)).not.toBe(inferBatchId(b))
-  })
-})
-
-describe('migrateNotifBatches', () => {
-  it('沒有 batchId 的舊資料會依標題與時間補上，同一次發送歸成一批', () => {
-    const list = [
-      make({ id: 'nm-1', userEmail: 'a@example.com', batchId: undefined as unknown as string }),
-      make({ id: 'nm-2', userEmail: 'b@example.com', batchId: undefined as unknown as string }),
-    ]
-    const migrated = migrateNotifBatches(list)
-    expect(migrated[0].batchId).toBeTruthy()
-    expect(migrated[0].batchId).toBe(migrated[1].batchId)
-  })
-
-  it('已經有 batchId 就不覆蓋', () => {
-    const migrated = migrateNotifBatches([make({ batchId: 'nb-keep' })])
-    expect(migrated[0].batchId).toBe('nb-keep')
-  })
-
-  it('不動其他欄位', () => {
-    const original = make({ read: true, userEmail: 'keep@example.com' })
-    const migrated = migrateNotifBatches([original])
-    expect(migrated[0].read).toBe(true)
-    expect(migrated[0].userEmail).toBe('keep@example.com')
   })
 })
 

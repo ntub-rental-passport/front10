@@ -5,18 +5,22 @@
  * 純數字防得了「按錯條件」，防不了「這批人對不對」—— 所以這裡連前幾個人
  * 的名字一起算出來，讓人在轟炸 128 個人之前有機會發現自己選成了房東。
  *
- * ## 兩份名單，同一套規則
+ * ## 跟後端同一套規則
  *
- * 立即發送算的是後台那份 localStorage 示範資料；排程發送算的是後端 MySQL
- * 的真實帳號（GET /api/admin/users）。兩邊的欄位長得不一樣，但「誰算租客」
- * 的規則必須一致，否則畫面說 128 人、實際送給 130 人。
+ * 立即發送與排程都由後端從 MySQL 的真實帳號解析收件人（inbox_service.resolve_recipients），
+ * 畫面上的人數用的是同一份帳號清單（GET /api/admin/users），規則必須一致，
+ * 否則畫面說 128 人、實際送給 130 人：停用帳號不算、admin 不算。
  *
- * 所以這個檔案只認一種中間格式（AudienceCandidate），由呼叫端各自轉進來。
- * 規則本身對齊後端的 scheduled_notification_service._default_resolve：
- * 停用帳號不算、admin 不算。
+ * 呼叫端把帳號轉成中間格式（AudienceCandidate）再交進來。
  */
 
 export type AudienceKind = 'all' | 'user' | 'landlord'
+
+/**
+ * 收件人代碼 → 資料庫的身分。「全部租客」的代碼是 user（沿用已存的排程資料），
+ * 但帳號上的身分是 tenant —— 以前直接拿 user 比對，全部租客永遠是 0 人。
+ */
+const ROLE_OF: Record<Exclude<AudienceKind, 'all'>, string> = { user: 'tenant', landlord: 'landlord' }
 
 export interface AudienceCandidate {
   email: string
@@ -51,14 +55,14 @@ export const AUDIENCE_LABEL: Record<AudienceKind, string> = {
  * 管理員永遠不算在廣播對象裡。
  *
  * 不是因為他們不重要，而是因為「全部使用者」在後台的語意一直是
- * 「所有一般使用者」（resolveRecipients 從一開始就先濾掉 admin）。
+ * 「所有一般使用者」（後端解析收件人時也先濾掉 admin）。
  * 讓廣播把管理員自己也炸一遍，只會讓人以後不敢按那顆按鈕。
  */
 export function matchesAudience(candidate: AudienceCandidate, kind: AudienceKind): boolean {
   if (!candidate.active) return false
   if (candidate.roles.includes('admin')) return false
-  if (kind === 'all') return true
-  return candidate.roles.includes(kind)
+  if (kind === 'all') return candidate.roles.some((role) => role === 'tenant' || role === 'landlord')
+  return candidate.roles.includes(ROLE_OF[kind])
 }
 
 export function buildAudience(

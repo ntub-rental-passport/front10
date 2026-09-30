@@ -23,9 +23,6 @@ export function inferBatchId(item: Pick<UserNotification, 'title' | 'createdAt'>
   return `legacy:${item.createdAt}:${item.title}`
 }
 
-export function migrateNotifBatches(list: UserNotification[]): UserNotification[] {
-  return list.map((item) => (item.batchId ? item : { ...item, batchId: inferBatchId(item) }))
-}
 
 /**
  * 收件人條件在舊資料裡沒有記錄，只能從批次大小回推：
