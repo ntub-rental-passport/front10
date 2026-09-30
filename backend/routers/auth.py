@@ -705,9 +705,10 @@ def start_registration(
         provider_subject = str(account.get("subject") or "")
         display_name = str(account.get("name")) if account.get("name") else None
         avatar_url = str(account.get("picture")) if account.get("picture") else None
-        role = str(token_payload.get("role") or role)
-        if role not in ALLOWED_ROLES:
-            raise HTTPException(status_code=422, detail="role-mismatch")
+        # 身分用註冊頁上選的那個（payload.role，上面已擋掉 tenant／landlord 以外的值），
+        # 不用 Google 票券裡的。票券裡那個只是「按 Google 之前停在哪個分頁」——
+        # 從登入頁的租客分頁按 Google 的人，回到註冊頁就再也改不成房東（2026-09-30 修）。
+        # 租客與房東都是註冊時自選的身分，不是權限邊界；管理員一律走 /staff-login。
         if not provider_subject:
             raise HTTPException(status_code=401, detail="Google 註冊資料缺少帳號識別碼。")
     else:
