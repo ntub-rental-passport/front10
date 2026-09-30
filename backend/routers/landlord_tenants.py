@@ -311,6 +311,7 @@ def update_tenant(tenant_id: int, payload: TenantPayload, db: Session = Depends(
     property_item, room = _resolve_room(db, landlord.id, payload); _assert_no_overlap(db, room.id, payload.lease_start, payload.lease_end, lease.id if lease else None)
     for field in ("name", "phone", "email", "birth_date", "contact_address", "emergency_name", "emergency_phone", "notes"):
         setattr(tenant, field, getattr(payload, field))
+    tenant.email = payload.email.strip().lower() if payload.email else None
     if payload.national_id:
         tenant.national_id = payload.national_id
     if not lease:

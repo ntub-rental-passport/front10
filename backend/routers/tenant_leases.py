@@ -1,6 +1,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from db.database import get_db
@@ -24,7 +25,7 @@ def list_tenant_leases(
             joinedload(LandlordTenant.leases).joinedload(LandlordLease.room),
         )
         .filter(
-            LandlordTenant.email == current_user.email,
+            func.lower(func.trim(LandlordTenant.email)) == current_user.email.strip().lower(),
             LandlordTenant.deleted_at.is_(None),
         )
         .all()

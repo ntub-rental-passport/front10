@@ -51,6 +51,37 @@ class TenantLeaseScopeTest(unittest.TestCase):
         self.assertEqual(result["items"][0]["room"], "101")
         self.assertTrue(result["items"][0]["effective"])
 
+    def test_legacy_email_whitespace_and_case_still_link_to_account(self):
+        profile = self.db.query(LandlordTenant).filter_by(email=self.current_user.email).one()
+        profile.email = "  Tenant@Example.COM  "
+        self.db.commit()
+        result = list_tenant_leases(db=self.db, current_user=self.current_user)
+        self.assertEqual([item["room"] for item in result["items"]], ["101"])
+        self.assertTrue(result["items"][0]["effective"])
+
+    def test_inactive_leases_remain_ineligible_for_repairs(self):
+        profile = self.db.query(LandlordTenant).filter_by(email=self.current_user.email).one()
+        lease = profile.leases[0]
+        today = date.today()
+        for changes in [
+            {"status": "pending"},
+            {"status": "ended"},
+            {"status": "terminated"},
+            {"start_date": today + timedelta(days=1)},
+            {"end_date": today - timedelta(days=1)},
+            {"moved_out_at": today},
+        ]:
+            with self.subTest(changes=changes):
+                lease.status = "active"
+                lease.start_date = today - timedelta(days=1)
+                lease.end_date = today + timedelta(days=30)
+                lease.moved_out_at = None
+                for field, value in changes.items():
+                    setattr(lease, field, value)
+                self.db.commit()
+                result = list_tenant_leases(db=self.db, current_user=self.current_user)
+                self.assertFalse(result["items"][0]["effective"])
+
 
 if __name__ == "__main__":
     unittest.main()
