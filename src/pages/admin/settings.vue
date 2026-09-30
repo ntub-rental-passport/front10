@@ -105,7 +105,6 @@ function clock(): string {
 const AUDIT_KEYS = ['auditRetentionDays'] as const
 const REMINDER_KEYS = ['maintenanceOverdueDays', 'subscriptionExpiringSoonDays'] as const
 const QUOTA_KEYS = [
-  'platformGeminiTokenQuota',
   'platformVisionPageQuota',
   'quotaWarnPercent',
   'quotaCriticalPercent',
@@ -565,11 +564,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             </div>
             <div class="space-y-4 md:col-span-3">
               <div class="grid gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-                <div class="space-y-2">
-                  <Label for="platformGeminiTokenQuota">Gemini 每月 token 上限</Label>
-                  <Input id="platformGeminiTokenQuota" v-model.number="draft.platformGeminiTokenQuota" type="number" class="max-w-[9rem]" min="0" />
-                  <p v-if="errors.platformGeminiTokenQuota" class="text-sm text-destructive">{{ errors.platformGeminiTokenQuota }}</p>
-                </div>
                 <div class="space-y-2">
                   <Label for="platformVisionPageQuota">Vision 每月頁數上限（頁）</Label>
                   <Input id="platformVisionPageQuota" v-model.number="draft.platformVisionPageQuota" type="number" class="max-w-[9rem]" min="0" />

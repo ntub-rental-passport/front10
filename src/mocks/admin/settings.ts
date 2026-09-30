@@ -16,7 +16,6 @@ export interface SystemSettings {
   subscriptionExpiringSoonDays: number
   // 以下為「平台向 AI 廠商購買的額度」，也就是成本側的總量。
   // 單一使用者能用幾次是方案權益，存在 SubscriptionPlan.features，不在這裡。
-  platformGeminiTokenQuota: number
   platformVisionPageQuota: number
   quotaWarnPercent: number
   quotaCriticalPercent: number
@@ -41,7 +40,6 @@ export function seedSettings(): SystemSettings {
     auditRetentionDays: 90,
     maintenanceOverdueDays: 7,
     subscriptionExpiringSoonDays: 14,
-    platformGeminiTokenQuota: 2_000_000,
     platformVisionPageQuota: 3_000,
     quotaWarnPercent: 80,
     quotaCriticalPercent: 95,

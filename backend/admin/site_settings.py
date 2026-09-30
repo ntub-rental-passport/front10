@@ -78,9 +78,6 @@ FIELDS: dict[str, Field] = {
     'subscriptionExpiringSoonDays': Field(
         '訂閱到期提醒天數', 'number', 14, unit='天', minimum=1, maximum=90, range_message='到期提醒天數需介於 1 到 90 天',
     ),
-    'platformGeminiTokenQuota': Field(
-        'Gemini 每月 token 上限', 'number', 2_000_000, minimum=0, range_message='Gemini token 額度不可為負數',
-    ),
     'platformVisionPageQuota': Field(
         'Vision 每月頁數上限', 'number', 3_000, unit='頁', minimum=0, range_message='Vision 頁數額度不可為負數',
     ),

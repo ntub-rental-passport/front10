@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken'
 import { PDFDocument } from 'pdf-lib'
 import vision from '@google-cloud/vision'
 import { getOllamaConfig, reviewContractFieldsWithOllama } from './ollama-contract.js'
+import { createUsageReporter } from './usage-reporter.js'
 import { analyzeContractFields, collectRelevantSnippets } from './contract-field-gate.js'
 import {
   createVisionPagePlaceholder,
@@ -41,12 +42,21 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: '未登入，請先登入後再使用 OCR 功能。' })
   }
   try {
-    req.user = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] })
+    const payload = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] })
+    // 同一把鑰匙也簽了回報用量用的服務憑證（見 usage-reporter.js）：沒有使用者 id 的不算登入
+    if (!payload?.sub) throw new Error('not a login token')
+    req.user = payload
     return next()
   } catch {
     return res.status(401).json({ error: '登入已過期或憑證無效，請重新登入。' })
   }
 }
+
+// Vision 用量回報給 FastAPI（見 usage-reporter.js）。容器裡是 http://fastapi:8000
+const usageReporter = createUsageReporter({
+  secret: jwtSecret,
+  baseUrl: (process.env.FASTAPI_INTERNAL_URL || 'http://127.0.0.1:8000').replace(/\/$/, ''),
+})
 
 const port = Number(process.env.OCR_API_PORT || 8787)
 const maxFileSizeMb = Number(process.env.OCR_MAX_FILE_SIZE_MB || 20)
@@ -276,6 +286,7 @@ async function recognizeImage(buffer, languageHints, sourceFileIndex, onProgress
   onProgress?.(0.05, '圖片已送交 Google OCR，等待辨識結果')
   let startedAt = performance.now()
   const [result] = await imageClient.documentTextDetection(request)
+  usageReporter.record(1)
   const googleVisionMs = performance.now() - startedAt
   onProgress?.(0.9, 'Google OCR 已回傳圖片辨識結果，正在整理文字')
   startedAt = performance.now()
@@ -337,6 +348,7 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
       const [pageResult] = await fileClient.batchAnnotateFiles({
         requests: [createFileRequest([pageNumber])],
       })
+      usageReporter.record(1)
       googleVisionMs += performance.now() - startedAt
       const fileResponse = pageResult.responses?.[0]
       const pageResponses = fileResponse?.responses ?? []
@@ -373,6 +385,8 @@ async function recognizeDocument(buffer, mimeType, languageHints, sourceFileInde
     const [result] = await fileClient.batchAnnotateFiles({
       requests: [createFileRequest(undefined)],
     })
+    // 多頁的 TIFF 之類：Vision 每頁各回一個 response，每頁各算一次
+    usageReporter.record(Math.max(1, result.responses?.[0]?.responses?.length ?? 0))
     googleVisionMs += performance.now() - startedAt
     const responses = result.responses?.[0]?.responses ?? []
     startedAt = performance.now()

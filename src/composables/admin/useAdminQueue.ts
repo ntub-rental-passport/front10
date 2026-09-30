@@ -14,15 +14,14 @@ import { buildQueueGroups, queueTotal, type QueueGroup } from '@/src/utils/admin
  * 有人改了其中一邊的聚合參數（例如預覽筆數、或多納入一種待辦），畫面上就會
  * 出現「徽章說 18 件、抽屜列出 14 件」這種對不起來的狀況 —— 而且不會報錯。
  *
- * 底層的 useAdminMaintenance 與 useAdminAiUsage 都是模組層的
- * createAdminCollection（全域單例），所以這裡重複呼叫不會產生第二份狀態，
- * 三個消費者拿到的一定是同一批資料。
+ * 底層的 useAdminMaintenance 與 useAdminAiUsage 都是模組層的單例
+ * （前者是 createAdminCollection，後者是從後端讀來的 ref），所以這裡重複呼叫
+ * 不會產生第二份狀態，三個消費者拿到的一定是同一批資料。
  *
  * ## 資料性質
  *
- * ⚠️ 目前整份佇列都是展示資料：工單來自 src/mocks 的 seedMaintenanceTickets，
- * 額度告急來自 seedAiUsage。這裡沒有任何後端呼叫。使用它的區塊不要標成真實
- * 資料（見各頁 data-real 的用法）。
+ * 工單仍是展示資料（src/mocks 的 seedMaintenanceTickets）；額度告急是真的，
+ * 來自後端記的 Google Vision 用量（backend/admin/ai_usage.py）。
  */
 export interface AdminQueue {
   groups: ComputedRef<QueueGroup[]>

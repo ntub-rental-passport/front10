@@ -11,7 +11,7 @@ import type { AiUsageDaily } from '@/src/mocks/admin/ai-usage'
 // 2026-08-10（週一）當作「今天」，當月共 31 天
 const TODAY = new Date(2026, 7, 10)
 
-function rec(date: string, units: number, provider: AiUsageDaily['provider'] = 'gemini'): AiUsageDaily {
+function rec(date: string, units: number, provider: AiUsageDaily['provider'] = 'vision'): AiUsageDaily {
   return { date, provider, units, calls: 1 }
 }
 
@@ -21,13 +21,14 @@ describe('monthToDateUnits', () => {
       rec('2026-08-01', 100),
       rec('2026-08-10', 50),
       rec('2026-07-31', 999), // 上月，不計
-      rec('2026-08-05', 777, 'vision'), // 別的供應商，不計
+      // 之後會有別的供應商（NVIDIA 等），不能算進 Vision
+      rec('2026-08-05', 777, 'nvidia' as AiUsageDaily['provider']),
     ]
-    expect(monthToDateUnits(records, 'gemini', TODAY)).toBe(150)
+    expect(monthToDateUnits(records, 'vision', TODAY)).toBe(150)
   })
 
   it('沒有資料時回 0', () => {
-    expect(monthToDateUnits([], 'gemini', TODAY)).toBe(0)
+    expect(monthToDateUnits([], 'vision', TODAY)).toBe(0)
   })
 })
 
@@ -37,18 +38,18 @@ describe('dailyAverage', () => {
     const records = Array.from({ length: 7 }, (_, i) =>
       rec(`2026-08-${`${i + 4}`.padStart(2, '0')}`, 70),
     )
-    expect(dailyAverage(records, 'gemini', TODAY)).toBe(70)
+    expect(dailyAverage(records, 'vision', TODAY)).toBe(70)
   })
 
   it('當月已過天數不足 7 天時，以實際天數為除數', () => {
     const earlyMonth = new Date(2026, 7, 3) // 8/3，當月只過了 3 天
     const records = [rec('2026-08-01', 30), rec('2026-08-02', 30), rec('2026-08-03', 30)]
     // 除數是 3 不是 7
-    expect(dailyAverage(records, 'gemini', earlyMonth)).toBe(30)
+    expect(dailyAverage(records, 'vision', earlyMonth)).toBe(30)
   })
 
   it('沒有用量時回 0，不回 NaN', () => {
-    expect(dailyAverage([], 'gemini', TODAY)).toBe(0)
+    expect(dailyAverage([], 'vision', TODAY)).toBe(0)
   })
 })
 
