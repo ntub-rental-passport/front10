@@ -15,6 +15,8 @@ class MonitoringTests(unittest.TestCase):
             'MONITOR_DB': self.temp.name + '/monitoring.db',
             'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
             'GARBAGE_REMINDER_DB': self.temp.name + '/garbage.db',
+            # 服務斷線／恢復會通知管理員 —— 不指到暫存檔的話會寫進真的通知中心
+            'ADMIN_NOTIFICATIONS_DB': self.temp.name + '/admin-notifications.db',
         })
         self.env.start()
 

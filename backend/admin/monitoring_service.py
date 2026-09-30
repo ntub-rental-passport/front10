@@ -422,7 +422,30 @@ def run_checks(now: float | None = None) -> None:
         if result is None:
             continue  # 沒有設定這個服務，不記「壞掉」—— 它本來就不存在
         ok, detail = result
-        record_check(service, ok, detail, now)
+        kind = record_check(service, ok, detail, now)
+        if kind:
+            _alert_transition(service, kind, detail)
+
+
+def _alert_transition(service: str, kind: str, detail: str | None) -> None:
+    """服務斷線與恢復各通知管理員一次（admin_notifications.py）。還是壞的時候不會再通知。"""
+    from admin import admin_notifications
+
+    label = SERVICE_LABELS.get(service, service)
+    if kind == 'down':
+        reason = f'{detail}。' if detail else '檢查沒有回應。'
+        body = f'{reason}後端每 60 秒會再檢查一次，恢復時會再通知。'
+        admin_notifications.record_alert(f'{label}連不上', body, action_url='/admin/monitoring', action_label='查看監控')
+        return
+    latest = next((e for e in list_events(limit=5, kinds=['recovered']) if e.get('service') == service), None)
+    duration = latest.get('durationSeconds') if latest else None
+    if duration is None:
+        body = '服務已經恢復正常。'
+    else:
+        from admin.site_settings import duration_label
+
+        body = f'服務已經恢復正常，這次中斷了 {duration_label(duration)}。'
+    admin_notifications.record_alert(f'{label}已恢復', body, action_url='/admin/monitoring', action_label='查看監控')
 
 
 # ---------------------------------------------------------------

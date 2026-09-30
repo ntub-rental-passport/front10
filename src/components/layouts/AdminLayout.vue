@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { Bell, ListChecks, LogOut, Menu, ShieldCheck, X } from 'lucide-vue-next'
 
@@ -28,7 +28,11 @@ import MaintenanceChip from '@/src/components/admin/MaintenanceChip.vue'
 import QueueDrawer from '@/src/components/admin/QueueDrawer.vue'
 import { navIcon } from '@/src/components/admin/nav-icons'
 import ThemeToggle from '@/src/components/admin/ThemeToggle.vue'
-import { useAdminNotificationCenter } from '@/src/composables/admin/useAdminNotificationCenter'
+import {
+  startAdminNotificationPolling,
+  stopAdminNotificationPolling,
+  useAdminNotificationCenter,
+} from '@/src/composables/admin/useAdminNotificationCenter'
 import { useAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
 import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
@@ -44,10 +48,13 @@ const router = useRouter()
 
 const { visibleNavGroups, currentAdminRole } = useAdminRbac()
 
-// 後台各頁直接讀 adminSettings（門檻、額度），進後台時向後端讀一次
+// 後台各頁直接讀 adminSettings（門檻、額度），進後台時向後端讀一次。
+// 通知中心的告警由後端自己產生，每 60 秒重讀，右上角的未讀數才會跟著變
 onMounted(() => {
   void loadAdminSettings()
+  startAdminNotificationPolling()
 })
+onBeforeUnmount(stopAdminNotificationPolling)
 const { unreadCount: adminUnread } = useAdminNotificationCenter()
 const { count: queueCount } = useAdminQueue()
 

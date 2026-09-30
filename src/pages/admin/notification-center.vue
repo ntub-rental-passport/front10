@@ -15,7 +15,12 @@ import {
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 import { Textarea } from '@/components/ui/textarea/index'
-import { useAdminNotificationCenter } from '@/src/composables/admin/useAdminNotificationCenter'
+import ActionError from '@/src/components/admin/ActionError.vue'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
+import {
+  loadAdminNotificationCenter,
+  useAdminNotificationCenter,
+} from '@/src/composables/admin/useAdminNotificationCenter'
 import { adminNotifSourceLabels, type AdminNotifSource } from '@/src/mocks/admin/admin-notifications'
 import { formatDateTime } from '@/src/utils/admin-format'
 import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
@@ -27,9 +32,8 @@ import {
   NOTIF_SOURCE_BADGE_CLASS,
   type NotifFilter,
 } from '@/src/utils/admin-notification-center'
-import { getAuthSession } from '@/src/composables/useAuth'
 
-const { items, unreadCount, markRead, markUnread, markAllRead, sendNote } =
+const { items, unreadCount, loadState, markRead, markUnread, markAllRead, sendNote } =
   useAdminNotificationCenter()
 
 /**
@@ -43,10 +47,10 @@ const filtered = computed(() => items.value.filter((item) => matchesNotifFilter(
 // 依日期分組：清單一長，「今天的還是上週的」比一個一個看時間戳快得多
 const groups = computed(() => groupNotificationsByDay(filtered.value))
 
+// 「使用者訊息」先不列：使用者沒有地方可以寫信給管理員，這個分類不會有東西
 const sourceFilters: { value: NotifFilter; label: string }[] = [
   { value: 'all', label: '全部' },
   { value: 'alert', label: adminNotifSourceLabels.alert },
-  { value: 'user-message', label: adminNotifSourceLabels['user-message'] },
   { value: 'admin-note', label: adminNotifSourceLabels['admin-note'] },
 ]
 
@@ -60,17 +64,28 @@ const noteDialogOpen = ref(false)
 const noteTitle = ref('')
 const noteBody = ref('')
 
+const noteSaving = ref(false)
+const noteError = ref('')
 function openNoteDialog(): void {
   noteTitle.value = ''
   noteBody.value = ''
+  noteError.value = ''
   noteDialogOpen.value = true
 }
 
-function submitNote(): void {
-  if (!noteTitle.value.trim() || !noteBody.value.trim()) return
-  const session = getAuthSession()
-  sendNote(noteTitle.value.trim(), noteBody.value.trim(), session?.nickname ?? session?.email ?? '管理員')
-  noteDialogOpen.value = false
+/** 寄件人由後端從登入的帳號決定，不由畫面帶 */
+async function submitNote(): Promise<void> {
+  if (!noteTitle.value.trim() || !noteBody.value.trim() || noteSaving.value) return
+  noteSaving.value = true
+  noteError.value = ''
+  try {
+    await sendNote(noteTitle.value.trim(), noteBody.value.trim())
+    noteDialogOpen.value = false
+  } catch (error) {
+    noteError.value = error instanceof Error ? error.message : '送出失敗，請稍後再試。'
+  } finally {
+    noteSaving.value = false
+  }
 }
 </script>
 
@@ -113,8 +128,10 @@ function submitNote(): void {
       </div>
     </div>
 
+    <AdminLoadNotice :state="loadState" what="通知" @retry="loadAdminNotificationCenter" />
+
     <div
-      v-if="filtered.length === 0"
+      v-if="filtered.length === 0 && loadState === 'ready'"
       class="rounded-2xl border border-dashed p-10 text-center text-foreground/70"
     >
       {{ filter === 'unread' ? '沒有未讀通知。' : '這個篩選沒有符合的通知。' }}
@@ -209,9 +226,13 @@ function submitNote(): void {
             <Textarea id="note-body" v-model="noteBody" rows="4" placeholder="詳細說明" />
           </div>
         </div>
+        <ActionError v-if="noteError" :message="noteError" @dismiss="noteError = ''" />
+
         <DialogFooter>
           <Button variant="outline" @click="noteDialogOpen = false">取消</Button>
-          <Button :disabled="!noteTitle.trim() || !noteBody.trim()" @click="submitNote">送出</Button>
+          <Button :disabled="!noteTitle.trim() || !noteBody.trim() || noteSaving" @click="submitNote">
+            {{ noteSaving ? '送出中…' : '送出' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
