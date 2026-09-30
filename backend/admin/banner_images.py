@@ -10,10 +10,14 @@ BANNER_IMAGE_DIR 指到的資料夾。VM 上掛載成 ./data/banner-images，跟
 
 ## 檔名
 
-用內容的雜湊值命名，附檔名照真正的圖片格式（不是使用者取的名字）：
+上傳進來的用內容雜湊命名，附檔名照真正的圖片格式（不是使用者取的名字）：
 - 同一張圖上傳兩次只留一份。
-- 名字只會有英數、底線與減號，不可能帶出路徑（`../` 之類）。
+- 名字只會有英數、底線與減號。
 - 上傳者取的名字只拿來當開頭的可讀前綴，其餘字元一律丟掉。
+
+讀取則寬鬆一些：管理員也可能直接把圖丟進 VM 的資料夾，那些檔名不會照上面的
+規則（中文、空白、.jpeg 都有可能），一樣要列得出來、選得到。擋的是會跑出這個
+資料夾的名字：帶路徑分隔符號的、`.` 與 `..`、指到外面的捷徑，以及不是圖片副檔名的檔案。
 
 ## 怎麼讀
 
@@ -26,6 +30,7 @@ import io
 import os
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 from PIL import Image
 
@@ -37,9 +42,8 @@ MAX_BYTES = 5 * 1024 * 1024
 MAX_EDGE = 6000
 #: 只收瀏覽器都認得、且能無損判讀的格式
 FORMATS = {'WEBP': 'webp', 'PNG': 'png', 'JPEG': 'jpg'}
-CONTENT_TYPES = {'webp': 'image/webp', 'png': 'image/png', 'jpg': 'image/jpeg'}
+CONTENT_TYPES = {'webp': 'image/webp', 'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg'}
 URL_PREFIX = '/api/content/banner-images'
-_NAME = re.compile(r'^[A-Za-z0-9_-]+\.(webp|png|jpg)$')
 
 
 def image_dir() -> Path:
@@ -69,11 +73,21 @@ def _inspect(data: bytes) -> tuple[str, int, int]:
     return FORMATS[fmt], width, height
 
 
+def _is_image_name(name: str) -> bool:
+    """檔名看起來是不是這個資料夾裡的圖片。擋掉會跑出資料夾的名字。"""
+    if not name or name in {'.', '..'} or name.startswith('.'):
+        return False
+    if '/' in name or '\\' in name or '\x00' in name:
+        return False
+    return name.rsplit('.', 1)[-1].lower() in CONTENT_TYPES if '.' in name else False
+
+
 def _view(path: Path) -> dict:
     stat = path.stat()
     return {
         'name': path.name,
-        'url': f'{URL_PREFIX}/{path.name}',
+        # 中文、空白的檔名要編碼過才能直接放進 <img src>
+        'url': f'{URL_PREFIX}/{quote(path.name)}',
         'size': stat.st_size,
         'uploadedAt': stat.st_mtime,
     }
@@ -104,14 +118,14 @@ def listing() -> list[dict]:
     directory = image_dir()
     if not directory.is_dir():
         return []
-    files = [p for p in directory.iterdir() if p.is_file() and _NAME.match(p.name)]
+    files = [p for p in directory.iterdir() if p.is_file() and _is_image_name(p.name)]
     files.sort(key=lambda p: (p.stat().st_mtime, p.name), reverse=True)
     return [_view(p) for p in files]
 
 
 def path_of(name: str) -> Path | None:
     """檔名對應的檔案。名字不合格式或檔案不在就回 None —— 不讓人用名字跑出資料夾。"""
-    if not _NAME.match(name or ''):
+    if not _is_image_name(name or ''):
         return None
     path = image_dir() / name
     if not path.is_file():
@@ -123,4 +137,4 @@ def path_of(name: str) -> Path | None:
 
 
 def content_type_of(name: str) -> str:
-    return CONTENT_TYPES[name.rsplit('.', 1)[1]]
+    return CONTENT_TYPES[name.rsplit('.', 1)[1].lower()]

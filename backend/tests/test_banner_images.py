@@ -134,6 +134,24 @@ class ApiTests(BannerImageTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('圖片', response.json()['detail'])
 
+    def test_files_put_on_the_vm_by_hand_also_show_up(self):
+        # 管理員可能直接把圖丟進 VM 的資料夾，檔名不會照上傳時的規則（中文、空白、.jpeg）
+        self.dir.mkdir(parents=True)
+        for name, fmt in (('我的 banner.webp', 'WEBP'), ('photo.jpeg', 'JPEG'), ('A_B-1.PNG', 'PNG')):
+            (self.dir / name).write_bytes(image_bytes(size=(1200, 400), fmt=fmt))
+        (self.dir / 'readme.txt').write_text('不是圖片')
+        (self.dir / 'half.webp.part').write_bytes(b'')
+
+        listed = banner_images.listing()
+        self.assertEqual(sorted(item['name'] for item in listed),
+                         ['A_B-1.PNG', 'photo.jpeg', '我的 banner.webp'])
+        for item in listed:
+            self.assertIsNotNone(banner_images.path_of(item['name']))
+        # 網址要能直接放進 <img src>，中文與空白得先編碼
+        url = next(item['url'] for item in listed if item['name'] == '我的 banner.webp')
+        self.assertNotIn(' ', url)
+        self.assertEqual(self.client(admin_ok=False).get(url).status_code, 200)
+
     def test_unknown_image_is_404(self):
         self.assertEqual(self.client(admin_ok=False).get('/api/content/banner-images/nope.webp').status_code, 404)
 
