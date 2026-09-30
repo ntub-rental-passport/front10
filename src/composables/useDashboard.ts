@@ -1,12 +1,16 @@
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import {
   type CycleStatus,
   type CycleView,
   type PaymentMethod,
   type RentalContract,
-  createSeedContracts,
-} from '@/src/mocks/dashboard-seed'
+} from '@/src/utils/dashboard-contract'
+import {
+  fetchDashboardContracts,
+  recordBillPayment,
+  undoBillPayment,
+} from '@/src/services/dashboardApi'
 import {
   accentStyles,
   defenseReminder,
@@ -75,8 +79,35 @@ function scrollToCycle(cycleId: string) {
 }
 
 export function useDashboard() {
-  const contracts = ref<RentalContract[]>(createSeedContracts())
-  const selectedContractId = ref(contracts.value[0]?.id ?? '')
+  // 資料一律來自資料庫（GET /api/dashboard/contracts）。
+  // 讀取失敗時維持空陣列並顯示錯誤 —— 不以任何示範資料填補，
+  // 那會讓使用者把別人的（或不存在的）租約當成自己的。
+  const contracts = ref<RentalContract[]>([])
+  const loading = ref(true)
+  const loadError = ref('')
+  const actionError = ref('')
+  const selectedContractId = ref('')
+
+  async function loadContracts(): Promise<void> {
+    loading.value = true
+    loadError.value = ''
+    try {
+      contracts.value = await fetchDashboardContracts()
+      if (!contracts.value.some((contract) => contract.id === selectedContractId.value)) {
+        selectedContractId.value = contracts.value[0]?.id ?? ''
+      }
+    } catch (error) {
+      contracts.value = []
+      loadError.value = error instanceof Error ? error.message : '讀取租約資料失敗，請稍後重試。'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  onMounted(loadContracts)
+
+  const hasContracts = computed(() => contracts.value.length > 0)
+  const isEmpty = computed(() => !loading.value && !loadError.value && !hasContracts.value)
   const selectedCycleId = ref<string | null>(null)
   const filterTab = ref<FilterTab>('all')
   const paymentDialogOpen = ref(false)
@@ -222,7 +253,7 @@ export function useDashboard() {
     paymentDialogOpen.value = true
   }
 
-  function submitPaymentRecord(form: PaymentRecordForm) {
+  async function submitPaymentRecord(form: PaymentRecordForm) {
     if (!paymentTargetCycleId.value) return
 
     const target = findCycleLocation(contracts.value, paymentTargetCycleId.value)
@@ -233,10 +264,21 @@ export function useDashboard() {
     const cycle = contract.cycles[cycleIndex]
     if (cycle.paidAt) return
 
-    cycle.paidAt = form.paidAt
-    cycle.paymentMethod = form.method
-    cycle.paymentNote = form.note.trim()
-    cycle.paymentProofName = form.proofName || null
+    // 先寫進資料庫再更新畫面：反過來的話寫入失敗會留下一個
+    // 看起來已繳、重整後又變回未繳的期數。
+    actionError.value = ''
+    try {
+      const saved = await recordBillPayment(cycle.id, {
+        paid_at: form.paidAt,
+        payment_method: form.method,
+        payment_note: form.note.trim(),
+        payment_proof_name: form.proofName || null,
+      })
+      Object.assign(cycle, saved)
+    } catch (error) {
+      actionError.value = error instanceof Error ? error.message : '記錄繳費失敗，請稍後重試。'
+      return
+    }
 
     const nextUnpaid = contract.cycles.find((item) => !item.paidAt)
     selectedContractId.value = contract.id
@@ -253,7 +295,7 @@ export function useDashboard() {
     confirmDialogOpen.value = true
   }
 
-  function confirmUndoCyclePaid() {
+  async function confirmUndoCyclePaid() {
     if (!confirmTargetCycleId.value) return
 
     const target = findCycleLocation(contracts.value, confirmTargetCycleId.value)
@@ -263,10 +305,13 @@ export function useDashboard() {
     const contract = contracts.value[contractIndex]
     const cycle = contract.cycles[cycleIndex]
 
-    cycle.paidAt = null
-    cycle.paymentMethod = null
-    cycle.paymentNote = ''
-    cycle.paymentProofName = null
+    actionError.value = ''
+    try {
+      Object.assign(cycle, await undoBillPayment(cycle.id))
+    } catch (error) {
+      actionError.value = error instanceof Error ? error.message : '取消繳費紀錄失敗，請稍後重試。'
+      return
+    }
 
     selectedContractId.value = contract.id
     selectedCycleId.value = cycle.id
@@ -308,6 +353,7 @@ export function useDashboard() {
 
   return {
     accentStyles,
+    actionError,
     activeContractView,
     activeCurrentCycle,
     confirmDialogOpen,
@@ -319,6 +365,11 @@ export function useDashboard() {
     filteredCycles,
     focusCycle,
     globalStats,
+    hasContracts,
+    isEmpty,
+    loadContracts,
+    loadError,
+    loading,
     leaseTermLabel,
     openPaymentDialog,
     paymentDialogOpen,

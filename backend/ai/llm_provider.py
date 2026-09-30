@@ -2,13 +2,18 @@
 
 ## 架構
 
-    使用者 → VM（去識別化）→ ① 自架 Ollama（經 Cloudflare Tunnel 到桌機）
-                            → ② NVIDIA 免費 API（①不可用時的備援）
+    使用者 → VM（去識別化）→ ① NVIDIA 免費 API
+                            → ② 自架 Ollama（本機，或經 Cloudflare Tunnel 到桌機）
                             → 兩者皆失敗 → LlmUnavailable → 呼叫端回 503
 
-為什麼要備援：主要路徑是跑在家裡桌機上的 Ollama。桌機會睡眠、
-家裡會斷網、口試那天人可能把電腦關了帶去學校 —— 這些都不是假設，
-是一定會發生的。沒有備援的話，功能就會在最需要它的時候不見。
+為什麼要備援：兩條路都會不見。NVIDIA 是免費額度（約 1,000 credits、
+40 req/分），用完就回 401/402/429；Ollama 那端的桌機會睡眠、會斷網、
+口試那天人可能把電腦關了帶去學校 —— 這些都不是假設，是一定會發生的。
+沒有備援的話，功能就會在最需要它的時候不見。
+
+順序在 2026-09-29 從「Ollama 優先」改為「NVIDIA 優先」：桌機隧道實務上
+沒有架起來，本機 Ollama 也不保證開著，而 gemma3:4b 明顯比 llama-3.1-70b
+慢。把不一定在的那個排第一，只是讓每個請求先付一次連線逾時。
 
 ## 絕對不做的事
 
@@ -18,7 +23,7 @@ LlmUnavailable，讓呼叫端回 503。曾經的作法是失敗時回一段寫�
 
 ## 設定
 
-    LLM_PROVIDER_ORDER   嘗試順序，預設 "ollama,nvidia"
+    LLM_PROVIDER_ORDER   嘗試順序，預設 "nvidia,ollama"（NVIDIA 為主、Ollama 備援）
     LLM_TUNNEL_URL       桌機代理的網址（Cloudflare Tunnel）。未設定時沿用 OLLAMA_URL。
                          ⚠️ 不要直接改 OLLAMA_URL —— 那個被 OCR 佔用了，
                          而 OCR 的請求不帶憑證，改了會被 Access 擋掉。
@@ -81,7 +86,11 @@ def _model_for(provider: str, purpose: str) -> str:
     if provider == "nvidia":
         if purpose == "chat" and (model := _env("NVIDIA_CHAT_MODEL")):
             return model
-        return _env("NVIDIA_MODEL", "meta/llama-3.1-70b-instruct")
+        # ⚠️ 預設模型會被 NVIDIA 下架。meta/llama-3.1-70b-instruct 在
+        # 2026-09-29 已從 /v1/models 消失，呼叫回 410 Gone —— 症狀是
+        # 每次分析都退到 Ollama，看起來像「備援很好用」而不是「主線壞了」。
+        # 換模型前先用 scripts/check_llm.py --models 確認它還在清單上。
+        return _env("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b")
     if purpose == "chat" and (model := _env("OLLAMA_CHAT_MODEL")):
         return model
     return _env("OLLAMA_MODEL", "gemma3:4b")
@@ -262,7 +271,11 @@ _PROVIDERS = {
 
 
 def provider_order() -> list[str]:
-    raw = _env("LLM_PROVIDER_ORDER", "ollama,nvidia")
+    # 預設 nvidia 優先（2026-09-29 決定）：桌機隧道實務上沒架起來，本機
+    # Ollama 也不保證開著，而 gemma3:4b 明顯比 NVIDIA 的 llama-3.1-70b 慢。
+    # 把「不一定在」的那個排第一，只會讓每個請求先付一次連線逾時。
+    # Ollama 保留為備援 —— NVIDIA 免費額度用盡時仍有東西接得住。
+    raw = _env("LLM_PROVIDER_ORDER", "nvidia,ollama")
     names = [n.strip().lower() for n in raw.split(",") if n.strip()]
     return [n for n in names if n in _PROVIDERS] or ["ollama"]
 

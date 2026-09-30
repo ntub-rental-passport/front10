@@ -81,8 +81,8 @@ describe('buildContractDocument', () => {
 
   it('「尚未辨識」視為空白而不是印出字面', () => {
     const document = buildContractDocument({ jurisdiction_court: '尚未辨識' })
-    expect(textOf(document, 'clause-jurisdiction')).toContain(BLANK)
-    expect(textOf(document, 'clause-jurisdiction')).not.toContain('尚未辨識')
+    expect(textOf(document, 'jurisdiction')).toContain(BLANK)
+    expect(textOf(document, 'jurisdiction')).not.toContain('尚未辨識')
   })
 
   it('沒有代理或轉租資料時不顯示該節', () => {
@@ -93,9 +93,26 @@ describe('buildContractDocument', () => {
     expect(textOf(withAgent, 'authorization')).toContain('代理人姓名：王小明')
   })
 
-  it('不從欄位還原的固定條文以註記呈現，不假裝是完整契約', () => {
+  it('固定條文照範本原文收錄，不是只有帶欄位的條文', () => {
     const document = buildContractDocument({})
-    expect(textOf(document, 'standard-clauses')).toContain('依內政部定型化契約範本原文')
+    // 第六～第二十二條沒有任何欄位，但仍應完整呈現
+    expect(textOf(document, 'clause-8')).toContain('租賃住宅或附屬設備損壞時，應由出租人負責修繕')
+    expect(textOf(document, 'clause-16')).toContain('承租人遲付租金之總額達二個月之租金額')
+    expect(textOf(document, 'clause-20')).toContain('應為有利於承租人之解釋')
+    expect(document.sections.map((section) => section.id)).toContain('clause-23')
+  })
+
+  it('收錄第一條至第二十三條，順序與範本一致', () => {
+    const ids = buildContractDocument({}).sections.map((section) => section.id)
+    for (let clause = 1; clause <= 23; clause += 1) {
+      expect(ids).toContain(`clause-${clause}`)
+    }
+    expect(ids.indexOf('clause-2')).toBeGreaterThan(ids.indexOf('clause-1'))
+    expect(ids.indexOf('signatures')).toBeGreaterThan(ids.indexOf('clause-23'))
+  })
+
+  it('不在辨識範圍的附件只列名稱，不假裝已還原', () => {
+    expect(textOf(buildContractDocument({}), 'attachments')).toContain('未於此處還原')
   })
 })
 
@@ -107,7 +124,7 @@ describe('documentValuesFromFieldReviews', () => {
       ),
     )
     expect(textOf(document, 'clause-1')).toContain('臺北市中正區羅斯福路一段 2 號 5 樓')
-    expect(textOf(document, 'clause-23')).toContain('姓名／名稱：王小明')
+    expect(textOf(document, 'signatures')).toContain('姓名（名稱）：王小明')
   })
 })
 
@@ -149,9 +166,9 @@ describe('documentValuesFromRental', () => {
 
   it('解密後的個資欄位回到當事人資料那一節', () => {
     const document = buildContractDocument(documentValuesFromRental(rental))
-    const parties = textOf(document, 'clause-23')
-    expect(parties).toContain('姓名／名稱：陳大文')
-    expect(parties).toContain('姓名／名稱：王小明')
+    const parties = textOf(document, 'signatures')
+    expect(parties).toContain('姓名（名稱）：陳大文')
+    expect(parties).toContain('姓名（名稱）：王小明')
     expect(parties).toContain('聯絡電話：0987-654-321')
   })
 

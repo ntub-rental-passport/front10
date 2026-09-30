@@ -149,6 +149,16 @@ class ContractFinalizeTests(unittest.TestCase):
             self.assertEqual(rental.car_parking_count, 1)
             self.assertIsNone(rental.motorcycle_parking_count)
 
+            # 存檔同時建立每期帳單，儀表板才有東西可讀
+            bills = sorted(rental.bills, key=lambda bill: bill.period_index)
+            self.assertEqual(len(bills), 12)
+            self.assertEqual(bills[0].due_date.isoformat(), '2025-08-05')
+            self.assertEqual(bills[0].rent_amount, 20000)
+            self.assertEqual(bills[-1].period_end.isoformat(), '2026-07-31')
+            # 水電要等實際帳單，不能預設 0
+            self.assertIsNone(bills[0].electricity_amount)
+            self.assertIsNone(bills[0].paid_at)
+
     def test_personal_data_columns_are_unreadable_without_the_key(self):
         rental_id = self.finalize().json()['rental_id']
         with self.Session() as db:

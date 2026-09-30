@@ -24,7 +24,7 @@ import {
 import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
 import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
 import { useDashboard } from '@/src/composables/useDashboard'
-import { paymentMethodLabel } from '@/src/mocks/dashboard-seed'
+import { paymentMethodLabel } from '@/src/utils/dashboard-contract'
 import {
   describeDaysLeft,
   formatCurrency,
@@ -71,6 +71,7 @@ const { isPathUnderMaintenance } = useFeatureGate()
 
 const {
   accentStyles,
+  actionError,
   activeContractView,
   activeCurrentCycle,
   confirmDialogOpen,
@@ -82,6 +83,10 @@ const {
   filteredCycles,
   focusCycle,
   globalStats,
+  isEmpty,
+  loadContracts,
+  loadError,
+  loading,
   leaseTermLabel,
   openPaymentDialog,
   paymentDialogOpen,
@@ -202,6 +207,14 @@ const {
       </Card>
     </section>
 
+    <div
+      v-if="actionError"
+      class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+      role="alert"
+    >
+      {{ actionError }}
+    </div>
+
     <!-- ── 主要內容區：左側租約列表 + 右側帳單詳情 ─────────────────────────── -->
     <section class="grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 lg:grid-cols-[240px_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
       <!-- 左側標題：row 1, col 1 -->
@@ -213,6 +226,33 @@ const {
       <!-- 左側：我的租約清單 row 2, col 1 -->
       <aside class="lg:col-start-1 lg:row-start-2">
         <div class="max-h-[44rem] space-y-2.5 overflow-y-auto pr-1">
+          <p v-if="loading" class="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+            正在讀取你的租約…
+          </p>
+
+          <div
+            v-else-if="loadError"
+            class="space-y-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            role="alert"
+          >
+            <p>{{ loadError }}</p>
+            <button type="button" class="font-semibold underline" @click="loadContracts">重新載入</button>
+          </div>
+
+          <!-- 沒有租約就明講，不以示範資料填充畫面 -->
+          <div
+            v-else-if="isEmpty"
+            class="space-y-2 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600"
+          >
+            <p class="font-semibold text-slate-900">還沒有已存檔的租約</p>
+            <p class="text-xs leading-relaxed">
+              上傳租約並完成校對後，選擇「這是最終簽署版」存檔，這裡就會顯示每期帳單與繳費進度。
+            </p>
+            <RouterLink to="/app/contract" class="inline-block text-xs font-semibold text-slate-900 underline">
+              前往契約辨識
+            </RouterLink>
+          </div>
+
           <div
             v-for="contract in contractViews"
             :key="contract.id"

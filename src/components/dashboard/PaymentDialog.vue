@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select/index'
 import { Textarea } from '@/components/ui/textarea/index'
-import { paymentMethodOptions, type CycleStatus, type CycleView, type PaymentMethod } from '@/src/mocks/dashboard-seed'
+import { paymentMethodOptions, type CycleStatus, type CycleView, type PaymentMethod } from '@/src/utils/dashboard-contract'
 import { formatCurrency, formatDate, formatIso, startOfToday } from '@/src/utils/rent-format'
 
 const props = defineProps<{

@@ -1334,7 +1334,13 @@
 /* ── 終版確認對話框 ───────────────────────────────────────────────────── */
 
 .finalize-dialog {
+  /* ⚠️ margin: auto 不能省。瀏覽器讓 modal dialog 置中靠的是 UA 樣式的
+     `dialog:modal { margin: auto }`，但 Tailwind preflight 把所有元素設成
+     margin: 0，把它蓋掉了——結果對話框會黏在畫面左上角。
+     analysis.css 的 .process-dialog 也是同樣理由寫了這行。 */
+  margin: auto;
   width: min(560px, calc(100vw - 32px));
+  max-width: none;
   max-height: calc(100dvh - 48px);
   padding: 0;
   border: 1px solid var(--border);
