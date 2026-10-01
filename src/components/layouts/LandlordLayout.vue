@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { ref } from 'vue'
+import LandlordNotificationBell from '@/src/components/landlord/LandlordNotificationBell.vue'
 import { signOut } from '@/src/composables/useAuth'
 
 const route = useRoute()
@@ -44,20 +45,24 @@ async function handleSignOut(): Promise<void> {
 <template>
   <div class="min-h-screen bg-[#f7f4ea] text-[#233129]">
     <header
-      class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#e4dfd2] bg-[#fbf9f2]/95 px-4 backdrop-blur lg:hidden"
+      class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#e4dfd2] bg-[#fbf9f2]/95 px-4 backdrop-blur lg:px-8"
+      :class="desktopCollapsed ? 'lg:ml-20' : 'lg:ml-[248px]'"
     >
       <RouterLink to="/landlord" class="flex items-center gap-2 font-bold"
         ><span class="grid h-9 w-9 place-items-center rounded-full bg-[#5c8163] text-white"
           ><Home class="h-4 w-4" /></span
         >RentMate 房東</RouterLink
       >
-      <button
-        class="rounded-xl border border-[#ddd6c8] p-2"
-        aria-label="開啟選單"
-        @click="mobileOpen = !mobileOpen"
-      >
-        <X v-if="mobileOpen" class="h-5 w-5" /><Menu v-else class="h-5 w-5" />
-      </button>
+      <div class="flex items-center gap-4">
+        <LandlordNotificationBell />
+        <button
+          class="rounded-xl border border-[#ddd6c8] p-2 lg:hidden"
+          aria-label="開啟選單"
+          @click="mobileOpen = !mobileOpen"
+        >
+          <X v-if="mobileOpen" class="h-5 w-5" /><Menu v-else class="h-5 w-5" />
+        </button>
+      </div>
     </header>
 
     <aside

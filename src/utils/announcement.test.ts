@@ -182,8 +182,8 @@ describe('resolveAnnouncementPhase', () => {
 describe('announcementPlacement', () => {
   const now = new Date('2026-09-24T00:00:00.000Z')
 
-  describe('audience 為 landlord：優先於狀態，任何狀態都判定成沒有人讀取', () => {
-    it('已發布、日期在區間內仍是 landlord-unsupported，不是 active', () => {
+  describe('房東公告依狀態顯示於房東通知', () => {
+    it('已發布且生效的房東公告只出現在房東通知', () => {
       const a = make({
         audience: 'landlord',
         level: 'warning',
@@ -191,32 +191,36 @@ describe('announcementPlacement', () => {
         startAt: '2026-09-01T00:00:00.000Z',
         endAt: '2026-09-30T00:00:00.000Z',
       })
-      expect(announcementPlacement(a, now)).toEqual({ kind: 'landlord-unsupported' })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'live', locations: ['landlord-bell'] })
     })
 
-    it('草稿狀態的房東公告是 landlord-unsupported，不是 unpublished', () => {
+    it('房東公告未發布就不出現', () => {
       const a = make({ audience: 'landlord', published: false })
-      expect(announcementPlacement(a, now)).toEqual({ kind: 'landlord-unsupported' })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'unpublished' })
     })
 
-    it('排程中的房東公告是 landlord-unsupported，不是 scheduled', () => {
+    it('排程中的房東公告會預告房東通知', () => {
       const a = make({
         audience: 'landlord',
         published: true,
         startAt: '2026-10-01T00:00:00.000Z',
         endAt: null,
       })
-      expect(announcementPlacement(a, now)).toEqual({ kind: 'landlord-unsupported' })
+      expect(announcementPlacement(a, now)).toEqual({
+        kind: 'scheduled',
+        startAt: a.startAt,
+        locations: ['landlord-bell'],
+      })
     })
 
-    it('已過期的房東公告是 landlord-unsupported，不是 expired', () => {
+    it('房東公告過期後不再出現', () => {
       const a = make({
         audience: 'landlord',
         published: true,
         startAt: '2026-08-01T00:00:00.000Z',
         endAt: '2026-09-01T00:00:00.000Z',
       })
-      expect(announcementPlacement(a, now)).toEqual({ kind: 'landlord-unsupported' })
+      expect(announcementPlacement(a, now)).toEqual({ kind: 'expired' })
     })
   })
 
@@ -228,10 +232,12 @@ describe('announcementPlacement', () => {
 
     it('草稿狀態跟等級無關，info／urgent 一樣是 unpublished', () => {
       expect(
-        announcementPlacement(make({ audience: 'tenant', level: 'info', published: false }), now).kind,
+        announcementPlacement(make({ audience: 'tenant', level: 'info', published: false }), now)
+          .kind,
       ).toBe('unpublished')
       expect(
-        announcementPlacement(make({ audience: 'all', level: 'urgent', published: false }), now).kind,
+        announcementPlacement(make({ audience: 'all', level: 'urgent', published: false }), now)
+          .kind,
       ).toBe('unpublished')
     })
 
@@ -268,7 +274,7 @@ describe('announcementPlacement', () => {
       expect(announcementPlacement(a, now)).toEqual({
         kind: 'scheduled',
         startAt: '2026-09-30T00:00:00.000Z',
-        locations: ['dashboard-banner', 'notification-center'],
+        locations: ['dashboard-banner', 'notification-center', 'landlord-bell'],
       })
     })
 
@@ -298,7 +304,7 @@ describe('announcementPlacement', () => {
       expect(announcementPlacement(a, now)).toEqual({
         kind: 'scheduled',
         startAt: '2026-10-01T00:00:00.000Z',
-        locations: ['notification-center'],
+        locations: ['notification-center', 'landlord-bell'],
       })
     })
 
@@ -312,7 +318,7 @@ describe('announcementPlacement', () => {
       })
       expect(announcementPlacement(a, now)).toEqual({
         kind: 'live',
-        locations: ['notification-center'],
+        locations: ['notification-center', 'landlord-bell'],
       })
     })
 
@@ -340,28 +346,24 @@ describe('announcementPlacement', () => {
       })
       expect(announcementPlacement(a, now)).toEqual({
         kind: 'live',
-        locations: ['dashboard-banner', 'notification-center'],
+        locations: ['dashboard-banner', 'notification-center', 'landlord-bell'],
       })
     })
 
-    it('audience 為 tenant 與 all 判斷結果一致（只有 landlord 特殊）', () => {
-      const base = {
-        level: 'warning' as const,
-        published: true,
-        startAt: '2026-09-01T00:00:00.000Z',
-        endAt: null,
-      }
-      expect(announcementPlacement(make({ ...base, audience: 'all' }), now)).toEqual(
-        announcementPlacement(make({ ...base, audience: 'tenant' }), now),
-      )
+    it('全部受眾比租客受眾多出房東通知', () => {
+      const a = make({ level: 'warning', startAt: '2026-09-01T00:00:00.000Z', endAt: null })
+      expect(announcementPlacement(a, now)).toEqual({
+        kind: 'live',
+        locations: ['dashboard-banner', 'notification-center', 'landlord-bell'],
+      })
     })
   })
 })
 
 describe('announcementPlacementSummary', () => {
-  it('landlord-unsupported：講清楚原因是房東端尚未讀取公告', () => {
-    const placement: AnnouncementPlacement = { kind: 'landlord-unsupported' }
-    expect(announcementPlacementSummary(placement)).toBe('不會出現在任何地方 —— 房東端尚未讀取公告')
+  it('房東公告的出現位置文案', () => {
+    const placement: AnnouncementPlacement = { kind: 'live', locations: ['landlord-bell'] }
+    expect(announcementPlacementSummary(placement)).toBe('只在房東通知')
   })
 
   it('unpublished', () => {

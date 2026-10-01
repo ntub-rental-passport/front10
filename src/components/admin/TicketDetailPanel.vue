@@ -1,241 +1,101 @@
 <script setup lang="ts">
-/**
- * 工單詳情與操作。
- *
- * 工單頁與使用者詳情頁共用同一份操作邏輯 —— 兩邊寫的是同一個 collection，
- * 任一邊推進狀態，另一邊的畫面會直接跟著更新。
- */
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button/index'
 import { Textarea } from '@/components/ui/textarea/index'
-import {
-  useAdminMaintenance,
-  type MaintenanceTicketView,
-} from '@/src/composables/admin/useAdminMaintenance'
-import {
-  adminQueueReason,
-  adminQueueReasonLabels,
-  isInAdminQueue,
-  isStatusDrivenQueueReason,
-  maintenanceCategoryLabels,
-  maintenanceStatusLabels,
-  maintenanceStatusTone,
-  maintenanceTransitions,
-  type AdminQueueReason,
-  type MaintenanceStatus,
-} from '@/src/utils/admin-maintenance'
-import { formatDate, formatDateTime } from '@/src/utils/admin-format'
+import { useAdminMaintenance, type MaintenanceTicketView } from '@/src/composables/admin/useAdminMaintenance'
+import { adminQueueReason, adminQueueReasonLabels, isInAdminQueue, maintenanceCategoryLabels, maintenanceStatusLabels } from '@/src/utils/admin-maintenance'
+import { formatDateTime } from '@/src/utils/admin-format'
+import type { AdminRepairMedia } from '@/src/services/adminRepairApi'
 import StatusDot from './StatusDot.vue'
-import { STATUS_CHIP_CLASS, STATUS_DOT_TONE_CLASS } from './status-dot'
+import ActionError from './ActionError.vue'
+import RepairAttachmentPreview from './RepairAttachmentPreview.vue'
 
 const props = defineProps<{ ticket: MaintenanceTicketView }>()
-
-const { advanceStatus, saveAdminNote, queueTicket, dequeueTicket, error } = useAdminMaintenance()
-
-const changeNote = ref('')
+const { saveAdminNote, queueTicket, dequeueTicket, setIntervention, error, saving } = useAdminMaintenance()
 const adminNoteDraft = ref(props.ticket.adminNote)
-
-// 切換到另一張工單時把草稿換掉，否則會把前一張的註記帶過去
-watch(
-  () => props.ticket.id,
-  () => {
-    changeNote.value = ''
-    adminNoteDraft.value = props.ticket.adminNote
-    error.value = ''
-  },
-)
-
-const nextStatuses = computed<MaintenanceStatus[]>(
-  () => maintenanceTransitions[props.ticket.status],
-)
-
-// 只有在待處理佇列裡的工單才能推進狀態，日常流程本來就該由租客與房東自己走完
+const saved = ref(false)
+watch(() => props.ticket.id, () => {
+  adminNoteDraft.value = props.ticket.adminNote
+  error.value = ''
+  saved.value = false
+})
+const queueReason = computed(() => adminQueueReason(props.ticket))
 const inQueue = computed(() => isInAdminQueue(props.ticket))
-const queueReason = computed<AdminQueueReason | null>(() => adminQueueReason(props.ticket))
-
-/**
- * 待處理原因的樣式。
- *
- * 爭議與逾期是系統判定的異常，要比管理員自己標記的更顯眼。
- *
- * 不用 Badge 的 destructive variant：它靠 text-destructive-foreground 上色，
- * 而那個 class 產不出任何 CSS（index.css 的 @theme 漏註冊），深色模式下
- * 實測只有 2.70。STATUS_CHIP_CLASS 的前景色是跟填色配對設計的。
- */
-function queueReasonClass(reason: AdminQueueReason): string {
-  return isStatusDrivenQueueReason(reason) ? STATUS_CHIP_CLASS.danger : STATUS_CHIP_CLASS.idle
-}
-
-function handleAdvance(next: MaintenanceStatus): void {
-  if (advanceStatus(props.ticket.id, next, changeNote.value)) {
-    changeNote.value = ''
-  }
-}
-
-function handleSaveNote(): void {
-  saveAdminNote(props.ticket.id, adminNoteDraft.value)
-}
-
-function handleQueue(): void {
-  queueTicket(props.ticket.id)
-}
-
-function handleDequeue(): void {
-  dequeueTicket(props.ticket.id)
+const files = computed(() => {
+  const source = props.ticket.source
+  const all: AdminRepairMedia[] = [
+    ...source.photos, ...(source.completionPhotos ?? []), ...(source.unresolvedPhotos ?? []),
+    ...(source.supplements ?? []).flatMap((item) => item.photos),
+    ...(source.receipt ? [source.receipt] : []), ...(source.quote ? [source.quote] : []),
+  ]
+  return [...new Map(all.map((item) => [item.id, item])).values()]
+})
+const actorLabels: Record<string, string> = { tenant: '租客', landlord: '房東', admin: '管理員', system: '系統' }
+async function handleSaveNote(): Promise<void> {
+  saved.value = await saveAdminNote(props.ticket.id, adminNoteDraft.value)
 }
 </script>
 
 <template>
-  <!--
-    段與段之間用分隔線，並把「段內間距」與「段間間距」拉開差距。原本全部
-    用 space-y-5，兩者是同一個距離 —— 距離相同時眼睛分不出哪裡是邊界，
-    四段會黏成一整片。
-
-    小標改成 text-xs 的弱化標籤（同側欄分組標題的作法）：原本標題與內文
-    都是 font-semibold 同樣大小，標題沒有「我是標籤」的訊號。
-  -->
-  <div class="divide-y divide-border text-sm [&>section]:py-5 [&>section:last-child]:pb-0">
-    <!--
-      用 <dl> 而不是一堆 div：這就是「名稱／數值」的定義清單，語意對了
-      螢幕閱讀器才唸得出配對關係。標籤用 foreground/70 —— muted-foreground
-      在這塊 bg-muted/40 上對比不夠。
-    -->
+  <div data-real="true" class="divide-y divide-border text-sm [&>section]:py-5 [&>section:last-child]:pb-0">
     <dl class="grid grid-cols-2 gap-x-4 gap-y-3 rounded-2xl bg-muted/40 p-5">
-      <div>
-        <dt class="text-xs text-foreground/70">租客</dt>
-        <dd class="mt-0.5 font-medium">{{ ticket.tenantName }}</dd>
-      </div>
-      <div>
-        <dt class="text-xs text-foreground/70">房東</dt>
-        <dd class="mt-0.5 font-medium">{{ ticket.landlordName }}</dd>
-      </div>
-      <div>
-        <dt class="text-xs text-foreground/70">分類</dt>
-        <dd class="mt-0.5 font-medium">{{ maintenanceCategoryLabels[ticket.category] }}</dd>
-      </div>
+      <div><dt class="text-xs text-foreground/70">租客</dt><dd>{{ ticket.tenantName }}</dd></div>
+      <div><dt class="text-xs text-foreground/70">房東</dt><dd>{{ ticket.landlordName }}</dd></div>
+      <div><dt class="text-xs text-foreground/70">分類</dt><dd>{{ maintenanceCategoryLabels[ticket.category] }}</dd></div>
       <div>
         <dt class="text-xs text-foreground/70">狀態</dt>
-        <!-- 與工單表格共用同一套顏色對應，見 maintenanceStatusTone -->
-        <dd class="mt-0.5">
-          <StatusDot
-            :tone="maintenanceStatusTone(ticket.status)"
-            :label="maintenanceStatusLabels[ticket.status]"
-          />
-        </dd>
+        <dd><StatusDot :tone="ticket.status === 'completed' ? 'ok' : 'idle'" :label="ticket.awaitingInspection ? '待租客複驗' : maintenanceStatusLabels[ticket.status]" /></dd>
       </div>
-      <div>
-        <dt class="text-xs text-foreground/70">建立日</dt>
-        <dd class="mt-0.5 font-medium">{{ formatDate(ticket.createdAt) }}</dd>
-      </div>
-      <div>
-        <dt class="text-xs text-foreground/70">已經過</dt>
-        <!--
-          逾期時用實心 chip 而不是紅字。--destructive 是 oklch(0.7 0.18 40)，
-          偏亮，當文字踩在淺色底上只有 2.6 左右，遠低於 AA —— 填色版本的
-          前景色才是跟它配對設計的（實測 6.35）。
-        -->
-        <dd class="mt-0.5">
-          <span
-            v-if="ticket.status === 'overdue'"
-            :class="['inline-flex rounded-full px-2 py-0.5 font-bold', STATUS_CHIP_CLASS.danger]"
-          >
-            {{ ticket.elapsed }} 天
-          </span>
-          <span v-else class="font-medium">{{ ticket.elapsed }} 天</span>
-        </dd>
-      </div>
+      <div><dt class="text-xs text-foreground/70">建立時間</dt><dd>{{ formatDateTime(ticket.createdAt) }}</dd></div>
+      <div><dt class="text-xs text-foreground/70">已經過</dt><dd>{{ ticket.elapsed }} 天</dd></div>
+      <div v-if="ticket.overdue"><StatusDot tone="danger" label="逾期未回應" /></div>
+      <div v-if="ticket.disputed"><StatusDot tone="danger" label="爭議中" /></div>
     </dl>
-
     <section>
-      <h3 class="mb-1.5 text-xs font-semibold tracking-wide text-foreground/70">問題描述</h3>
-      <p>{{ ticket.description }}</p>
+      <h3 class="mb-2 text-xs font-semibold text-foreground/70">問題描述</h3>
+      <p>{{ ticket.source.location }} · {{ ticket.source.equipment }}</p>
+      <p class="mt-1 whitespace-pre-wrap">{{ ticket.description }}</p>
+      <p v-if="ticket.source.completionNote" class="mt-3">完工說明：{{ ticket.source.completionNote }}</p>
+      <p v-if="ticket.source.unresolvedNote" class="mt-3">租客複驗回覆：{{ ticket.source.unresolvedNote }}</p>
+      <p v-if="ticket.source.responsibilityQuestion" class="mt-3">責任疑問：{{ ticket.source.responsibilityQuestion }}</p>
+      <dl class="mt-3 grid grid-cols-2 gap-2">
+        <div><dt class="text-foreground/70">維修廠商</dt><dd>{{ ticket.source.vendorName || '尚未指派' }}</dd></div>
+        <div><dt class="text-foreground/70">預約時間</dt><dd>{{ ticket.source.scheduledAt ? formatDateTime(ticket.source.scheduledAt) : '尚未排程' }}</dd></div>
+        <div><dt class="text-foreground/70">估價</dt><dd>{{ ticket.source.estimatedCost == null ? '尚未提供' : `${ticket.source.estimatedCost.toLocaleString()} 元` }}</dd></div>
+        <div><dt class="text-foreground/70">實際金額</dt><dd>{{ ticket.source.actualCost == null ? '尚未提供' : `${ticket.source.actualCost.toLocaleString()} 元` }}</dd></div>
+      </dl>
     </section>
-
+    <section v-if="files.length">
+      <h3 class="mb-2 text-xs font-semibold text-foreground/70">照片與附件</h3>
+      <div class="grid grid-cols-2 gap-3"><RepairAttachmentPreview v-for="media in files" :key="media.id" :media="media" /></div>
+    </section>
     <section>
-      <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">狀態時間軸</h3>
-      <!--
-        每一筆的「轉移到哪個狀態」用同一套顏色對應。時間軸本來全是黑字，
-        要逐行讀才知道哪一步開始出問題；上了色之後，紅點出現在哪一行
-        一眼就看得到。
-      -->
-      <ol class="space-y-4 border-l-2 border-border pl-5">
-        <li v-for="(event, index) in ticket.timeline" :key="index" class="relative">
-          <!-- 節點壓在線上，讓它看起來是時間軸而不是一個縮排的清單 -->
-          <span
-            class="absolute -left-[27px] top-1.5 size-2.5 rounded-full border-2 border-background"
-            :class="STATUS_DOT_TONE_CLASS[maintenanceStatusTone(event.to)]"
-            aria-hidden="true"
-          />
-          <p class="text-xs text-foreground/70">
-            {{ formatDateTime(event.at) }} · {{ event.actor }}
-          </p>
-          <p class="flex flex-wrap items-center gap-1.5">
-            <span class="text-foreground/70">
-              {{ event.from ? maintenanceStatusLabels[event.from] : '建立' }}
-            </span>
-            <span class="text-foreground/70" aria-hidden="true">→</span>
-            <StatusDot
-              :tone="maintenanceStatusTone(event.to)"
-              :label="maintenanceStatusLabels[event.to]"
-            />
-          </p>
-          <p v-if="event.note" class="text-foreground/70">備註：{{ event.note }}</p>
+      <h3 class="mb-2 text-xs font-semibold text-foreground/70">工單時間軸</h3>
+      <ol class="space-y-4 border-l-2 border-border pl-4">
+        <li v-for="event in ticket.source.timeline" :key="event.id">
+          <p class="text-xs text-foreground/70">{{ formatDateTime(event.at) }} · {{ actorLabels[event.actorRole ?? 'system'] ?? '系統' }}</p>
+          <p class="font-medium">{{ event.title }}</p>
+          <p v-if="event.detail" class="whitespace-pre-wrap text-foreground/70">{{ event.detail }}</p>
         </li>
       </ol>
     </section>
-
     <section>
-      <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">狀態推進</h3>
-      <template v-if="inQueue">
-        <p
-          v-if="queueReason"
-          :class="[
-            'mb-2 inline-flex rounded-full px-3 py-1 text-xs font-medium',
-            queueReasonClass(queueReason),
-          ]"
-        >
-          待處理原因：{{ adminQueueReasonLabels[queueReason] }}
-        </p>
-        <Textarea v-model="changeNote" placeholder="變更備註（選填）" class="mb-2" />
-        <div v-if="nextStatuses.length > 0" class="flex flex-wrap gap-2">
-          <Button v-for="next in nextStatuses" :key="next" size="sm" @click="handleAdvance(next)">
-            推進至「{{ maintenanceStatusLabels[next] }}」
-          </Button>
-        </div>
-        <p v-else class="text-muted-foreground">已是終態</p>
-        <!-- 爭議中與逾期是由狀態決定的，得靠推進狀態才離得開佇列，這顆在那兩種情況不會有效果 -->
-        <Button
-          v-if="!isStatusDrivenQueueReason(queueReason)"
-          variant="outline"
-          size="sm"
-          class="mt-2"
-          @click="handleDequeue"
-        >
-          移出待處理
-        </Button>
-      </template>
-      <template v-else>
-        <p class="mb-2 text-muted-foreground">
-          此工單不在待處理佇列中，租客與房東的報修流程由雙方自行走完，管理員不主動推進狀態。
-        </p>
-        <Button size="sm" @click="handleQueue">加入待處理</Button>
-      </template>
-      <!--
-        錯誤訊息不用紅字：--destructive 當文字色在淺色底上只有 2.6 左右。
-        改成淡紅底的方框 —— 容器帶語意、文字用正常前景色，兩件事都成立。
-      -->
-      <p
-        v-if="error"
-        class="mt-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
-      >
-        {{ error }}
-      </p>
+      <h3 class="mb-2 text-xs font-semibold text-foreground/70">平台處理</h3>
+      <p class="mb-3 text-foreground/70">房東回報完工後，由租客複驗確認結案。</p>
+      <p v-if="queueReason" class="mb-3">待處理原因：{{ adminQueueReasonLabels[queueReason] }}</p>
+      <div class="flex flex-wrap gap-2">
+        <Button v-if="!inQueue" size="sm" :disabled="saving" @click="queueTicket(ticket.id)">加入待處理</Button>
+        <Button v-if="ticket.manuallyQueued || ticket.interventionRequested" variant="outline" size="sm" :disabled="saving" @click="dequeueTicket(ticket.id)">清除人工介入標記</Button>
+        <Button v-if="!ticket.interventionRequested" variant="outline" size="sm" :disabled="saving" @click="setIntervention(ticket.id, true)">標記平台介入</Button>
+      </div>
+      <p v-if="ticket.overdue || ticket.source.responsibilityAgreement === 'questioned'" class="mt-2 text-xs text-foreground/70">逾期與責任異議會依案件進度重新判斷，清除人工標記後仍可能留在待處理。</p>
+      <ActionError v-if="error" :message="error" class="mt-3" @dismiss="error = ''" />
     </section>
-
     <section>
-      <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-foreground/70">管理員註記</h3>
-      <Textarea v-model="adminNoteDraft" placeholder="填寫僅供內部檢視的備註" class="mb-2" />
-      <Button variant="outline" size="sm" @click="handleSaveNote">儲存管理員註記</Button>
+      <h3 class="mb-2 text-xs font-semibold text-foreground/70">管理員註記</h3>
+      <Textarea v-model="adminNoteDraft" placeholder="填寫僅供內部檢視的備註" class="mb-2" @input="saved = false" />
+      <Button variant="outline" size="sm" :disabled="saving" @click="handleSaveNote">{{ saving ? '儲存中…' : '儲存管理員註記' }}</Button>
+      <p v-if="saved" role="status" class="mt-2 text-foreground/70">已儲存。</p>
     </section>
   </div>
 </template>

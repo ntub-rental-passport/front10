@@ -1,57 +1,34 @@
-export interface RepairPhotoRef {
-  id: string
-  name: string
-  type: string
-  size: number
-}
+import { readRepairFile, uploadRepairFile, type RepairSide } from './repairApi'
+import { validateRepairUpload, type RepairPhotoPurpose } from '@/src/utils/repair-uploads'
 
-const DATABASE_NAME = 'rentmate-repair-media'
-const STORE_NAME = 'photos'
-
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE_NAME, 1)
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
-        request.result.createObjectStore(STORE_NAME)
-      }
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
+export interface RepairPhotoRef { id: string; name: string; type: string; size: number; url?: string; purpose?: RepairPhotoPurpose }
+// 草稿只在送出前暫存記憶體，不讀寫或移除原來的 IndexedDB。
+const drafts = new Map<string, File>()
+const references = new Map<string, RepairPhotoRef>()
+export async function saveRepairPhoto(file: File, ticketId?: string, purpose: RepairPhotoPurpose = 'initial', side: RepairSide = 'tenant'): Promise<RepairPhotoRef> {
+  const error = validateRepairUpload(file, purpose)
+  if (error) throw new Error(error)
+  const reference = ticketId ? await uploadRepairFile(side, ticketId, file, purpose) : { id: `draft-${crypto.randomUUID()}`, name: file.name, type: file.type, size: file.size, purpose }
+  if (!ticketId) drafts.set(reference.id, file)
+  references.set(reference.id, reference)
+  return reference
 }
-
-export async function saveRepairPhoto(file: File): Promise<RepairPhotoRef> {
-  const id = crypto.randomUUID()
-  const database = await openDatabase()
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(STORE_NAME, 'readwrite')
-    transaction.objectStore(STORE_NAME).put(file, id)
-    transaction.oncomplete = () => resolve()
-    transaction.onerror = () => reject(transaction.error)
-  })
-  database.close()
-  return { id, name: file.name, type: file.type, size: file.size }
+export async function uploadDraftPhotos(ticketId: string, photos: RepairPhotoRef[]): Promise<RepairPhotoRef[]> {
+  for (let index = 0; index < photos.length; index++) {
+    const photo = photos[index]!
+    const file = drafts.get(photo.id)
+    if (!file) continue
+    const uploaded = await saveRepairPhoto(file, ticketId)
+    photos[index] = uploaded
+    drafts.delete(photo.id)
+  }
+  return [...photos]
 }
-
-export async function getRepairPhotoUrl(id: string): Promise<string> {
-  const database = await openDatabase()
-  const blob = await new Promise<Blob | undefined>((resolve, reject) => {
-    const request = database.transaction(STORE_NAME).objectStore(STORE_NAME).get(id)
-    request.onsuccess = () => resolve(request.result as Blob | undefined)
-    request.onerror = () => reject(request.error)
-  })
-  database.close()
-  return blob ? URL.createObjectURL(blob) : ''
+export async function getRepairPhotoUrl(photo: RepairPhotoRef | string): Promise<string> {
+  const reference = typeof photo === 'string' ? references.get(photo) : photo
+  const id = typeof photo === 'string' ? photo : photo.id
+  const draft = drafts.get(id)
+  if (draft) return URL.createObjectURL(draft)
+  return reference?.url ? readRepairFile(reference.url) : ''
 }
-
-export async function removeRepairPhoto(id: string): Promise<void> {
-  const database = await openDatabase()
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(STORE_NAME, 'readwrite')
-    transaction.objectStore(STORE_NAME).delete(id)
-    transaction.oncomplete = () => resolve()
-    transaction.onerror = () => reject(transaction.error)
-  })
-  database.close()
-}
+export async function removeRepairPhoto(id: string): Promise<void> { drafts.delete(id); references.delete(id) }

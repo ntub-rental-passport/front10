@@ -1,4 +1,8 @@
-import type { Announcement, AnnouncementAudience, AnnouncementLevel } from '@/src/mocks/admin/content'
+import type {
+  Announcement,
+  AnnouncementAudience,
+  AnnouncementLevel,
+} from '@/src/mocks/admin/content'
 import { resolvePhase, type Phase } from './phase'
 
 export function isAnnouncementActive(a: Announcement, now: Date): boolean {
@@ -29,7 +33,10 @@ export function resolveAnnouncementPhase(a: Announcement, now: Date): Announceme
  * 這則內容該不該出現在某一端。公告與輪播共用同一組對象（全部／租客／房東），
  * 所以判斷也共用一份：`all` 兩邊都看得到，其餘只給指定的那一端。
  */
-export function matchesAudience(audience: AnnouncementAudience, side: 'tenant' | 'landlord'): boolean {
+export function matchesAudience(
+  audience: AnnouncementAudience,
+  side: 'tenant' | 'landlord',
+): boolean {
   return audience === 'all' || audience === side
 }
 
@@ -62,8 +69,8 @@ export function isAnnouncementDismissed(
   return dismissedKeys.includes(announcementDismissKey(a))
 }
 
-/** 一則公告實際可能出現的地方。目前只有這兩處會讀公告——見 announcementPlacement 的說明。 */
-export type AnnouncementLocation = 'dashboard-banner' | 'notification-center'
+/** 一則公告實際可能出現的地方。租客首頁、通知中心與房東通知都會讀公告——見 announcementPlacement 的說明。 */
+export type AnnouncementLocation = 'dashboard-banner' | 'notification-center' | 'landlord-bell'
 
 /**
  * 這則公告「實際」會出現在哪裡——唯一的判斷來源。後台列表、預覽面板都該呼叫
@@ -72,39 +79,32 @@ export type AnnouncementLocation = 'dashboard-banner' | 'notification-center'
  * 講成「會出現在儀表板」——那則公告根本沒在任何地方出現。
  */
 export type AnnouncementPlacement =
-  | { kind: 'landlord-unsupported' }
   | { kind: 'unpublished' }
   | { kind: 'expired' }
   | { kind: 'scheduled'; startAt: string; locations: AnnouncementLocation[] }
   | { kind: 'live'; locations: AnnouncementLocation[] }
 
-type PlaceableAnnouncement = Pick<Announcement, 'audience' | 'published' | 'startAt' | 'endAt' | 'level'>
+type PlaceableAnnouncement = Pick<
+  Announcement,
+  'audience' | 'published' | 'startAt' | 'endAt' | 'level'
+>
 
 /**
- * 優先序（由上到下，符合第一條就不再往下看）：
- *
- *   1. audience === 'landlord' → 不會出現在任何地方。全專案讀公告的只有
- *      useNotifications.ts、useAnnouncementDismissal.ts、dashboard.vue，
- *      三個都是租客端，房東端（src/pages/landlord/）沒有一行程式碼讀公告。
- *      這條要排在狀態判斷之前：就算發布了、日期也在區間內，房東端還是
- *      讀不到，不能讓它被判成「未發布」而誤導成「發布了就會出現」。
- *   2. 狀態 draft（未發布）→ 不會出現
- *   3. 狀態 expired（已過期）→ 不會出現
- *   4. 狀態 scheduled（排程中）→ 還沒出現，但從 startAt 起會出現在第 5 條
- *      算出的地方
- *   5. 狀態 active（生效中）→ 通知中心一定有；儀表板橫幅只有 warning／urgent
- *      （isDashboardAnnouncementLevel 為真）才有
+ * 2026-10-01 房東鈴鐺完成後，房東公告也有實際入口；所有受眾先依發布日期判斷。
+ * 生效或排程公告依受眾決定位置：租客通知中心、房東通知；租客端的 warning／urgent
+ * 另外顯示儀表板橫幅，避免一般公告佔滿首頁。
  */
 export function announcementPlacement(a: PlaceableAnnouncement, now: Date): AnnouncementPlacement {
-  if (a.audience === 'landlord') return { kind: 'landlord-unsupported' }
-
   const phase = resolvePhase(a, now)
   if (phase === 'draft') return { kind: 'unpublished' }
   if (phase === 'expired') return { kind: 'expired' }
 
-  const locations: AnnouncementLocation[] = isDashboardAnnouncementLevel(a.level)
-    ? ['dashboard-banner', 'notification-center']
-    : ['notification-center']
+  const locations: AnnouncementLocation[] = []
+  if (matchesAudience(a.audience, 'tenant')) {
+    if (isDashboardAnnouncementLevel(a.level)) locations.push('dashboard-banner')
+    locations.push('notification-center')
+  }
+  if (matchesAudience(a.audience, 'landlord')) locations.push('landlord-bell')
 
   return phase === 'scheduled'
     ? { kind: 'scheduled', startAt: a.startAt, locations }
@@ -120,13 +120,14 @@ export function formatAnnouncementShortDate(iso: string): string {
 const LOCATION_LABELS: Record<AnnouncementLocation, string> = {
   'dashboard-banner': '儀表板橫幅',
   'notification-center': '通知中心',
+  'landlord-bell': '房東通知',
 }
 
 function locationsSummary(locations: AnnouncementLocation[]): string {
   if (locations.length === 0) return '不會出現'
   if (locations.length === 1) {
     const only = locations[0]
-    return only === 'notification-center' ? '只在通知中心' : LOCATION_LABELS[only]
+    return only === 'dashboard-banner' ? LOCATION_LABELS[only] : `只在${LOCATION_LABELS[only]}`
   }
   return locations.map((loc) => LOCATION_LABELS[loc]).join('＋')
 }
@@ -137,8 +138,6 @@ function locationsSummary(locations: AnnouncementLocation[]): string {
  */
 export function announcementPlacementSummary(placement: AnnouncementPlacement): string {
   switch (placement.kind) {
-    case 'landlord-unsupported':
-      return '不會出現在任何地方 —— 房東端尚未讀取公告'
     case 'unpublished':
       return '未發布 —— 不會出現'
     case 'expired':

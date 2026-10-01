@@ -84,6 +84,8 @@ export function canTransition(from: MaintenanceStatus, to: MaintenanceStatus): b
  * 佇列成員資格是衍生計算，不額外存欄位 —— 否則欄位跟三個來源條件會不同步。
  */
 export type AdminQueueTicket = {
+  overdue?: boolean
+  disputed?: boolean
   status: MaintenanceStatus
   interventionRequested: boolean
   manuallyQueued: boolean
@@ -91,6 +93,7 @@ export type AdminQueueTicket = {
 
 export function isInAdminQueue(ticket: AdminQueueTicket): boolean {
   return (
+    ticket.disputed || ticket.overdue ||
     ticket.status === 'disputed' ||
     ticket.status === 'overdue' ||
     ticket.interventionRequested ||
@@ -126,8 +129,8 @@ export function isStatusDrivenQueueReason(reason: AdminQueueReason | null): bool
  * 最後才是管理員自己標記的。不在佇列內回傳 null。
  */
 export function adminQueueReason(ticket: AdminQueueTicket): AdminQueueReason | null {
-  if (ticket.status === 'disputed') return 'disputed'
-  if (ticket.status === 'overdue') return 'overdue'
+  if (ticket.disputed || ticket.status === 'disputed') return 'disputed'
+  if (ticket.overdue || ticket.status === 'overdue') return 'overdue'
   if (ticket.interventionRequested) return 'intervention_requested'
   if (ticket.manuallyQueued) return 'manually_queued'
   return null

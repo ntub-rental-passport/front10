@@ -79,3 +79,4 @@ client_secret*.json
 !.env.production
 backend/uploads/inspection/
 backend/uploads/banners/
+backend/uploads/repair-photos/

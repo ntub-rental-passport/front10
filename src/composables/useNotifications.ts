@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { usePublicContent } from './usePublicContent'
+import { refreshPublicContent, usePublicContent } from './usePublicContent'
 import { refreshInbox, useInbox } from './useInbox'
 import type { AnnouncementLevel, NotifChannel, NotifSourceType } from '@/src/mocks/admin-seed'
 
@@ -30,14 +30,23 @@ export interface InboxItem {
  * 站內通知與已讀狀態都存在後端（見 useInbox），換一台裝置看到的是同一份。
  * 公告是廣播內容、本身沒有收件人，已讀記的是「這個人讀過哪幾則公告」。
  */
-export function useNotifications() {
-  // 通知中心是租客端的收件匣，只該收到跟租客身分有關的公告（audience 為 tenant 或 all）。
-  const { tenantAnnouncements } = usePublicContent()
-  const { state, markMessageRead, markAnnouncementRead, markAllRead: markEverythingRead } = useInbox()
+export function useNotifications(side: 'tenant' | 'landlord' = 'tenant') {
+  const content = usePublicContent()
+  const announcements =
+    side === 'landlord' ? content.landlordAnnouncements : content.tenantAnnouncements
+  const {
+    state,
+    loading,
+    loadError,
+    actionError,
+    markMessageRead,
+    markAnnouncementRead,
+    markAllRead: markEverythingRead,
+  } = useInbox()
   void refreshInbox()
 
   const announcementItems = computed<InboxItem[]>(() =>
-    tenantAnnouncements.value.map((item) => ({
+    announcements.value.map((item) => ({
       key: `an:${item.id}`,
       sourceId: item.id,
       source: 'announcement' as const,
@@ -88,5 +97,20 @@ export function useNotifications() {
     markEverythingRead(announcementItems.value.map((item) => item.sourceId))
   }
 
-  return { inboxItems, unreadCount, markRead, markAllRead }
+  async function refresh(): Promise<void> {
+    await Promise.all([refreshInbox(), refreshPublicContent({ force: true })])
+  }
+
+  return {
+    inboxItems,
+    unreadCount,
+    markRead,
+    markAllRead,
+    refresh,
+    actionError,
+    loading: computed(() => loading.value || content.loading.value),
+    loadError: computed(
+      () => loadError.value || (content.loadError.value ? '讀不到通知中的公告，請重新讀取。' : ''),
+    ),
+  }
 }

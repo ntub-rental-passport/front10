@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -32,13 +32,13 @@ import {
   getRepairPhotoUrl,
   removeRepairPhoto,
   saveRepairPhoto,
+  uploadDraftPhotos,
   type RepairPhotoRef,
 } from '@/src/services/repairMediaStore'
 
 const session = getAuthSession()
 const tenantUserId = getAuthenticatedUserId(session)
-const { tickets, createTicket, updateTicket, claimDemoTenantTickets } = useRepairTickets()
-claimDemoTenantTickets(tenantUserId)
+const { tickets, createTicket, updateTicket, loading, error, saving, actionError, refresh, reloadTicket } = useRepairTickets()
 const tenantTickets = computed(() =>
   tickets.value.filter((item) => item.tenantUserId === tenantUserId),
 )
@@ -47,20 +47,6 @@ const selected = computed(
   () => tenantTickets.value.find((item) => item.id === selectedId.value) ?? tenantTickets.value[0],
 )
 
-const demoLease: TenantLeaseOption = {
-  leaseId: 'lease-demo-101',
-  propertyId: 'property-demo-1',
-  roomId: 'room-demo-101',
-  property: '我的出租物件',
-  address: '臺北市中山區松江路 88 號',
-  room: '101',
-  tenant: session?.nickname || '王小明',
-  phone: '0912-345-678',
-  startDate: '2026-05-01',
-  endDate: '2027-04-30',
-  status: 'active',
-  effective: true,
-}
 const leases = ref<TenantLeaseOption[]>([])
 const leaseLoadError = ref('')
 const leasesLoading = ref(true)
@@ -94,6 +80,7 @@ const uploadError = ref('')
 const uploadBusy = ref(false)
 const photoUrls = ref<Record<string, string>>({})
 const formPhotos = ref<RepairPhotoRef[]>([])
+const draftTicketId = ref('')
 const formPhotoUrls = ref<Record<string, string>>({})
 
 const today = new Date()
@@ -120,7 +107,7 @@ const endTimeOptions = computed(() => endOptions(repairStartTime.value))
 const locationItems: Record<string, string[]> = {
   客廳: ['冷氣', '照明', '家具', '門窗', '插座', '其他'],
   臥室: ['冷氣', '照明', '家具', '門窗', '插座', '其他'],
-  浴室: ['熱水器｜HCG LF-4012', '洗手台', '馬桶', '排水', '水管漏水', '照明', '其他'],
+  浴室: ['熱水器', '洗手台', '馬桶', '排水', '水管漏水', '照明', '其他'],
   廚房: ['冰箱', '流理台', '排水', '水管漏水', '瓦斯設備', '照明', '其他'],
   陽台: ['洗衣機', '排水', '水龍頭', '門窗', '照明', '其他'],
   公共區域: ['照明', '門鎖', '電梯', '消防設備', '其他'],
@@ -280,12 +267,10 @@ async function loadLeases(): Promise<void> {
   leaseLoadError.value = ''
   try {
     const remoteLeases = await fetchTenantLeases()
-    leases.value = remoteLeases.length || session?.accessToken ? remoteLeases : [demoLease]
+    leases.value = remoteLeases
   } catch {
-    leaseLoadError.value = session?.accessToken
-      ? '租約服務暫時無法連線，為避免送錯物件，目前先停用新增報修。'
-      : '目前使用本機示範租約；串接正式帳號後會自動載入有效租約。'
-    leases.value = session?.accessToken ? [] : [demoLease]
+    leaseLoadError.value = '租約服務暫時無法連線，請重新讀取。'
+    leases.value = []
   }
   selectedLeaseId.value = activeLeases.value[0]?.leaseId ?? ''
   form.value.phone = selectedLease.value?.phone || ''
@@ -311,17 +296,31 @@ watch(
     timelineOpen.value = false
   },
 )
-watch(
-  () => selected.value?.photos,
-  async (photos) => {
-    Object.values(photoUrls.value).forEach((url) => URL.revokeObjectURL(url))
-    const entries = await Promise.all(
-      (photos ?? []).map(async (photo) => [photo.id, await getRepairPhotoUrl(photo.id)] as const),
-    )
+const attachmentError = ref('')
+const selectedAttachments = computed(() => selected.value ? [
+  ...selected.value.photos,
+  ...selected.value.supplements.flatMap(item => item.photos),
+  ...(selected.value.unresolvedPhotos ?? []),
+  ...(selected.value.completionPhotos ?? []),
+  ...[selected.value.receipt, selected.value.quote].filter((item): item is RepairPhotoRef => !!item),
+] : [])
+let photoRequest = 0
+async function loadAttachments(): Promise<void> {
+  const version = ++photoRequest
+  attachmentError.value = ''
+  const entries: [string, string][] = []
+  try {
+    for (const photo of selectedAttachments.value) entries.push([photo.id, await getRepairPhotoUrl(photo)])
+    if (version !== photoRequest) { entries.forEach(([, url]) => URL.revokeObjectURL(url)); return }
+    Object.values(photoUrls.value).forEach(url => URL.revokeObjectURL(url))
     photoUrls.value = Object.fromEntries(entries)
-  },
-  { immediate: true },
-)
+  } catch {
+    entries.forEach(([, url]) => URL.revokeObjectURL(url))
+    if (version === photoRequest) attachmentError.value = '讀不到附件，請重試。'
+  }
+}
+watch(selectedAttachments, () => { void loadAttachments() }, { immediate: true })
+onUnmounted(() => { photoRequest++; Object.values(photoUrls.value).forEach(url => URL.revokeObjectURL(url)); Object.values(formPhotoUrls.value).forEach(url => URL.revokeObjectURL(url)) })
 
 function notify(message: string): void {
   toast.value = message
@@ -333,7 +332,7 @@ async function processPhotos(
   target: 'form' | 'supplement' | 'unresolved',
 ): Promise<void> {
   uploadError.value = ''
-  const allowed = new Set(['image/jpeg', 'image/png', 'image/heic', 'image/heif'])
+  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp'])
   const current =
     target === 'form'
       ? formPhotos.value
@@ -341,20 +340,26 @@ async function processPhotos(
         ? supplementPhotos.value
         : unresolvedPhotos.value
   const accepted = files.slice(0, Math.max(0, 5 - current.length))
-  const invalid = accepted.find((file) => !allowed.has(file.type) || file.size > 10 * 1024 * 1024)
+  const invalid = accepted.find((file) => !allowed.has(file.type) || file.size > 5 * 1024 * 1024)
   if (invalid) {
-    uploadError.value = `${invalid.name} 不符合 JPG、PNG、HEIC 或 10MB 上限。`
+    uploadError.value = `${invalid.name} 不符合 JPG、PNG、WebP 或 5MB 上限。`
     return
   }
   uploadBusy.value = true
   try {
-    const saved = await Promise.all(accepted.map(saveRepairPhoto))
-    current.push(...saved)
+    const saved: RepairPhotoRef[] = []
+    for (const file of accepted) {
+      const photo = await saveRepairPhoto(file, target === 'form' ? undefined : selected.value?.id, target === 'form' ? 'initial' : target)
+      saved.push(photo)
+      current.push(photo)
+    }
     if (target === 'form') {
       form.value.photos = [...current]
       form.value.photoNames = current.map((photo) => photo.name)
-      for (const photo of saved) formPhotoUrls.value[photo.id] = await getRepairPhotoUrl(photo.id)
+      for (const photo of saved) formPhotoUrls.value[photo.id] = await getRepairPhotoUrl(photo)
     }
+  } catch (error) {
+    uploadError.value = error instanceof Error ? error.message : '附件上傳失敗，請重試。'
   } finally {
     uploadBusy.value = false
   }
@@ -397,11 +402,14 @@ function reviewForm(): void {
   summaryOpen.value = true
 }
 
-function submitRepair(): void {
+async function submitRepair(): Promise<void> {
+  if (saving.value || uploadBusy.value) return
   const lease = selectedLease.value
   if (!lease) return
-  const ticket = createTicket({
+  const ticket = draftTicketId.value ? { id: draftTicketId.value } : await createTicket({
     ...form.value,
+    photos: [],
+    photoNames: [],
     tenantUserId,
     leaseId: lease.leaseId,
     propertyId: lease.propertyId,
@@ -412,23 +420,38 @@ function submitRepair(): void {
     tenant: lease.tenant,
     phone: form.value.phone || lease.phone,
   })
+  if (!ticket) return
+  draftTicketId.value = ticket.id
   selectedId.value = ticket.id
+  uploadBusy.value = true
+  uploadError.value = ''
+  try {
+    await uploadDraftPhotos(ticket.id, formPhotos.value)
+    await reloadTicket(ticket.id)
+  } catch (error) {
+    uploadError.value = error instanceof Error ? error.message : '附件上傳失敗。'
+    formError.value = '案件已建立；附件未全部上傳，請重試送出，系統會沿用同一案件。'
+    return
+  } finally { uploadBusy.value = false }
+  draftTicketId.value = ''
   summaryOpen.value = false
   createOpen.value = false
   formPhotos.value = []
+  Object.values(formPhotoUrls.value).forEach(url => URL.revokeObjectURL(url))
   formPhotoUrls.value = {}
   form.value = emptyForm()
   notify('報修已送出，房東收到新案件通知')
 }
 
 function closeRepairDialogs(): void {
+  if (saving.value || uploadBusy.value) return
   summaryOpen.value = false
   createOpen.value = false
 }
 
-function acceptSchedule(): void {
+async function acceptSchedule(): Promise<void> {
   if (!selected.value) return
-  updateTicket(
+  if (!await updateTicket(
     selected.value.id,
     { tenantScheduleReply: 'accepted', rescheduleRequest: null },
     {
@@ -436,11 +459,11 @@ function acceptSchedule(): void {
       detail: `${formatDateTime(selected.value.scheduledAt)}；${selected.value.contactBeforeArrival ? '到場前請先聯絡' : '依原進場方式'}`,
       actorRole: 'tenant',
     },
-  )
+  )) return
   notify('已確認維修時段並通知房東')
 }
 
-function submitReschedule(): void {
+async function submitReschedule(): Promise<void> {
   if (
     !selected.value ||
     !reschedule.value.date ||
@@ -452,7 +475,7 @@ function submitReschedule(): void {
     reschedule.value.alternativeEnabled && reschedule.value.alternativeDate
       ? `${reschedule.value.alternativeDate} ${reschedule.value.alternativeStartTime}–${reschedule.value.alternativeEndTime}`
       : ''
-  updateTicket(
+  if (!await updateTicket(
     selected.value.id,
     {
       tenantScheduleReply: 'reschedule',
@@ -472,15 +495,15 @@ function submitReschedule(): void {
       detail: `可配合 ${primary}${alternative ? `；備選 ${alternative}` : ''}${reschedule.value.note ? `；${reschedule.value.note}` : ''}`,
       actorRole: 'tenant',
     },
-  )
+  )) return
   rescheduleOpen.value = false
   notify('改期需求已送給房東')
 }
 
-function submitSupplement(): void {
+async function submitSupplement(): Promise<void> {
   if (!selected.value || (!supplementNote.value.trim() && !supplementPhotos.value.length)) return
   const at = new Date().toISOString()
-  updateTicket(
+  if (!await updateTicket(
     selected.value.id,
     {
       supplementRequested: false,
@@ -501,16 +524,16 @@ function submitSupplement(): void {
       detail: `${supplementNote.value.trim()}${supplementPhotos.value.length ? `（新增 ${supplementPhotos.value.length} 張照片）` : ''}`,
       actorRole: 'tenant',
     },
-  )
+  )) return
   supplementNote.value = ''
   supplementPhotos.value = []
   supplementOpen.value = false
   notify('補充資料已送出')
 }
 
-function cancelTicket(): void {
+async function cancelTicket(): Promise<void> {
   if (!selected.value || !window.confirm('確定要取消這筆報修嗎？原始紀錄仍會保留。')) return
-  updateTicket(
+  if (!await updateTicket(
     selected.value.id,
     { status: 'canceled' },
     {
@@ -518,43 +541,43 @@ function cancelTicket(): void {
       detail: '案件已取消，原始報修與操作紀錄仍保留。',
       actorRole: 'tenant',
     },
-  )
+  )) return
   notify('報修已取消')
 }
 
-function agreeResponsibility(): void {
+async function agreeResponsibility(): Promise<void> {
   if (!selected.value) return
-  updateTicket(
+  if (!await updateTicket(
     selected.value.id,
     { responsibilityAgreement: 'agreed', responsibilityQuestion: '' },
     { title: '租客已確認費用與責任說明', actorRole: 'tenant' },
-  )
+  )) return
   notify('確認紀錄已保存')
 }
 
-function submitQuestion(): void {
+async function submitQuestion(): Promise<void> {
   if (!selected.value || !questionNote.value.trim()) return
-  updateTicket(
+  if (!await updateTicket(
     selected.value.id,
     { responsibilityAgreement: 'questioned', responsibilityQuestion: questionNote.value.trim() },
     { title: '租客對責任或金額提出疑問', detail: questionNote.value.trim(), actorRole: 'tenant' },
-  )
+  )) return
   questionOpen.value = false
   questionNote.value = ''
   notify('疑問已送給房東')
 }
 
-function resolveInspection(): void {
+async function resolveInspection(): Promise<void> {
   if (!selected.value) return
-  updateTicket(
+  if (!await updateTicket(
     selected.value.id,
     { inspectionResult: 'resolved', status: 'completed' },
     { title: '租客驗收通過，案件完成', actorRole: 'tenant' },
-  )
+  )) return
   notify('驗收完成，案件紀錄已保存')
 }
 
-function submitUnresolved(): void {
+async function submitUnresolved(): Promise<void> {
   if (
     !selected.value ||
     !unresolved.value.note.trim() ||
@@ -562,13 +585,14 @@ function submitUnresolved(): void {
   )
     return
   const revisit = `${unresolved.value.date} ${unresolved.value.startTime}–${unresolved.value.endTime}`
-  updateTicket(
+  if (!await updateTicket(
     selected.value.id,
     {
       inspectionResult: 'unresolved',
       status: 'processing',
       unresolvedNote: unresolved.value.note.trim(),
       unresolvedPhotoNames: unresolvedPhotos.value.map((photo) => photo.name),
+      unresolvedPhotos: [...unresolvedPhotos.value],
       unresolvedSafetyConcern: unresolved.value.safetyConcern,
       revisitAvailableTime: revisit,
     },
@@ -577,7 +601,7 @@ function submitUnresolved(): void {
       detail: `${unresolved.value.note.trim()}；可再次維修 ${revisit}${unresolved.value.safetyConcern ? '；仍有安全疑慮' : ''}`,
       actorRole: 'tenant',
     },
-  )
+  )) return
   unresolvedOpen.value = false
   unresolvedPhotos.value = []
   notify('已通知房東再次處理')
@@ -586,6 +610,13 @@ function submitUnresolved(): void {
 
 <template>
   <div class="tenant-repair-page min-h-full w-full space-y-5 p-4 text-[#18233d] md:p-6 xl:p-8">
+    <p v-if="loading" role="status">正在讀取報修資料…</p>
+    <div v-if="error" role="alert">{{ error }} <button class="btn secondary" @click="refresh">重新讀取</button></div>
+    <p v-if="actionError" role="alert">{{ actionError }}</p>
+    <p v-if="uploadError" role="alert">{{ uploadError }}</p>
+    <p v-if="draftTicketId" role="status">案件 {{ draftTicketId }} 已建立，尚有附件待送出。<button class="btn secondary" @click="summaryOpen = true">繼續上傳附件</button></p>
+    <button v-if="!loading" class="btn secondary" @click="refresh">重新整理案件</button>
+    <fieldset v-if="!error && !loading" :disabled="saving || uploadBusy" class="contents">
     <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
         <p class="eyebrow">住家服務</p>
@@ -594,7 +625,7 @@ function submitUnresolved(): void {
           快速回報問題，掌握房東回覆、維修時間與費用確認。
         </p>
       </div>
-      <button class="btn primary" :disabled="!activeLeases.length" @click="createOpen = true">
+      <button class="btn primary" :disabled="!activeLeases.length" @click="draftTicketId ? summaryOpen = true : createOpen = true">
         <Plus />建立報修單
       </button>
     </header>
@@ -655,7 +686,7 @@ function submitUnresolved(): void {
             <p>{{ item.description }}</p>
             <small>{{ formatShortDateTime(item.createdAt) }} · {{ item.id }}</small>
           </button>
-          <button class="new-card" :disabled="!activeLeases.length" @click="createOpen = true">
+          <button class="new-card" :disabled="!activeLeases.length" @click="draftTicketId ? summaryOpen = true : createOpen = true">
             <Plus />回報新的問題
           </button>
         </div>
@@ -869,11 +900,11 @@ function submitUnresolved(): void {
               </div>
               <div>
                 <dt>入住狀況</dt>
-                <dd>{{ selected.inventory.moveInStatus }}</dd>
+                <dd>{{ selected.inventory.moveInStatus || '尚無資料' }}</dd>
               </div>
               <div>
                 <dt>設備資料</dt>
-                <dd>{{ selected.inventory.brand }} {{ selected.inventory.model }}</dd>
+                <dd>{{ [selected.inventory.brand, selected.inventory.model].filter(Boolean).join(' ') || '尚無資料' }}</dd>
               </div>
               <div>
                 <dt>預估／實際</dt>
@@ -895,6 +926,13 @@ function submitUnresolved(): void {
             <p v-else class="confirmed"><Check />你已確認這份責任與費用說明</p>
           </section>
 
+          <section v-if="selectedAttachments.length" class="soft">
+            <h3>案件附件</h3>
+            <p v-if="attachmentError" role="alert">{{ attachmentError }} <button @click="loadAttachments">重新讀取附件</button></p>
+            <div class="flex flex-wrap gap-3"><a v-for="photo in selectedAttachments" :key="photo.id" :href="photoUrls[photo.id]" target="_blank" rel="noopener" :download="photo.name" class="file">
+              <img v-if="photoUrls[photo.id] && photo.type.startsWith('image/')" :src="photoUrls[photo.id]" :alt="photo.name" class="h-20 w-24 object-cover" />{{ photo.name }}
+            </a></div>
+          </section>
           <section v-if="selected.status === 'inspection'" class="soft">
             <h3>完修資料</h3>
             <dl>
@@ -945,11 +983,11 @@ function submitUnresolved(): void {
           </section>
         </div>
       </article>
-      <section v-else class="panel empty">
+      <section v-else-if="!loading && !error" class="panel empty">
         <Home />
         <h2>目前沒有報修案件</h2>
         <p>你可以從有效租約建立第一筆報修。</p>
-        <button class="btn primary" :disabled="!activeLeases.length" @click="createOpen = true">
+        <button class="btn primary" :disabled="!activeLeases.length" @click="draftTicketId ? summaryOpen = true : createOpen = true">
           建立報修單
         </button>
       </section>
@@ -1013,11 +1051,11 @@ function submitUnresolved(): void {
                   }}<input
                     class="hidden"
                     type="file"
-                    accept="image/jpeg,image/png,image/heic,image/heif"
+                    accept="image/jpeg,image/png,image/webp"
                     multiple
                     :disabled="uploadBusy"
                     @change="handlePhotos($event, 'form')" /></span
-                ><small>支援 JPG、PNG、HEIC，每張最大 10MB；照片內容會保存於媒體儲存層。</small
+                ><small>支援 JPG、PNG、WebP，每張最大 5MB；照片內容會保存於媒體儲存層。</small
                 ><span v-if="uploadError" class="form-error"
                   ><AlertTriangle />{{ uploadError }}</span
                 ></label
@@ -1092,7 +1130,7 @@ function submitUnresolved(): void {
             </div>
             <p v-if="formError" class="form-error"><AlertTriangle />{{ formError }}</p>
           </div>
-          <footer>
+          <p v-if="actionError || uploadError" class="form-error" role="alert">{{ actionError || uploadError }}</p><footer>
             <button type="button" class="btn secondary" @click="createOpen = false">取消</button
             ><button class="btn primary">檢查報修摘要<ChevronRight /></button>
           </footer>
@@ -1162,7 +1200,7 @@ function submitUnresolved(): void {
               ><Camera />補充照片<input
                 class="hidden"
                 type="file"
-                accept="image/jpeg,image/png,image/heic,image/heif"
+                accept="image/jpeg,image/png,image/webp"
                 multiple
                 @change="handlePhotos($event, 'supplement')"
             /></label>
@@ -1172,7 +1210,7 @@ function submitUnresolved(): void {
               }}
             </p>
           </div>
-          <footer>
+          <p v-if="actionError || uploadError" class="form-error" role="alert">{{ actionError || uploadError }}</p><footer>
             <button type="button" class="btn secondary" @click="supplementOpen = false">取消</button
             ><button
               class="btn primary"
@@ -1244,7 +1282,7 @@ function submitUnresolved(): void {
               />
             </label>
           </div>
-          <footer>
+          <p v-if="actionError || uploadError" class="form-error" role="alert">{{ actionError || uploadError }}</p><footer>
             <button type="button" class="btn secondary" @click="rescheduleOpen = false">取消</button
             ><button class="btn primary">送出改期需求</button>
           </footer>
@@ -1266,7 +1304,7 @@ function submitUnresolved(): void {
               />
             </label>
           </div>
-          <footer>
+          <p v-if="actionError || uploadError" class="form-error" role="alert">{{ actionError || uploadError }}</p><footer>
             <button type="button" class="btn secondary" @click="questionOpen = false">取消</button
             ><button class="btn primary" :disabled="!questionNote.trim()">送出給房東</button>
           </footer>
@@ -1290,7 +1328,7 @@ function submitUnresolved(): void {
               ><Camera />上傳完修後照片<input
                 class="hidden"
                 type="file"
-                accept="image/jpeg,image/png,image/heic,image/heif"
+                accept="image/jpeg,image/png,image/webp"
                 multiple
                 @change="handlePhotos($event, 'unresolved')" /></label
             ><label class="check-row safety"
@@ -1319,7 +1357,7 @@ function submitUnresolved(): void {
               >
             </div>
           </div>
-          <footer>
+          <p v-if="actionError || uploadError" class="form-error" role="alert">{{ actionError || uploadError }}</p><footer>
             <button type="button" class="btn secondary" @click="unresolvedOpen = false">取消</button
             ><button class="btn primary" :disabled="!unresolved.note.trim()">
               通知房東再次處理
@@ -1328,6 +1366,7 @@ function submitUnresolved(): void {
         </form>
       </div>
     </Teleport>
+    </fieldset>
   </div>
 </template>
 

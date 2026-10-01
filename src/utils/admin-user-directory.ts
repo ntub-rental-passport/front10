@@ -6,7 +6,7 @@
  */
 
 import type { AdminRole, AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admin/users'
-import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
+import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import type { PlanId, Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
 import { depositGap, depositMatchOf, type DepositMatch } from './admin-deposit'
