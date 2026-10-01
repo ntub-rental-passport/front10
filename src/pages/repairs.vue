@@ -68,6 +68,7 @@ const selectedLease = computed(
 
 const createOpen = ref(false)
 const summaryOpen = ref(false)
+const saving = ref(false)
 const supplementOpen = ref(false)
 const rescheduleOpen = ref(false)
 const unresolvedOpen = ref(false)
@@ -395,28 +396,34 @@ function reviewForm(): void {
 }
 
 async function submitRepair(): Promise<void> {
+  if (saving.value) return
   const lease = selectedLease.value
   if (!lease) return
-  const ticket = await createTicket({
-    ...form.value,
-    tenantUserId,
-    leaseId: lease.leaseId,
-    propertyId: lease.propertyId,
-    roomId: lease.roomId,
-    property: lease.property,
-    address: lease.address,
-    room: lease.room,
-    tenant: lease.tenant,
-    phone: form.value.phone || lease.phone,
-  })
-  if (!ticket) return // 錯誤訊息由 repairError 顯示，表單內容保留讓使用者重試
-  selectedId.value = ticket.id
-  summaryOpen.value = false
-  createOpen.value = false
-  formPhotos.value = []
-  formPhotoUrls.value = {}
-  form.value = emptyForm()
-  notify(lease.kind === 'rental' ? '報修已存證，可隨時補充照片與進度' : '報修已送出，房東收到新案件通知')
+  saving.value = true
+  try {
+    const ticket = await createTicket({
+      ...form.value,
+      tenantUserId,
+      leaseId: lease.leaseId,
+      propertyId: lease.propertyId,
+      roomId: lease.roomId,
+      property: lease.property,
+      address: lease.address,
+      room: lease.room,
+      tenant: lease.tenant,
+      phone: form.value.phone || lease.phone,
+    })
+    if (!ticket) return // 錯誤訊息由 repairError 顯示，表單內容保留讓使用者重試
+    selectedId.value = ticket.id
+    summaryOpen.value = false
+    createOpen.value = false
+    formPhotos.value = []
+    formPhotoUrls.value = {}
+    form.value = emptyForm()
+    notify(lease.kind === 'rental' ? '報修已存證，可隨時補充照片與進度' : '報修已送出，房東收到新案件通知')
+  } finally {
+    saving.value = false
+  }
 }
 
 function closeRepairDialogs(): void {
@@ -1191,7 +1198,9 @@ async function submitUnresolved(): Promise<void> {
                 <dd>{{ form.photos.length ? `${form.photos.length} 張` : '未上傳' }}</dd>
               </div>
             </dl>
-            <button class="btn primary w-full" @click="submitRepair"><Check />確認送出報修</button>
+            <button class="btn primary w-full" :disabled="saving" @click="submitRepair">
+              <Check />{{ saving ? '送出中…' : '確認送出報修' }}
+            </button>
           </div>
         </section>
       </div>
