@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -30,10 +29,7 @@ def message(**overrides):
 class InboxTestCase(AdminStoreTestCase):
     def setUp(self):
         super().setUp()
-        self.temp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {
-            'NOTIFICATION_INBOX_DB': self.temp.name + '/inbox.db',
-            'MONITOR_DB': self.temp.name + '/monitor.db',
             'SMTP_USERNAME': 'sender@example.com',
             'SMTP_APP_PASSWORD': 'app-password',
         })
@@ -44,7 +40,6 @@ class InboxTestCase(AdminStoreTestCase):
     def tearDown(self):
         self.accounts.stop()
         self.env.stop()
-        self.temp.cleanup()
 
     def send(self, recipient, **overrides):
         return inbox.create_batch(message(**overrides), recipient, actor='admin@example.com')

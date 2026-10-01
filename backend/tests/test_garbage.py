@@ -1,20 +1,19 @@
-import os
-import tempfile
 import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from tests.admin_store import AdminStoreTestCase
 from notifications import garbage_service as service
 from routers.garbage import ActiveInput, list_reminders, toggle_reminder, delete_reminder, validate_subscription
 
 
-class GarbageReminderTests(unittest.TestCase):
+class GarbageReminderTests(AdminStoreTestCase):
+    """提醒佇列 2026-10-02 起在專案的資料庫裡，所以要換掉 database.engine。"""
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'GARBAGE_REMINDER_DB': self.temp.name + '/reminders.db'})
-        self.env.start()
+        super().setUp()
         self.caps = patch.object(service, 'capabilities', return_value={'email': True, 'push': True})
         self.caps.start()
         self.user = SimpleNamespace(id=10, email='tenant@example.com')
@@ -26,8 +25,6 @@ class GarbageReminderTests(unittest.TestCase):
 
     def tearDown(self):
         self.caps.stop()
-        self.env.stop()
-        self.temp.cleanup()
 
     def create(self):
         return service.create_reminder(self.user.id, self.user.email, self.values)

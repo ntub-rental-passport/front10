@@ -1,14 +1,14 @@
-"""Taipei schedules and durable, single-delivery reminder queue (SQLite)."""
+"""台北市清運時刻表，以及「只送一次」的提醒佇列（存在專案的資料庫）。"""
 import csv
 import json
 import logging
 import os
-import sqlite3
-from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
+
+from db.sqlstore import open_store
 
 TZ = timezone(timedelta(hours=8))
 logger = logging.getLogger(__name__)
@@ -17,32 +17,20 @@ logger = logging.getLogger(__name__)
 #
 # 原本寫死 Path(__file__).resolve().parents[1]，那在開發機上剛好是 repo 根，
 # 但容器的 Dockerfile 是 `COPY . .` 從 ./backend 進 /app —— parents[1] 變成
-# 根目錄 `/`，於是去找 /public/data 與 /backend，兩個都不存在。
-# 2026-09-19 正式站實測：排程每 20 秒噴一次
-# `sqlite3.OperationalError: unable to open database file`。
+# 根目錄 `/`，於是去找 /public/data，那裡沒有東西。
+# 2026-09-19 正式站實測：排程每 20 秒噴一次找不到檔案。
 #
 # 預設值維持原本的 repo 佈局（開發機行為不變），容器由 compose 設環境變數覆寫。
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# ⚠️ 這兩個一定要在**呼叫時**才讀環境變數，不能做成模組層級常數。
-# tests/test_garbage.py 在 setUp() 裡 patch GARBAGE_REMINDER_DB 指向暫存檔，
-# 那時模組早就 import 完了 —— 常數會停在開發機的真實路徑上，
-# 每個測試都去寫同一個檔案，狀態互相污染。
-# 2026-09-19 實際踩到：4 個測試失敗（「送了 2 次」「狀態還是 pending」）。
+# ⚠️ 下面這個一定要在**呼叫時**才讀環境變數，不能做成模組層級常數：
+# 測試會 patch 環境變數指向暫存目錄，那時模組早就 import 完了 —— 常數會停在
+# 開發機的真實路徑上，每個測試都去讀寫同一個位置，狀態互相污染。
 
 
 def data_dir() -> Path:
     """垃圾車站點資料（唯讀）。容器裡由 compose 以唯讀 volume 掛進來。"""
     return Path(os.getenv('GARBAGE_DATA_DIR') or (_REPO_ROOT / 'public/data'))
-
-
-def reminder_db() -> Path:
-    """提醒佇列的 SQLite。
-
-    容器裡要指向可寫且**跨部署保留**的位置 —— 放在映像裡的話，
-    每次 docker compose up --build 都會把使用者設好的提醒清光。
-    """
-    return Path(os.getenv('GARBAGE_REMINDER_DB') or (_REPO_ROOT / 'backend/garbage-reminders.db'))
 
 
 @lru_cache(maxsize=1)
@@ -68,22 +56,13 @@ def stops():
     return result
 
 
-@contextmanager
 def connect():
-    path = reminder_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    db.execute('''CREATE TABLE IF NOT EXISTS garbage_reminders (
-        id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, payload TEXT NOT NULL,
-        due REAL NOT NULL, active INTEGER NOT NULL DEFAULT 1,
-        email_status TEXT NOT NULL, push_status TEXT NOT NULL)''')
-    db.execute('CREATE INDEX IF NOT EXISTS garbage_due ON garbage_reminders(active, due)')
-    try:
-        with db:
-            yield db
-    finally:
-        db.close()
+    """提醒佇列的連線。2026-10-02 起是專案的資料庫，不再是 SQLite 檔。
+
+    名字保留不改，呼叫端（含 admin/monitoring_service.py 的佇列統計）就不用動。
+    一個 `with` 就是一次交易：正常結束 commit、丟例外 rollback，跟原本一樣。
+    """
+    return open_store()
 
 
 def capabilities():
@@ -133,10 +112,13 @@ def create_reminder(user_id, recipient, values):
         if db.execute('SELECT count(*) FROM garbage_reminders WHERE user_id=? AND active=1 AND due>?', (user_id, datetime.now(TZ).timestamp())).fetchone()[0] >= 50:
             raise ValueError('最多可設定 50 筆待發送提醒。')
         identifier = str(uuid4())
-        db.execute('INSERT INTO garbage_reminders VALUES (?, ?, ?, ?, 1, ?, ?)', (
-            identifier, user_id, json.dumps(payload, ensure_ascii=False), due.timestamp(),
-            'pending' if values['notifyEmail'] else 'disabled', 'pending' if values['notifyPush'] else 'disabled',
-        ))
+        db.execute(
+            'INSERT INTO garbage_reminders '
+            '(id, user_id, payload, due, active, email_status, push_status) VALUES (?, ?, ?, ?, 1, ?, ?)',
+            (identifier, user_id, json.dumps(payload, ensure_ascii=False), due.timestamp(),
+             'pending' if values['notifyEmail'] else 'disabled',
+             'pending' if values['notifyPush'] else 'disabled'),
+        )
         return public_reminder(db.execute('SELECT * FROM garbage_reminders WHERE id=?', (identifier,)).fetchone())
 
 

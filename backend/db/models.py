@@ -1,6 +1,6 @@
 """ORM mappings for database.sql (multi-role accounts)."""
 import datetime
-from sqlalchemy import Boolean, Column, Date, DateTime, Time, Enum, Integer, BigInteger, String, Text, DECIMAL, JSON, ForeignKey, UniqueConstraint, CheckConstraint, Index, CHAR
+from sqlalchemy import Boolean, Column, Date, DateTime, Time, Enum, Float, Integer, BigInteger, String, Text, DECIMAL, JSON, ForeignKey, UniqueConstraint, CheckConstraint, Index, CHAR
 from sqlalchemy.dialects.mysql import DATETIME, DOUBLE, LONGTEXT, TINYINT
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_method
@@ -746,3 +746,133 @@ class AdminRepairNote(Base):
     __tablename__ = 'repair_notes'
     ticket_id = Column(String(40), nullable=False, primary_key=True)
     value = Column(Text, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# 通知與監控（2026-10-02 從 SQLite 搬進來，第二批）
+#
+# 時間欄位有兩種型別，是刻意的：收件匣存 ISO 字串（前端直接吃），排程、監控、
+# 垃圾車存 Unix 秒數的浮點數（它們都在算時間差）。搬的時候沒改，改型別就得同時
+# 改四個模組的比較與排序邏輯。
+#
+# Unix 秒數用 Float().with_variant(DOUBLE)：測試跑在 SQLite、正式站跑在 MySQL，
+# 只寫 DOUBLE 的話 SQLite 那邊建不起來。
+# ---------------------------------------------------------------------------
+
+Seconds = Float().with_variant(DOUBLE, 'mysql')
+
+
+class InboxMessage(Base):
+    """站內通知收件匣：後台寄出的每一封，一個收件人一列（notifications/inbox_service.py）。
+
+    表名是 inbox_messages 而不是 messages：資料庫裡已經有 notifications（租客端
+    通知）與 message_boards（室友留言板），再來一張 messages 沒人分得出誰是誰。
+
+    不對 user_id 設外鍵：帳號刪掉時這些寄送紀錄要留著 —— 「有沒有寄給他」是
+    稽核問題，不該因為帳號消失就跟著消失。
+    """
+    __tablename__ = 'inbox_messages'
+    __table_args__ = (
+        Index('inbox_messages_user', 'user_id', 'created_at'),
+        Index('inbox_messages_batch', 'batch_id'),
+    )
+    id = Column(String(64), nullable=False, primary_key=True)
+    batch_id = Column(String(64), nullable=False)
+    user_id = Column(Integer, nullable=False)
+    user_email = Column(String(255), nullable=False)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    category = Column(String(32), nullable=False)
+    channels = Column(String(255), nullable=False)
+    inapp_state = Column(String(32), nullable=True)
+    email_state = Column(String(32), nullable=True)
+    push_state = Column(String(32), nullable=True)
+    recipient_label = Column(String(255), nullable=False)
+    source_label = Column(String(255), nullable=False)
+    source_type = Column(String(32), nullable=False)
+    action_url = Column(String(512), nullable=True)
+    action_label = Column(String(255), nullable=True)
+    created_by = Column(String(255), nullable=False)
+    created_at = Column(String(40), nullable=False)
+    read_at = Column(String(40), nullable=True)
+
+
+class AnnouncementRead(Base):
+    """公告已讀。公告不是一人一列寄出的，誰讀過要另外記（inbox_service.py）。"""
+    __tablename__ = 'announcement_reads'
+    user_id = Column(Integer, nullable=False, primary_key=True)
+    announcement_id = Column(String(64), nullable=False, primary_key=True)
+    read_at = Column(String(40), nullable=False)
+
+
+class AnnouncementDismissal(Base):
+    """公告關掉不再顯示（inbox_service.py）。"""
+    __tablename__ = 'announcement_dismissals'
+    user_id = Column(Integer, nullable=False, primary_key=True)
+    dismiss_key = Column(String(128), nullable=False, primary_key=True)
+    dismissed_at = Column(String(40), nullable=False)
+
+
+class ScheduledNotification(Base):
+    """排程通知：時間到了由後端背景迴圈寄出（notifications/scheduled_notification_service.py）。"""
+    __tablename__ = 'scheduled_notifications'
+    __table_args__ = (Index('scheduled_notifications_due', 'status', 'due'),)
+    id = Column(String(64), nullable=False, primary_key=True)
+    created_by = Column(String(255), nullable=False)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    category = Column(String(32), nullable=False)
+    channels = Column(String(255), nullable=False)
+    recipient = Column(Text, nullable=False)
+    recipient_label = Column(String(255), nullable=False)
+    source_label = Column(String(255), nullable=False)
+    due = Column(Seconds, nullable=False)
+    created_at = Column(Seconds, nullable=False)
+    status = Column(String(32), nullable=False)
+    sent_at = Column(Seconds, nullable=True)
+    result = Column(Text, nullable=True)
+
+
+class MonitorState(Base):
+    """各服務目前的狀態，一個服務一列，只存現況（admin/monitoring_service.py）。"""
+    __tablename__ = 'monitor_state'
+    service = Column(String(64), nullable=False, primary_key=True)
+    status = Column(String(16), nullable=False)
+    since = Column(Seconds, nullable=False)
+    detail = Column(String(255), nullable=True)
+    checked_at = Column(Seconds, nullable=False)
+
+
+class MonitorEvent(Base):
+    """監控事件：只記狀態轉換，不記每一次「正常」（admin/monitoring_service.py）。"""
+    __tablename__ = 'monitor_events'
+    __table_args__ = (Index('monitor_events_at', 'at'),)
+    id = Column(BigInteger().with_variant(Integer, 'sqlite'), nullable=False, primary_key=True, autoincrement=True)
+    at = Column(Seconds, nullable=False)
+    service = Column(String(64), nullable=False)
+    kind = Column(String(32), nullable=False)
+    detail = Column(String(255), nullable=True)
+    duration = Column(Seconds, nullable=True)
+
+
+class MonitorMeta(Base):
+    """監控的雜項數值：心跳時間、OCR 回報的憑證狀態（admin/monitoring_service.py）。
+
+    `key` 是 MySQL 保留字，SQL 裡一定要用反引號括起來。
+    """
+    __tablename__ = 'monitor_meta'
+    key = Column(String(64), nullable=False, primary_key=True)
+    value = Column(Seconds, nullable=False)
+
+
+class GarbageReminder(Base):
+    """垃圾車提醒：使用者自己設的，到時間寄信或推播（notifications/garbage_service.py）。"""
+    __tablename__ = 'garbage_reminders'
+    __table_args__ = (Index('garbage_reminders_due', 'active', 'due'),)
+    id = Column(String(64), nullable=False, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    payload = Column(Text, nullable=False)
+    due = Column(Seconds, nullable=False)
+    active = Column(Integer().with_variant(TINYINT(1), 'mysql'), nullable=False, default=1)
+    email_status = Column(String(32), nullable=False)
+    push_status = Column(String(32), nullable=False)

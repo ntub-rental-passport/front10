@@ -18,7 +18,7 @@ Vision 是在 Node 的 OCR 服務裡呼叫的（server/index.js）。它每次�
 
 ## 存哪裡
 
-SQLite（AI_USAGE_DB），VM 上在掛載的 data/garbage/。
+專案的資料庫（daily_usage、usage_meta 兩張表）。2026-10-01 從 SQLite 搬進來。
 """
 
 from db.sqlstore import open_store as _open

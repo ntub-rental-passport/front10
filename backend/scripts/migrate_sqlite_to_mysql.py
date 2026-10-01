@@ -1,7 +1,8 @@
-"""把後台原本存在 SQLite 小檔的資料倒進專案的資料庫（2026-10-01）。
+"""把後台原本存在 SQLite 小檔的資料倒進專案的資料庫（2026-10-01、10-02 兩批）。
 
 後台自己的資料本來分散在十個 SQLite 檔（VM 上在 ~/rentmate/data/garbage/）。
-第一批先搬後台介面直接要用的七個模組、十三張表。
+第一批（10-01）搬後台介面直接要用的七個模組、十三張表；第二批（10-02）搬收件匣、
+排程通知、監控、垃圾車提醒，搬完就沒有 SQLite 檔了。
 
 ## 用法
 
@@ -41,6 +42,19 @@ PLAN = {
                                ('admin_notification_reads', ('notification_id', 'admin_id'))],
     'ai-usage.db': [('daily_usage', ('date', 'provider')), ('usage_meta', ('key',))],
     'admin-repair-notes.db': [('repair_notes', ('ticket_id',))],
+    # 第二批（2026-10-02）
+    # 收件匣的表改名了：SQLite 裡叫 messages，MySQL 裡叫 inbox_messages
+    # （已經有 notifications 與 message_boards 了）。來源表名 → 目的表名。
+    'notification-inbox.db': [(('messages', 'inbox_messages'), ('id',)),
+                              ('announcement_reads', ('user_id', 'announcement_id')),
+                              ('announcement_dismissals', ('user_id', 'dismiss_key'))],
+    'scheduled-notifications.db': [('scheduled_notifications', ('id',))],
+    # monitor_events 的主鍵是自動編號，兩邊的號碼會撞 —— 不比主鍵，比「同一時間、
+    # 同一服務、同一種事件」算同一筆，所以重跑不會把事件重複倒進去。
+    'monitoring.db': [('monitor_state', ('service',)),
+                      ('monitor_events', ('at', 'service', 'kind')),
+                      ('monitor_meta', ('key',))],
+    'garbage-reminders.db': [('garbage_reminders', ('id',))],
 }
 
 
@@ -76,16 +90,19 @@ def main() -> int:
                 print(f'- {filename}：沒有這個檔，跳過')
                 continue
             for table, keys in tables:
+                source_table, target = table if isinstance(table, tuple) else (table, table)
                 try:
-                    rows = rows_of(path, table)
+                    rows = rows_of(path, source_table)
                 except sqlite3.DatabaseError as error:
-                    print(f'  ! {table}：讀不到（{error}）')
+                    print(f'  ! {source_table}：讀不到（{error}）')
                     continue
                 new = skipped = 0
                 for row in rows:
+                    # monitor_events 的 id 是自動編號，兩邊會撞號 —— 比對與寫入都不帶它
+                    row = {k: v for k, v in row.items() if not (target == 'monitor_events' and k == 'id')}
                     where = ' AND '.join(f'`{k}` = :{k}' for k in keys)
                     existing = connection.execute(
-                        text(f'SELECT 1 FROM {table} WHERE {where}'),
+                        text(f'SELECT 1 FROM `{target}` WHERE {where}'),
                         {k: row[k] for k in keys},
                     ).first()
                     if existing:
@@ -93,11 +110,11 @@ def main() -> int:
                         continue
                     columns = ', '.join(f'`{c}`' for c in row)
                     values = ', '.join(f':{c}' for c in row)
-                    connection.execute(text(f'INSERT INTO {table} ({columns}) VALUES ({values})'), row)
+                    connection.execute(text(f'INSERT INTO `{target}` ({columns}) VALUES ({values})'), row)
                     new += 1
                 total_new += new
                 total_skipped += skipped
-                print(f'  {table}: 新增 {new}、已存在跳過 {skipped}')
+                print(f'  {target}: 新增 {new}、已存在跳過 {skipped}')
         if args.commit:
             transaction.commit()
             print(f'\n完成：新增 {total_new} 筆，跳過 {total_skipped} 筆。')

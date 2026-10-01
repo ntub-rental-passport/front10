@@ -1,4 +1,4 @@
-"""後台監控：定期檢查各服務，並把「壞掉的時候」記下來（SQLite）。
+"""後台監控：定期檢查各服務，並把「壞掉的時候」記下來。
 
 ## 為什麼要後端自己檢查
 
@@ -21,20 +21,28 @@
 
 ## 多個 worker
 
-uvicorn 開多個 worker 時，每個 worker 都會跑自己的檢查。狀態轉換與心跳都用
-BEGIN IMMEDIATE 包起來做比對後寫入：同一次停機只會有一個 worker 記到，
-不會被記成兩筆。
+uvicorn 開多個 worker 時，每個 worker 都會跑自己的檢查。狀態轉換與心跳都是
+「讀舊狀態 → 比對 → 寫新狀態」，讀的時候就把那一列鎖住（db/sqlstore.py 的
+`Store.lock`）：同一次停機只會有一個 worker 記到，不會被記成兩筆。
+
+## 一個誠實的限制
+
+2026-10-02 起監控資料存在專案的資料庫裡，也就是被監控的對象之一。資料庫連不上
+的時候，這裡什麼都記不了，監控頁也打不開 —— 不過那時候登入本身就不會成功
+（管理員 session 也在同一個資料庫），所以沒有另外做退路。資料庫掛掉這件事，
+要看的是後端的 log，不是監控頁。
 """
 import logging
 import os
-import sqlite3
 import time
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from db.sqlstore import open_store
+
 logger = logging.getLogger(__name__)
 
+#: 只剩 _vision_configured() 的憑證路徑在用：相對路徑要相對於 repo 根，不是 backend/
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 事件保留天數。回答得了「上週三晚上是不是掛過」，資料量也有上限。
@@ -57,11 +65,6 @@ SERVICE_LABELS = {
 }
 
 
-def monitor_db() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
-    return Path(os.getenv('MONITOR_DB') or (_REPO_ROOT / 'backend/monitoring.db'))
-
-
 def _iso(ts: float | None) -> str | None:
     """帶時區的 ISO 字串。沒帶時區的話瀏覽器會當本地時間，UTC+8 會差 8 小時。"""
     if ts is None:
@@ -69,47 +72,18 @@ def _iso(ts: float | None) -> str | None:
     return datetime.fromtimestamp(ts, timezone.utc).isoformat()
 
 
-@contextmanager
 def _open():
-    path = monitor_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # isolation_level=None：自己控制交易，寫入一律用 BEGIN IMMEDIATE 先拿寫鎖，
-    # 「讀舊狀態 → 比對 → 寫新狀態」才會是一個不可分割的動作。
-    db = sqlite3.connect(path, timeout=15, isolation_level=None)
-    db.row_factory = sqlite3.Row
-    db.execute('''CREATE TABLE IF NOT EXISTS monitor_state (
-        service TEXT PRIMARY KEY,
-        status TEXT NOT NULL,
-        since REAL NOT NULL,
-        detail TEXT,
-        checked_at REAL NOT NULL)''')
-    db.execute('''CREATE TABLE IF NOT EXISTS monitor_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        at REAL NOT NULL,
-        service TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        detail TEXT,
-        duration REAL)''')
-    db.execute('CREATE INDEX IF NOT EXISTS monitor_events_at ON monitor_events(at)')
-    db.execute('''CREATE TABLE IF NOT EXISTS monitor_meta (
-        key TEXT PRIMARY KEY,
-        value REAL NOT NULL)''')
-    try:
-        yield db
-    finally:
-        db.close()
+    """唯讀用。表由 migrations/ 建立，這裡不自己 CREATE TABLE（見 db/sqlstore.py）。"""
+    return open_store()
 
 
-@contextmanager
 def _write():
-    with _open() as db:
-        db.execute('BEGIN IMMEDIATE')
-        try:
-            yield db
-            db.execute('COMMIT')
-        except Exception:
-            db.execute('ROLLBACK')
-            raise
+    """寫入用。一個 `with` 就是一次交易，正常結束 commit、丟例外 rollback。
+
+    跟 `_open()` 是同一件事，分成兩個名字只為了讓呼叫端一眼看出這段會寫入 ——
+    會寫的地方要用 `db.lock()` 讀，別人才不會同時改同一列。
+    """
+    return open_store()
 
 
 def _insert_event(db, at: float, service: str, kind: str, detail: str | None, duration: float | None) -> None:
@@ -132,7 +106,7 @@ def record_check(service: str, ok: bool, detail: str | None = None, now: float |
     ts = time.time() if now is None else now
     status = 'up' if ok else 'down'
     with _write() as db:
-        row = db.execute(
+        row = db.lock(
             'SELECT status, since FROM monitor_state WHERE service = ?', (service,)
         ).fetchone()
         if row is None:
@@ -188,12 +162,8 @@ def heartbeat(now: float | None = None) -> float | None:
     """
     ts = time.time() if now is None else now
     with _write() as db:
-        row = db.execute("SELECT value FROM monitor_meta WHERE key = 'heartbeat'").fetchone()
-        db.execute(
-            "INSERT INTO monitor_meta (key, value) VALUES ('heartbeat', ?) "
-            'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-            (ts,),
-        )
+        row = db.lock("SELECT value FROM monitor_meta WHERE `key` = 'heartbeat'").fetchone()
+        db.upsert('monitor_meta', {'key': 'heartbeat'}, {'value': ts})
         if row is None:
             return None
         gap = ts - row['value']
@@ -205,7 +175,7 @@ def heartbeat(now: float | None = None) -> float | None:
 
 def last_heartbeat() -> float | None:
     with _open() as db:
-        row = db.execute("SELECT value FROM monitor_meta WHERE key = 'heartbeat'").fetchone()
+        row = db.execute("SELECT value FROM monitor_meta WHERE `key` = 'heartbeat'").fetchone()
     return row['value'] if row else None
 
 
@@ -380,18 +350,14 @@ def _remember_ocr_credentials(response) -> None:
     if not isinstance(configured, bool):
         return
     with _write() as db:
-        db.execute(
-            'INSERT INTO monitor_meta (key, value) VALUES (?, ?) '
-            'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-            (_OCR_CREDENTIALS_KEY, 1 if configured else 0),
-        )
+        db.upsert('monitor_meta', {'key': _OCR_CREDENTIALS_KEY}, {'value': 1 if configured else 0})
 
 
 def _vision_configured() -> bool:
     """OCR 回報過就以它為準；從沒回報過（開發時沒開 OCR）才看後端這邊的檔案 ——
     開發機上兩邊是同一台，這個退路在那裡是準的。"""
     with _open() as db:
-        row = db.execute('SELECT value FROM monitor_meta WHERE key = ?', (_OCR_CREDENTIALS_KEY,)).fetchone()
+        row = db.execute('SELECT value FROM monitor_meta WHERE `key` = ?', (_OCR_CREDENTIALS_KEY,)).fetchone()
     if row is not None:
         return bool(row['value'])
 

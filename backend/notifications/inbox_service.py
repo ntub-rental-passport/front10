@@ -21,21 +21,20 @@
 
 ## 存哪裡
 
-SQLite（NOTIFICATION_INBOX_DB），VM 上在掛載的 data/garbage/，備份腳本會一起備份。
+專案的資料庫（2026-10-02 從 SQLite 搬進來）。表是 `inbox_messages` —— 不叫
+`messages`，因為已經有 `notifications`（租客端通知）與 `message_boards`
+（室友留言板），三張都叫 message 沒人分得出誰是誰。
+
 公告的已讀、關閉狀態也放這裡：以前存在瀏覽器，換一台裝置就又變成未讀。
 """
 
 import json
-import os
 import re
-import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from db.sqlstore import StoreUnavailable, open_store
 
 CATEGORIES = ('系統', '租約', '補貼', '帳務')
 CHANNELS = ('inapp', 'email', 'push')
@@ -46,52 +45,26 @@ BROADCAST_ROLES = {'tenant', 'landlord'}
 _HTTP_URL = re.compile(r'^https?://[^\s/$.?#][^\s]*$', re.IGNORECASE)
 
 
-def inbox_db() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
-    return Path(os.getenv('NOTIFICATION_INBOX_DB') or (_REPO_ROOT / 'backend/notification-inbox.db'))
-
-
 def _now() -> float:
     return time.time()
 
 
 def _iso(ts: float) -> str:
-    """跟 JavaScript 的 toISOString() 同一個格式。"""
-    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    """ISO 字串，微秒精度。
+
+    原本是毫秒（跟 JavaScript 的 toISOString() 同一個格式），但搬進 MySQL 之後
+    排序只剩 created_at 可以靠 —— SQLite 時代同一毫秒的兩筆還有 rowid 當第二
+    順位，MySQL 沒有那個欄位。連續寄兩則通知常常落在同一毫秒，收件匣就會隨機
+    決定誰在前面。改成微秒，排序才等於寄出的順序。
+
+    瀏覽器的 new Date() 吃得下微秒（多的位數直接截掉），前端不用改。
+    """
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec='microseconds').replace('+00:00', 'Z')
 
 
-@contextmanager
 def _open():
-    path = inbox_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    try:
-        with db:
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS messages ('
-                'id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, user_id INTEGER NOT NULL, user_email TEXT NOT NULL, '
-                'title TEXT NOT NULL, body TEXT NOT NULL, category TEXT NOT NULL, channels TEXT NOT NULL, '
-                'inapp_state TEXT, email_state TEXT, push_state TEXT, '
-                'recipient_label TEXT NOT NULL, source_label TEXT NOT NULL, source_type TEXT NOT NULL, '
-                'action_url TEXT, action_label TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT)'
-            )
-            db.execute('CREATE INDEX IF NOT EXISTS messages_user ON messages(user_id, created_at)')
-            db.execute('CREATE INDEX IF NOT EXISTS messages_batch ON messages(batch_id)')
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS announcement_reads ('
-                'user_id INTEGER NOT NULL, announcement_id TEXT NOT NULL, read_at TEXT NOT NULL, '
-                'PRIMARY KEY (user_id, announcement_id))'
-            )
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS announcement_dismissals ('
-                'user_id INTEGER NOT NULL, dismiss_key TEXT NOT NULL, dismissed_at TEXT NOT NULL, '
-                'PRIMARY KEY (user_id, dismiss_key))'
-            )
-        with db:
-            yield db
-    finally:
-        db.close()
+    """一次交易。表由 migrations/ 建立，這裡不自己 CREATE TABLE（見 db/sqlstore.py）。"""
+    return open_store()
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +184,7 @@ def _insert_messages(db, batch_id: str, fields: dict, recipients: list[dict], *,
         if 'email' in channels:
             email_state = (email_states or {}).get(account['email'].lower(), 'pending')
         db.execute(
-            'INSERT INTO messages (id, batch_id, user_id, user_email, title, body, category, channels, '
+            'INSERT INTO inbox_messages (id, batch_id, user_id, user_email, title, body, category, channels, '
             'inapp_state, email_state, push_state, recipient_label, source_label, source_type, action_url, '
             'action_label, created_by, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
             (
@@ -248,7 +221,7 @@ def send_pending_emails(batch_id: str, send_email=None) -> dict:
 
     with _open() as db:
         rows = db.execute(
-            "SELECT id, user_email, title, body, source_label, created_by FROM messages "
+            "SELECT id, user_email, title, body, source_label, created_by FROM inbox_messages "
             "WHERE batch_id = ? AND email_state = 'pending'",
             (batch_id,),
         ).fetchall()
@@ -257,7 +230,7 @@ def send_pending_emails(batch_id: str, send_email=None) -> dict:
     for row in rows:
         with _open() as db:
             claimed = db.execute(
-                "UPDATE messages SET email_state = 'sending' WHERE id = ? AND email_state = 'pending'", (row['id'],)
+                "UPDATE inbox_messages SET email_state = 'sending' WHERE id = ? AND email_state = 'pending'", (row['id'],)
             ).rowcount
         if not claimed:
             continue
@@ -270,7 +243,7 @@ def send_pending_emails(batch_id: str, send_email=None) -> dict:
             state = 'failed'
             failed += 1
         with _open() as db:
-            db.execute('UPDATE messages SET email_state = ? WHERE id = ?', (state, row['id']))
+            db.execute('UPDATE inbox_messages SET email_state = ? WHERE id = ?', (state, row['id']))
 
     if rows and (sent or failed):
         from admin import audit_service
@@ -314,13 +287,13 @@ def deliver_scheduled(emails: list[str], row, email_states: dict[str, str]) -> i
 # ---------------------------------------------------------------------------
 
 
-def _delivery(row: sqlite3.Row) -> dict:
+def _delivery(row) -> dict:
     states = {'inapp': row['inapp_state'], 'email': row['email_state'], 'push': row['push_state']}
     # sending 是寄信當下的過渡狀態，畫面上還是「待送」
     return {channel: ('pending' if state == 'sending' else state) for channel, state in states.items() if state}
 
 
-def _user_view(row: sqlite3.Row) -> dict:
+def _user_view(row) -> dict:
     view = {
         'id': row['id'],
         'title': row['title'],
@@ -340,10 +313,17 @@ def _user_view(row: sqlite3.Row) -> dict:
 
 def list_messages(limit: int = 5000) -> list[dict]:
     """後台的發送紀錄：每位收件人一筆（前端依 batchId 分組成批次），新到舊。"""
-    if not inbox_db().exists():
+    try:
+        store = _open()
+    except StoreUnavailable:
+        # 資料庫連不上時後台頁面照樣要開得起來，只是紀錄是空的
         return []
-    with _open() as db:
-        rows = db.execute('SELECT * FROM messages ORDER BY created_at DESC, rowid DESC LIMIT ?', (limit,)).fetchall()
+    with store as db:
+        rows = db.execute(
+            # id 當第二順位只是為了「同一毫秒的兩筆排出來的順序固定」，本身沒有意義
+            # （id 是隨機的）。原本用 rowid，MySQL 沒有那個欄位。
+            'SELECT * FROM inbox_messages ORDER BY created_at DESC, id DESC LIMIT ?', (limit,)
+        ).fetchall()
     return [
         {
             **_user_view(row),
@@ -359,12 +339,14 @@ def list_messages(limit: int = 5000) -> list[dict]:
 
 def user_inbox(user_id: int) -> list[dict]:
     """這個人收件匣裡的站內通知，新到舊。只寄 Email 的不算。"""
-    if not inbox_db().exists():
+    try:
+        store = _open()
+    except StoreUnavailable:
         return []
-    with _open() as db:
+    with store as db:
         rows = db.execute(
-            'SELECT * FROM messages WHERE user_id = ? AND inapp_state IS NOT NULL '
-            'ORDER BY created_at DESC, rowid DESC LIMIT 500',
+            'SELECT * FROM inbox_messages WHERE user_id = ? AND inapp_state IS NOT NULL '
+            'ORDER BY created_at DESC, id DESC LIMIT 500',
             (user_id,),
         ).fetchall()
     return [_user_view(row) for row in rows]
@@ -373,10 +355,10 @@ def user_inbox(user_id: int) -> list[dict]:
 def mark_read(user_id: int, message_id: str) -> None:
     """只能標自己的。不是自己的（或不存在）一律 LookupError，不透露別人有沒有這筆。"""
     with _open() as db:
-        exists = db.execute('SELECT 1 FROM messages WHERE id = ? AND user_id = ?', (message_id, user_id)).fetchone()
+        exists = db.execute('SELECT 1 FROM inbox_messages WHERE id = ? AND user_id = ?', (message_id, user_id)).fetchone()
         if exists is None:
             raise LookupError(message_id)
-        db.execute('UPDATE messages SET read_at = ? WHERE id = ? AND read_at IS NULL', (_iso(_now()), message_id))
+        db.execute('UPDATE inbox_messages SET read_at = ? WHERE id = ? AND read_at IS NULL', (_iso(_now()), message_id))
 
 
 def _clean_ids(values, max_length: int) -> list[str]:
@@ -394,35 +376,38 @@ def mark_all_read(user_id: int, announcement_ids: list[str]) -> None:
     ids = _clean_ids(announcement_ids, 64)
     now = _iso(_now())
     with _open() as db:
-        db.execute('UPDATE messages SET read_at = ? WHERE user_id = ? AND read_at IS NULL', (now, user_id))
+        db.execute('UPDATE inbox_messages SET read_at = ? WHERE user_id = ? AND read_at IS NULL', (now, user_id))
         for announcement_id in ids:
-            db.execute('INSERT OR IGNORE INTO announcement_reads (user_id, announcement_id, read_at) VALUES (?, ?, ?)',
-                       (user_id, announcement_id, now))
+            db.insert_ignore('announcement_reads',
+                             {'user_id': user_id, 'announcement_id': announcement_id}, {'read_at': now})
 
 
 def mark_announcement_read(user_id: int, announcement_id: str) -> None:
     (announcement_id,) = _clean_ids([announcement_id], 64)
     with _open() as db:
-        db.execute('INSERT OR IGNORE INTO announcement_reads (user_id, announcement_id, read_at) VALUES (?, ?, ?)',
-                   (user_id, announcement_id, _iso(_now())))
+        db.insert_ignore('announcement_reads',
+                         {'user_id': user_id, 'announcement_id': announcement_id}, {'read_at': _iso(_now())})
 
 
 def dismiss_announcement(user_id: int, key: str) -> None:
     """首頁公告橫幅按了關閉。key 是「id:updatedAt」：公告改過內容就會再出現。"""
     (key,) = _clean_ids([key], 128)
     with _open() as db:
-        db.execute('INSERT OR IGNORE INTO announcement_dismissals (user_id, dismiss_key, dismissed_at) VALUES (?, ?, ?)',
-                   (user_id, key, _iso(_now())))
+        db.insert_ignore('announcement_dismissals',
+                         {'user_id': user_id, 'dismiss_key': key}, {'dismissed_at': _iso(_now())})
 
 
 def announcement_state(user_id: int) -> dict:
-    if not inbox_db().exists():
+    try:
+        store = _open()
+    except StoreUnavailable:
         return {'readAnnouncementIds': [], 'dismissedAnnouncementKeys': []}
-    with _open() as db:
-        reads = db.execute('SELECT announcement_id FROM announcement_reads WHERE user_id = ? ORDER BY rowid',
-                           (user_id,)).fetchall()
-        dismissals = db.execute('SELECT dismiss_key FROM announcement_dismissals WHERE user_id = ? ORDER BY rowid',
-                                (user_id,)).fetchall()
+    with store as db:
+        # 原本是 ORDER BY rowid（MySQL 沒有），改成按時間 —— 本來想要的就是這個
+        reads = db.execute('SELECT announcement_id FROM announcement_reads WHERE user_id = ? '
+                           'ORDER BY read_at, announcement_id', (user_id,)).fetchall()
+        dismissals = db.execute('SELECT dismiss_key FROM announcement_dismissals WHERE user_id = ? '
+                                'ORDER BY dismissed_at, dismiss_key', (user_id,)).fetchall()
     return {
         'readAnnouncementIds': [row['announcement_id'] for row in reads],
         'dismissedAnnouncementKeys': [row['dismiss_key'] for row in dismissals],
