@@ -28,15 +28,16 @@ platform_settings.py 管的是後端真的會照著執行的安全設定（密�
 讀的時候建檔的話，每支測試都會在 backend/ 底下留一個資料庫。
 """
 
+from sqlalchemy.exc import SQLAlchemyError
+
+from db.sqlstore import Row, open_store as _open
+
 import json
 import re
-import sqlite3
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from admin.platform_settings import settings_db
 
 TZ = timezone(timedelta(hours=8))
 
@@ -150,25 +151,6 @@ def duration_label(seconds: float) -> str:
     return f'{elapsed // 86400} 天 {elapsed % 86400 // 3600} 小時'
 
 
-@contextmanager
-def _open():
-    path = settings_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    try:
-        db.execute('CREATE TABLE IF NOT EXISTS site_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-        db.execute(
-            'CREATE TABLE IF NOT EXISTS feature_outages ('
-            'feature_key TEXT PRIMARY KEY, internal_reason TEXT NOT NULL, '
-            "public_note TEXT NOT NULL DEFAULT '', closed_at TEXT NOT NULL, eta_at TEXT)"
-        )
-        with db:
-            yield db
-    finally:
-        db.close()
-
-
 # ---------------------------------------------------------------------------
 # 系統設定
 # ---------------------------------------------------------------------------
@@ -180,14 +162,12 @@ def _defaults() -> dict:
 
 def get_settings() -> dict:
     values = _defaults()
-    if not settings_db().exists():
-        return values
     try:
         with _open() as db:
             for row in db.execute('SELECT key, value FROM site_settings').fetchall():
                 if row['key'] in values:
                     values[row['key']] = json.loads(row['value'])
-    except (sqlite3.Error, ValueError):
+    except (SQLAlchemyError, ValueError):
         # 讀不到就用預設值：每個頁面都會讀，不能因為設定檔壞掉讓網站打不開
         return _defaults()
     return values
@@ -296,11 +276,8 @@ def update_settings(changes: dict, *, actor: str) -> dict:
     if changed:
         with _open() as db:
             for key, value in changed.items():
-                db.execute(
-                    'INSERT INTO site_settings (key, value) VALUES (?, ?) '
-                    'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-                    (key, json.dumps(value, ensure_ascii=False)),
-                )
+                db.upsert('site_settings', {'key': key},
+                          {'value': json.dumps(value, ensure_ascii=False)})
         from admin import audit_service
 
         if 'maintenanceMode' in changed:
@@ -339,7 +316,7 @@ def maintenance_bypass(email: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _outage_view(row: sqlite3.Row) -> dict:
+def _outage_view(row: Row) -> dict:
     return {
         'featureKey': row['feature_key'],
         'internalReason': row['internal_reason'],
@@ -350,8 +327,6 @@ def _outage_view(row: sqlite3.Row) -> dict:
 
 
 def list_outages() -> list[dict]:
-    if not settings_db().exists():
-        return []
     with _open() as db:
         rows = db.execute('SELECT * FROM feature_outages ORDER BY closed_at').fetchall()
     return [_outage_view(row) for row in rows]
@@ -420,8 +395,6 @@ def close_feature(key: str, internal_reason: str, public_note: str, eta_at: str 
 def reopen_feature(key: str, *, actor: str) -> None:
     """恢復功能：移除紀錄，稽核記下這次總共關了多久。沒在關閉中就丟 LookupError。"""
     label = _feature_label(key)
-    if not settings_db().exists():
-        raise LookupError(key)
     with _open() as db:
         existing = db.execute('SELECT * FROM feature_outages WHERE feature_key = ?', (key,)).fetchone()
         if not existing:

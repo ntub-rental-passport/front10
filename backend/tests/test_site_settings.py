@@ -7,18 +7,17 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
+from tests.admin_store import AdminStoreTestCase
 from admin import audit_service
 from admin import site_settings as site
 from auth import security
 
-
-class SiteSettingsTestCase(unittest.TestCase):
+class SiteSettingsTestCase(AdminStoreTestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp.name) / 'settings.db'
         self.env = patch.dict(os.environ, {
-            'PLATFORM_SETTINGS_DB': str(self.db_path),
-            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
         })
         self.env.start()
 
@@ -29,7 +28,6 @@ class SiteSettingsTestCase(unittest.TestCase):
     def audit(self):
         return [(e['action'], e['target'], e['detail']) for e in reversed(audit_service.list_events())]
 
-
 class DefaultsTests(SiteSettingsTestCase):
     def test_defaults_without_creating_a_file(self):
         # 每個頁面載入都會讀公開設定；讀的時候建檔，測試就會在 backend/ 底下留資料庫
@@ -39,7 +37,6 @@ class DefaultsTests(SiteSettingsTestCase):
         self.assertEqual(values['platformVisionPageQuota'], 3000)
         self.assertEqual(site.list_outages(), [])
         self.assertFalse(self.db_path.exists())
-
 
 class UpdateTests(SiteSettingsTestCase):
     def test_update_is_persisted_and_returns_the_full_settings(self):
@@ -105,7 +102,6 @@ class UpdateTests(SiteSettingsTestCase):
         # 前端的數字欄位送過來可能是 10.0
         self.assertEqual(site.update_settings({'maintenanceOverdueDays': 10.0}, actor='a@example.com')['maintenanceOverdueDays'], 10)
 
-
 class PublicViewTests(SiteSettingsTestCase):
     def test_public_view_leaves_out_the_allowlist_and_the_thresholds(self):
         site.update_settings({'maintenanceMode': True, 'maintenanceAllowlist': 'vip@example.com'}, actor='a@example.com')
@@ -123,7 +119,6 @@ class PublicViewTests(SiteSettingsTestCase):
         self.assertTrue(site.maintenance_bypass(' other@example.com'))
         self.assertFalse(site.maintenance_bypass('someone@example.com'))
         self.assertFalse(site.maintenance_bypass(None))
-
 
 class OutageTests(SiteSettingsTestCase):
     def test_closing_a_feature_records_when_and_why(self):
@@ -173,7 +168,6 @@ class OutageTests(SiteSettingsTestCase):
         self.assertEqual(len(public), 1)
         self.assertEqual(set(public[0]), {'featureKey', 'publicNote', 'closedAt', 'etaAt'})
         self.assertNotIn('API 金鑰過期', repr(public))
-
 
 class ApiTests(SiteSettingsTestCase):
     admin = MagicMock(email='admin@example.com')
@@ -228,7 +222,6 @@ class ApiTests(SiteSettingsTestCase):
         self.assertEqual(close_feature('notes', OutageUpdate(internalReason='測試'), admin=self.admin)['featureKey'], 'notes')
         self.assertIsNone(reopen_feature('notes', admin=self.admin))
 
-
 class DurationLabelTests(unittest.TestCase):
     def test_label_gets_coarser_as_time_passes(self):
         for seconds, label in [
@@ -238,7 +231,6 @@ class DurationLabelTests(unittest.TestCase):
             (2 * 86400 + 5 * 3600, '2 天 5 小時'),
         ]:
             self.assertEqual(site.duration_label(seconds), label)
-
 
 if __name__ == '__main__':
     unittest.main()

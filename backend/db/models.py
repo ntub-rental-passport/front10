@@ -1,7 +1,7 @@
 """ORM mappings for database.sql (multi-role accounts)."""
 import datetime
 from sqlalchemy import Boolean, Column, Date, DateTime, Time, Enum, Integer, BigInteger, String, Text, DECIMAL, JSON, ForeignKey, UniqueConstraint, CheckConstraint, Index, CHAR
-from sqlalchemy.dialects.mysql import DATETIME, LONGTEXT, TINYINT
+from sqlalchemy.dialects.mysql import DATETIME, DOUBLE, LONGTEXT, TINYINT
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_method
 from db.database import Base
@@ -596,3 +596,150 @@ class AdminSession(Base):
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
     last_active_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# 後台自己的資料（2026-10-01 從 SQLite 搬進來）
+#
+# 原本每個模組各存一個 SQLite 小檔，資料不在 ER 圖與備份裡。欄位型別沿用當初
+# SQLite 的樣子（時間一律存 ISO 字串、布林存 0/1），搬遷時才不用再轉一次格式。
+# 建表的 SQL 在 migrations/20261001_admin_tables_to_mysql.sql。
+# ---------------------------------------------------------------------------
+
+class SiteSetting(Base):
+    """系統設定：網站名稱、維護模式、各種門檻（admin/site_settings.py）。"""
+    __tablename__ = 'site_settings'
+    key = Column(String(64), nullable=False, primary_key=True)
+    value = Column(Text, nullable=False)
+
+
+class FeatureOutage(Base):
+    """功能停用：暫時對所有使用者關掉某個功能（admin/site_settings.py）。"""
+    __tablename__ = 'feature_outages'
+    feature_key = Column(String(64), nullable=False, primary_key=True)
+    internal_reason = Column(Text, nullable=False)
+    public_note = Column(Text, nullable=False)
+    closed_at = Column(String(40), nullable=False)
+    eta_at = Column(String(40), nullable=True)
+
+
+class PlatformSetting(Base):
+    """安全設定：密碼最短長度、登入有效時間（admin/platform_settings.py）。"""
+    __tablename__ = 'platform_settings'
+    key = Column(String(64), nullable=False, primary_key=True)
+    value = Column(Integer, nullable=False)
+
+
+class Announcement(Base):
+    """後台發的公告（admin/content_service.py）。"""
+    __tablename__ = 'announcements'
+    id = Column(String(40), nullable=False, primary_key=True)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    level = Column(String(20), nullable=False)
+    audience = Column(String(20), nullable=False)
+    published = Column(Integer().with_variant(TINYINT(1), 'mysql'), nullable=False)
+    start_at = Column(String(40), nullable=False)
+    end_at = Column(String(40), nullable=True)
+    updated_at = Column(String(40), nullable=False)
+
+
+class Banner(Base):
+    """首頁輪播（admin/content_service.py）。"""
+    __tablename__ = 'banners'
+    id = Column(String(40), nullable=False, primary_key=True)
+    title = Column(String(255), nullable=False)
+    image_url = Column(String(512), nullable=False)
+    link_url = Column(String(512), nullable=False)
+    audience = Column(String(20), nullable=False, server_default='all')
+    sort_order = Column(Integer, nullable=False)
+    published = Column(Integer().with_variant(TINYINT(1), 'mysql'), nullable=False)
+    start_at = Column(String(40), nullable=False)
+    end_at = Column(String(40), nullable=True)
+    updated_at = Column(String(40), nullable=False)
+
+
+class NotificationTemplate(Base):
+    """通知模板（admin/content_service.py）。"""
+    __tablename__ = 'notification_templates'
+    id = Column(String(40), nullable=False, primary_key=True)
+    name = Column(String(255), nullable=False)
+    category = Column(String(40), nullable=False)
+    channels = Column(String(255), nullable=False)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    action_url = Column(String(512), nullable=True)
+    action_label = Column(String(100), nullable=True)
+    enabled = Column(Integer().with_variant(TINYINT(1), 'mysql'), nullable=False)
+    updated_at = Column(String(40), nullable=False)
+
+
+class ContentMeta(Base):
+    """內容的雜項狀態，例如示範內容寫過沒有（admin/content_service.py）。"""
+    __tablename__ = 'content_meta'
+    key = Column(String(64), nullable=False, primary_key=True)
+    value = Column(Text, nullable=False)
+
+
+class AuditEvent(Base):
+    """後台稽核紀錄（admin/audit_service.py）。
+
+    跟更早的 admin_audit_logs 不同：那張表沒有程式在用，欄位也對不上現在記的內容。
+    """
+    __tablename__ = 'audit_events'
+    __table_args__ = (Index('idx_audit_events_at', 'at'), Index('idx_audit_events_subject', 'subject'),)
+    # SQLite 只有 INTEGER PRIMARY KEY 會自動編號，BIGINT 不會（測試跑在 SQLite）
+    id = Column(BigInteger().with_variant(Integer, 'sqlite'), nullable=False, primary_key=True, autoincrement=True)
+    at = Column(DECIMAL(20, 6).with_variant(DOUBLE, 'mysql'), nullable=False)
+    actor = Column(String(254), nullable=False)
+    action = Column(String(100), nullable=False)
+    target = Column(String(255), nullable=False)
+    detail = Column(Text, nullable=False)
+    subject = Column(String(100), nullable=True)
+    ip = Column(String(64), nullable=True)
+
+
+class AdminNotification(Base):
+    """管理員通知中心：系統告警與內部備註（admin/admin_notifications.py）。"""
+    __tablename__ = 'admin_notifications'
+    __table_args__ = (Index('idx_admin_notifications_created', 'created_at'),)
+    id = Column(String(40), nullable=False, primary_key=True)
+    source = Column(String(20), nullable=False)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    action_url = Column(String(512), nullable=True)
+    action_label = Column(String(100), nullable=True)
+    sender_name = Column(String(100), nullable=True)
+    sender_email = Column(String(254), nullable=True)
+    created_at = Column(String(40), nullable=False)
+
+
+class AdminNotificationRead(Base):
+    """每位管理員各自的已讀（admin/admin_notifications.py）。"""
+    __tablename__ = 'admin_notification_reads'
+    notification_id = Column(String(40), nullable=False, primary_key=True)
+    admin_id = Column(Integer, nullable=False, primary_key=True)
+    read_at = Column(String(40), nullable=False)
+
+
+class AiDailyUsage(Base):
+    """AI 用量：目前只記 OCR 服務用掉的 Google Vision 頁數（admin/ai_usage.py）。"""
+    __tablename__ = 'daily_usage'
+    date = Column(String(10), nullable=False, primary_key=True)
+    provider = Column(String(20), nullable=False, primary_key=True)
+    units = Column(Integer, nullable=False)
+    calls = Column(Integer, nullable=False)
+
+
+class AiUsageMeta(Base):
+    """額度告警發過沒有，每個門檻每月只通知一次（admin/ai_usage.py）。"""
+    __tablename__ = 'usage_meta'
+    key = Column(String(100), nullable=False, primary_key=True)
+    value = Column(Text, nullable=False)
+
+
+class AdminRepairNote(Base):
+    """後台對報修工單的內部註記與旗標（admin/repair_notes.py）。"""
+    __tablename__ = 'repair_notes'
+    ticket_id = Column(String(40), nullable=False, primary_key=True)
+    value = Column(Text, nullable=False)

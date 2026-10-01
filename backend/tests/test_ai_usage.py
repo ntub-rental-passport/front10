@@ -8,25 +8,21 @@ from unittest.mock import MagicMock, patch
 import jwt
 from fastapi import HTTPException
 
+from tests.admin_store import AdminStoreTestCase
 from admin import admin_notifications, ai_usage, site_settings
 from auth import security
 
 TZ = timezone(timedelta(hours=8))
 
-
 def at(text: str) -> float:
     """台灣時間的「2026-09-30 10:00」轉成 epoch 秒。"""
     return datetime.strptime(text, '%Y-%m-%d %H:%M').replace(tzinfo=TZ).timestamp()
 
-
-class UsageTestCase(unittest.TestCase):
+class UsageTestCase(AdminStoreTestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {
-            'AI_USAGE_DB': self.temp.name + '/ai-usage.db',
-            'PLATFORM_SETTINGS_DB': self.temp.name + '/settings.db',
-            'ADMIN_NOTIFICATIONS_DB': self.temp.name + '/center.db',
-            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
         })
         self.env.start()
 
@@ -39,7 +35,6 @@ class UsageTestCase(unittest.TestCase):
 
     def alerts(self):
         return [item['title'] for item in reversed(admin_notifications.list_for(None))]
-
 
 class RecordTests(UsageTestCase):
     def test_usage_adds_up_per_day_in_taiwan_time(self):
@@ -64,7 +59,6 @@ class RecordTests(UsageTestCase):
             with self.subTest(args=args):
                 with self.assertRaises(ValueError):
                     ai_usage.record(*args)
-
 
 class QuotaAlertTests(UsageTestCase):
     def test_warn_and_critical_alert_once_per_month(self):
@@ -98,7 +92,6 @@ class QuotaAlertTests(UsageTestCase):
         self.set_quota(0)
         ai_usage.record('vision', 500, 1, now=at('2026-09-10 10:00'))
         self.assertEqual(self.alerts(), [])
-
 
 class ApiTests(UsageTestCase):
     admin = MagicMock(id=1, email='a@example.com')
@@ -137,7 +130,6 @@ class ApiTests(UsageTestCase):
         body = read_usage(admin=self.admin)
         self.assertEqual(body['providers'], [{'id': 'vision', 'label': 'Google Cloud Vision', 'unit': 'page'}])
         self.assertEqual(body['daily'][0]['units'], 3)
-
 
 if __name__ == '__main__':
     unittest.main()

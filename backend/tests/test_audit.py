@@ -10,6 +10,7 @@ from fastapi import HTTPException, Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from tests.admin_store import AdminStoreTestCase
 from admin import audit_service
 from db.database import Base
 from db.models import PendingAdminLogin, User, UserRole
@@ -17,12 +18,11 @@ from auth.verification import hash_verification_code
 
 T0 = 1_790_000_000.0
 
-
-class AuditTestCase(unittest.TestCase):
+class AuditTestCase(AdminStoreTestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {
-            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
             'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
             'MONITOR_DB': self.temp.name + '/monitoring.db',
             'SMTP_USERNAME': 'sender@example.com',
@@ -39,7 +39,6 @@ class AuditTestCase(unittest.TestCase):
             (e['action'], e['actor'], e['target'], e['detail'])
             for e in reversed(audit_service.list_events(subject=subject))
         ]
-
 
 class AuditServiceTests(AuditTestCase):
     def test_newest_first_with_timezone(self):
@@ -69,7 +68,6 @@ class AuditServiceTests(AuditTestCase):
         self.assertIsNone(audit_service.clean_reason('   \n  '))
         self.assertIsNone(audit_service.clean_reason(None))
         self.assertEqual(len(audit_service.clean_reason('字' * 500)), audit_service.REASON_MAX_LENGTH)
-
 
 class AccountStatusAuditTests(AuditTestCase):
     def setUp(self):
@@ -120,7 +118,6 @@ class AccountStatusAuditTests(AuditTestCase):
             self.set_status(self.admin, 'suspended')  # 不能停用自己
         self.assertEqual(self.entries(), [])
 
-
 class ScheduleAuditTests(AuditTestCase):
     admin = SimpleNamespace(email='admin@example.com')
 
@@ -160,7 +157,6 @@ class ScheduleAuditTests(AuditTestCase):
         with self.assertRaises(HTTPException):
             create_schedule(self.payload(past), admin=self.admin)
         self.assertEqual(self.entries(), [])
-
 
 class AdminLoginAuditTests(AuditTestCase):
     CODE = '123456'
@@ -261,7 +257,6 @@ class AdminLoginAuditTests(AuditTestCase):
             '帳密正確，但驗證碼錯誤（還可再試 1 次）',
             '帳密正確，但驗證碼錯誤 3 次，這次登入已作廢',
         ])
-
 
 if __name__ == '__main__':
     unittest.main()

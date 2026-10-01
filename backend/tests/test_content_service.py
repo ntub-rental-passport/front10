@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -8,16 +7,14 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
+from tests.admin_store import AdminStoreTestCase
 from admin import audit_service
 from admin import content_service as content
-
 
 def iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
-
 NOW = datetime.now(timezone.utc)
-
 
 def announcement(**overrides):
     values = {
@@ -27,7 +24,6 @@ def announcement(**overrides):
     values.update(overrides)
     return values
 
-
 def banner(**overrides):
     values = {
         'title': '新功能', 'imageUrl': '/banners/subsidy.webp', 'linkUrl': '/app/subsidy',
@@ -35,7 +31,6 @@ def banner(**overrides):
     }
     values.update(overrides)
     return values
-
 
 def template(**overrides):
     values = {
@@ -45,14 +40,12 @@ def template(**overrides):
     values.update(overrides)
     return values
 
-
-class ContentTestCase(unittest.TestCase):
+class ContentTestCase(AdminStoreTestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp.name) / 'content.db'
         self.env = patch.dict(os.environ, {
-            'ADMIN_CONTENT_DB': str(self.db_path),
-            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
         })
         self.env.start()
 
@@ -62,7 +55,6 @@ class ContentTestCase(unittest.TestCase):
 
     def audit(self):
         return [(e['action'], e['target'], e['detail']) for e in reversed(audit_service.list_events())]
-
 
 class SeedTests(ContentTestCase):
     def test_first_read_carries_over_the_existing_content(self):
@@ -86,7 +78,6 @@ class SeedTests(ContentTestCase):
             content.delete_banner(item['id'], actor='a@example.com')
         self.assertEqual(content.list_banners(), [])
 
-
 class PublicContentTests(ContentTestCase):
     def test_only_active_items_are_public(self):
         public = content.public_content()
@@ -99,7 +90,6 @@ class PublicContentTests(ContentTestCase):
         content.create_banner(banner(title='草稿', published=False), actor='a@example.com')
         content.create_banner(banner(title='已結束', endAt=iso(NOW - timedelta(minutes=1))), actor='a@example.com')
         self.assertEqual([b['title'] for b in content.public_content()['banners']], ['租補試算上線', '契約分析教學', '點交存證'])
-
 
 class AnnouncementTests(ContentTestCase):
     def test_create_update_delete_are_audited(self):
@@ -137,7 +127,6 @@ class AnnouncementTests(ContentTestCase):
         with self.assertRaises(LookupError):
             content.delete_announcement('an-missing', actor='a@example.com')
 
-
 class BannerAudienceTests(ContentTestCase):
     def test_banners_default_to_everyone(self):
         self.assertEqual({b['audience'] for b in content.list_banners()}, {'all'})
@@ -154,17 +143,6 @@ class BannerAudienceTests(ContentTestCase):
     def test_an_unknown_audience_is_refused(self):
         with self.assertRaises(ValueError):
             content.create_banner(banner(audience='everyone'), actor='a@example.com')
-
-    def test_an_old_database_without_the_column_still_opens(self):
-        # VM 與本機既有的 admin-content.db 是沒有 audience 欄位的，開檔時要自己補上
-        content.list_banners()  # 先讓它建檔（讀的時候才會建）
-        path = content.content_db()
-        with sqlite3.connect(path) as db:
-            db.execute('CREATE TABLE old_banners AS SELECT id, title, image_url, link_url, sort_order, '
-                       'published, start_at, end_at, updated_at FROM banners')
-            db.execute('DROP TABLE banners')
-            db.execute('ALTER TABLE old_banners RENAME TO banners')
-        self.assertEqual({b['audience'] for b in content.list_banners()}, {'all'})
 
 
 class BannerTests(ContentTestCase):
@@ -204,7 +182,6 @@ class BannerTests(ContentTestCase):
                 self.assertIn(fragment, str(caught.exception))
         self.assertEqual(content.create_banner(banner(imageUrl='https://example.com/a.png'), actor='a@example.com')['imageUrl'], 'https://example.com/a.png')
 
-
 class TemplateTests(ContentTestCase):
     def test_create_toggle_update_delete_are_audited(self):
         created = content.create_template(template(), actor='a@example.com')
@@ -235,7 +212,6 @@ class TemplateTests(ContentTestCase):
     def test_duplicate_channels_are_collapsed(self):
         created = content.create_template(template(channels=['email', 'inapp', 'email']), actor='a@example.com')
         self.assertEqual(created['channels'], ['email', 'inapp'])
-
 
 class ApiTests(ContentTestCase):
     admin = MagicMock(email='admin@example.com')
@@ -271,7 +247,6 @@ class ApiTests(ContentTestCase):
 
         result = reorder_banners(BannerOrder(ids=['ban-2', 'ban-3', 'ban-1'], movedId='ban-1'), admin=self.admin)
         self.assertEqual([b['id'] for b in result], ['ban-2', 'ban-3', 'ban-1'])
-
 
 if __name__ == '__main__':
     unittest.main()

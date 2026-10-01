@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import BackgroundTasks, HTTPException
 
+from tests.admin_store import AdminStoreTestCase
 from admin import audit_service
 from auth.security import CurrentUser
 from notifications import inbox_service as inbox
@@ -18,7 +19,6 @@ ACCOUNTS = [
     {'id': 6, 'email': 'admin-tenant@example.com', 'status': 'active', 'roles': {'admin', 'tenant'}},
 ]
 
-
 def message(**overrides):
     values = {
         'title': '停水通知', 'body': '週六停水', 'category': '系統', 'channels': ['inapp'],
@@ -27,13 +27,12 @@ def message(**overrides):
     values.update(overrides)
     return values
 
-
-class InboxTestCase(unittest.TestCase):
+class InboxTestCase(AdminStoreTestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {
             'NOTIFICATION_INBOX_DB': self.temp.name + '/inbox.db',
-            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
             'MONITOR_DB': self.temp.name + '/monitor.db',
             'SMTP_USERNAME': 'sender@example.com',
             'SMTP_APP_PASSWORD': 'app-password',
@@ -49,7 +48,6 @@ class InboxTestCase(unittest.TestCase):
 
     def send(self, recipient, **overrides):
         return inbox.create_batch(message(**overrides), recipient, actor='admin@example.com')
-
 
 class RecipientTests(InboxTestCase):
     def emails(self, recipient):
@@ -83,7 +81,6 @@ class RecipientTests(InboxTestCase):
     def test_bad_condition_is_rejected(self):
         with self.assertRaises(ValueError):
             inbox.resolve_recipients({'kind': 'role', 'role': 'admin'})
-
 
 class SendTests(InboxTestCase):
     def test_every_recipient_gets_a_message_and_the_send_is_audited(self):
@@ -128,7 +125,6 @@ class SendTests(InboxTestCase):
                 self.send({'kind': 'role', 'role': 'all'})
         self.assertIn('沒有符合條件', str(caught.exception))
 
-
 class EmailTests(InboxTestCase):
     def test_pending_emails_are_sent_once_and_each_result_is_kept(self):
         batch = self.send({'kind': 'role', 'role': 'all'}, channels=['inapp', 'email'])
@@ -147,7 +143,6 @@ class EmailTests(InboxTestCase):
         self.assertEqual(inbox.send_pending_emails(batch['batchId'], send_email=fake_send), {'sent': 0, 'failed': 0})
         self.assertIn(('通知管理', '一次性撰寫', 'Email：寄出 2 人，1 人失敗'),
                       [(e['action'], e['target'], e['detail']) for e in audit_service.list_events()])
-
 
 class UserInboxTests(InboxTestCase):
     def test_users_only_see_their_own_messages_newest_first(self):
@@ -182,7 +177,6 @@ class UserInboxTests(InboxTestCase):
             'dismissedAnnouncementKeys': ['an-1:2026-09-01T00:00:00.000Z'],
         })
         self.assertEqual(inbox.announcement_state(2), {'readAnnouncementIds': [], 'dismissedAnnouncementKeys': []})
-
 
 class ApiTests(InboxTestCase):
     admin = MagicMock(email='admin@example.com')
@@ -231,7 +225,6 @@ class ApiTests(InboxTestCase):
         with self.assertRaises(HTTPException) as caught:
             read_message(theirs, user=self.tenant)
         self.assertEqual(caught.exception.status_code, 404)
-
 
 if __name__ == '__main__':
     unittest.main()
