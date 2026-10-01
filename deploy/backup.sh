@@ -25,6 +25,9 @@ BACKUP_ROOT="$HOME/backups"
 WORK="$BACKUP_ROOT/rentmate-backup-$STAMP"
 mkdir -p "$WORK/key" "$WORK/host"
 
+# 讀 .env 取得學校資料庫的密碼（切換到學校機器之後才需要）
+set -a; . "$(dirname "$0")/../.env"; set +a
+
 echo "=========================================="
 echo " RentMate 備份 → $WORK"
 echo "=========================================="
@@ -32,9 +35,14 @@ echo "=========================================="
 # ---------- 1. MySQL 資料庫 ----------
 # --single-transaction：對 InnoDB 做一致性快照，過程中不鎖表、不中斷服務
 # 密碼透過容器環境變數取用，不出現在指令列
+#
+# 2026-10-02 起資料庫在學校的機器上（140.131.114.242），不再是這裡的 mysql 容器。
+# 還是借 mysql 容器來跑：它有 mysqldump（fastapi 容器沒有），只是改成連學校那台。
+# 密碼從 .env 讀進容器，不出現在指令列。
 echo "[1/5] 匯出 MySQL 資料庫..."
-docker compose exec -T mysql sh -c \
-  'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers "115-RentMate"' \
+docker compose run --rm --no-deps \
+  -e SCHOOL_DB_PASSWORD="$SCHOOL_DB_PASSWORD" mysql sh -c \
+  'exec mysqldump -h 140.131.114.242 -urentmate -p"$SCHOOL_DB_PASSWORD" --single-transaction --routines --triggers "115-RentMate"' \
   > "$WORK/db.sql"
 echo "      $(wc -l < "$WORK/db.sql") 行、$(du -h "$WORK/db.sql" | cut -f1)"
 
