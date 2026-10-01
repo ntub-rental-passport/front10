@@ -1121,6 +1121,11 @@ main > div:has(> .garbage-page--wide) {
     min-width: 90px !important;
   }
 }
+@media (max-width: 639px) {
+  .garbage-page .station-detail {
+    bottom: calc(64px + 16px + env(safe-area-inset-bottom));
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .garbage-page .spinning {
     animation: none;

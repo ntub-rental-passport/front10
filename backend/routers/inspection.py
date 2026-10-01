@@ -78,6 +78,39 @@ def timestamp(value):
     return value.replace(tzinfo=timezone.utc).isoformat()
 
 
+# 可信度門檻直接對齊 SmartCaptureCamera 的 HUD，不另外定一套數字，否則畫面上
+# 說「清晰」的照片會在存證報告裡被標成晃動。改這裡要同時改該元件的
+# lightStatus / sharpnessStatus，反之亦然。
+BRIGHTNESS_MIN = 65
+BRIGHTNESS_MAX = 215
+SHARPNESS_MIN = 40
+
+
+def integrity_note(record):
+    """一句人看得懂的可信度說明，給存證報告與房東日後審閱用。"""
+    if record.capture_source != 'camera':
+        return '此照片為檔案上傳，未經現場拍攝品質把關。'
+    quality = record.capture_quality or {}
+    if not quality:
+        return '現場拍攝，未取得品質量測值。'
+    problems = []
+    brightness = quality.get('brightness')
+    if isinstance(brightness, (int, float)):
+        if brightness < BRIGHTNESS_MIN:
+            problems.append('光線偏暗')
+        elif brightness > BRIGHTNESS_MAX:
+            problems.append('畫面過曝')
+    sharpness = quality.get('sharpness')
+    if isinstance(sharpness, (int, float)) and sharpness < SHARPNESS_MIN:
+        problems.append('畫面晃動')
+    # None 和 False 的意思完全不同：None 是沒量到，False 是量到了而且歪的。
+    if quality.get('isLevel') is False:
+        problems.append('手機未保持水平')
+    elif quality.get('isLevel') is None:
+        problems.append('未啟用水平偵測')
+    return '現場拍攝，但' + '、'.join(problems) + '。' if problems else '現場拍攝，品質正常。'
+
+
 def evidence_json(record, phase):
     result = record.vlm_result or {}
     return {
@@ -87,6 +120,9 @@ def evidence_json(record, phase):
         'aiLabel': ('狀態完好' if not result.get('has_defect') else f"{result.get('severity', '')}瑕疵") if result else '尚未完成辨識',
         'note': result.get('defect_summary', '照片已儲存，可重新執行辨識。'),
         'userNote': record.user_note,
+        'captureSource': record.capture_source,
+        'captureQuality': record.capture_quality,
+        'integrityNote': integrity_note(record),
     }
 
 
@@ -130,9 +166,24 @@ class ItemRequest(BaseModel):
     category: Literal['appliance', 'furniture', 'fixture'] = 'furniture'
 
 
+class CaptureQuality(BaseModel):
+    """SmartCaptureCamera 在按下快門那一刻量到的畫面狀態。
+
+    is_level 可以是 None：iOS 的 deviceorientation 要使用者在原生對話框按「允許」
+    才會吐資料，沒授權時我們拿不到傾角。但亮度與清晰度是本機 canvas 算的、
+    不需要任何權限，所以照送 —— 把有證據的照片整組標成「未取得量測值」，
+    只會讓存證比實際上更不可信。
+    """
+    brightness: float = Field(ge=0, le=255)
+    sharpness: float = Field(ge=0)
+    is_level: bool | None = None
+
+
 class PhotoRequest(BaseModel):
     image_data: str = Field(min_length=1, max_length=12_000_000)
     user_note: str = Field(default='', max_length=5000)
+    capture_source: Literal['camera', 'file'] = 'file'
+    capture_quality: CaptureQuality | None = None
 
 
 class DefectResult(BaseModel):
@@ -222,6 +273,15 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
         raise HTTPException(400, '無法解析圖片，請選擇有效的圖片檔案。')
     item = owned_item(db, item_id, user, lock=True)
     claim_version(db, item, item.version)
+    # 來源是 file 時一律不存品質：客戶端自己宣稱的分數不能換到可信度。
+    # 這是伺服器唯一擋得住的事 —— 來源本身仍然是前端回報的，見 integrity_note。
+    quality = None
+    if payload.capture_source == 'camera' and payload.capture_quality is not None:
+        quality = {
+            'brightness': payload.capture_quality.brightness,
+            'sharpness': payload.capture_quality.sharpness,
+            'isLevel': payload.capture_quality.is_level,
+        }
     name = uuid.uuid4().hex + '.jpg'
     directory = photo_directory()
     directory.mkdir(parents=True, exist_ok=True)
@@ -231,7 +291,8 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
         old_record = getattr(item, phase)
         record = InspectionRecord(rental_id=item.rental_id,
             type='check_in' if phase == 'baseline' else 'check_out', photo_url=name,
-            item_name=item.item_name, room_name=item.room_name, user_note=payload.user_note)
+            item_name=item.item_name, room_name=item.room_name, user_note=payload.user_note,
+            capture_source=payload.capture_source, capture_quality=quality)
         db.add(record)
         db.flush()
         setattr(item, phase, record)

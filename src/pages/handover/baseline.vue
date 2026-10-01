@@ -60,7 +60,7 @@ import {
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 
-import { useHandover, type HandoverItem } from '@/src/composables/useHandover'
+import { useHandover, type HandoverItem, type CaptureQuality, type CaptureSource } from '@/src/composables/useHandover'
 import {
   firstEvidenceOfPhase,
   formatHandoverTimestamp,
@@ -146,14 +146,14 @@ function resizeImage(file: File, maxWidth = 1024): Promise<string> {
   })
 }
 
-async function processPhotoWithAI(item: HandoverItem, dataUrl: string) {
-  await addEvidence(item.id, 'baseline', { url: dataUrl })
+async function processPhotoWithAI(item: HandoverItem, dataUrl: string, source: CaptureSource, quality: CaptureQuality | null) {
+  await addEvidence(item.id, 'baseline', { url: dataUrl, source, quality })
 }
 
 // 相機拍照回傳
 async function handlePhotoCaptured(payload: CapturePayload) {
   if (!activeTargetItem.value) return
-  await processPhotoWithAI(activeTargetItem.value, payload.dataUrl)
+  await processPhotoWithAI(activeTargetItem.value, payload.dataUrl, payload.source, payload.quality)
 }
 
 // 本地檔案上傳
@@ -174,7 +174,7 @@ async function capturePhoto(itemId: string) {
 
     try {
       const dataUrl = await resizeImage(file)
-      await processPhotoWithAI(targetItem, dataUrl)
+      await processPhotoWithAI(targetItem, dataUrl, 'file', null)
     } catch (cause) {
       error.value = '無法讀取圖片，請重新選擇圖片檔案。'
       console.error('圖片壓縮或處理失敗:', cause)
@@ -479,6 +479,9 @@ function fmtDate(iso: string) {
                         {{ fmtDate(firstBaseline(it)!.capturedAt) }}
                       </span>
                     </div>
+                    <p v-if="firstBaseline(it)!.integrityNote" class="text-xs" :class="firstBaseline(it)!.captureSource === 'camera' ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400'">
+                      {{ firstBaseline(it)!.integrityNote }}
+                    </p>
 
                     <Button
                       v-if="!firstBaseline(it)!.vlmResult"
@@ -633,6 +636,7 @@ function fmtDate(iso: string) {
               <div v-if="firstBaseline(it)" class="full-item-line">
                 拍攝時間：{{ fmtDate(firstBaseline(it)!.capturedAt) }}
               </div>
+              <p v-if="firstBaseline(it)?.integrityNote" class="print-integrity">{{ firstBaseline(it)!.integrityNote }}</p>
               <div v-if="firstBaseline(it)?.aiConfidence" class="full-item-line">
                 AI 清晰度：{{ ((firstBaseline(it)!.aiConfidence ?? 0) * 100).toFixed(0) }}%
               </div>
@@ -681,6 +685,11 @@ function fmtDate(iso: string) {
     margin-bottom: 1rem;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid #999;
+  }
+  .print-integrity {
+    font-size: 10pt;
+    color: #444;
+    margin-top: 2pt;
   }
 }
 
