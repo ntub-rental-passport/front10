@@ -33,7 +33,7 @@ def _open():
     搬進共用資料庫之後旗標照舊，只是表不再由程式建立。
     """
     with open_store() as db:
-        if db.execute("SELECT 1 FROM content_meta WHERE key = 'seeded'").fetchone() is None:
+        if db.execute("SELECT 1 FROM content_meta WHERE `key` = 'seeded'").fetchone() is None:
             _seed(db)
         yield db
 
@@ -111,7 +111,7 @@ def _seed_templates(now: float) -> list[tuple]:
 
 def _seed(db: Store) -> None:
     now = _now()
-    # 倒著寫：列表是新到舊（rowid 大的在前），倒著寫才會照原本的順序顯示
+    # 倒著寫：列表是新到舊（updated_at 新的在前），倒著寫才會照原本的順序顯示
     for row in reversed(_seed_announcements(now)):
         db.execute('INSERT INTO announcements (id, title, body, level, audience, published, start_at, end_at, updated_at) '
                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', row)
@@ -122,7 +122,7 @@ def _seed(db: Store) -> None:
         db.execute('INSERT INTO notification_templates (id, name, category, channels, title, body, action_url, action_label, '
                    'enabled, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)',
                    (tid, name, category, json.dumps(channels), title, body, enabled, _iso(updated)))
-    db.execute("INSERT INTO content_meta (key, value) VALUES ('seeded', ?)", (_iso(now),))
+    db.execute("INSERT INTO content_meta (`key`, value) VALUES ('seeded', ?)", (_iso(now),))
 
 
 def _new_id(prefix: str) -> str:
@@ -226,7 +226,9 @@ def _clean_announcement(values: dict) -> tuple:
 def list_announcements() -> list[dict]:
     """新到舊（最後建立的在最前面），跟後台原本的列表順序一樣。"""
     with _open() as db:
-        rows = db.execute('SELECT * FROM announcements ORDER BY rowid DESC').fetchall()
+        # 最近更新的在前。原本靠 SQLite 的 rowid（插入順序），共用資料庫沒有那個欄位；
+        # 對後台來說「剛改過的排前面」也比「先建立的排前面」有用。
+        rows = db.execute('SELECT * FROM announcements ORDER BY updated_at DESC, id DESC').fetchall()
     return [_announcement_view(row) for row in rows]
 
 
@@ -307,7 +309,7 @@ def _clean_banner(values: dict) -> tuple:
 
 def list_banners() -> list[dict]:
     with _open() as db:
-        rows = db.execute('SELECT * FROM banners ORDER BY sort_order, rowid').fetchall()
+        rows = db.execute('SELECT * FROM banners ORDER BY sort_order, id').fetchall()
     return [_banner_view(row) for row in rows]
 
 
@@ -410,7 +412,7 @@ def _clean_template(values: dict) -> tuple:
 
 def list_templates() -> list[dict]:
     with _open() as db:
-        rows = db.execute('SELECT * FROM notification_templates ORDER BY rowid DESC').fetchall()
+        rows = db.execute('SELECT * FROM notification_templates ORDER BY updated_at DESC, id DESC').fetchall()
     return [_template_view(row) for row in rows]
 
 
@@ -476,7 +478,7 @@ def public_content() -> dict:
     """首頁與租客端要的：生效中的輪播（照順序）與公告（新開始的在前）。"""
     now = _now()
     with _open() as db:
-        banners = db.execute('SELECT * FROM banners ORDER BY sort_order, rowid').fetchall()
+        banners = db.execute('SELECT * FROM banners ORDER BY sort_order, id').fetchall()
         announcements = db.execute('SELECT * FROM announcements').fetchall()
     active = sorted(
         (row for row in announcements if _active(row, now)),

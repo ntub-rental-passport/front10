@@ -11,7 +11,7 @@ MySQL。
 錯。所以這裡提供一個「看起來像 sqlite3 連線」的薄殼：
 
     with open_store() as db:
-        row = db.execute('SELECT value FROM site_settings WHERE key = ?', (key,)).fetchone()
+        row = db.execute('SELECT value FROM site_settings WHERE `key` = ?', (key,)).fetchone()
         if row: print(row['value'])
 
 `?` 佔位符、`row['欄位名']`、`fetchone/fetchall/rowcount` 都照舊，呼叫端幾乎不用改。
@@ -111,8 +111,8 @@ class Store:
 
         `add=True` 時把 values 累加上去（AI 用量的每日累計用）。
         """
-        assignment = ', '.join(f'{k} = {k} + ?' if add else f'{k} = ?' for k in values)
-        where = ' AND '.join(f'{k} = ?' for k in keys)
+        assignment = ', '.join(f'`{k}` = `{k}` + ?' if add else f'`{k}` = ?' for k in values)
+        where = ' AND '.join(f'`{k}` = ?' for k in keys)
         updated = self.execute(
             f'UPDATE {table} SET {assignment} WHERE {where}',
             (*values.values(), *keys.values()),
@@ -121,8 +121,9 @@ class Store:
             return
         columns = list(keys) + list(values)
         placeholders = ', '.join('?' for _ in columns)
+        names = ', '.join(f'`{c}`' for c in columns)
         self.execute(
-            f'INSERT INTO {table} ({", ".join(columns)}) VALUES ({placeholders})',
+            f'INSERT INTO {table} ({names}) VALUES ({placeholders})',
             (*keys.values(), *values.values()),
         )
 
@@ -131,14 +132,15 @@ class Store:
 
         呼叫端用這個回傳值判斷「是不是我搶到的」（例如額度告警每月只發一次）。
         """
-        where = ' AND '.join(f'{k} = ?' for k in keys)
+        where = ' AND '.join(f'`{k}` = ?' for k in keys)
         existing = self.execute(f'SELECT 1 FROM {table} WHERE {where}', tuple(keys.values())).fetchone()
         if existing:
             return 0
         columns = list(keys) + list(values)
         placeholders = ', '.join('?' for _ in columns)
+        names = ', '.join(f'`{c}`' for c in columns)
         self.execute(
-            f'INSERT INTO {table} ({", ".join(columns)}) VALUES ({placeholders})',
+            f'INSERT INTO {table} ({names}) VALUES ({placeholders})',
             (*keys.values(), *values.values()),
         )
         return 1

@@ -57,7 +57,7 @@ def get_settings() -> dict:
     values = _defaults()
     try:
         with _open() as db:
-            for row in db.execute('SELECT key, value FROM platform_settings').fetchall():
+            for row in db.execute('SELECT `key`, value FROM platform_settings').fetchall():
                 if row['key'] in values:
                     values[row['key']] = int(row['value'])
     except SQLAlchemyError:

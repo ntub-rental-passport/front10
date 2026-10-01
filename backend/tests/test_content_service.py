@@ -58,7 +58,8 @@ class ContentTestCase(AdminStoreTestCase):
 
 class SeedTests(ContentTestCase):
     def test_first_read_carries_over_the_existing_content(self):
-        self.assertEqual([a['id'] for a in content.list_announcements()], ['an-1', 'an-2', 'an-3', 'an-4'])
+        # 列表是最近更新的在前（見 list_announcements），種子的 updated_at 各不相同
+        self.assertEqual([a['id'] for a in content.list_announcements()], ['an-1', 'an-4', 'an-2', 'an-3'])
         self.assertEqual(
             [(b['id'], b['title'], b['imageUrl'], b['order'], b['published']) for b in content.list_banners()],
             [
@@ -68,7 +69,8 @@ class SeedTests(ContentTestCase):
             ],
         )
         templates = content.list_templates()
-        self.assertEqual([t['id'] for t in templates], ['nt-1', 'nt-2', 'nt-3', 'nt-4', 'nt-5'])
+        # 同樣是最近更新的在前；種子的 updated_at 各不相同，所以不是 nt-1..nt-5
+        self.assertEqual([t['id'] for t in templates], ['nt-3', 'nt-1', 'nt-4', 'nt-2', 'nt-5'])
         self.assertFalse(templates[-1]['enabled'])
         # 搬內容不搬紀錄：初始化本身不算管理員操作
         self.assertEqual(self.audit(), [])
