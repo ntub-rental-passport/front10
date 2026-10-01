@@ -12,6 +12,7 @@ from PIL import Image
 
 from admin import banner_images
 from auth.security import get_current_admin
+from db.database import get_db
 from routers import content_api
 
 
@@ -101,6 +102,9 @@ class ApiTests(BannerImageTestCase):
     def client(self, admin_ok=True):
         app = FastAPI()
         app.include_router(content_api.router)
+        # 輪播圖不碰資料庫，但 get_current_admin 的相依會去要連線：不換掉的話，
+        # 沒有 .env 的環境（CI、暫存工作區）會先回 503，測不到 401。
+        app.dependency_overrides[get_db] = lambda: None
         if admin_ok:
             app.dependency_overrides[get_current_admin] = lambda: self.admin
         return TestClient(app)
