@@ -3,6 +3,18 @@ import { inspectionRequest } from '@/src/services/inspectionApi'
 import { getAuthSession } from '@/src/composables/useAuth'
 
 export type EvidencePhase = 'baseline' | 'checkout'
+export type CaptureSource = 'camera' | 'file'
+
+export interface CaptureQuality {
+  brightness: number
+  sharpness: number
+  /*
+   * null 代表「沒量到」，不是「不水平」。iOS 的 deviceorientation 要使用者在原生
+   * 對話框按「允許」才會吐資料；亮度與清晰度是本機 canvas 算的，不需要權限，
+   * 所以就算拿不到傾角也照送 —— 整組丟掉會讓有證據的照片被標成未取得量測值。
+   */
+  isLevel: boolean | null
+}
 
 export interface HandoverProperty {
   id: string
@@ -21,6 +33,9 @@ export interface HandoverEvidence {
   note?: string
   userNote?: string
   vlmResult?: Record<string, unknown> | null
+  captureSource?: CaptureSource
+  captureQuality?: CaptureQuality | null
+  integrityNote?: string
 }
 
 export type HandoverDiff = {
@@ -148,7 +163,7 @@ export function useHandover() {
   async function addEvidence(
     itemId: string,
     phase: EvidencePhase,
-    payload: { url: string; note?: string },
+    payload: { url: string; note?: string; source: CaptureSource; quality: CaptureQuality | null },
   ) {
     await perform(async () => {
       const item = await inspectionRequest<HandoverItem>(
@@ -157,6 +172,15 @@ export function useHandover() {
         {
           image_data: payload.url,
           user_note: payload.note ?? '',
+          capture_source: payload.source,
+          capture_quality:
+            payload.source === 'camera' && payload.quality
+              ? {
+                  brightness: payload.quality.brightness,
+                  sharpness: payload.quality.sharpness,
+                  is_level: payload.quality.isLevel,
+                }
+              : null,
         },
       )
       replaceItem(item)

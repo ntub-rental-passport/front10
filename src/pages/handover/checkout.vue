@@ -118,7 +118,7 @@ async function capturePhoto(itemId: string) {
 
     try {
       const dataUrl = await resizeImage(file)
-      await addEvidence(itemId, 'checkout', { url: dataUrl })
+      await addEvidence(itemId, 'checkout', { url: dataUrl, source: 'file', quality: null })
     } catch (cause) {
       error.value = '無法讀取圖片，請重新選擇圖片檔案。'
       console.error('圖片處理失敗', cause)

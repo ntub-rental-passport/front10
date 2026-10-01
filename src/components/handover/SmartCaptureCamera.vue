@@ -13,6 +13,9 @@
         <DialogDescription class="text-xs text-slate-400">
           依 AR 水平指標與光線提示對準物品，畫面清晰時點擊拍攝存證。
         </DialogDescription>
+        <Button v-if="needsOrientationPermission && isCameraReady && !hasOrientationMeasurement" type="button" size="sm" variant="secondary" class="self-start" @click="requestOrientationPermission">
+          啟用水平偵測
+        </Button>
       </DialogHeader>
 
       <!-- 相機預覽視窗：flex-1 讓它在手機上自動吃滿上下高度 -->
@@ -28,8 +31,8 @@
 
         <!-- 錯誤提示 -->
         <div v-if="cameraError" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-900/90 z-20">
-          <AlertCircle class="h-10 w-10 text-amber-400 mb-2" />
-          <p class="text-sm font-medium text-slate-200 mb-1">無法啟動鏡頭</p>
+          <component :is="uploadOnly ? Upload : AlertCircle" class="h-10 w-10 text-amber-400 mb-2" />
+          <p class="text-sm font-medium text-slate-200 mb-1">{{ uploadOnly ? '這台裝置請用上傳' : '無法啟動鏡頭' }}</p>
           <p class="text-xs text-slate-400 mb-4 max-w-sm">{{ cameraError }}</p>
           <Button size="sm" variant="secondary" @click="triggerFileInput">
             <Upload class="h-3.5 w-3.5 mr-1.5" /> 改用檔案上傳
@@ -139,15 +142,17 @@ import {
 import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
 import { Camera, AlertCircle, Upload, Sun, Compass, Activity } from 'lucide-vue-next'
+import { useFieldCaptureSupport } from '@/src/composables/useDeviceGate'
+import type { CaptureQuality, CaptureSource } from '@/src/composables/useHandover'
 
 export type CapturePayload = {
   dataUrl: string
-  quality: {
-    brightness: number
-    sharpness: number
-    isLevel: boolean
-  }
+  source: CaptureSource
+  quality: CaptureQuality | null
 }
+
+const { fieldCapture } = useFieldCaptureSupport()
+const uploadOnly = ref(false)
 
 const props = withDefaults(
   defineProps<{
@@ -178,9 +183,14 @@ const cameraError = ref<string | null>(null)
 const tiltAngle = ref(0)
 const brightnessValue = ref(128)
 const sharpnessScore = ref(100)
+const hasFrameMeasurement = ref(false)
+const hasOrientationMeasurement = ref(false)
+const needsOrientationPermission = typeof DeviceOrientationEvent !== 'undefined' &&
+  typeof (DeviceOrientationEvent as any).requestPermission === 'function'
 
 let stream: MediaStream | null = null
 let analysisTimer: number | null = null
+let orientationListening = false
 
 // 光線判斷
 const lightStatus = computed(() => {
@@ -195,16 +205,27 @@ const sharpnessStatus = computed(() => {
   return { label: '清晰', color: 'text-emerald-400', isOk: true }
 })
 
-// 最佳拍攝狀態
+/*
+ * 最佳拍攝狀態（綠燈）。
+ *
+ * 刻意不要求 hasOrientationMeasurement：iOS 要使用者在原生對話框按「允許」才會
+ * 吐 deviceorientation，沒授權時這個值永遠是 false，綠燈就變成永遠不亮的裝飾品。
+ * 決定照片好壞的是光線與清晰度，水平只是構圖輔助 —— 一張清晰但歪 10 度的存證照，
+ * 證據力高於一張水平但模糊的。有傾角資料時才把角度納入判斷，沒有就略過。
+ */
 const isIdealState = computed(() => {
-  const isAngleOk = Math.abs(tiltAngle.value) < 8
-  return lightStatus.value.isOk && sharpnessStatus.value.isOk && isAngleOk && isCameraReady.value
+  const isAngleOk = !hasOrientationMeasurement.value || Math.abs(tiltAngle.value) < 8
+  return hasFrameMeasurement.value &&
+    lightStatus.value.isOk && sharpnessStatus.value.isOk && isAngleOk && isCameraReady.value
 })
 
 const hudStatusText = computed(() => {
+  if (!hasFrameMeasurement.value) return '等待畫面量測（可先拍攝）'
   if (!lightStatus.value.isOk) return brightnessValue.value < 65 ? '⚠️ 光線不足，建議補光' : '⚠️ 畫面過曝，請避開反光'
-  if (Math.abs(tiltAngle.value) >= 8) return '📐 請調整手機角度至水平'
+  if (hasOrientationMeasurement.value && Math.abs(tiltAngle.value) >= 8) return '📐 請調整手機角度至水平'
   if (!sharpnessStatus.value.isOk) return '✋ 請握穩手機，減少晃動'
+  // 水平偵測拿不到資料不擋拍攝，但要讓使用者知道這張的量測不完整
+  if (!hasOrientationMeasurement.value) return '🟢 畫面清晰，可拍攝（水平偵測未啟用）'
   return '🟢 畫面清晰，可點擊拍攝'
 })
 
@@ -212,6 +233,19 @@ const hudStatusText = computed(() => {
 
 async function startCamera() {
   cameraError.value = null
+  uploadOnly.value = false
+  hasFrameMeasurement.value = false
+  hasOrientationMeasurement.value = false
+  /*
+   * 桌機不開鏡頭：筆電 webcam 拍不到房間角落，而傾角偵測靠 DeviceOrientation，
+   * 桌機量不到角度。畫質差又沒有水平資訊的照片，存證效力比使用者自己用手機
+   * 拍完再上傳更低，所以這裡直接導向上傳。
+   */
+  if (!fieldCapture.value) {
+    uploadOnly.value = true
+    cameraError.value = '請改用下方的「上傳」選擇照片，或改用手機開啟這個頁面當場拍攝。'
+    return
+  }
   await nextTick()
 
   // 若 Dialog 剛開啟動畫中尚未抓到 videoEl，再等一個 tick
@@ -238,7 +272,7 @@ async function startCamera() {
       isCameraReady.value = true
 
       startAnalysisLoop()
-      requestOrientationPermission()
+      if (!needsOrientationPermission) requestOrientationPermission()
     }
   } catch (error: any) {
     console.error('相機啟動失敗:', error)
@@ -255,6 +289,10 @@ function stopCamera() {
   stream?.getTracks().forEach((track) => track.stop())
   stream = null
   isCameraReady.value = false
+  if (orientationListening) {
+    window.removeEventListener('deviceorientation', handleOrientation)
+    orientationListening = false
+  }
 }
 
 // ---------- 即時亮度與模糊分析迴圈 (極輕量計算) ---------- //
@@ -295,29 +333,37 @@ function startAnalysisLoop() {
         }
       }
       sharpnessScore.value = Math.min(100, Math.round((variance / (62 * 46)) * 4))
-    } catch {}
+      hasFrameMeasurement.value = true
+    } catch {
+      // Video frames can briefly be unavailable while the camera starts or stops.
+    }
   }, 250)
 }
 
 // ---------- iOS / Android 陀螺儀感測授權 ---------- //
 
-function requestOrientationPermission() {
-  const handleOrientation = (e: DeviceOrientationEvent) => {
-    if (e.gamma !== null) {
-      tiltAngle.value = e.gamma
-    }
+function handleOrientation(e: DeviceOrientationEvent) {
+  if (e.gamma !== null) {
+    tiltAngle.value = e.gamma
+    hasOrientationMeasurement.value = true
   }
+}
 
-  if (typeof (DeviceOrientationEvent as any)?.requestPermission === 'function') {
+function addOrientationListener() {
+  if (orientationListening) return
+  window.addEventListener('deviceorientation', handleOrientation)
+  orientationListening = true
+}
+
+function requestOrientationPermission() {
+  if (needsOrientationPermission) {
     (DeviceOrientationEvent as any).requestPermission()
       .then((response: string) => {
-        if (response === 'granted') {
-          window.addEventListener('deviceorientation', handleOrientation)
-        }
+        if (response === 'granted' && props.open && isCameraReady.value) addOrientationListener()
       })
       .catch(() => {})
   } else if (typeof window !== 'undefined') {
-    window.addEventListener('deviceorientation', handleOrientation)
+    addOrientationListener()
   }
 }
 
@@ -338,11 +384,15 @@ function onClickCapture() {
 
   emit('captured', {
     dataUrl,
-    quality: {
-      brightness: Math.round(brightnessValue.value),
-      sharpness: sharpnessScore.value,
-      isLevel: Math.abs(tiltAngle.value) < 8
-    }
+    source: 'camera',
+    quality: hasFrameMeasurement.value
+      ? {
+          brightness: Math.round(brightnessValue.value),
+          sharpness: sharpnessScore.value,
+          // 沒拿到傾角就送 null，不要拿 tiltAngle 的初始值 0 假裝「水平」
+          isLevel: hasOrientationMeasurement.value ? Math.abs(tiltAngle.value) < 8 : null,
+        }
+      : null,
   })
   handleOpenChange(false)
 }
@@ -361,14 +411,7 @@ function onFileSelected(e: Event) {
   const reader = new FileReader()
   reader.onload = (event) => {
     const dataUrl = event.target?.result as string
-    emit('captured', {
-      dataUrl,
-      quality: {
-        brightness: 128,
-        sharpness: 100,
-        isLevel: true
-      }
-    })
+    emit('captured', { dataUrl, source: 'file', quality: null })
     handleOpenChange(false)
   }
   reader.readAsDataURL(file)

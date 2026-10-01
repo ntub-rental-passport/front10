@@ -52,7 +52,7 @@ watch(isSidebarPinned, (value) => {
 </script>
 
 <template>
-  <div class="flex h-screen w-full bg-muted/20">
+  <div class="flex h-[100dvh] w-full bg-muted/20">
     <!-- Desktop Sidebar -->
     <aside
       v-if="!hidesDesktopSidebar"
@@ -121,7 +121,7 @@ watch(isSidebarPinned, (value) => {
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 overflow-y-auto pb-16 sm:pb-0">
+    <main class="flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pt-0 sm:pb-0">
       <div :class="isWideContentRoute ? 'min-h-full w-full' : 'mx-auto min-h-full max-w-[1400px] p-4 md:p-6'">
         <!--
           維護攔截刻意不 redirect：使用者要找的東西還在這個網址底下，只是
@@ -146,14 +146,14 @@ watch(isSidebarPinned, (value) => {
     </main>
 
     <!-- Mobile Bottom Nav -->
-    <nav class="fixed bottom-0 left-0 right-0 z-50 flex h-16 border-t bg-background sm:hidden">
+    <nav class="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4rem+env(safe-area-inset-bottom))] border-t bg-background pb-[env(safe-area-inset-bottom)] sm:hidden">
       <RouterLink
         v-for="item in mobileNavItems"
         :key="item.path"
         :to="item.path"
         :title="isPathUnderMaintenance(item.path) ? `${item.label}（維護中）` : item.label"
         :class="cn(
-          'flex flex-1 flex-col items-center justify-center gap-0.5 text-[9px] font-medium transition-colors',
+          'flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors',
           isActive(item.path)
             ? 'text-primary'
             : isPathUnderMaintenance(item.path)

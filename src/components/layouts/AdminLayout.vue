@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/dropdown-menu/index'
 import { cn } from '@/lib/utils'
 import AdminSidebar from '@/src/components/admin/AdminSidebar.vue'
+import DesktopOnlyNotice from '@/src/components/DesktopOnlyNotice.vue'
+import { useAdminDeviceGate } from '@/src/composables/useDeviceGate'
 import MaintenanceChip from '@/src/components/admin/MaintenanceChip.vue'
 import QueueDrawer from '@/src/components/admin/QueueDrawer.vue'
 import { navIcon } from '@/src/components/admin/nav-icons'
@@ -44,6 +46,7 @@ import { adminRoleLabels } from '@/src/utils/admin-rbac'
 import { initialOf } from '@/src/utils/admin-recent-logins'
 
 const route = useRoute()
+const { blocked: deviceBlocked } = useAdminDeviceGate()
 const router = useRouter()
 
 const { visibleNavGroups, currentAdminRole } = useAdminRbac()
@@ -139,7 +142,8 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
     header／卡片之間露出一條淺色縫隙，把深色模式的白字標題蓋到看不見。
     改用 --background、--muted 兩個既有 token 組出同方向的漸層。
   -->
-  <div class="flex min-h-screen bg-[linear-gradient(180deg,_var(--background),_var(--muted))]">
+  <DesktopOnlyNotice v-if="deviceBlocked" />
+  <div v-else class="flex min-h-screen bg-[linear-gradient(180deg,_var(--background),_var(--muted))]">
     <AdminSidebar />
 
     <div class="flex min-w-0 flex-1 flex-col">

@@ -575,8 +575,12 @@ const {
 
     <!-- ── 停水停電通報 ──────────────────────────────────────────────────────── -->
     <section>
-      <!-- 手機版：簡單橫幅連結（sm 以下顯示） -->
-      <RouterLink v-if="false" to="/app/outage" class="block sm:hidden">
+      <!--
+        手機版：簡單橫幅連結（sm 以下顯示）。
+        這是停電通報在手機上的唯一入口 —— 手機沒有側邊欄，底部導航也只有六格
+        放不下它。下面那張桌機版卡片維持關閉，因為桌機側邊欄已經有入口了。
+      -->
+      <RouterLink to="/app/outage" class="block sm:hidden">
         <Card class="group cursor-pointer overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm transition-all hover:border-amber-300 hover:shadow-md">
           <CardContent class="p-5">
             <div class="flex items-center gap-4">

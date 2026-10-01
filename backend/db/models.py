@@ -249,6 +249,9 @@ class InspectionRecord(Base):
     rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='CASCADE'), nullable=False)
     type = Column(Enum('check_in','check_out', validate_strings=True, create_constraint=True), nullable=False)
     photo_url = Column(String(512), nullable=False)
+    capture_source = Column(Enum('camera', 'file', validate_strings=True, create_constraint=True),
+                            nullable=False, default='file')
+    capture_quality = Column(JSON, nullable=True)
     item_name = Column(String(100), nullable=True)
     room_name = Column(String(100), nullable=True)
     vlm_result = Column(JSON, nullable=True)

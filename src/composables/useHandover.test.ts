@@ -42,6 +42,51 @@ async function loadedStore(items: HandoverItem[] = [item]) {
 }
 
 describe('database handover state', () => {
+  it('sends camera source and measured quality to the API', async () => {
+    const store = await loadedStore()
+    request.mockResolvedValueOnce(structuredClone(uploaded))
+    request.mockResolvedValueOnce({ item: structuredClone(uploaded) })
+    await store.addEvidence('10', 'baseline', {
+      url: 'data:image/jpeg;base64,abc', source: 'camera',
+      quality: { brightness: 140, sharpness: 88, isLevel: true },
+    })
+    expect(request).toHaveBeenCalledWith('/items/10/photos/baseline', 'PUT', {
+      image_data: 'data:image/jpeg;base64,abc', user_note: '', capture_source: 'camera',
+      capture_quality: { brightness: 140, sharpness: 88, is_level: true },
+    })
+  })
+
+  it('keeps the measured light and sharpness when the level reading is unavailable', async () => {
+    // iOS 沒授權 deviceorientation 時拿不到傾角，但亮度與清晰度是本機 canvas 算的。
+    // 整組丟掉會讓一張有證據的照片被標成「未取得量測值」。
+    const store = await loadedStore()
+    request.mockResolvedValueOnce(structuredClone(uploaded))
+    request.mockResolvedValueOnce({ status: 'success', vlm_result: {}, item: structuredClone(uploaded) })
+    await store.addEvidence('10', 'baseline', {
+      url: 'data:image/jpeg;base64,abc',
+      source: 'camera',
+      quality: { brightness: 140, sharpness: 88, isLevel: null },
+    })
+    expect(request).toHaveBeenCalledWith('/items/10/photos/baseline', 'PUT', {
+      image_data: 'data:image/jpeg;base64,abc',
+      user_note: '',
+      capture_source: 'camera',
+      capture_quality: { brightness: 140, sharpness: 88, is_level: null },
+    })
+  })
+
+  it('sends null quality for a file upload', async () => {
+    const store = await loadedStore()
+    request.mockResolvedValueOnce(structuredClone(uploaded))
+    request.mockResolvedValueOnce({ item: structuredClone(uploaded) })
+    await store.addEvidence('10', 'baseline', {
+      url: 'data:image/jpeg;base64,abc', source: 'file', quality: null,
+    })
+    expect(request).toHaveBeenCalledWith('/items/10/photos/baseline', 'PUT', {
+      image_data: 'data:image/jpeg;base64,abc', user_note: '', capture_source: 'file',
+      capture_quality: null,
+    })
+  })
   it('loads persisted evidence and comparison on a new page instance', async () => {
     const saved: HandoverItem = {
       ...uploaded,
@@ -57,7 +102,7 @@ describe('database handover state', () => {
     request
       .mockResolvedValueOnce(structuredClone(uploaded))
       .mockRejectedValueOnce(new Error('分析失敗'))
-    await store.addEvidence('10', 'baseline', { url: 'data:image/jpeg;base64,abc' })
+    await store.addEvidence('10', 'baseline', { url: 'data:image/jpeg;base64,abc', source: 'file', quality: null })
     expect(store.itemsOfCurrentProperty.value[0].evidences[0].id).toBe('20')
     expect(store.error.value).toBe('分析失敗')
     expect(store.busy.value).toBe(false)
@@ -81,7 +126,7 @@ describe('database handover state', () => {
     }
     const store = await loadedStore([saved])
     request.mockRejectedValueOnce(new Error('無法儲存'))
-    await store.addEvidence('10', 'baseline', { url: 'new' })
+    await store.addEvidence('10', 'baseline', { url: 'new', source: 'file', quality: null })
     expect(store.itemsOfCurrentProperty.value[0]).toEqual(saved)
   })
 

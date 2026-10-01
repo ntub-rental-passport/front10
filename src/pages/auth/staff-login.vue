@@ -2,6 +2,8 @@
 import { computed, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/src/components/layouts/AuthLayout.vue'
+import DesktopOnlyNotice from '@/src/components/DesktopOnlyNotice.vue'
+import { useAdminDeviceGate } from '@/src/composables/useDeviceGate'
 import { Button } from '@/components/ui/button/index'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
@@ -24,6 +26,7 @@ import { recordLogin } from '@/src/composables/admin/useAdminUsers'
  * 「已通過帳密驗證」的憑據，留在磁碟上等於把第一道關卡的成果外洩。
  */
 const router = useRouter()
+const { blocked: deviceBlocked } = useAdminDeviceGate()
 const route = useRoute()
 
 /** 從後台被帶回來的原因（見 AdminLayout 的閒置登出），講清楚比讓人自己猜好 */
@@ -130,7 +133,8 @@ function restart(): void {
 </script>
 
 <template>
-  <AuthShell content-width-class="max-w-lg" footer-note="此入口僅供經授權的 RentMate 內部人員使用。">
+  <DesktopOnlyNotice v-if="deviceBlocked" />
+  <AuthShell v-else content-width-class="max-w-lg" footer-note="此入口僅供經授權的 RentMate 內部人員使用。">
     <div>
       <!--
         眉標原本是 text-primary/70：疊在登入頁的淺色漸層上實測只有 3.57，

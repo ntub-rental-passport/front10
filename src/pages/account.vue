@@ -1375,7 +1375,12 @@ button:focus-visible {
 
   .feedback-toast {
     right: 16px;
-    bottom: 80px;
+  }
+}
+
+@media (max-width: 639px) {
+  .feedback-toast {
+    bottom: calc(64px + 24px + env(safe-area-inset-bottom));
   }
 }
 

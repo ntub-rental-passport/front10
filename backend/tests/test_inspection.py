@@ -70,10 +70,55 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
-    def upload(self, item_id, phase='baseline'):
-        response = self.request('PUT', f'/items/{item_id}/photos/{phase}', json={'image_data': self.photo, 'user_note': 'note'})
+    def upload(self, item_id, phase='baseline', **extra):
+        response = self.request('PUT', f'/items/{item_id}/photos/{phase}', json={'image_data': self.photo, 'user_note': 'note', **extra})
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
+
+    def test_camera_capture_stores_source_and_quality(self):
+        item = self.upload(self.item()['id'], capture_source='camera',
+            capture_quality={'brightness': 140, 'sharpness': 88, 'is_level': True})
+        evidence = item['evidences'][0]
+        self.assertEqual(evidence['captureSource'], 'camera')
+        self.assertEqual(evidence['captureQuality'],
+                         {'brightness': 140, 'sharpness': 88, 'isLevel': True})
+        self.assertEqual(evidence['integrityNote'], '現場拍攝，品質正常。')
+
+    def test_file_upload_never_carries_quality(self):
+        item = self.upload(self.item()['id'], capture_source='file',
+            capture_quality={'brightness': 128, 'sharpness': 100, 'is_level': True})
+        evidence = item['evidences'][0]
+        self.assertEqual(evidence['captureSource'], 'file')
+        self.assertIsNone(evidence['captureQuality'])
+        self.assertEqual(evidence['integrityNote'], '此照片為檔案上傳，未經現場拍攝品質把關。')
+
+    def test_poor_camera_quality_is_flagged(self):
+        item = self.upload(self.item()['id'], capture_source='camera',
+            capture_quality={'brightness': 40, 'sharpness': 20, 'is_level': False})
+        note = item['evidences'][0]['integrityNote']
+        self.assertIn('光線偏暗', note)
+        self.assertIn('畫面晃動', note)
+        self.assertIn('手機未保持水平', note)
+
+    def test_camera_without_level_keeps_the_measured_light_and_sharpness(self):
+        # 使用者沒授權水平偵測時，亮度與清晰度仍然是真的量到的，不該整組丟掉 ——
+        # 把有證據的照片標成「未取得量測值」反而讓存證更沒說服力。
+        item = self.upload(self.item()['id'], capture_source='camera',
+            capture_quality={'brightness': 140, 'sharpness': 88})
+        evidence = item['evidences'][0]
+        self.assertEqual(evidence['captureQuality'],
+                         {'brightness': 140, 'sharpness': 88, 'isLevel': None})
+        self.assertEqual(evidence['integrityNote'], '現場拍攝，但未啟用水平偵測。')
+
+    def test_camera_without_measurements_is_labeled_unknown(self):
+        evidence = self.upload(self.item()['id'], capture_source='camera')['evidences'][0]
+        self.assertIsNone(evidence['captureQuality'])
+        self.assertEqual(evidence['integrityNote'], '現場拍攝，未取得品質量測值。')
+
+    def test_undeclared_source_is_a_file(self):
+        evidence = self.upload(self.item()['id'])['evidences'][0]
+        self.assertEqual(evidence['captureSource'], 'file')
+        self.assertIsNone(evidence['captureQuality'])
 
     def test_roundtrip_analysis_comparison_and_retake_invalidation(self):
         item = self.item()
