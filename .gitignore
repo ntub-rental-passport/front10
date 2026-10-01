@@ -77,6 +77,6 @@ client_secret*.json
 !.env.example
 # 前端正式環境設定（VITE_API_BASE_URL 等），沒有秘密，web 映像 build 時要用
 !.env.production
-backend/uploads/inspection/
-backend/uploads/banners/
-backend/uploads/repair-photos/
+# 使用者上傳的照片（點交存證、報修、輪播圖）：含住家內部與個人資訊，絕不可進版控
+backend/uploads/
+uploads/

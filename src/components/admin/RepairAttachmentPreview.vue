@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { fetchAdminRepairMedia, type AdminRepairMedia } from '@/src/services/adminRepairApi'
-const props = defineProps<{ media: AdminRepairMedia }>()
+const props = defineProps<{ media: AdminRepairMedia
+  /** 附件端點在工單底下，要同時給工單的流水號 */
+  ticketId: string
+}>()
 const url = ref('')
 const error = ref('')
 let request = 0
@@ -14,7 +17,7 @@ async function load(): Promise<void> {
   release()
   error.value = ''
   try {
-    const blob = await fetchAdminRepairMedia(props.media)
+    const blob = await fetchAdminRepairMedia(props.ticketId, props.media)
     if (current !== request) return
     url.value = URL.createObjectURL(blob)
   } catch (cause) {

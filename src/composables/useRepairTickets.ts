@@ -1,7 +1,30 @@
-import { computed, onMounted, onUnmounted, reactive } from 'vue'
+/**
+ * 報修工單。
+ *
+ * 原本整個存在瀏覽器（localStorage + IndexedDB），造成：
+ * - 房東只有在「同一台電腦、同一個瀏覽器」才看得到租客的報修
+ * - 房東看不到照片，只看到檔名
+ * - 房東端列出所有人的工單，沒有依房東過濾
+ * - 另有 4 筆寫死的示範工單混在真實資料裡
+ *
+ * 現在一律讀寫後端（/api/repairs），由伺服器依登入身分限定範圍、
+ * 檢查每個角色能改哪些欄位，並把每個動作寫進只能新增的時間軸。
+ */
+import { computed, reactive } from 'vue'
+import { getAuthenticatedUserId, getAuthSession } from '@/src/composables/useAuth'
 import { notifyLandlordWorkspaceUpdated } from '@/src/composables/useLandlordWorkspace'
-import { getAuthSession } from '@/src/composables/useAuth'
-import type { RepairPhotoRef } from '@/src/services/repairMediaStore'
+import {
+  forgetPending,
+  uploadPayload,
+  type RepairPhotoRef,
+} from '@/src/services/repairMediaStore'
+import {
+  createRepairTicket,
+  fetchRepairTickets,
+  markRepairRead,
+  patchRepairTicket,
+  type RepairPhotoStage,
+} from '@/src/services/repairApi'
 
 export type RepairUrgency = 'emergency' | 'soon' | 'normal'
 export type RepairStatus = 'pending' | 'processing' | 'inspection' | 'completed' | 'canceled'
@@ -35,16 +58,11 @@ export interface RepairRescheduleRequest {
 }
 
 export interface RepairTicket {
-  canonicalStatus: 'new' | 'acknowledged' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
-  ticketNo: string
-  landlordUserId: string
-  overdue: boolean
-  disputed: boolean
-  receipt?: RepairPhotoRef | null
-  quote?: RepairPhotoRef | null
-  completionPhotos?: RepairPhotoRef[]
-  unresolvedPhotos?: RepairPhotoRef[]
   id: string
+  /** 顯示用編號，例如 R-20260930-0012。 */
+  code: string
+  /** 房東不在平台上（對自己存檔的租約報修）：由租客自行管理與結案。 */
+  selfManaged: boolean
   tenantUserId: string
   leaseId: string
   propertyId: string
@@ -74,6 +92,9 @@ export interface RepairTicket {
   payer: string
   quoteName: string
   receiptName: string
+  receipt: RepairPhotoRef | null
+  completionPhotos: RepairPhotoRef[]
+  unresolvedPhotos: RepairPhotoRef[]
   tenantScheduleReply: '' | 'accepted' | 'reschedule' | 'contact-first'
   inspectionResult: '' | 'resolved' | 'unresolved' | 'retry'
   contactBeforeArrival: boolean
@@ -94,7 +115,7 @@ export interface RepairTicket {
     model: string
     moveInStatus: string
     moveInPhoto: string
-    repairCount: number | null
+    repairCount: number
   }
   createdAt: string
   updatedAt: string
@@ -121,58 +142,155 @@ export interface NewRepairTicket {
   phone: string
 }
 
-import { fetchRepairs, fetchRepair, patchRepair, postRepair, type RepairSide } from '@/src/services/repairApi'
-import { archiveLegacyRepairs } from '@/src/utils/repair-uploads'
-
 export const REPAIR_TICKETS_UPDATED_EVENT = 'rentmate:repair-tickets-updated'
 
-export function useRepairTickets() {
+const state = reactive({
+  tickets: [] as RepairTicket[],
+  loading: false,
+  /** 這份資料是用哪個身分載入的。同一個帳號可以同時是租客與房東，
+   *  切換角色後伺服器回的是另一批工單，必須重新載入。 */
+  loadedFor: '',
+  error: '',
+})
+
+function identityKey(): string {
   const session = getAuthSession()
-  const side: RepairSide = session?.role === 'landlord' ? 'landlord' : 'tenant'
-  const state = reactive({ tickets: [] as RepairTicket[], loading: true, saving: false, error: '', actionError: '' })
-  const currentIdentity = () => { const current = getAuthSession(); return current?.userId === session?.userId && current?.role === session?.role }
-  function put(ticket: RepairTicket) {
-    if (!currentIdentity()) return
-    const index = state.tickets.findIndex(item => item.id === ticket.id)
-    if (index < 0) state.tickets.unshift(ticket)
-    else state.tickets[index] = ticket
-    window.dispatchEvent(new CustomEvent(REPAIR_TICKETS_UPDATED_EVENT))
-    try { notifyLandlordWorkspaceUpdated('repair') } catch { /* 本機儲存失效不能把成功的伺服器操作顯示成失敗。 */ }
-  }
-  async function refresh(): Promise<void> {
+  return session ? `${session.role}:${getAuthenticatedUserId(session)}` : ''
+}
+
+/** 前端自己組的欄位，不送到後端（由伺服器依照片與事件重建）。 */
+const CLIENT_ONLY_FIELDS = new Set<keyof RepairTicket>([
+  'supplements',
+  'photoNames',
+  'photos',
+  'unresolvedPhotoNames',
+  'unresolvedPhotos',
+  'completionPhotoNames',
+  'completionPhotos',
+  'receiptName',
+  'receipt',
+  'quoteName',
+  'landlordRead',
+  'timeline',
+  'inventory',
+  'updatedAt',
+])
+
+function replaceTicket(ticket: RepairTicket): void {
+  const index = state.tickets.findIndex((item) => item.id === ticket.id)
+  if (index === -1) state.tickets.unshift(ticket)
+  else state.tickets.splice(index, 1, ticket)
+}
+
+function announce(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(REPAIR_TICKETS_UPDATED_EVENT))
+  notifyLandlordWorkspaceUpdated('repair')
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
+
+export interface RepairPhotoUpload {
+  stage: RepairPhotoStage
+  photos: RepairPhotoRef[]
+}
+
+export function useRepairTickets() {
+  const tickets = computed(() => state.tickets)
+  const loading = computed(() => state.loading)
+  const error = computed(() => state.error)
+
+  /** 依登入身分讀取：租客拿到自己的工單，房東拿到自己租約上的工單。 */
+  async function load(): Promise<void> {
+    const key = identityKey()
     state.loading = true
     state.error = ''
     try {
-      const result = await fetchRepairs(side)
-      state.tickets = currentIdentity() ? result.items : []
-    } catch (error) { state.error = error instanceof Error ? error.message : '讀不到報修資料，請重試。' }
-    finally { state.loading = false }
+      state.tickets.splice(0, state.tickets.length, ...(await fetchRepairTickets()))
+      state.loadedFor = key
+    } catch (cause) {
+      state.error = errorMessage(cause, '讀取報修資料失敗，請稍後重試。')
+    } finally {
+      state.loading = false
+    }
   }
-  async function mutate<T>(operation: () => Promise<T>): Promise<T | null> {
-    if (state.saving) return null
-    state.saving = true
-    state.actionError = ''
-    try { return await operation() }
-    catch (error) { state.actionError = error instanceof Error ? error.message : '報修操作失敗，請重試。'; return null }
-    finally { state.saving = false }
-  }
+
   async function createTicket(input: NewRepairTicket): Promise<RepairTicket | null> {
-    return mutate(async () => { const ticket = await postRepair(input); put(ticket); return ticket })
+    state.error = ''
+    try {
+      const ticket = await createRepairTicket({
+        target: input.leaseId,
+        location: input.location,
+        equipment: input.equipment,
+        description: input.description,
+        urgency: input.urgency,
+        availableTime: input.availableTime,
+        accessPermission: input.accessPermission,
+        phone: input.phone,
+        photos: uploadPayload(input.photos),
+      })
+      forgetPending(input.photos)
+      replaceTicket(ticket)
+      announce()
+      return ticket
+    } catch (cause) {
+      state.error = errorMessage(cause, '報修送出失敗，請稍後重試。')
+      return null
+    }
   }
-  async function updateTicket(id: string, updates: Partial<RepairTicket>, event?: { title: string; detail?: string; actorRole?: RepairTimelineItem['actorRole'] }): Promise<RepairTicket | null> {
-    return mutate(async () => { const ticket = await patchRepair(side, id, updates, event && { title: event.title, detail: event.detail }); put(ticket); return ticket })
+
+  /**
+   * 更新工單。先寫資料庫成功才更新畫面 —— 反過來的話寫入失敗會留下
+   * 一個看起來已處理、重整後又變回原狀的案件。
+   *
+   * 回傳 true 表示已存檔；失敗時錯誤訊息放在 error。
+   */
+  async function updateTicket(
+    id: string,
+    updates: Partial<RepairTicket>,
+    event: { title: string; detail?: string; actorRole?: RepairTimelineItem['actorRole'] },
+    upload?: RepairPhotoUpload,
+  ): Promise<boolean> {
+    state.error = ''
+    const payload = Object.fromEntries(
+      Object.entries(updates).filter(([key]) => !CLIENT_ONLY_FIELDS.has(key as keyof RepairTicket)),
+    )
+    try {
+      const ticket = await patchRepairTicket(id, {
+        updates: payload,
+        // 行為者由伺服器依登入身分記錄，不送 actorRole
+        event: { title: event.title, detail: event.detail },
+        photos: upload ? uploadPayload(upload.photos) : [],
+        photoStage: upload?.photos.length ? upload.stage : null,
+      })
+      if (upload) forgetPending(upload.photos)
+      replaceTicket(ticket)
+      announce()
+      return true
+    } catch (cause) {
+      state.error = errorMessage(cause, '更新報修失敗，請稍後重試。')
+      return false
+    }
   }
-  async function reloadTicket(id: string): Promise<void> { await mutate(async () => { put(await fetchRepair(side, id)) }) }
+
   async function markRead(id: string): Promise<void> {
-    if (!state.tickets.find(item => item.id === id)?.landlordRead) await updateTicket(id, { landlordRead: true })
+    const ticket = state.tickets.find((item) => item.id === id)
+    if (!ticket || ticket.landlordRead) return
+    try {
+      replaceTicket(await markRepairRead(id))
+      announce()
+    } catch (cause) {
+      state.error = errorMessage(cause, '標記已讀失敗。')
+    }
   }
-  const refetch = () => { if (!state.saving) void refresh() }
-  onMounted(() => {
-    try { archiveLegacyRepairs(window.localStorage) }
-    catch { state.actionError = '舊報修資料備份失敗，已保留原始資料；目前僅顯示伺服器資料。' }
-    void refresh()
-    window.addEventListener('focus', refetch)
-  })
-  onUnmounted(() => window.removeEventListener('focus', refetch))
-  return { tickets: computed(() => state.tickets), loading: computed(() => state.loading), error: computed(() => state.error), saving: computed(() => state.saving), actionError: computed(() => state.actionError), refresh, createTicket, updateTicket, markRead, reloadTicket }
+
+  if (!state.loading && state.loadedFor !== identityKey()) {
+    // 換了身分就先清空，避免短暫顯示上一個角色的工單
+    state.tickets.splice(0, state.tickets.length)
+    void load()
+  }
+
+  return { tickets, loading, error, load, createTicket, updateTicket, markRead }
 }

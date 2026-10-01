@@ -392,28 +392,69 @@ class RepairTicket(Base):
     location = Column(String(100), nullable=True)
     equipment = Column(String(100), nullable=True)
     description = Column(Text, nullable=False)
-    urgency = Column(Enum('low','medium','high','urgent', validate_strings=True, create_constraint=True), nullable=False, default='medium')
+    phone = Column(EncryptedText(255), nullable=True)
+    urgency = Column(Enum('emergency','soon','normal', validate_strings=True, create_constraint=True), nullable=False, default='normal')
     available_time = Column(Text, nullable=True)
     access_permission = Column(Enum('present','absent','contact-first', validate_strings=True, create_constraint=True), nullable=False, default='contact-first')
-    status = Column(Enum('new','acknowledged','scheduled','in_progress','completed','cancelled', validate_strings=True, create_constraint=True), nullable=False, default='new')
+    contact_before_arrival = Column(Boolean, nullable=False, default=False)
+    status = Column(Enum('pending','processing','inspection','completed','canceled', validate_strings=True, create_constraint=True), nullable=False, default='pending')
     landlord_read_at = Column(Timestamp, nullable=True)
-    responsibility = Column(Enum('landlord','tenant','shared','undetermined', validate_strings=True, create_constraint=True), nullable=False, default='undetermined')
+    responsibility = Column(Enum('pending','landlord','tenant','shared', validate_strings=True, create_constraint=True), nullable=False, default='pending')
     responsibility_note = Column(Text, nullable=True)
+    responsibility_agreement = Column(String(20), nullable=True)
+    responsibility_question = Column(Text, nullable=True)
+    supplement_requested = Column(Boolean, nullable=False, default=False)
+    supplement_request_note = Column(Text, nullable=True)
     vendor_name = Column(String(100), nullable=True)
     vendor_phone = Column(String(30), nullable=True)
     scheduled_at = Column(Timestamp, nullable=True)
+    tenant_schedule_reply = Column(String(20), nullable=True)
+    reschedule_request = Column(JSON, nullable=True)
+    estimated_cost = Column(Integer, nullable=True)
+    actual_cost = Column(Integer, nullable=True)
+    payer = Column(String(50), nullable=True)
+    completion_note = Column(Text, nullable=True)
+    inspection_result = Column(String(20), nullable=True)
+    unresolved_note = Column(Text, nullable=True)
+    unresolved_safety_concern = Column(Boolean, nullable=False, default=False)
+    revisit_available_time = Column(Text, nullable=True)
     completed_at = Column(Timestamp, nullable=True)
     created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
     updated_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    events = relationship("RepairTicketEvent", back_populates="ticket", cascade="all, delete-orphan",
+                          order_by="RepairTicketEvent.id")
+    photos = relationship("RepairTicketPhoto", back_populates="ticket", cascade="all, delete-orphan",
+                          order_by="RepairTicketPhoto.id")
+
+class RepairTicketEvent(Base):
+    """報修時間軸。只新增、不修改、不刪除 —— 這就是存證。"""
+    __tablename__ = 'repair_ticket_events'
+    __table_args__ = (Index('idx_repair_events_ticket', 'ticket_id'),)
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    ticket_id = Column(Integer, ForeignKey('repair_tickets.id', ondelete='CASCADE'), nullable=False)
+    actor_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    actor_role = Column(Enum('tenant','landlord','system', validate_strings=True, create_constraint=True), nullable=False, default='system')
+    kind = Column(String(30), nullable=False, default='note')
+    title = Column(String(200), nullable=False)
+    detail = Column(Text, nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+    ticket = relationship("RepairTicket", back_populates="events")
 
 class RepairTicketPhoto(Base):
     __tablename__ = 'repair_ticket_photos'
     __table_args__ = (Index('idx_repair_photos_ticket', 'ticket_id'),)
     id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
     ticket_id = Column(Integer, ForeignKey('repair_tickets.id', ondelete='CASCADE'), nullable=False)
+    event_id = Column(Integer, ForeignKey('repair_ticket_events.id', ondelete='SET NULL'), nullable=True)
+    stage = Column(Enum('report','supplement','completion','unresolved','receipt', validate_strings=True, create_constraint=True), nullable=False, default='report')
+    uploaded_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     photo_url = Column(String(512), nullable=False)
     photo_name = Column(String(255), nullable=True)
     uploaded_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+    ticket = relationship("RepairTicket", back_populates="photos")
 
 class Note(Base):
     __tablename__ = 'personal_notes'

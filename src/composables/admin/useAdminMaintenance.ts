@@ -103,7 +103,9 @@ export function useAdminMaintenance() {
     // 先等讀取完成，避免稍晚回來的舊列表覆蓋剛儲存的備註。
     if (inflight) await inflight
     try {
-      const result = await patchAdminRepair(id, updates)
+      // 畫面上傳進來的是案件編號（ticket.id），後端要的是資料表流水號
+      const record = records.value.find((item) => item.ticketNo === id || item.id === id)
+      const result = await patchAdminRepair(record?.id ?? id, updates)
       if (currentOwner !== sessionKey()) return false
       const index = records.value.findIndex((item) => item.id === result.id)
       if (index >= 0) records.value.splice(index, 1, result)

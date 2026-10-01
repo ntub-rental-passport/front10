@@ -19,7 +19,7 @@ import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 
 const { rooms, tenants } = useLandlordWorkspace()
 const { payments, total, received, awaiting, rate, monthLabel } = useLandlordFinance()
-const { tickets, loading: repairsLoading, error: repairsError, refresh: refreshRepairs } = useRepairTickets()
+const { tickets, loading: repairsLoading, error: repairsError, load: refreshRepairs } = useRepairTickets()
 
 const rentedRooms = computed(() => rooms.value.filter((room) => room.status === 'rented').length)
 const occupancyRate = computed(() => rooms.value.length

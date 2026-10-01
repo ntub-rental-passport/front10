@@ -350,21 +350,37 @@ CREATE TABLE `landlord_tenant_activities` (
 CREATE TABLE `repair_tickets` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `tenant_user_id` INT NOT NULL COMMENT '報修人',
-  `rental_id` INT DEFAULT NULL COMMENT '租客自記約（房東未使用平台）',
-  `lease_id` INT DEFAULT NULL COMMENT '房東連動約（雙方皆用平台）',
+  `rental_id` INT DEFAULT NULL COMMENT '租客自記約（房東未使用平台）：工單即為存證紀錄',
+  `lease_id` INT DEFAULT NULL COMMENT '房東連動約（雙方皆用平台）：房東端可處理',
   `location` VARCHAR(100) DEFAULT NULL,
   `equipment` VARCHAR(100) DEFAULT NULL,
   `description` TEXT NOT NULL,
-  `urgency` ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+  `phone` VARBINARY(255) DEFAULT NULL COMMENT '報修聯絡電話（加密）',
+  `urgency` ENUM('emergency','soon','normal') NOT NULL DEFAULT 'normal',
   `available_time` TEXT DEFAULT NULL,
   `access_permission` ENUM('present','absent','contact-first') NOT NULL DEFAULT 'contact-first',
-  `status` ENUM('new','acknowledged','scheduled','in_progress','completed','cancelled') NOT NULL DEFAULT 'new',
+  `contact_before_arrival` BOOLEAN NOT NULL DEFAULT FALSE,
+  `status` ENUM('pending','processing','inspection','completed','canceled') NOT NULL DEFAULT 'pending',
   `landlord_read_at` DATETIME(6) DEFAULT NULL,
-  `responsibility` ENUM('landlord','tenant','shared','undetermined') NOT NULL DEFAULT 'undetermined',
+  `responsibility` ENUM('pending','landlord','tenant','shared') NOT NULL DEFAULT 'pending',
   `responsibility_note` TEXT DEFAULT NULL,
+  `responsibility_agreement` VARCHAR(20) DEFAULT NULL COMMENT 'agreed / questioned',
+  `responsibility_question` TEXT DEFAULT NULL,
+  `supplement_requested` BOOLEAN NOT NULL DEFAULT FALSE,
+  `supplement_request_note` TEXT DEFAULT NULL,
   `vendor_name` VARCHAR(100) DEFAULT NULL,
   `vendor_phone` VARCHAR(30) DEFAULT NULL,
   `scheduled_at` DATETIME(6) DEFAULT NULL,
+  `tenant_schedule_reply` VARCHAR(20) DEFAULT NULL COMMENT 'accepted / reschedule / contact-first',
+  `reschedule_request` JSON DEFAULT NULL,
+  `estimated_cost` INT DEFAULT NULL,
+  `actual_cost` INT DEFAULT NULL,
+  `payer` VARCHAR(50) DEFAULT NULL,
+  `completion_note` TEXT DEFAULT NULL,
+  `inspection_result` VARCHAR(20) DEFAULT NULL COMMENT 'resolved / unresolved / retry',
+  `unresolved_note` TEXT DEFAULT NULL,
+  `unresolved_safety_concern` BOOLEAN NOT NULL DEFAULT FALSE,
+  `revisit_available_time` TEXT DEFAULT NULL,
   `completed_at` DATETIME(6) DEFAULT NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
@@ -376,13 +392,34 @@ CREATE TABLE `repair_tickets` (
   INDEX `idx_repair_tickets_lease_unread` (`lease_id`, `landlord_read_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 報修時間軸：只新增、不修改、不刪除。這就是「存證」——
+-- 誰在什麼時候做了什麼，事後無法竄改，發生爭議時可以拿出來對照。
+CREATE TABLE `repair_ticket_events` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `ticket_id` INT NOT NULL,
+  `actor_user_id` INT DEFAULT NULL,
+  `actor_role` ENUM('tenant','landlord','system') NOT NULL DEFAULT 'system',
+  `kind` VARCHAR(30) NOT NULL DEFAULT 'note' COMMENT 'note / supplement / status',
+  `title` VARCHAR(200) NOT NULL,
+  `detail` TEXT DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`ticket_id`) REFERENCES `repair_tickets`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`actor_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  INDEX `idx_repair_events_ticket` (`ticket_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `repair_ticket_photos` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `ticket_id` INT NOT NULL,
-  `photo_url` VARCHAR(512) NOT NULL,
-  `photo_name` VARCHAR(255) DEFAULT NULL,
+  `event_id` INT DEFAULT NULL COMMENT '補件照片屬於哪一次補充',
+  `stage` ENUM('report','supplement','completion','unresolved','receipt') NOT NULL DEFAULT 'report',
+  `uploaded_by` INT DEFAULT NULL,
+  `photo_url` VARCHAR(512) NOT NULL COMMENT '伺服器產生的檔名（REPAIR_UPLOAD_DIR 下），不是外部網址',
+  `photo_name` VARCHAR(255) DEFAULT NULL COMMENT '使用者上傳時的原始檔名',
   `uploaded_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   FOREIGN KEY (`ticket_id`) REFERENCES `repair_tickets`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`event_id`) REFERENCES `repair_ticket_events`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`uploaded_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
   INDEX `idx_repair_photos_ticket` (`ticket_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import SubsidyJourney from './SubsidyJourney.vue'
 import heroImage from '@/src/assets/subsidy/01-rent-subsidy-hero.png'
@@ -15,7 +15,19 @@ import {
   House,
   CircleHelp,
   FileText,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
 } from 'lucide-vue-next'
+import { useSubsidyRental } from '@/src/composables/useSubsidyRental'
+import {
+  buildApplicationFields,
+  cityFromAddress,
+  leaseCoverage,
+  maskNationalId,
+  type ApplicationField,
+} from '@/src/utils/subsidy-rental'
 import {
   checkHousing,
   checkIncome,
@@ -52,6 +64,52 @@ const housing = reactive({
   old: false,
 })
 const income = computed(() => checkIncome(form.city, form.annual, form.people, form.expanded))
+
+// ---- 從存檔租約帶入 ----
+// 定位：幫忙備齊資料，送件與查進度由使用者自己在官網完成。
+// 不保存任何結果，每次打開都從存檔租約重新計算（2026-10-01 決定）。
+const {
+  summaries: storedRentals,
+  selectedId: selectedRentalId,
+  rental: storedRental,
+  loading: rentalLoading,
+  error: rentalError,
+} = useSubsidyRental()
+const rentalCity = computed(() => cityFromAddress(storedRental.value?.address))
+const coverage = computed(() =>
+  leaseCoverage(storedRental.value?.start_date, storedRental.value?.end_date),
+)
+const applicationFields = computed(() => buildApplicationFields(storedRental.value))
+const rentalLabel = (item: { contract_tag: string | null; address: string }) =>
+  item.contract_tag || item.address
+// 只在使用者還沒選時帶入縣市，不覆蓋手動選擇
+watch(
+  rentalCity,
+  (city) => {
+    if (city && !form.city) form.city = city
+  },
+  { immediate: true },
+)
+
+const idRevealed = ref(false)
+const copiedKey = ref('')
+const copyError = ref('')
+function displayValue(field: ApplicationField): string {
+  return field.sensitive && !idRevealed.value ? maskNationalId(field.value) : field.value
+}
+async function copyField(field: ApplicationField): Promise<void> {
+  copyError.value = ''
+  try {
+    await navigator.clipboard.writeText(field.value)
+    copiedKey.value = field.key
+    window.setTimeout(() => {
+      if (copiedKey.value === field.key) copiedKey.value = ''
+    }, 1600)
+  } catch {
+    // 非 HTTPS 或瀏覽器拒絕剪貼簿權限時會失敗
+    copyError.value = '瀏覽器不允許自動複製，請點「顯示」後手動選取。'
+  }
+}
 const housingResult = computed(() =>
   checkHousing(housing.tax, housing.legal, housing.residentialTax, housing.use, housing.old),
 )
@@ -223,6 +281,39 @@ function exportRecovery() {
       >
     </nav>
 
+    <section
+      v-if="page === 'calculator' || page === 'housing' || page === 'apply' || page === 'upload'"
+      class="panel rental-source"
+      aria-live="polite"
+    >
+      <p v-if="rentalLoading">正在讀取你存檔的租約…</p>
+      <template v-else-if="storedRentals.length">
+        <div>
+          <strong>已從你存檔的租約帶入資料</strong>
+          <small>只在這個畫面使用，不會另外保存；每次打開都會重新讀取。</small>
+        </div>
+        <select
+          v-if="storedRentals.length > 1"
+          v-model="selectedRentalId"
+          aria-label="選擇要使用的租約"
+        >
+          <option v-for="item in storedRentals" :key="item.rental_id" :value="item.rental_id">
+            {{ rentalLabel(item) }}（{{ item.start_date }} ~ {{ item.end_date }}）
+          </option>
+        </select>
+        <span v-else>{{ rentalLabel(storedRentals[0]!) }}</span>
+      </template>
+      <div v-else>
+        <strong>還沒有存檔的租約</strong>
+        <small>
+          下面的欄位請手動輸入。先在
+          <RouterLink to="/app/contract/scanner">契約辨識</RouterLink>
+          存檔一份終版契約，就能自動帶入。
+        </small>
+      </div>
+      <p v-if="rentalError" class="rental-source-error" role="alert">{{ rentalError }}</p>
+    </section>
+
     <template v-if="page === 'subsidy'">
       <section class="hero illustrated-hero">
         <img
@@ -334,7 +425,9 @@ function exportRecovery() {
         </fieldset>
         <div class="form-grid">
           <label
-            >租屋縣市<select v-model="form.city">
+            >租屋縣市<small v-if="rentalCity && form.city === rentalCity" class="autofill-tag"
+              >依租約地址帶入</small
+            ><select v-model="form.city">
               <option value="">請選擇</option>
               <option v-for="(_, city) in incomeLimits" :key="city">{{ city }}</option>
             </select></label
@@ -456,6 +549,18 @@ function exportRecovery() {
             <strong>等待填寫資料</strong>
             <p>請填妥縣市、有效的非負所得與正整數人數，才會顯示所得結果。</p>
           </div>
+          <div v-if="coverage" class="income-followup">
+            <h3>你的租期與 {{ coverage.rocYear }} 年</h3>
+            <p v-if="coverage.monthsInYear === 0">
+              租期與 {{ coverage.rocYear }} 年沒有重疊，這份租約無法用來申請今年的租補。
+            </p>
+            <p v-else-if="coverage.monthsInYear < 12">
+              租期涵蓋 {{ coverage.rocYear }} 年其中 {{ coverage.monthsInYear }} 個月。租補按月核計，可申請的月份以租期內為限。
+            </p>
+            <p v-else>租期涵蓋 {{ coverage.rocYear }} 年全年。</p>
+            <p v-if="coverage.ended">這份租約已經到期；若已續約或搬家，請以新租約申請。</p>
+            <p v-if="coverage.notStarted">這份租約尚未開始，起租後才能申請。</p>
+          </div>
           <div class="income-followup">
             <h3>接下來還要確認</h3>
             <p v-if="personalQuestions.some((q) => form[q.key] !== 'yes')">
@@ -517,6 +622,25 @@ function exportRecovery() {
             >查看 115 年房屋條件與舊戶說明 ↗</a
           >
         </section>
+        <section v-if="storedRental" class="panel">
+          <h3>租約上可用來查證的資料</h3>
+          <p>以下資料只能協助你查證，不能代替上面的判斷。</p>
+          <dl class="evidence-list">
+            <div>
+              <dt>門牌</dt>
+              <dd>{{ storedRental.address || '契約未載明' }}</dd>
+            </div>
+            <div>
+              <dt>建號</dt>
+              <dd>{{ storedRental.building_number || '契約未載明' }}</dd>
+            </div>
+            <div>
+              <dt>地號</dt>
+              <dd>{{ storedRental.land_number || '契約未載明' }}</dd>
+            </div>
+          </dl>
+          <p>有建號可以向地政機關申請建物謄本，確認用途與是否合法登記。</p>
+        </section>
         <section class="panel">
           <h3>還要留意</h3>
           <p>
@@ -565,6 +689,40 @@ function exportRecovery() {
         </ul>
       </section>
       <aside>
+        <section v-if="applicationFields.length" class="panel copy-panel">
+          <h2>官網要填、租約上已經有的資料</h2>
+          <p>在官網填表時逐格複製貼上，送出前請再對照一次你的租約原本。</p>
+          <ul class="copy-list">
+            <li v-for="field in applicationFields" :key="field.key">
+              <div>
+                <span class="copy-label">{{ field.label }}</span>
+                <strong class="copy-value">{{ displayValue(field) }}</strong>
+                <small v-if="field.warning" class="copy-warning">{{ field.warning }}</small>
+                <small v-else-if="field.hint">{{ field.hint }}</small>
+              </div>
+              <div class="copy-actions">
+                <button
+                  v-if="field.sensitive"
+                  type="button"
+                  :aria-label="idRevealed ? '隱藏' : '顯示'"
+                  @click="idRevealed = !idRevealed"
+                >
+                  <EyeOff v-if="idRevealed" :size="16" /><Eye v-else :size="16" />
+                </button>
+                <button type="button" :aria-label="`複製${field.label}`" @click="copyField(field)">
+                  <Check v-if="copiedKey === field.key" :size="16" /><Copy v-else :size="16" />
+                </button>
+              </div>
+            </li>
+          </ul>
+          <p v-if="copyError" class="copy-warning" role="alert">{{ copyError }}</p>
+          <p class="copy-note">
+            ⚠️ 官網要上傳的是<strong>雙方實際簽署的租約影本</strong>。RentMate「檢視契約」印出的是由欄位回拼的核對稿，不等於正本，不能拿去送件。
+          </p>
+          <p class="copy-note">
+            戶籍地址、撥款帳戶、家庭成員不在租約上，請在官網直接填寫。RentMate 不收取任何證件或帳戶資料。
+          </p>
+        </section>
         <section class="panel result">
           <img
             class="topic-art"
@@ -762,6 +920,91 @@ function exportRecovery() {
 </template>
 
 <style scoped>
+.rental-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.rental-source strong {
+  display: block;
+}
+.rental-source small {
+  color: var(--muted-foreground, #6b7280);
+}
+.rental-source select {
+  max-width: 100%;
+}
+.rental-source-error,
+.copy-warning {
+  color: #b91c1c;
+}
+.autofill-tag {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  color: #047857;
+}
+.evidence-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.evidence-list dt {
+  font-size: 0.75rem;
+  color: var(--muted-foreground, #6b7280);
+}
+.copy-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  padding: 0;
+  list-style: none;
+}
+.copy-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+}
+.copy-list li > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 0.125rem;
+}
+.copy-label {
+  font-size: 0.75rem;
+  color: var(--muted-foreground, #6b7280);
+}
+.copy-value {
+  overflow-wrap: anywhere;
+}
+.copy-list small {
+  font-size: 0.75rem;
+}
+.copy-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
+.copy-actions button {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+.copy-note {
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
 .subsidy-guide {
   max-width: 1440px;
   margin: 0 auto;

@@ -26,7 +26,7 @@ const files = computed(() => {
   const all: AdminRepairMedia[] = [
     ...source.photos, ...(source.completionPhotos ?? []), ...(source.unresolvedPhotos ?? []),
     ...(source.supplements ?? []).flatMap((item) => item.photos),
-    ...(source.receipt ? [source.receipt] : []), ...(source.quote ? [source.quote] : []),
+    ...(source.receipt ? [source.receipt] : []),
   ]
   return [...new Map(all.map((item) => [item.id, item])).values()]
 })
@@ -67,7 +67,7 @@ async function handleSaveNote(): Promise<void> {
     </section>
     <section v-if="files.length">
       <h3 class="mb-2 text-xs font-semibold text-foreground/70">照片與附件</h3>
-      <div class="grid grid-cols-2 gap-3"><RepairAttachmentPreview v-for="media in files" :key="media.id" :media="media" /></div>
+      <div class="grid grid-cols-2 gap-3"><RepairAttachmentPreview v-for="media in files" :key="media.id" :ticket-id="ticket.source.id" :media="media" /></div>
     </section>
     <section>
       <h3 class="mb-2 text-xs font-semibold text-foreground/70">工單時間軸</h3>
