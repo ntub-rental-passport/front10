@@ -56,17 +56,6 @@ __pycache__/
 
 # 憑證與金鑰：用樣式而非單一檔名，避免下一個憑證檔又漏掉
 rentmate-vision-key.json
-client_secret*.json
-*-key.json
-*credentials*.json
-*.pem
-*.p12
-.env
-.env.*
-!.env.example
-# 使用者上傳的照片（點交存證、報修）：含住家內部與個人資訊，絕不可進版控
-backend/uploads/
-uploads/
 
 # Python 虛擬環境（桌機代理 desktop/.venv 會有幾百 MB 的 torch）
 .venv/
@@ -76,3 +65,18 @@ venv/
 # 補這條規則避免它哪天又被 git add . 加回去。
 docker-compose.yml
 docker-compose.*.yml
+
+# 憑證與環境變數（main 49027407 補上）
+client_secret*.json
+*-key.json
+*credentials*.json
+*.pem
+*.p12
+.env
+.env.*
+!.env.example
+# 前端正式環境設定（VITE_API_BASE_URL 等），沒有秘密，web 映像 build 時要用
+!.env.production
+# 使用者上傳的照片（點交存證、報修、輪播圖）：含住家內部與個人資訊，絕不可進版控
+backend/uploads/
+uploads/

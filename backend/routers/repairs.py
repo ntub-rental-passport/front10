@@ -35,7 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from auth.security import get_current_landlord, get_current_tenant, read_access_token
+from auth.security import get_current_admin, get_current_landlord, get_current_tenant, read_access_token
 from db import models
 from db.database import get_db
 from routers.inspection import compress_image
@@ -117,6 +117,10 @@ def current_actor(
         return get_current_tenant(authorization, db), "tenant"
     if role == "landlord":
         return get_current_landlord(authorization, db), "landlord"
+    # 管理員只讀不寫：後台要看得到工單與照片才判斷得了爭議（見 admin_repairs_api.py）。
+    # 能改工單的仍然只有租客與房東，_apply_updates 不收 admin。
+    if role == "admin":
+        return get_current_admin(authorization, db), "admin"
     raise HTTPException(403, "報修功能僅限租客與房東使用。")
 
 
@@ -157,7 +161,8 @@ def _load_ticket(db: Session, ticket_id: int, user: models.User, role: str) -> m
         .first()
     )
     allowed = ticket is not None and (
-        (role == "tenant" and ticket.tenant_user_id == user.id)
+        role == "admin"
+        or (role == "tenant" and ticket.tenant_user_id == user.id)
         or (role == "landlord" and ticket.lease_id in _landlord_lease_ids(db, user))
     )
     if not allowed:

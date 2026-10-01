@@ -79,6 +79,32 @@ class MultiRoleAuthTests(unittest.TestCase):
             self.assertEqual(get_current_tenant(tokens['tenant'], db).id, user_id)
         self.assertEqual(self.client.get('/api/auth/me').status_code, 401)
 
+    def test_google_signup_uses_the_role_chosen_on_the_register_page(self):
+        # 從登入頁按 Google 時身分是租客，回註冊頁改選房東：要照註冊頁選的建帳號，
+        # 不能被按 Google 之前的那個身分蓋掉（2026-09-30）。
+        account = auth.GoogleAccountResponse(email='newbie@example.com', emailVerified=True,
+            name=None, picture=None, subject='google-newbie')
+        with patch.object(auth, '_google_config', return_value=('id', 'test-secret', '', '')):
+            ticket = auth._store_ticket(account, 'tenant', '/')
+            exchange = self.client.post('/api/auth/google/session', json={'ticket': ticket})
+            pending = self.start(role='landlord',
+                                 googleRegistrationToken=exchange.json()['registrationToken'])
+            result = self.verify(pending)
+        self.assertEqual(result.status_code, 200, result.text)
+        with self.Session() as db:
+            user = db.get(User, result.json()['userId'])
+            self.assertEqual([r.role for r in user.roles], ['landlord'])
+
+    def test_google_signup_rejects_a_role_outside_the_public_two(self):
+        account = auth.GoogleAccountResponse(email='newbie@example.com', emailVerified=True,
+            name=None, picture=None, subject='google-newbie')
+        with patch.object(auth, '_google_config', return_value=('id', 'test-secret', '', '')):
+            ticket = auth._store_ticket(account, 'tenant', '/')
+            exchange = self.client.post('/api/auth/google/session', json={'ticket': ticket})
+            pending = self.start(role='admin',
+                                 googleRegistrationToken=exchange.json()['registrationToken'])
+        self.assertEqual(pending.status_code, 422)
+
     def test_google_link_after_email_proof_preserves_password_and_profile(self):
         user_id = self.account()
         account = auth.GoogleAccountResponse(email='shared@example.com', emailVerified=True,

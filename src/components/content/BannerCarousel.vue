@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
 import { usePublicContent } from '@/src/composables/usePublicContent'
 import { resolvePhase } from '@/src/utils/phase'
+import { matchesAudience } from '@/src/utils/announcement'
 import type { Banner } from '@/src/mocks/admin/content'
 
 const props = defineProps<{
@@ -18,6 +19,12 @@ const props = defineProps<{
    * 把正在編輯的草稿也顯示在預覽裡，這件事不能靠這個元件自己讀 store 做到。
    */
   items?: Banner[]
+  /**
+   * 這是誰的首頁。後台可以指定輪播的對象（全部／租客／房東），這裡照著濾：
+   * 房東不該在自己的首頁看到「租補試算」這種租客專用的圖。
+   * 公開首頁（未登入）看不出身分，只顯示「全部」的那些。
+   */
+  audience?: 'tenant' | 'landlord'
 }>()
 
 const { banners } = usePublicContent()
@@ -29,9 +36,17 @@ const sourceBanners = computed(() => props.items ?? banners.value)
 // 缺點是排程切換的當下不會自動重新渲染，但要等到別的東西觸發這個 computed
 // 重算才會更新（例如切頁、後台改資料）。這個限制是刻意接受的，見
 // src/utils/phase.ts。
+function forThisSide(item: Banner): boolean {
+  // 後台預覽（items）要看得到正在編輯的那張，不管它指定給誰
+  if (props.items) return true
+  // 公開首頁看不出身分，只放「全部」的那些
+  if (!props.audience) return item.audience === 'all'
+  return matchesAudience(item.audience, props.audience)
+}
+
 const visibleBanners = computed(() =>
   sourceBanners.value
-    .filter((item) => resolvePhase(item, new Date()) === 'active')
+    .filter((item) => forThisSide(item) && resolvePhase(item, new Date()) === 'active')
     .sort((a, b) => a.order - b.order),
 )
 

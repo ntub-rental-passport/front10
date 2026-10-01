@@ -11,6 +11,7 @@ from admin.metrics import count_requests
 from routers import admin, auth, contract, garbage, landlord_properties, landlord_tenants, inspection, tenant_leases, outage
 from routers import notes, households, scheduled_notifications, platform_settings_api
 from routers import content_api, dashboard, repairs, inbox_api, admin_notifications_api, ai_usage_api, admin_user_records_api
+from routers import admin_repairs_api
 from notifications.garbage_service import dispatch_due
 from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
 from admin import monitoring_service
@@ -128,6 +129,7 @@ app.include_router(inbox_api.router)
 app.include_router(admin_notifications_api.router)
 app.include_router(ai_usage_api.router)
 app.include_router(admin_user_records_api.router)
+app.include_router(admin_repairs_api.router)
 
 @app.get("/")
 def root():

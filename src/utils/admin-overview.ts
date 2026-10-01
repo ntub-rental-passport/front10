@@ -5,7 +5,7 @@
  * 這個檔案負責把散在各 collection 的資料算成那兩者需要的形狀。
  */
 
-import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
+import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
 import type { AdminUser } from '@/src/mocks/admin/users'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import { depositMatchOf, type DepositMatch } from './admin-deposit'

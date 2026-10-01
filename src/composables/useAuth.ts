@@ -416,17 +416,22 @@ export function clearGoogleRegistrationContext(): void {
   window.sessionStorage.removeItem(GOOGLE_REGISTRATION_KEY)
 }
 
+/**
+ * `role` 是註冊頁上選的身分，不一定等於 context.role —— 後者只是按 Google 之前
+ * 停在哪個分頁。從登入頁的租客分頁按 Google 的人，回到註冊頁還是能改成房東。
+ */
 export async function startGoogleEmailRegistration(
   context: GoogleRegistrationContext,
+  role: 'tenant' | 'landlord' = context.role,
 ): Promise<PendingRegistration> {
   const result = await startRegistration({
-    role: context.role,
+    role,
     googleRegistrationToken: context.registrationToken,
   })
   const pending: PendingRegistration = {
     registrationId: result.registrationId,
     email: result.email,
-    role: context.role,
+    role,
     expiresAt: Date.now() + result.expiresIn * 1000,
     resendAvailableAt: Date.now() + result.resendAvailableIn * 1000,
     attemptsRemaining: result.attemptsRemaining,

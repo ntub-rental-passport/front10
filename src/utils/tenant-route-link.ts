@@ -65,6 +65,30 @@ export const TENANT_ROUTE_OPTIONS: TenantRouteOption[] = [
 
 export const TENANT_ROUTE_GROUPS = [...new Set(TENANT_ROUTE_OPTIONS.map((item) => item.group))]
 
+/**
+ * 房東端的頁面。輪播可以指定對象之後（2026-10-01），給房東看的那幾張不能連到
+ * 租客端的頁面 —— 房東點進去會看到不屬於他的介面。
+ */
+export const LANDLORD_ROUTE_OPTIONS: TenantRouteOption[] = [
+  { url: '/landlord', label: '房東總覽', group: '總覽' },
+
+  { url: '/landlord/properties', label: '房務管理', group: '營運' },
+  { url: '/landlord/tenants', label: '租客管理', group: '營運' },
+  { url: '/landlord/contracts', label: '合約管理', group: '營運' },
+  { url: '/landlord/finance', label: '財務管理', group: '營運' },
+  { url: '/landlord/maintenance', label: '修繕管理', group: '營運' },
+
+  { url: '/landlord/subscription', label: '方案與訂閱', group: '其他' },
+  { url: '/landlord/settings', label: '設定', group: '其他' },
+]
+
+export const LANDLORD_ROUTE_GROUPS = [...new Set(LANDLORD_ROUTE_OPTIONS.map((item) => item.group))]
+
+/** 這個對象的輪播可以連到哪些頁。「全部」只能連兩邊都有的頁，也就是租客端那份。 */
+export function routeOptionsFor(audience: 'all' | 'tenant' | 'landlord'): TenantRouteOption[] {
+  return audience === 'landlord' ? LANDLORD_ROUTE_OPTIONS : TENANT_ROUTE_OPTIONS
+}
+
 /** 沒填按鈕文字時，租客端用的預設值（見 notifications.vue 的 `?? '查看詳情'`）。 */
 export const DEFAULT_ACTION_LABEL = '查看詳情'
 

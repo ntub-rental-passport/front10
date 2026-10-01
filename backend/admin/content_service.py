@@ -135,8 +135,12 @@ def _open():
             db.execute(
                 'CREATE TABLE IF NOT EXISTS banners (id TEXT PRIMARY KEY, title TEXT NOT NULL, image_url TEXT NOT NULL, '
                 'link_url TEXT NOT NULL, sort_order INTEGER NOT NULL, published INTEGER NOT NULL, start_at TEXT NOT NULL, '
-                'end_at TEXT, updated_at TEXT NOT NULL)'
+                "end_at TEXT, updated_at TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'all')"
             )
+            # 既有的資料庫（本機與 VM）建表時還沒有 audience，開檔時補上。
+            # 舊輪播一律當成給所有人看，跟改版前的行為一樣。
+            if 'audience' not in {row[1] for row in db.execute('PRAGMA table_info(banners)')}:
+                db.execute("ALTER TABLE banners ADD COLUMN audience TEXT NOT NULL DEFAULT 'all'")
             db.execute(
                 'CREATE TABLE IF NOT EXISTS notification_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, '
                 'category TEXT NOT NULL, channels TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, '
@@ -304,6 +308,7 @@ def _banner_view(row: sqlite3.Row) -> dict:
         'title': row['title'],
         'imageUrl': row['image_url'],
         'linkUrl': row['link_url'],
+        'audience': row['audience'],
         'order': row['sort_order'],
         'published': bool(row['published']),
         'startAt': row['start_at'],
@@ -321,9 +326,12 @@ def _clean_banner(values: dict) -> tuple:
     if not isinstance(link, str) or not _is_site_path(link.strip()):
         # 輪播只導到站內頁面；外部連結可以把使用者帶去任何地方
         raise ValueError('輪播連結必須是站內的頁面。')
+    audience = values.get('audience', 'all')
+    if audience not in ANNOUNCEMENT_AUDIENCES:
+        raise ValueError('輪播對象只能是全部、租客或房東。')
     published = _flag(values, 'published', '是否發布')
     start, end = _schedule(values)
-    return title, image.strip(), link.strip(), published, start, end
+    return title, image.strip(), link.strip(), audience, published, start, end
 
 
 def list_banners() -> list[dict]:
@@ -333,14 +341,14 @@ def list_banners() -> list[dict]:
 
 
 def create_banner(values: dict, *, actor: str) -> dict:
-    title, image, link, published, start, end = _clean_banner(values)
+    title, image, link, audience, published, start, end = _clean_banner(values)
     bid = _new_id('ban')
     with _open() as db:
         (last,) = db.execute('SELECT COALESCE(MAX(sort_order), -1) FROM banners').fetchone()
         db.execute(
-            'INSERT INTO banners (id, title, image_url, link_url, sort_order, published, start_at, end_at, updated_at) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (bid, title, image, link, last + 1, published, start, end, _iso(_now())),
+            'INSERT INTO banners (id, title, image_url, link_url, sort_order, published, start_at, end_at, '
+            'updated_at, audience) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (bid, title, image, link, last + 1, published, start, end, _iso(_now()), audience),
         )
         row = db.execute('SELECT * FROM banners WHERE id = ?', (bid,)).fetchone()
     _audit('內容管理', 'Banner', f'新增輪播「{title}」', actor=actor, subject=f'banner:{bid}')
@@ -348,12 +356,12 @@ def create_banner(values: dict, *, actor: str) -> dict:
 
 
 def update_banner(bid: str, values: dict, *, actor: str) -> dict:
-    title, image, link, published, start, end = _clean_banner(values)
+    title, image, link, audience, published, start, end = _clean_banner(values)
     with _open() as db:
         cursor = db.execute(
-            'UPDATE banners SET title = ?, image_url = ?, link_url = ?, published = ?, start_at = ?, end_at = ?, '
-            'updated_at = ? WHERE id = ?',
-            (title, image, link, published, start, end, _iso(_now()), bid),
+            'UPDATE banners SET title = ?, image_url = ?, link_url = ?, audience = ?, published = ?, start_at = ?, '
+            'end_at = ?, updated_at = ? WHERE id = ?',
+            (title, image, link, audience, published, start, end, _iso(_now()), bid),
         )
         if cursor.rowcount == 0:
             raise LookupError(bid)

@@ -9,10 +9,11 @@
 不讓 pydantic 先擋下來回英文的 422。
 """
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from admin import content_service
+from admin import banner_images, content_service
 from auth.security import get_current_admin
 from db.models import User
 
@@ -82,6 +83,36 @@ class BannerOrder(BaseModel):
     ids: list[str]
     #: 被移動的那一張，只用來寫稽核（「調整輪播「XX」的順序」）
     movedId: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# 輪播圖片（見 admin/banner_images.py）
+# ---------------------------------------------------------------------------
+
+
+@router.post('/api/admin/banner-images', status_code=201)
+async def upload_banner_image(
+    file: UploadFile = File(...),
+    admin: User = Depends(get_current_admin),
+) -> dict:
+    data = await file.read(banner_images.MAX_BYTES + 1)
+    return _run(lambda: banner_images.save(data, file.filename or ''))
+
+
+@router.get('/api/admin/banner-images')
+def list_banner_images(admin: User = Depends(get_current_admin)) -> dict:
+    return {'items': banner_images.listing()}
+
+
+@router.get('/api/content/banner-images/{name}')
+def read_banner_image(name: str) -> FileResponse:
+    """不需登入：首頁輪播對未登入的訪客也要看得到。"""
+    path = banner_images.path_of(name)
+    if path is None:
+        raise HTTPException(status_code=404, detail='找不到這張圖片。')
+    # 檔名帶內容雜湊，同一個網址的內容不會變，可以讓瀏覽器長期快取
+    return FileResponse(path, media_type=banner_images.content_type_of(name),
+                        headers={'Cache-Control': 'public, max-age=604800, immutable'})
 
 
 @router.put('/api/admin/content/banner-order')

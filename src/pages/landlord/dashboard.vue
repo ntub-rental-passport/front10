@@ -15,10 +15,11 @@ import RentalCenterPopover from '@/src/components/landlord/RentalCenterPopover.v
 import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import { useLandlordFinance } from '@/src/composables/useLandlordFinance'
 import { useRepairTickets } from '@/src/composables/useRepairTickets'
+import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 
 const { rooms, tenants } = useLandlordWorkspace()
 const { payments, total, received, awaiting, rate, monthLabel } = useLandlordFinance()
-const { tickets } = useRepairTickets()
+const { tickets, loading: repairsLoading, error: repairsError, load: refreshRepairs } = useRepairTickets()
 
 const rentedRooms = computed(() => rooms.value.filter((room) => room.status === 'rented').length)
 const occupancyRate = computed(() => rooms.value.length
@@ -61,8 +62,8 @@ const stats = computed(() => [
   },
   {
     title: '今日待處理',
-    value: `${todayTasks.value} 件`,
-    note: `報修 ${openRepairs.value.length} · 合約 ${contractReminders.value.length} · 收款 ${pendingPayments.value.length}`,
+    value: repairsError.value || repairsLoading.value ? '—' : `${todayTasks.value} 件`,
+    note: repairsError.value ? '報修資料讀取失敗' : repairsLoading.value ? '正在讀取報修資料…' : `報修 ${openRepairs.value.length} · 合約 ${contractReminders.value.length} · 收款 ${pendingPayments.value.length}`,
     trend: '查看全部',
     icon: Wrench,
     tone: 'purple',
@@ -71,7 +72,7 @@ const stats = computed(() => [
 
 const priorities = computed(() => [
   { label: '待收款', detail: `${pendingPayments.value.length} 筆待收 · 總額 ${money(awaiting.value)}`, count: `${pendingPayments.value.length} 筆`, icon: WalletCards },
-  { label: '報修處理中', detail: `${openRepairs.value.length} 件尚未結案`, count: `${openRepairs.value.length} 件`, icon: Wrench },
+  { label: '報修處理中', detail: repairsError.value ? '讀不到報修資料' : repairsLoading.value ? '正在讀取…' : `${openRepairs.value.length} 件尚未結案`, count: repairsError.value || repairsLoading.value ? '—' : `${openRepairs.value.length} 件`, icon: Wrench },
   { label: '合約提醒', detail: `即將到期或已到期 ${contractReminders.value.length} 份`, count: `${contractReminders.value.length} 份`, icon: FileText },
   { label: '租客資料', detail: `${incompleteTenants.value.length} 位租客待補資料`, count: `${incompleteTenants.value.length} 位`, icon: Users },
 ])
@@ -86,6 +87,7 @@ const toneClasses: Record<string, string> = {
 
 <template>
   <div class="mx-auto max-w-[1600px] space-y-6">
+    <div v-if="repairsError" role="alert" class="rounded-xl border border-[#dcae98] p-3 text-sm">{{ repairsError }} <button class="underline" @click="refreshRepairs">重新讀取報修</button></div>
     <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
         <h1 class="text-3xl font-black tracking-tight">總覽</h1>
@@ -99,6 +101,9 @@ const toneClasses: Record<string, string> = {
         ><RentalCenterPopover />
       </div>
     </header>
+
+    <!-- 後台維護的輪播，只顯示對象是房東或全部的那些（見 BannerCarousel） -->
+    <BannerCarousel audience="landlord" />
 
     <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <article

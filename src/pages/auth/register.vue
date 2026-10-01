@@ -192,7 +192,6 @@ function getInputStateClass(state: FieldState): string {
 }
 
 function selectIdentity(identity: AuthIdentity): void {
-  if (googleRegistration.value) return
   selectedIdentity.value = identity
   errorMessage.value = ''
   void router.replace({
@@ -270,6 +269,7 @@ async function handleGoogleRegister(): Promise<void> {
   try {
     const pendingRegistration = await startGoogleEmailRegistration(
       googleRegistration.value,
+      selectedIdentity.value,
     )
     await router.push({
       path: '/verify-email',
@@ -304,7 +304,6 @@ async function handleGoogleRegister(): Promise<void> {
               v-for="option in authIdentityOptions"
               :key="option.value"
               type="button"
-              :disabled="Boolean(googleRegistration)"
               :aria-pressed="selectedIdentity === option.value"
               :class="[
                 'auth-role-card',

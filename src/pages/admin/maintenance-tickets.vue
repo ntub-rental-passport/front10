@@ -31,6 +31,7 @@ import { AlertTriangle, ClipboardList, MessageSquareWarning, Search, Wrench, X }
 import InlineStat from '@/src/components/admin/InlineStat.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
 import { STATUS_CHIP_CLASS } from '@/src/components/admin/status-dot'
+import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import {
   maintenanceQueueTab,
@@ -61,7 +62,7 @@ const {
   userFilter,
   filteredTickets,
   queueCount,
-  stats,
+  stats, loadState, reload,
 } = useAdminMaintenance()
 
 const categoryOptions = Object.keys(maintenanceCategoryLabels) as MaintenanceCategory[]
@@ -141,7 +142,8 @@ function clearFilters(): void {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-real="true">
+    <AdminLoadNotice :state="loadState" what="報修工單" @retry="reload" />
     <div
       v-if="userFilter"
       class="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3"
@@ -164,7 +166,7 @@ function clearFilters(): void {
       之後那塊垂直空間讓給了頁籤 —— 頁籤是這一頁最常點的東西，本來就該比
       「看一眼就好」的統計數字大。
 
-      展示資料（無 data-real）：stats 來自 seedMaintenanceTickets。
+      真實資料：stats 與工單清單來自 /api/admin/repairs。
       約定見 src/utils/admin-data-marking.md。
     -->
     <div class="flex flex-wrap items-center justify-between gap-x-10 gap-y-4">
@@ -208,7 +210,7 @@ function clearFilters(): void {
         改用實心填色（STATUS_CHIP_CLASS.danger），前景色是跟填色配對設計的，
         實測兩個模式都是 6.35。其餘三列維持中性，有色才有意義。
       -->
-      <dl class="min-w-[13rem] divide-y divide-border text-sm">
+      <dl v-if="loadState === 'ready'" class="min-w-[13rem] divide-y divide-border text-sm">
         <div class="flex items-baseline justify-between gap-8 py-1.5">
           <dt class="text-foreground/70">逾期未回應</dt>
           <dd>
@@ -260,7 +262,7 @@ function clearFilters(): void {
           </p>
         </div>
 
-        <Table>
+        <Table v-if="loadState === 'ready'">
           <TableHeader>
             <TableRow>
               <TableHead class="whitespace-nowrap">工單編號</TableHead>
@@ -293,14 +295,18 @@ function clearFilters(): void {
                   理由見 admin-maintenance.ts 的 maintenanceStatusTone。
                 -->
                 <StatusDot
-                  :tone="maintenanceStatusTone(ticket.status)"
-                  :label="maintenanceStatusLabels[ticket.status]"
+                  :tone="ticket.awaitingInspection || ticket.status === 'submitted' || ticket.status === 'notified' ? 'idle' : maintenanceStatusTone(ticket.status)"
+                  :label="ticket.awaitingInspection ? '待租客複驗' : maintenanceStatusLabels[ticket.status]"
                 />
+                <div class="mt-1 flex gap-1">
+                  <span v-if="ticket.overdue" :class="['rounded-full px-2 text-xs', STATUS_CHIP_CLASS.danger]">逾期</span>
+                  <span v-if="ticket.disputed" :class="['rounded-full px-2 text-xs', STATUS_CHIP_CLASS.danger]">爭議中</span>
+                </div>
               </TableCell>
               <TableCell class="whitespace-nowrap">{{ formatDate(ticket.createdAt) }}</TableCell>
               <TableCell
                 class="whitespace-nowrap"
-                :class="ticket.status === 'overdue' ? 'font-semibold text-destructive' : ''"
+                :class="ticket.overdue ? 'font-semibold text-destructive' : ''"
               >
                 {{ ticket.elapsed }} 天
               </TableCell>
@@ -308,7 +314,7 @@ function clearFilters(): void {
                 {{ formatDateTime(ticket.lastUpdatedAt) }}
               </TableCell>
             </TableRow>
-            <TableRow v-if="filteredTickets.length === 0 && statusTab === 'queue'">
+            <TableRow v-if="loadState === 'ready' && filteredTickets.length === 0 && statusTab === 'queue'">
               <TableCell colspan="9" class="py-10 text-center text-muted-foreground">
                 <p>目前沒有需要管理員處理的工單，租客與房東的報修流程都在正常進行。</p>
                 <Button
@@ -321,7 +327,7 @@ function clearFilters(): void {
                 </Button>
               </TableCell>
             </TableRow>
-            <TableRow v-else-if="filteredTickets.length === 0">
+            <TableRow v-else-if="loadState === 'ready' && filteredTickets.length === 0">
               <TableCell colspan="9" class="py-10 text-center text-muted-foreground">
                 <p>沒有符合條件的工單。</p>
                 <Button variant="outline" size="sm" class="mt-3" @click="clearFilters">

@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -135,6 +136,35 @@ class AnnouncementTests(ContentTestCase):
             content.update_announcement('an-missing', announcement(), actor='a@example.com')
         with self.assertRaises(LookupError):
             content.delete_announcement('an-missing', actor='a@example.com')
+
+
+class BannerAudienceTests(ContentTestCase):
+    def test_banners_default_to_everyone(self):
+        self.assertEqual({b['audience'] for b in content.list_banners()}, {'all'})
+        created = content.create_banner(banner(), actor='a@example.com')
+        self.assertEqual(created['audience'], 'all')
+
+    def test_audience_is_stored_and_can_be_changed(self):
+        created = content.create_banner(banner(audience='landlord'), actor='a@example.com')
+        self.assertEqual(created['audience'], 'landlord')
+        updated = content.update_banner(created['id'], banner(audience='tenant'), actor='a@example.com')
+        self.assertEqual(updated['audience'], 'tenant')
+        self.assertEqual(content.public_content()['banners'][-1]['audience'], 'tenant')
+
+    def test_an_unknown_audience_is_refused(self):
+        with self.assertRaises(ValueError):
+            content.create_banner(banner(audience='everyone'), actor='a@example.com')
+
+    def test_an_old_database_without_the_column_still_opens(self):
+        # VM 與本機既有的 admin-content.db 是沒有 audience 欄位的，開檔時要自己補上
+        content.list_banners()  # 先讓它建檔（讀的時候才會建）
+        path = content.content_db()
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE old_banners AS SELECT id, title, image_url, link_url, sort_order, '
+                       'published, start_at, end_at, updated_at FROM banners')
+            db.execute('DROP TABLE banners')
+            db.execute('ALTER TABLE old_banners RENAME TO banners')
+        self.assertEqual({b['audience'] for b in content.list_banners()}, {'all'})
 
 
 class BannerTests(ContentTestCase):

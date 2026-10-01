@@ -15,7 +15,7 @@ import {
   type UserDirectorySources,
 } from './admin-user-directory'
 import type { AdminUser } from '@/src/mocks/admin/users'
-import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
+import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import type { Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
 import type { PlanFeatureRule, PlanFeatures } from './admin-entitlements'

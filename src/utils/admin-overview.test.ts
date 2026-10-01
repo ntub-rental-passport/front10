@@ -11,7 +11,7 @@ import {
   type TrendPoint,
 } from './admin-overview'
 import type { AdminUser } from '@/src/mocks/admin/users'
-import type { MaintenanceTicket } from '@/src/mocks/admin/maintenance'
+import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 
 const NOW = new Date('2026-08-14T12:00:00.000Z')

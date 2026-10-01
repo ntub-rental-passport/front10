@@ -37,7 +37,11 @@ import {
   type AnnouncementPlacement,
 } from '@/src/utils/announcement'
 import { dateKey } from '@/src/utils/date-key'
-import type { Announcement, AnnouncementAudience, AnnouncementLevel } from '@/src/mocks/admin/content'
+import type {
+  Announcement,
+  AnnouncementAudience,
+  AnnouncementLevel,
+} from '@/src/mocks/admin/content'
 
 const { announcements, loadState, saveAnnouncement, removeAnnouncement } = useAdminContent()
 
@@ -262,7 +266,9 @@ function startCreate(): void {
 }
 
 function canSubmit(): boolean {
-  return draft.value.title.trim() !== '' && draft.value.body.trim() !== '' && draft.value.startAt !== ''
+  return (
+    draft.value.title.trim() !== '' && draft.value.body.trim() !== '' && draft.value.startAt !== ''
+  )
 }
 
 /** 存檔的錯誤顯示在編輯面板；刪除的錯誤顯示在清單上方 */
@@ -282,14 +288,14 @@ async function save(): Promise<void> {
   let saved: Announcement
   try {
     saved = await saveAnnouncement({
-    id: creating ? undefined : draft.value.id,
-    title: draft.value.title,
-    body: draft.value.body,
-    level: draft.value.level,
-    audience: draft.value.audience,
-    published: draft.value.published,
-    startAt: fromDateInput(draft.value.startAt),
-    endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
+      id: creating ? undefined : draft.value.id,
+      title: draft.value.title,
+      body: draft.value.body,
+      level: draft.value.level,
+      audience: draft.value.audience,
+      published: draft.value.published,
+      startAt: fromDateInput(draft.value.startAt),
+      endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
     })
   } catch (error) {
     saveError.value = messageOf(error)
@@ -424,7 +430,10 @@ const previewAnnouncement = computed<Announcement>(() => ({
                 class="flex w-full items-center gap-1.5 py-2 text-left text-sm font-semibold text-foreground/70"
                 @click="expiredCollapsed = !expiredCollapsed"
               >
-                <component :is="expiredCollapsed ? ChevronRight : ChevronDown" class="h-4 w-4 shrink-0" />
+                <component
+                  :is="expiredCollapsed ? ChevronRight : ChevronDown"
+                  class="h-4 w-4 shrink-0"
+                />
                 {{ section.label }}（{{ grouped[section.phase].length }}）
               </button>
               <h3 v-else class="py-2 text-sm font-semibold text-foreground/70">
@@ -459,7 +468,9 @@ const previewAnnouncement = computed<Announcement>(() => ({
                   </div>
                   <p class="truncate text-xs text-foreground/70">
                     {{ audienceLabels[item.audience] }} · {{ placementSummaryOf(item) }}
-                    <template v-if="rowTiming(item, section.phase)"> · {{ rowTiming(item, section.phase) }}</template>
+                    <template v-if="rowTiming(item, section.phase)">
+                      · {{ rowTiming(item, section.phase) }}</template
+                    >
                   </p>
                 </button>
               </div>
@@ -478,9 +489,11 @@ const previewAnnouncement = computed<Announcement>(() => ({
         </div>
 
         <div v-else class="space-y-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
-          <!-- 上半部：租客會看到的樣子，即時反映下方還沒存檔的編輯內容 -->
+          <!-- 上半部：使用者會看到的樣子，即時反映下方還沒存檔的編輯內容 -->
           <section class="space-y-3">
-            <h2 class="text-sm font-semibold">租客會看到的樣子</h2>
+            <h2 class="text-sm font-semibold">
+              {{ draft.audience === 'landlord' ? '房東' : '使用者' }}會看到的樣子
+            </h2>
             <p :class="summaryBoxClass">{{ draftPlacementText }}</p>
 
             <AnnouncementBanner v-if="showBannerSample" :announcement="previewAnnouncement" />
@@ -489,13 +502,23 @@ const previewAnnouncement = computed<Announcement>(() => ({
               class="flex items-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground"
             >
               <LevelBadge :level="draft.level" prefixed />
-              <span>只會顯示成通知中心裡的一則列表項目，不會有儀表板橫幅那種樣式。</span>
+              <span
+                >顯示為{{
+                  draft.audience === 'landlord'
+                    ? '房東通知'
+                    : draft.audience === 'all'
+                      ? '通知中心與房東通知'
+                      : '通知中心'
+                }}中的列表項目。</span
+              >
             </div>
           </section>
 
           <!-- 下半部：編輯表單 -->
           <section class="space-y-4 border-t border-border pt-5">
-            <h2 class="text-sm font-semibold">{{ panelMode === 'create' ? '新增公告' : '編輯公告' }}</h2>
+            <h2 class="text-sm font-semibold">
+              {{ panelMode === 'create' ? '新增公告' : '編輯公告' }}
+            </h2>
 
             <div class="space-y-2">
               <Label for="an-title">標題</Label>
@@ -527,16 +550,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
                     <SelectItem value="landlord">房東</SelectItem>
                   </SelectContent>
                 </Select>
-                <!--
-                  房東端目前沒有任何一行程式碼讀公告（見 announcementPlacement 的說明），
-                  選了「房東」要當場講清楚，不能等存檔後才在列表發現公告根本沒送出去。
-                -->
-                <p
-                  v-if="draftPlacement.kind === 'landlord-unsupported'"
-                  :class="['rounded-lg px-2.5 py-1.5 text-xs font-medium', STATUS_CHIP_CLASS.warn]"
-                >
-                  這則公告目前不會出現在任何地方：房東端不顯示公告。
-                </p>
               </div>
             </div>
             <div class="flex items-center justify-between rounded-xl border px-3 py-2">
@@ -557,20 +570,31 @@ const previewAnnouncement = computed<Announcement>(() => ({
             <ActionError v-if="saveError" :message="saveError" @dismiss="saveError = ''" />
 
             <div class="flex justify-end">
-              <Button :disabled="!canSubmit() || saving" @click="save">{{ saving ? '儲存中…' : '儲存' }}</Button>
+              <Button :disabled="!canSubmit() || saving" @click="save">{{
+                saving ? '儲存中…' : '儲存'
+              }}</Button>
             </div>
           </section>
 
           <!-- 刪除：只有編輯既有公告時才看得到，新增中還沒有東西可以刪 -->
           <section v-if="panelMode === 'edit'" class="border-t border-border pt-4">
-            <Button variant="outline" class="text-destructive" @click="requestDelete">刪除公告</Button>
+            <Button variant="outline" class="text-destructive" @click="requestDelete"
+              >刪除公告</Button
+            >
           </section>
         </div>
       </div>
     </div>
 
     <!-- 放棄未儲存變更的確認 -->
-    <Dialog :open="discardConfirmOpen" @update:open="(o: boolean) => { if (!o) cancelDiscard() }">
+    <Dialog
+      :open="discardConfirmOpen"
+      @update:open="
+        (o: boolean) => {
+          if (!o) cancelDiscard()
+        }
+      "
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>放棄未儲存的變更？</DialogTitle>
@@ -584,11 +608,20 @@ const previewAnnouncement = computed<Announcement>(() => ({
     </Dialog>
 
     <!-- 刪除確認：沿用既有的做法 -->
-    <Dialog :open="deleteTarget !== null" @update:open="(o: boolean) => { if (!o) deleteTarget = null }">
+    <Dialog
+      :open="deleteTarget !== null"
+      @update:open="
+        (o: boolean) => {
+          if (!o) deleteTarget = null
+        }
+      "
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>刪除公告？</DialogTitle>
-          <DialogDescription>「{{ deleteTarget?.title }}」將被永久刪除，無法復原。</DialogDescription>
+          <DialogDescription
+            >「{{ deleteTarget?.title }}」將被永久刪除，無法復原。</DialogDescription
+          >
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" @click="deleteTarget = null">取消</Button>
