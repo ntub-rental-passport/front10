@@ -21,6 +21,7 @@ from fastapi import HTTPException, Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from db import database
 from db.database import Base
 from db.models import UserRole
 from db.models import User, UserIdentity
@@ -44,6 +45,10 @@ class GoogleSessionTest(unittest.TestCase):
     def setUp(self):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
+        # 後台設定也在同一個資料庫（db/sqlstore.py 直接用 database.engine）
+        engine_patch = patch.object(database, 'engine', engine)
+        engine_patch.start()
+        self.addCleanup(engine_patch.stop)
         self.db = sessionmaker(bind=engine)()
         self.response = Response()
 

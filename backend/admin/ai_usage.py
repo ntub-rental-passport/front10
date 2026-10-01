@@ -21,16 +21,13 @@ Vision 是在 Node 的 OCR 服務裡呼叫的（server/index.js）。它每次�
 SQLite（AI_USAGE_DB），VM 上在掛載的 data/garbage/。
 """
 
-import os
-import sqlite3
+from db.sqlstore import open_store as _open
+
 import time
-from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 TZ = timezone(timedelta(hours=8))
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-
 PROVIDERS = {
     'vision': {'label': 'Google Cloud Vision', 'unit': 'page'},
 }
@@ -38,32 +35,8 @@ PROVIDERS = {
 MAX_UNITS_PER_REPORT = 100_000
 
 
-def ai_usage_db() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
-    return Path(os.getenv('AI_USAGE_DB') or (_REPO_ROOT / 'backend/ai-usage.db'))
-
-
 def _local(ts: float) -> datetime:
     return datetime.fromtimestamp(ts, TZ)
-
-
-@contextmanager
-def _open():
-    path = ai_usage_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    try:
-        with db:
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS daily_usage (date TEXT NOT NULL, provider TEXT NOT NULL, '
-                'units INTEGER NOT NULL, calls INTEGER NOT NULL, PRIMARY KEY (date, provider))'
-            )
-            db.execute('CREATE TABLE IF NOT EXISTS usage_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-        with db:
-            yield db
-    finally:
-        db.close()
 
 
 def _count(value, name: str, maximum: int) -> int:
@@ -80,18 +53,13 @@ def record(provider: str, units: int, calls: int, now: float | None = None) -> N
     calls = _count(calls, '呼叫次數', MAX_UNITS_PER_REPORT)
     ts = time.time() if now is None else now
     with _open() as db:
-        db.execute(
-            'INSERT INTO daily_usage (date, provider, units, calls) VALUES (?, ?, ?, ?) '
-            'ON CONFLICT(date, provider) DO UPDATE SET units = units + excluded.units, calls = calls + excluded.calls',
-            (_local(ts).strftime('%Y-%m-%d'), provider, units, calls),
-        )
+        db.upsert('daily_usage', {'date': _local(ts).strftime('%Y-%m-%d'), 'provider': provider},
+                  {'units': units, 'calls': calls}, add=True)
     _check_quota(provider, ts)
 
 
 def daily(days: int = 60, now: float | None = None) -> list[dict]:
     """最近 days 天（含今天）的每日用量，舊到新。"""
-    if not ai_usage_db().exists():
-        return []
     ts = time.time() if now is None else now
     cutoff = (_local(ts) - timedelta(days=days - 1)).strftime('%Y-%m-%d')
     with _open() as db:
@@ -103,8 +71,6 @@ def daily(days: int = 60, now: float | None = None) -> list[dict]:
 
 
 def month_to_date(provider: str, now: float | None = None) -> int:
-    if not ai_usage_db().exists():
-        return 0
     month = _local(time.time() if now is None else now).strftime('%Y-%m')
     with _open() as db:
         (total,) = db.execute(
@@ -138,14 +104,11 @@ def _check_quota(provider: str, ts: float) -> None:
 
     month = _local(ts).strftime('%Y-%m')
     with _open() as db:
-        claimed = db.execute(
-            'INSERT OR IGNORE INTO usage_meta (key, value) VALUES (?, ?)',
-            (f'alerted:{provider}:{month}:{level}', str(ts)),
-        ).rowcount
+        claimed = db.insert_ignore('usage_meta', {'key': f'alerted:{provider}:{month}:{level}'},
+                                   {'value': str(ts)})
         if level == 'critical':
             # 直接跳到告急的，之後不再補發預警
-            db.execute('INSERT OR IGNORE INTO usage_meta (key, value) VALUES (?, ?)',
-                       (f'alerted:{provider}:{month}:warn', str(ts)))
+            db.insert_ignore('usage_meta', {'key': f'alerted:{provider}:{month}:warn'}, {'value': str(ts)})
     if not claimed:
         return
     admin_notifications.record_alert(

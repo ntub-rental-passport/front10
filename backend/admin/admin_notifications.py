@@ -23,55 +23,23 @@
 跟稽核紀錄一樣：告警是附帶的，寫入失敗只記 log，不能讓監控或寄信本身失敗。
 """
 
+from db.sqlstore import open_store as _open
+
 import logging
-import os
-import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 TITLE_MAX_LENGTH = 100
 BODY_MAX_LENGTH = 2000
 LIST_LIMIT = 300
 
 
-def admin_notifications_db() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
-    return Path(os.getenv('ADMIN_NOTIFICATIONS_DB') or (_REPO_ROOT / 'backend/admin-notifications.db'))
-
-
 def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-
-
-@contextmanager
-def _open():
-    path = admin_notifications_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    try:
-        with db:
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS admin_notifications ('
-                'id TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, '
-                'action_url TEXT, action_label TEXT, sender_name TEXT, sender_email TEXT, created_at TEXT NOT NULL)'
-            )
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS admin_notification_reads ('
-                'notification_id TEXT NOT NULL, admin_id INTEGER NOT NULL, read_at TEXT NOT NULL, '
-                'PRIMARY KEY (notification_id, admin_id))'
-            )
-        with db:
-            yield db
-    finally:
-        db.close()
 
 
 def _insert(source: str, title: str, body: str, *, action_url=None, action_label=None,
@@ -118,8 +86,6 @@ def add_note(title: str, body: str, *, sender_email: str, sender_name: str, send
 
 def list_for(admin_id: int | None, limit: int = LIST_LIMIT) -> list[dict]:
     """新到舊，已讀狀態是這位管理員自己的。"""
-    if not admin_notifications_db().exists():
-        return []
     with _open() as db:
         rows = db.execute(
             'SELECT n.*, r.read_at FROM admin_notifications n '
@@ -154,10 +120,9 @@ def _require(db, notification_id: str) -> None:
 def mark_read(admin_id: int, notification_id: str) -> None:
     with _open() as db:
         _require(db, notification_id)
-        db.execute(
-            'INSERT OR IGNORE INTO admin_notification_reads (notification_id, admin_id, read_at) VALUES (?, ?, ?)',
-            (notification_id, admin_id, _iso(time.time())),
-        )
+        db.insert_ignore('admin_notification_reads',
+                         {'notification_id': notification_id, 'admin_id': admin_id},
+                         {'read_at': _iso(time.time())})
 
 
 def mark_unread(admin_id: int, notification_id: str) -> None:
@@ -168,11 +133,9 @@ def mark_unread(admin_id: int, notification_id: str) -> None:
 
 
 def mark_all_read(admin_id: int) -> None:
-    if not admin_notifications_db().exists():
-        return
     with _open() as db:
-        db.execute(
-            'INSERT OR IGNORE INTO admin_notification_reads (notification_id, admin_id, read_at) '
-            'SELECT id, ?, ? FROM admin_notifications',
-            (admin_id, _iso(time.time())),
-        )
+        # 一次把全部標成已讀：逐筆寫，避免用到只有某一邊資料庫才有的語法
+        now = _iso(time.time())
+        for row in db.execute('SELECT id FROM admin_notifications').fetchall():
+            db.insert_ignore('admin_notification_reads',
+                             {'notification_id': row['id'], 'admin_id': admin_id}, {'read_at': now})

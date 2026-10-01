@@ -4,11 +4,13 @@ import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from tests.admin_store import AdminStoreTestCase
 from notifications import scheduled_notification_service as service
 
 
-class ScheduledNotificationTests(unittest.TestCase):
+class ScheduledNotificationTests(AdminStoreTestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         # 一定要 patch 環境變數而不是模組常數：service 用的是「呼叫時才讀」，
         # 這樣每個測試才會拿到自己的暫存 DB，不會互相污染。
@@ -17,7 +19,6 @@ class ScheduledNotificationTests(unittest.TestCase):
             # 寄送失敗、錯過會寫進監控事件紀錄 —— 不指到暫存檔的話會寫進真的 monitoring.db
             'MONITOR_DB': self.temp.name + '/monitoring.db',
             # 寄送結果也會寫進稽核紀錄，同理
-            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
             # 寄送失敗、錯過也會通知管理員，同理
             'ADMIN_NOTIFICATIONS_DB': self.temp.name + '/admin-notifications.db',
             'SMTP_USERNAME': 'sender@example.com',

@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 
 from admin import user_records
 from auth.security import get_current_admin
+from db import database
 from db.database import Base, get_db
 from db.models import (
     InspectionItem, InspectionRecord, LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant,
@@ -29,6 +30,11 @@ class RecordsTestCase(unittest.TestCase):
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
         self.addCleanup(self.engine.dispose)
         Base.metadata.create_all(self.engine)
+        # 後台的設定等資料也在同一個資料庫（db/sqlstore.py 直接用 database.engine），
+        # 不換掉的話登入、報修這些流程會去連真正的開發資料庫。
+        engine_patch = patch.object(database, 'engine', self.engine)
+        engine_patch.start()
+        self.addCleanup(engine_patch.stop)
         self.db = sessionmaker(bind=self.engine)()
         self.addCleanup(self.db.close)
 

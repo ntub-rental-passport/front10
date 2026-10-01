@@ -28,52 +28,20 @@
 跟監控事件一樣：稽核寫入失敗只記 log，不能讓「停用帳號」本身失敗。
 """
 
+from db.sqlstore import open_store as _open
+
 import logging
-import os
-import sqlite3
 import time
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 系統自己做的事（例如排程寄送的結果）用這個當操作者，前端顯示成「系統」
 SYSTEM_ACTOR = 'system'
 
 #: 停用原因的上限。這是給人看的一句話，不是報告
 REASON_MAX_LENGTH = 200
-
-
-def audit_db() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
-    return Path(os.getenv('ADMIN_AUDIT_DB') or (_REPO_ROOT / 'backend/admin-audit.db'))
-
-
-@contextmanager
-def _open():
-    path = audit_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    try:
-        db.execute('''CREATE TABLE IF NOT EXISTS audit_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            at REAL NOT NULL,
-            actor TEXT NOT NULL,
-            action TEXT NOT NULL,
-            target TEXT NOT NULL,
-            detail TEXT NOT NULL,
-            subject TEXT,
-            ip TEXT)''')
-        db.execute('CREATE INDEX IF NOT EXISTS audit_at ON audit_events(at)')
-        db.execute('CREATE INDEX IF NOT EXISTS audit_subject ON audit_events(subject, at)')
-        with db:
-            yield db
-    finally:
-        db.close()
 
 
 def _iso(ts: float) -> str:

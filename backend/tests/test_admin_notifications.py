@@ -5,16 +5,15 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
+from tests.admin_store import AdminStoreTestCase
 from admin import admin_notifications as center
 from admin import audit_service, monitoring_service
 
-
-class CenterTestCase(unittest.TestCase):
+class CenterTestCase(AdminStoreTestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {
-            'ADMIN_NOTIFICATIONS_DB': self.temp.name + '/center.db',
-            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
             'MONITOR_DB': self.temp.name + '/monitor.db',
             'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
         })
@@ -26,7 +25,6 @@ class CenterTestCase(unittest.TestCase):
 
     def titles(self, admin_id=1):
         return [item['title'] for item in center.list_for(admin_id)]
-
 
 class StoreTests(CenterTestCase):
     def test_alerts_are_shared_but_read_state_is_per_admin(self):
@@ -79,7 +77,6 @@ class StoreTests(CenterTestCase):
                 self.assertLogs('admin.admin_notifications', level='ERROR'):
             center.record_alert('x', 'y')
 
-
 class AlertSourceTests(CenterTestCase):
     def test_service_down_and_recovered_raise_alerts_once(self):
         with patch.dict(monitoring_service.PROBES, {'ocr': lambda: (False, '連線逾時')}, clear=True):
@@ -105,7 +102,6 @@ class AlertSourceTests(CenterTestCase):
         scheduled._record_monitor_event('notification-missed', '「颱風停班」')
         self.assertEqual(self.titles(), ['排程通知錯過預定時間', '排程通知寄送失敗'])
         self.assertEqual(center.list_for(1)[0]['actionUrl'], '/admin/notifications?tab=schedule')
-
 
 class ApiTests(CenterTestCase):
     admin = MagicMock(id=1, email='a@example.com', display_name='系統管理員')
@@ -140,7 +136,6 @@ class ApiTests(CenterTestCase):
         with self.assertRaises(HTTPException) as caught:
             read_one('missing', admin=self.admin)
         self.assertEqual(caught.exception.status_code, 404)
-
 
 if __name__ == '__main__':
     unittest.main()

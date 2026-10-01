@@ -7,39 +7,15 @@
 - 要求平台介入：租客或房東提出的，管理員據此分流
 - 手動加入待辦：分流規則以外的個案，管理員自己標的
 
-這三個放 SQLite 小檔（ADMIN_REPAIR_NOTES_DB），不動組員維護的 MySQL 結構——
-後端啟動時會逐欄檢查資料表，為了三個欄位再跑一次遷移不划算。
+存在 repair_notes 這張表（見 migrations/20261001_admin_tables_to_mysql.sql）。
+工單本體是組員維護的 repair_tickets，這裡不去動它的結構。
 """
 
 import json
-import os
-import sqlite3
-from contextlib import contextmanager
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from db.sqlstore import open_store as _open
 
 FIELDS = {'adminNote': '', 'interventionRequested': False, 'manuallyQueued': False}
-
-
-def notes_db() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
-    return Path(os.getenv('ADMIN_REPAIR_NOTES_DB') or (_REPO_ROOT / 'backend/admin-repair-notes.db'))
-
-
-@contextmanager
-def _open():
-    path = notes_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    try:
-        with db:
-            db.execute('CREATE TABLE IF NOT EXISTS repair_notes (ticket_id TEXT PRIMARY KEY, value TEXT NOT NULL)')
-        with db:
-            yield db
-    finally:
-        db.close()
 
 
 def _clean(values: dict) -> dict:
@@ -61,9 +37,7 @@ def _clean(values: dict) -> dict:
 
 
 def all_notes() -> dict[str, dict]:
-    """全部的註記，key 是工單 id。還沒有人寫過就回空的，不建檔。"""
-    if not notes_db().exists():
-        return {}
+    """全部的註記，key 是工單 id。還沒有人寫過就是空的。"""
     with _open() as db:
         rows = db.execute('SELECT ticket_id, value FROM repair_notes').fetchall()
     return {row['ticket_id']: {**FIELDS, **json.loads(row['value'])} for row in rows}
@@ -76,7 +50,6 @@ def notes_for(ticket_id: str) -> dict:
 def update(ticket_id: str, values: dict) -> dict:
     merged = {**notes_for(ticket_id), **_clean(values)}
     with _open() as db:
-        db.execute('INSERT INTO repair_notes (ticket_id, value) VALUES (?, ?) '
-                   'ON CONFLICT(ticket_id) DO UPDATE SET value = excluded.value',
-                   (str(ticket_id), json.dumps(merged, ensure_ascii=False)))
+        db.upsert('repair_notes', {'ticket_id': str(ticket_id)},
+                  {'value': json.dumps(merged, ensure_ascii=False)})
     return merged

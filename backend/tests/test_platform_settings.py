@@ -8,25 +8,23 @@ from unittest.mock import MagicMock, patch
 import jwt
 from fastapi import HTTPException, Response
 
+from tests.admin_store import AdminStoreTestCase
 from admin import audit_service
 from admin import platform_settings as settings
 from auth import security
 
-
-class PlatformSettingsTestCase(unittest.TestCase):
+class PlatformSettingsTestCase(AdminStoreTestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp.name) / 'settings.db'
         self.env = patch.dict(os.environ, {
-            'PLATFORM_SETTINGS_DB': str(self.db_path),
-            'ADMIN_AUDIT_DB': self.temp.name + '/audit.db',
         })
         self.env.start()
 
     def tearDown(self):
         self.env.stop()
         self.temp.cleanup()
-
 
 class StoreTests(PlatformSettingsTestCase):
     def test_defaults_without_creating_a_file(self):
@@ -55,7 +53,6 @@ class StoreTests(PlatformSettingsTestCase):
                 settings.update_settings(changes, actor='admin@example.com')
             self.assertIn(fragment, str(caught.exception))
         self.assertEqual(audit_service.list_events(), [])
-
 
 class TokenLifetimeTests(PlatformSettingsTestCase):
     def exp_of(self, token: str) -> int:
@@ -97,7 +94,6 @@ class TokenLifetimeTests(PlatformSettingsTestCase):
         security.set_auth_cookie(response, 'not-a-jwt')
         self.assertIn(f'Max-Age={settings.DEFAULT_SESSION_MINUTES * 60}', response.headers['set-cookie'])
 
-
 class RegistrationPasswordTests(PlatformSettingsTestCase):
     def start(self, password: str):
         from routers.auth import RegistrationStartRequest, start_registration
@@ -121,7 +117,6 @@ class RegistrationPasswordTests(PlatformSettingsTestCase):
             self.start('seven77')
         with self.assertRaises(LookupError):
             self.start('eight888')
-
 
 class ApiTests(PlatformSettingsTestCase):
     admin = MagicMock(email='admin@example.com')
@@ -149,7 +144,6 @@ class ApiTests(PlatformSettingsTestCase):
         view = update_admin_settings(SettingsUpdate(passwordMinLength=10, sessionMinutes=1440), admin=self.admin)
         self.assertEqual((view['passwordMinLength'], view['sessionMinutes']), (10, 1440))
         self.assertEqual(view['adminSessionMinutes'], settings.ADMIN_SESSION_MINUTES)
-
 
 if __name__ == '__main__':
     unittest.main()

@@ -20,17 +20,29 @@ SQLite（ADMIN_CONTENT_DB），VM 上放在掛載的 data/garbage/，備份腳�
 量很小，不需要跟 MySQL 的使用者、租約關聯。
 """
 
+from contextlib import contextmanager
+
+from db.sqlstore import Row, Store, open_store
+
+
+@contextmanager
+def _open():
+    """第一次用到時寫入原本放在前端的示範公告、輪播與通知模板。
+
+    這段原本在自己開 SQLite 檔的 _open() 裡（用 content_meta 的 seeded 當旗標）。
+    搬進共用資料庫之後旗標照舊，只是表不再由程式建立。
+    """
+    with open_store() as db:
+        if db.execute("SELECT 1 FROM content_meta WHERE key = 'seeded'").fetchone() is None:
+            _seed(db)
+        yield db
+
 import json
-import os
 import re
-import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 ANNOUNCEMENT_LEVELS = ('info', 'warning', 'urgent')
 ANNOUNCEMENT_AUDIENCES = ('all', 'tenant', 'landlord')
@@ -38,11 +50,6 @@ TEMPLATE_CATEGORIES = ('系統', '租約', '補貼', '帳務')
 TEMPLATE_CHANNELS = ('inapp', 'email', 'push')
 
 DAY = 86400
-
-
-def content_db() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
-    return Path(os.getenv('ADMIN_CONTENT_DB') or (_REPO_ROOT / 'backend/admin-content.db'))
 
 
 def _now() -> float:
@@ -102,7 +109,7 @@ def _seed_templates(now: float) -> list[tuple]:
     ]
 
 
-def _seed(db: sqlite3.Connection) -> None:
+def _seed(db: Store) -> None:
     now = _now()
     # 倒著寫：列表是新到舊（rowid 大的在前），倒著寫才會照原本的順序顯示
     for row in reversed(_seed_announcements(now)):
@@ -116,42 +123,6 @@ def _seed(db: sqlite3.Connection) -> None:
                    'enabled, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)',
                    (tid, name, category, json.dumps(channels), title, body, enabled, _iso(updated)))
     db.execute("INSERT INTO content_meta (key, value) VALUES ('seeded', ?)", (_iso(now),))
-
-
-@contextmanager
-def _open():
-    path = content_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    try:
-        with db:
-            db.execute('CREATE TABLE IF NOT EXISTS content_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS announcements (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, '
-                'level TEXT NOT NULL, audience TEXT NOT NULL, published INTEGER NOT NULL, start_at TEXT NOT NULL, '
-                'end_at TEXT, updated_at TEXT NOT NULL)'
-            )
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS banners (id TEXT PRIMARY KEY, title TEXT NOT NULL, image_url TEXT NOT NULL, '
-                'link_url TEXT NOT NULL, sort_order INTEGER NOT NULL, published INTEGER NOT NULL, start_at TEXT NOT NULL, '
-                "end_at TEXT, updated_at TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'all')"
-            )
-            # 既有的資料庫（本機與 VM）建表時還沒有 audience，開檔時補上。
-            # 舊輪播一律當成給所有人看，跟改版前的行為一樣。
-            if 'audience' not in {row[1] for row in db.execute('PRAGMA table_info(banners)')}:
-                db.execute("ALTER TABLE banners ADD COLUMN audience TEXT NOT NULL DEFAULT 'all'")
-            db.execute(
-                'CREATE TABLE IF NOT EXISTS notification_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, '
-                'category TEXT NOT NULL, channels TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, '
-                'action_url TEXT, action_label TEXT, enabled INTEGER NOT NULL, updated_at TEXT NOT NULL)'
-            )
-            if db.execute("SELECT 1 FROM content_meta WHERE key = 'seeded'").fetchone() is None:
-                _seed(db)
-        with db:
-            yield db
-    finally:
-        db.close()
 
 
 def _new_id(prefix: str) -> str:
@@ -212,7 +183,7 @@ def _is_image_url(value: str) -> bool:
     return _is_site_path(value) or bool(_HTTP_URL.match(value))
 
 
-def _active(row: sqlite3.Row, now: float) -> bool:
+def _active(row: Row, now: float) -> bool:
     """跟前端 resolvePhase 一樣：發布中、已經開始、還沒結束（結束時間當下仍算生效）。"""
     if not row['published']:
         return False
@@ -226,7 +197,7 @@ def _active(row: sqlite3.Row, now: float) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _announcement_view(row: sqlite3.Row) -> dict:
+def _announcement_view(row: Row) -> dict:
     return {
         'id': row['id'],
         'title': row['title'],
@@ -302,7 +273,7 @@ def delete_announcement(aid: str, *, actor: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _banner_view(row: sqlite3.Row) -> dict:
+def _banner_view(row: Row) -> dict:
     return {
         'id': row['id'],
         'title': row['title'],
@@ -397,7 +368,7 @@ def reorder_banners(ids: list[str], *, moved_id: str | None, actor: str) -> list
 # ---------------------------------------------------------------------------
 
 
-def _template_view(row: sqlite3.Row) -> dict:
+def _template_view(row: Row) -> dict:
     return {
         'id': row['id'],
         'name': row['name'],

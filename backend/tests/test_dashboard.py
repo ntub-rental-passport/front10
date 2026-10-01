@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 
 from auth.security import CurrentUser, get_current_user
 from db.billing import build_bill_rows
+from db import database
 from db.database import Base, get_db
 from db.models import Bill, Rental, User, UserRole
 from routers import dashboard
@@ -31,6 +32,11 @@ class DashboardTests(unittest.TestCase):
                                     poolclass=StaticPool)
         event.listen(self.engine, 'connect', lambda c, _: c.execute('PRAGMA foreign_keys=ON'))
         Base.metadata.create_all(self.engine)
+        # 後台的設定等資料也在同一個資料庫（db/sqlstore.py 直接用 database.engine），
+        # 不換掉的話登入、報修這些流程會去連真正的開發資料庫。
+        engine_patch = patch.object(database, 'engine', self.engine)
+        engine_patch.start()
+        self.addCleanup(engine_patch.stop)
         self.Session = sessionmaker(bind=self.engine)
         self.addCleanup(self.engine.dispose)
 

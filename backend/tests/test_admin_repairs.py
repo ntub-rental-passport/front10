@@ -4,7 +4,6 @@
 """
 import base64
 import os
-import tempfile
 import unittest
 from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
@@ -17,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from admin import repair_notes
 from auth.security import get_current_admin
+from db import database
 from db.database import Base, get_db
 from db.models import (
     LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, RepairTicket, User, UserRole,
@@ -28,18 +28,17 @@ class AdminRepairTestCase(unittest.TestCase):
     admin = MagicMock(id=1, email='admin@example.com')
 
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {
-            'ADMIN_REPAIR_NOTES_DB': self.temp.name + '/repair-notes.db',
-            'PII_ENCRYPTION_KEY': base64.b64encode(b'r' * 32).decode(),
-        })
+        self.env = patch.dict(os.environ, {'PII_ENCRYPTION_KEY': base64.b64encode(b'r' * 32).decode()})
         self.env.start()
         self.addCleanup(self.env.stop)
-        self.addCleanup(self.temp.cleanup)
 
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
         self.addCleanup(self.engine.dispose)
         Base.metadata.create_all(self.engine)
+        # 後台的註記現在也在同一個資料庫（db/sqlstore.py 用的是 database.engine）
+        engine_patch = patch.object(database, 'engine', self.engine)
+        engine_patch.start()
+        self.addCleanup(engine_patch.stop)
         self.db = sessionmaker(bind=self.engine)()
         self.addCleanup(self.db.close)
 
@@ -130,7 +129,7 @@ class NoteTests(AdminRepairTestCase):
         [item] = self.client().get('/api/admin/repairs').json()['items']
         self.assertEqual((item['adminNote'], item['interventionRequested'], item['manuallyQueued']),
                          ('', False, False))
-        self.assertFalse(repair_notes.notes_db().exists())
+        self.assertEqual(repair_notes.all_notes(), {})
 
     def test_a_note_is_saved_and_comes_back_in_the_listing(self):
         response = self.client().patch(f'/api/admin/repairs/{self.ticket.id}',

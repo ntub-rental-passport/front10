@@ -17,12 +17,11 @@
 否則每個會簽發憑證的測試都會在 backend/ 底下留一個資料庫檔。
 """
 
-import os
-import sqlite3
-from contextlib import contextmanager
-from pathlib import Path
+from sqlalchemy.exc import SQLAlchemyError
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from db.sqlstore import open_store as _open
+
+from pathlib import Path
 
 #: 預設值。登入有效時間的預設見 DEFAULT_SESSION_MINUTES 的說明
 DEFAULT_PASSWORD_MIN_LENGTH = 8
@@ -47,11 +46,6 @@ LABELS = {
 }
 
 
-def settings_db() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
-    return Path(os.getenv('PLATFORM_SETTINGS_DB') or (_REPO_ROOT / 'backend/platform-settings.db'))
-
-
 def _defaults() -> dict:
     return {
         'password_min_length': DEFAULT_PASSWORD_MIN_LENGTH,
@@ -59,30 +53,14 @@ def _defaults() -> dict:
     }
 
 
-@contextmanager
-def _open():
-    path = settings_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    try:
-        db.execute('CREATE TABLE IF NOT EXISTS platform_settings (key TEXT PRIMARY KEY, value INTEGER NOT NULL)')
-        with db:
-            yield db
-    finally:
-        db.close()
-
-
 def get_settings() -> dict:
     values = _defaults()
-    if not settings_db().exists():
-        return values
     try:
         with _open() as db:
             for row in db.execute('SELECT key, value FROM platform_settings').fetchall():
                 if row['key'] in values:
                     values[row['key']] = int(row['value'])
-    except sqlite3.Error:
+    except SQLAlchemyError:
         # 讀不到就用預設值：登入與註冊不能因為設定檔壞掉而整個停擺
         return _defaults()
     return values
@@ -127,11 +105,7 @@ def update_settings(changes: dict, *, actor: str) -> dict:
     if changed:
         with _open() as db:
             for key, value in changed.items():
-                db.execute(
-                    'INSERT INTO platform_settings (key, value) VALUES (?, ?) '
-                    'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-                    (key, value),
-                )
+                db.upsert('platform_settings', {'key': key}, {'value': value})
         from admin import audit_service
 
         for key, value in changed.items():
