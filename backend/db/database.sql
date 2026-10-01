@@ -224,6 +224,8 @@ CREATE TABLE `inspection_records` (
   `rental_id` INT NOT NULL,
   `type` ENUM('check_in','check_out') NOT NULL,
   `photo_url` VARCHAR(512) NOT NULL,
+  `capture_source` ENUM('camera','file') NOT NULL DEFAULT 'file',
+  `capture_quality` JSON DEFAULT NULL,
   `item_name` VARCHAR(100) DEFAULT NULL,
   `room_name` VARCHAR(100) DEFAULT NULL,
   `vlm_result` JSON DEFAULT NULL COMMENT 'NVIDIA VLM 生成的結構化損傷判斷',
