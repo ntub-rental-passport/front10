@@ -30,6 +30,7 @@ import re
 from contextlib import contextmanager
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from db import database
 
@@ -143,9 +144,20 @@ class Store:
         return 1
 
 
+class StoreUnavailable(SQLAlchemyError):
+    """連不上資料庫。
+
+    繼承 SQLAlchemyError 是刻意的：呼叫端原本就用它判斷「讀不到設定」，
+    那時的處置（退回預設值）在這裡同樣正確 —— 登入與註冊不能因為資料庫
+    暫時連不上就整個停擺。
+    """
+
+
 @contextmanager
 def open_store():
     """一次交易：正常結束就 commit，丟例外就 rollback。"""
+    if database.engine is None:
+        raise StoreUnavailable('資料庫尚未設定（缺少 DATABASE_URL）。')
     connection = database.engine.connect()
     try:
         with connection.begin():

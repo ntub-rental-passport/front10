@@ -14,6 +14,7 @@ from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from db import database
 from db.database import Base, get_db
 from db.models import User, UserRole, Rental, InspectionItem, InspectionRecord
 from routers import inspection
@@ -31,6 +32,11 @@ class InspectionTests(unittest.TestCase):
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
         event.listen(self.engine, 'connect', lambda conn, _: conn.execute('PRAGMA foreign_keys=ON'))
         Base.metadata.create_all(self.engine)
+        # 後台的設定等資料也在同一個資料庫（db/sqlstore.py 直接用 database.engine），
+        # 不換掉的話登入、報修這些流程會去連真正的開發資料庫。
+        engine_patch = patch.object(database, 'engine', self.engine)
+        engine_patch.start()
+        self.addCleanup(engine_patch.stop)
         self.Session = sessionmaker(bind=self.engine)
         self.addCleanup(self.engine.dispose)
         with self.Session() as db:

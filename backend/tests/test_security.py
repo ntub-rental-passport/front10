@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from admin import platform_settings
+from db import database
 from db.database import Base
 from db.models import AdminSession, User, UserRole
 from auth.security import ADMIN_IDLE_DETAIL, create_access_token, get_current_admin, read_access_token
@@ -40,6 +41,10 @@ class AdminGuardTest(unittest.TestCase):
     def setUp(self):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
+        # 後台設定也在同一個資料庫（db/sqlstore.py 直接用 database.engine）
+        engine_patch = patch.object(database, 'engine', engine)
+        engine_patch.start()
+        self.addCleanup(engine_patch.stop)
         self.db = sessionmaker(bind=engine)()
         self.admin = User(roles=[UserRole(role="admin")], email="admin@example.com")
         self.tenant = User(roles=[UserRole(role="tenant")], email="tenant@example.com")
