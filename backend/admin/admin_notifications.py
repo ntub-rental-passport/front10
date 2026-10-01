@@ -39,7 +39,9 @@ LIST_LIMIT = 300
 
 
 def _iso(ts: float) -> str:
-    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    # 取到微秒：列表靠 created_at 排序，毫秒在連續寫入時會打平，順序就不穩定了
+    # （SQLite 時代是靠 rowid 當第二順位，搬進共用資料庫之後沒有那個欄位）
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec='microseconds').replace('+00:00', 'Z')
 
 
 def _insert(source: str, title: str, body: str, *, action_url=None, action_label=None,
@@ -90,7 +92,7 @@ def list_for(admin_id: int | None, limit: int = LIST_LIMIT) -> list[dict]:
         rows = db.execute(
             'SELECT n.*, r.read_at FROM admin_notifications n '
             'LEFT JOIN admin_notification_reads r ON r.notification_id = n.id AND r.admin_id = ? '
-            'ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?',
+            'ORDER BY n.created_at DESC, n.id DESC LIMIT ?',
             (admin_id, limit),
         ).fetchall()
     items = []

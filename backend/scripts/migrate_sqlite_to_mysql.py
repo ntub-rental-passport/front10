@@ -83,7 +83,7 @@ def main() -> int:
                     continue
                 new = skipped = 0
                 for row in rows:
-                    where = ' AND '.join(f'{k} = :{k}' for k in keys)
+                    where = ' AND '.join(f'`{k}` = :{k}' for k in keys)
                     existing = connection.execute(
                         text(f'SELECT 1 FROM {table} WHERE {where}'),
                         {k: row[k] for k in keys},
@@ -91,7 +91,7 @@ def main() -> int:
                     if existing:
                         skipped += 1
                         continue
-                    columns = ', '.join(row)
+                    columns = ', '.join(f'`{c}`' for c in row)
                     values = ', '.join(f':{c}' for c in row)
                     connection.execute(text(f'INSERT INTO {table} ({columns}) VALUES ({values})'), row)
                     new += 1
