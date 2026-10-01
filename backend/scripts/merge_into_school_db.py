@@ -2,9 +2,12 @@
 
 ## 背景
 
-正式站一直連 VM 容器裡的 MySQL，學校那台 140.131.114.242 另外有一份比較舊的
-資料（組員建的三個帳號與三份合約）。要改成以學校那台為正式資料庫，又不想丟掉
-任何一邊，所以兩邊合併。
+正式站一直連 VM 容器裡的 MySQL，學校那台另外有一份比較舊的資料（組員建的三個
+帳號與三份合約）。要改成以學校那台為正式資料庫，又不想丟掉任何一邊，所以兩邊
+合併。
+
+學校那台的主機、帳號、密碼不寫在這裡 —— 這個 repo 是公開的。值放在 VM 的
+.env，或向專題負責人索取。
 
 ## 怎麼併
 
@@ -20,7 +23,7 @@
 
 在 VM 的 fastapi 容器裡跑（它同時連得到兩邊）：
 
-    python scripts/merge_into_school_db.py --target "mysql+pymysql://帳號:密碼@140.131.114.242:3306/115-RentMate"
+    python scripts/merge_into_school_db.py --target "mysql+pymysql://帳號:密碼@主機:3306/資料庫名"
     python scripts/merge_into_school_db.py --target ... --commit
 
 預設只試跑。試跑一樣會把每一筆真的寫進交易裡、最後整個回滾 —— 只數筆數不執行
