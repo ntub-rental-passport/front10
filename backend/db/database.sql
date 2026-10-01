@@ -732,4 +732,124 @@ CREATE TABLE `repair_notes` (
   PRIMARY KEY (`ticket_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 通知與監控（2026-10-02 從 SQLite 搬進來，見 migrations/20261002_notification_monitor_tables_to_mysql.sql）
+-- 搬完之後 backend/ 底下就不再有任何 SQLite 檔。
+--
+-- 時間欄位有兩種型別，是刻意的：收件匣存 ISO 字串（前端直接吃），排程、監控、
+-- 垃圾車存 Unix 秒數的浮點數（它們都在算時間差）。
+
+-- 站內通知收件匣（inbox_service.py）：後台寄出的每一封，一個收件人一列。
+-- 表名是 inbox_messages 而不是 messages —— 已經有 notifications 與 message_boards 了。
+-- 不對 user_id 設外鍵：帳號刪掉時寄送紀錄要留著當稽核痕跡。
+
+CREATE TABLE `inbox_messages` (
+  `id` VARCHAR(64) NOT NULL,
+  `batch_id` VARCHAR(64) NOT NULL,
+  `user_id` INT NOT NULL,
+  `user_email` VARCHAR(255) NOT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `body` TEXT NOT NULL,
+  `category` VARCHAR(32) NOT NULL,
+  `channels` VARCHAR(255) NOT NULL,
+  `inapp_state` VARCHAR(32) DEFAULT NULL,
+  `email_state` VARCHAR(32) DEFAULT NULL,
+  `push_state` VARCHAR(32) DEFAULT NULL,
+  `recipient_label` VARCHAR(255) NOT NULL,
+  `source_label` VARCHAR(255) NOT NULL,
+  `source_type` VARCHAR(32) NOT NULL,
+  `action_url` VARCHAR(512) DEFAULT NULL,
+  `action_label` VARCHAR(255) DEFAULT NULL,
+  `created_by` VARCHAR(255) NOT NULL,
+  `created_at` VARCHAR(40) NOT NULL,
+  `read_at` VARCHAR(40) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `inbox_messages_user` (`user_id`, `created_at`),
+  INDEX `inbox_messages_batch` (`batch_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 公告已讀（inbox_service.py）：公告不是一人一列寄出的，誰讀過要另外記
+
+CREATE TABLE `announcement_reads` (
+  `user_id` INT NOT NULL,
+  `announcement_id` VARCHAR(64) NOT NULL,
+  `read_at` VARCHAR(40) NOT NULL,
+  PRIMARY KEY (`user_id`, `announcement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 公告關掉不再顯示（inbox_service.py）
+
+CREATE TABLE `announcement_dismissals` (
+  `user_id` INT NOT NULL,
+  `dismiss_key` VARCHAR(128) NOT NULL,
+  `dismissed_at` VARCHAR(40) NOT NULL,
+  PRIMARY KEY (`user_id`, `dismiss_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 排程通知（scheduled_notification_service.py）：時間到了由後端背景迴圈寄出
+
+CREATE TABLE `scheduled_notifications` (
+  `id` VARCHAR(64) NOT NULL,
+  `created_by` VARCHAR(255) NOT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `body` TEXT NOT NULL,
+  `category` VARCHAR(32) NOT NULL,
+  `channels` VARCHAR(255) NOT NULL,
+  `recipient` TEXT NOT NULL,
+  `recipient_label` VARCHAR(255) NOT NULL,
+  `source_label` VARCHAR(255) NOT NULL,
+  `due` DOUBLE NOT NULL,
+  `created_at` DOUBLE NOT NULL,
+  `status` VARCHAR(32) NOT NULL,
+  `sent_at` DOUBLE DEFAULT NULL,
+  `result` TEXT DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `scheduled_notifications_due` (`status`, `due`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 各服務目前的狀態（monitoring_service.py）：一個服務一列，只存現況
+
+CREATE TABLE `monitor_state` (
+  `service` VARCHAR(64) NOT NULL,
+  `status` VARCHAR(16) NOT NULL,
+  `since` DOUBLE NOT NULL,
+  `detail` VARCHAR(255) DEFAULT NULL,
+  `checked_at` DOUBLE NOT NULL,
+  PRIMARY KEY (`service`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 監控事件（monitoring_service.py）：只記狀態轉換，不記每一次「正常」
+
+CREATE TABLE `monitor_events` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `at` DOUBLE NOT NULL,
+  `service` VARCHAR(64) NOT NULL,
+  `kind` VARCHAR(32) NOT NULL,
+  `detail` VARCHAR(255) DEFAULT NULL,
+  `duration` DOUBLE DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `monitor_events_at` (`at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 監控的雜項數值（monitoring_service.py）：心跳時間、OCR 回報的憑證狀態
+
+CREATE TABLE `monitor_meta` (
+  `key` VARCHAR(64) NOT NULL,
+  `value` DOUBLE NOT NULL,
+  PRIMARY KEY (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 垃圾車提醒（garbage_service.py）：使用者自己設的，到時間寄信或推播
+
+CREATE TABLE `garbage_reminders` (
+  `id` VARCHAR(64) NOT NULL,
+  `user_id` INT NOT NULL,
+  `payload` TEXT NOT NULL,
+  `due` DOUBLE NOT NULL,
+  `active` TINYINT(1) NOT NULL DEFAULT 1,
+  `email_status` VARCHAR(32) NOT NULL,
+  `push_status` VARCHAR(32) NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `garbage_reminders_due` (`active`, `due`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;

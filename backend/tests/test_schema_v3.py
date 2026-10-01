@@ -4,7 +4,6 @@ from datetime import date, datetime, timedelta
 import os
 from pathlib import Path
 import re
-import tempfile
 import unittest
 from unittest.mock import patch
 from cryptography.exceptions import InvalidTag
@@ -32,7 +31,7 @@ class SchemaContractTests(unittest.TestCase):
     def test_every_table_column_type_nullability_and_foreign_key_matches_sql(self):
         sql = (Path(__file__).parents[1] / 'db' / 'database.sql').read_text(encoding='utf-8')
         tables = dict(re.findall(r'CREATE TABLE `([^`]+)`\s*\((.*?)\) ENGINE', sql, re.S))
-        self.assertEqual(len(tables), 43)
+        self.assertEqual(len(tables), 51)
         self.assertEqual(set(tables), set(Base.metadata.tables))
         for name, body in tables.items():
             columns = dict(re.findall(r'^\s*`([^`]+)`\s+([^\n]+)', body, re.M))
@@ -65,13 +64,11 @@ class SchemaContractTests(unittest.TestCase):
 
 class NewSchemaApiTests(unittest.TestCase):
     def setUp(self):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        # 管理員登入會寫稽核紀錄；不導到暫存檔，本機後台就會多出假的「admin@example.com 登入」
+        # 管理員登入會寫稽核紀錄 —— 下面把 database.engine 換成記憶體資料庫，
+        # 所以不會在本機後台留下假的「admin@example.com 登入」
         env = patch.dict(os.environ, {
             'AUTH_TOKEN_SECRET': 'schema-test-secret',
             'PII_ENCRYPTION_KEY': base64.b64encode(b'x' * 32).decode(),
-            'ADMIN_AUDIT_DB': temp.name + '/audit.db',
         })
         env.start()
         self.addCleanup(env.stop)

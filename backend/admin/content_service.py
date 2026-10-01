@@ -16,8 +16,8 @@
 
 ## 存哪裡
 
-SQLite（ADMIN_CONTENT_DB），VM 上放在掛載的 data/garbage/，備份腳本會一起備份。
-量很小，不需要跟 MySQL 的使用者、租約關聯。
+專案的資料庫（announcements、banners、notification_templates、content_meta）。
+2026-10-01 從 SQLite 搬進來。量很小，但放在同一個資料庫才進得了 ER 圖與備份。
 """
 
 from contextlib import contextmanager

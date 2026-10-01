@@ -2,8 +2,8 @@
 
 platform_settings.py 管的是後端真的會照著執行的安全設定（密碼長度、登入期限）。
 這裡管的是系統設定頁的其他欄位（網站名稱、維護模式、各種提醒門檻），以及
-系統監控頁的「功能停用」。三者放在同一個 SQLite 檔（PLATFORM_SETTINGS_DB）的
-不同資料表 —— VM 上那個檔本來就在會保留的資料夾裡，不用多設路徑。
+系統監控頁的「功能停用」。三者放在專案資料庫的三張表（platform_settings、
+site_settings、feature_outages），2026-10-01 從同一個 SQLite 檔搬進來。
 
 ## 維護模式和功能停用只擋畫面
 

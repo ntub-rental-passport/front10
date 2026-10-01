@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 import uuid
 from datetime import datetime, timedelta
@@ -21,10 +20,7 @@ T0 = 1_790_000_000.0
 class AuditTestCase(AdminStoreTestCase):
     def setUp(self):
         super().setUp()
-        self.temp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {
-            'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
-            'MONITOR_DB': self.temp.name + '/monitoring.db',
             'SMTP_USERNAME': 'sender@example.com',
             'SMTP_APP_PASSWORD': 'app-password',
         })
@@ -32,7 +28,6 @@ class AuditTestCase(AdminStoreTestCase):
 
     def tearDown(self):
         self.env.stop()
-        self.temp.cleanup()
 
     def entries(self, subject=None):
         return [

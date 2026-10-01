@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -11,16 +10,9 @@ from notifications import scheduled_notification_service as service
 class ScheduledNotificationTests(AdminStoreTestCase):
     def setUp(self):
         super().setUp()
-        self.temp = tempfile.TemporaryDirectory()
-        # 一定要 patch 環境變數而不是模組常數：service 用的是「呼叫時才讀」，
-        # 這樣每個測試才會拿到自己的暫存 DB，不會互相污染。
+        # 寄送失敗會寫進監控事件、稽核紀錄與管理員通知中心 —— 那三個現在都在
+        # AdminStoreTestCase 換掉的記憶體資料庫裡，不會寫到真的開發資料庫。
         self.env = patch.dict(os.environ, {
-            'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
-            # 寄送失敗、錯過會寫進監控事件紀錄 —— 不指到暫存檔的話會寫進真的 monitoring.db
-            'MONITOR_DB': self.temp.name + '/monitoring.db',
-            # 寄送結果也會寫進稽核紀錄，同理
-            # 寄送失敗、錯過也會通知管理員，同理
-            'ADMIN_NOTIFICATIONS_DB': self.temp.name + '/admin-notifications.db',
             'SMTP_USERNAME': 'sender@example.com',
             'SMTP_APP_PASSWORD': 'app-password',
         })
@@ -29,7 +21,6 @@ class ScheduledNotificationTests(AdminStoreTestCase):
 
     def tearDown(self):
         self.env.stop()
-        self.temp.cleanup()
 
     # -------------------- helpers --------------------
 
@@ -238,8 +229,7 @@ class ScheduledNotificationTests(AdminStoreTestCase):
     def test_inapp_schedule_lands_in_the_inbox_with_the_email_results(self):
         from notifications import inbox_service
 
-        with patch.dict(os.environ, {'NOTIFICATION_INBOX_DB': self.temp.name + '/inbox.db'}), \
-                patch.object(inbox_service, '_load_accounts', return_value=self.ACCOUNTS):
+        with patch.object(inbox_service, '_load_accounts', return_value=self.ACCOUNTS):
             item = self.create(channels=['inapp', 'email'])
 
             def fail_for_b(address, title, body):

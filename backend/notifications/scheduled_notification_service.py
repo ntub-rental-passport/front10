@@ -1,4 +1,4 @@
-"""管理員排程通知：真正跑在後端的佇列（SQLite）。
+"""管理員排程通知：真正跑在後端的佇列（存在專案的資料庫）。
 
 ## 為什麼這個檔案存在
 
@@ -23,16 +23,13 @@ services/notificationApi.ts）。那條路徑上沒有任何東西能在指定�
 import json
 import logging
 import os
-import sqlite3
-from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from uuid import uuid4
+
+from db.sqlstore import open_store
 
 TZ = timezone(timedelta(hours=8))
 logger = logging.getLogger(__name__)
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 排程一次最多能排多久以後（與垃圾車提醒一致）
 MAX_LEAD = timedelta(days=366)
@@ -50,43 +47,13 @@ SUPPORTED_CHANNELS = ('email', 'inapp')
 CATEGORIES = ('系統', '租約', '補貼', '帳務')
 
 
-def schedule_db() -> Path:
-    """排程佇列的 SQLite。
-
-    ⚠️ 一定要在**呼叫時**才讀環境變數。做成模組層級常數的話，測試在
-    setUp() 裡 patch 這個變數時模組早就 import 完了，每個測試都會去寫
-    同一個真實檔案而互相污染 —— garbage_service 就是這樣踩過的。
-    """
-    return Path(os.getenv('ADMIN_SCHEDULE_DB') or (_REPO_ROOT / 'backend/scheduled-notifications.db'))
-
-
-@contextmanager
 def connect():
-    path = schedule_db()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=15)
-    db.row_factory = sqlite3.Row
-    db.execute('''CREATE TABLE IF NOT EXISTS scheduled_notifications (
-        id TEXT PRIMARY KEY,
-        created_by TEXT NOT NULL,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        category TEXT NOT NULL,
-        channels TEXT NOT NULL,
-        recipient TEXT NOT NULL,
-        recipient_label TEXT NOT NULL,
-        source_label TEXT NOT NULL,
-        due REAL NOT NULL,
-        created_at REAL NOT NULL,
-        status TEXT NOT NULL,
-        sent_at REAL,
-        result TEXT)''')
-    db.execute('CREATE INDEX IF NOT EXISTS schedule_due ON scheduled_notifications(status, due)')
-    try:
-        with db:
-            yield db
-    finally:
-        db.close()
+    """佇列的連線。2026-10-02 起是專案的資料庫，不再是 SQLite 檔。
+
+    一個 `with` 就是一次交易：正常結束 commit、丟例外 rollback，跟原本一樣。
+    表由 migrations/ 建立，這裡不自己 CREATE TABLE（見 db/sqlstore.py）。
+    """
+    return open_store()
 
 
 def email_configured() -> bool:
@@ -106,7 +73,7 @@ def capabilities() -> dict:
     }
 
 
-def public_row(row: sqlite3.Row) -> dict:
+def public_row(row) -> dict:
     """對外表示。收件人條件會原樣回傳，但指定名單只回人數不回 email ——
     排程列表是整頁可見的，不需要把每個人的信箱攤在上面。"""
     recipient = json.loads(row['recipient'])

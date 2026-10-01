@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -12,16 +11,12 @@ from admin import audit_service, monitoring_service
 class CenterTestCase(AdminStoreTestCase):
     def setUp(self):
         super().setUp()
-        self.temp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {
-            'MONITOR_DB': self.temp.name + '/monitor.db',
-            'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
         })
         self.env.start()
 
     def tearDown(self):
         self.env.stop()
-        self.temp.cleanup()
 
     def titles(self, admin_id=1):
         return [item['title'] for item in center.list_for(admin_id)]

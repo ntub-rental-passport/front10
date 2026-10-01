@@ -47,7 +47,7 @@ URL_PREFIX = '/api/content/banner-images'
 
 
 def image_dir() -> Path:
-    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.reminder_db）。"""
+    """⚠️ 一定要在呼叫時才讀環境變數（理由同 garbage_service.data_dir）。"""
     return Path(os.getenv('BANNER_IMAGE_DIR') or (_REPO_ROOT / 'backend/uploads/banners'))
 
 

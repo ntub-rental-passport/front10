@@ -3,26 +3,18 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.admin_store import AdminStoreTestCase
 from admin import monitoring_service as monitor
 
 T0 = 1_790_000_000.0  # 固定起點，事件時間好比對
 
 
-class MonitoringTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {
-            'MONITOR_DB': self.temp.name + '/monitoring.db',
-            'ADMIN_SCHEDULE_DB': self.temp.name + '/schedule.db',
-            'GARBAGE_REMINDER_DB': self.temp.name + '/garbage.db',
-            # 服務斷線／恢復會通知管理員 —— 不指到暫存檔的話會寫進真的通知中心
-            'ADMIN_NOTIFICATIONS_DB': self.temp.name + '/admin-notifications.db',
-        })
-        self.env.start()
+class MonitoringTests(AdminStoreTestCase):
+    """監控、排程佇列、通知中心現在都在同一個資料庫裡（2026-10-02 起）。
 
-    def tearDown(self):
-        self.env.stop()
-        self.temp.cleanup()
+    AdminStoreTestCase 會把 database.engine 換成每個測試自己的記憶體資料庫 ——
+    不換的話服務斷線通知會寫進真的開發資料庫。
+    """
 
     def kinds(self):
         return [event['kind'] for event in reversed(monitor.list_events())]

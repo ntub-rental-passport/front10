@@ -37,6 +37,18 @@ from db import database
 _PLACEHOLDER = re.compile(r'\?')
 
 
+def _translate(sql: str) -> str:
+    """把 sqlite3 的 `?` 換成 SQLAlchemy 的具名參數 `:p0`、`:p1`…"""
+    index = 0
+
+    def name(_match):
+        nonlocal index
+        index += 1
+        return f':p{index - 1}'
+
+    return _PLACEHOLDER.sub(name, sql)
+
+
 class Row:
     """讓結果列同時支援 row['欄位'] 與 row[0]，跟 sqlite3.Row 一樣。"""
 
@@ -89,18 +101,36 @@ class Store:
 
     def execute(self, sql: str, params=()):
         """`?` 佔位符照舊；參數用序列傳入，跟 sqlite3 一樣。"""
-        index = 0
-
-        def name(_match):
-            nonlocal index
-            index += 1
-            return f':p{index - 1}'
-
-        statement = _PLACEHOLDER.sub(name, sql)
         bound = {f'p{i}': value for i, value in enumerate(params)}
-        result = self._connection.execute(text(statement), bound)
+        result = self._connection.execute(text(_translate(sql)), bound)
         rows = [Row(row._mapping) for row in result] if result.returns_rows else []
         return _Result(rows, result.rowcount)
+
+    def executemany(self, sql: str, rows):
+        """同一句 SQL 餵多組參數，跟 sqlite3 的 executemany 一樣。
+
+        rowcount 不回傳：MySQL 與 SQLite 對「多列寫入影響幾列」的算法不一致，
+        回一個兩邊不一樣的數字比不回更糟。要筆數的話自己數 rows。
+        """
+        bound = [{f'p{i}': value for i, value in enumerate(row)} for row in rows]
+        if not bound:
+            return
+        self._connection.execute(text(_translate(sql)), bound)
+
+    def lock(self, sql: str, params=()):
+        """讀出來並鎖住這幾列，直到這次交易結束。
+
+        給「讀舊狀態 → 比對 → 寫新狀態」用的。SQLite 版原本是 `BEGIN IMMEDIATE`
+        （一開始就拿整個檔案的寫鎖），MySQL 沒有那種東西，要鎖的是列 —— 加
+        `FOR UPDATE`。不鎖的話 uvicorn 開多個 worker 時，同一次停機可能被兩個
+        worker 各記一筆（見 admin/monitoring_service.py 開頭的說明）。
+
+        SQLite 不認得 `FOR UPDATE`，所以只在 MySQL 上加。測試跑在 SQLite，那邊
+        一次只有一個寫入者，不加也不會錯。
+        """
+        if self._connection.dialect.name == 'mysql':
+            sql = f'{sql} FOR UPDATE'
+        return self.execute(sql, params)
 
     def upsert(self, table: str, keys: dict, values: dict, *, add=False):
         """有就更新、沒有就新增。
