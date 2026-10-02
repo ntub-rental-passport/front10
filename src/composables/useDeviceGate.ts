@@ -21,6 +21,8 @@ export interface GateWindow {
 export interface DeviceGate {
   blocked: Ref<boolean>
   fieldCapture: Ref<boolean>
+  /** 原始訊號：主要指標裝置是不是手指。 */
+  coarsePointer: Ref<boolean>
   stop: () => void
 }
 
@@ -40,13 +42,15 @@ export function readSnapshot(win: GateWindow | undefined): DeviceSnapshot {
 export function createDeviceGate(win: GateWindow | undefined): DeviceGate {
   const blocked = ref(false)
   const fieldCapture = ref(false)
+  const coarsePointer = ref(false)
   const evaluate = () => {
     const snapshot = readSnapshot(win)
     blocked.value = shouldBlockAdminSurface(snapshot)
     fieldCapture.value = supportsFieldCapture(snapshot)
+    coarsePointer.value = snapshot.coarsePointer
   }
   evaluate()
-  if (!win) return { blocked, fieldCapture, stop: () => {} }
+  if (!win) return { blocked, fieldCapture, coarsePointer, stop: () => {} }
 
   const query = win.matchMedia?.(POINTER_QUERY)
   query?.addEventListener?.('change', evaluate)
@@ -54,6 +58,7 @@ export function createDeviceGate(win: GateWindow | undefined): DeviceGate {
   return {
     blocked,
     fieldCapture,
+    coarsePointer,
     stop: () => {
       query?.removeEventListener?.('change', evaluate)
       win.removeEventListener('resize', evaluate)
@@ -67,8 +72,8 @@ export function useAdminDeviceGate(): Pick<DeviceGate, 'blocked'> {
   return { blocked: gate.blocked }
 }
 
-export function useFieldCaptureSupport(): Pick<DeviceGate, 'fieldCapture'> {
+export function useFieldCaptureSupport(): Pick<DeviceGate, 'fieldCapture' | 'coarsePointer'> {
   const gate = createDeviceGate(typeof window === 'undefined' ? undefined : window)
   onUnmounted(gate.stop)
-  return { fieldCapture: gate.fieldCapture }
+  return { fieldCapture: gate.fieldCapture, coarsePointer: gate.coarsePointer }
 }
