@@ -37,6 +37,53 @@ export function shouldBlockAdminSurface(snapshot: DeviceSnapshot): boolean {
  * 存證效力比使用者自己用手機拍完再上傳更低。寬度不納入判斷：平板橫向仍然該用
  * 鏡頭拍。
  */
-export function supportsFieldCapture(snapshot: DeviceSnapshot): boolean {
+export function supportsFieldCapture<T extends Pick<DeviceSnapshot, 'coarsePointer'>>(snapshot: T): boolean {
   return snapshot.coarsePointer
+}
+
+export interface CameraUnavailable {
+  /** 給提示畫面的標題，要讓人一眼知道是哪一類問題 */
+  title: string
+  /** 一句話說明原因與下一步 */
+  detail: string
+}
+
+export interface CameraEnvironment extends Pick<DeviceSnapshot, 'coarsePointer'> {
+  /** window.isSecureContext：HTTPS 或 localhost 才是 true */
+  isSecureContext: boolean
+  /** navigator.mediaDevices 是否存在 */
+  hasMediaDevices: boolean
+}
+
+/*
+ * 相機開不起來的三種原因，回傳人看得懂的說明；可以開就回 null。
+ *
+ * 會有這支是因為非 secure context 的失敗方式特別難懂：瀏覽器不是拒絕權限，而是
+ * 把整個 navigator.mediaDevices 物件藏起來，所以程式碼讀 .getUserMedia 時丟的是
+ * 「undefined is not an object」。那個原始 JS 錯誤直接顯示給使用者毫無意義 ——
+ * 真正該講的是「這個網址不是 HTTPS」。
+ *
+ * 判斷順序是裝置優先：桌機使用者不該被告知去換 HTTPS 網址，他換了也還是桌機。
+ */
+export function cameraUnavailableReason(env: CameraEnvironment): CameraUnavailable | null {
+  if (!supportsFieldCapture(env)) {
+    return {
+      title: '這台裝置請用上傳',
+      detail: '請改用下方的「上傳」選擇照片，或改用手機開啟這個頁面當場拍攝。',
+    }
+  }
+  if (!env.isSecureContext) {
+    return {
+      title: '這個網址不能開相機',
+      detail:
+        '瀏覽器只在 HTTPS（或 localhost）才開放相機，用區網 IP 開啟時會停用。請改用 https:// 的網址開啟這一頁，或先用下方的「上傳」選擇照片。',
+    }
+  }
+  if (!env.hasMediaDevices) {
+    return {
+      title: '這個瀏覽器不支援相機',
+      detail: '這個瀏覽器沒有提供相機介面，請改用下方的「上傳」選擇照片。',
+    }
+  }
+  return null
 }

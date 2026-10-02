@@ -30,10 +30,10 @@
         ></video>
 
         <!-- 錯誤提示 -->
-        <div v-if="cameraError" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-900/90 z-20">
-          <component :is="uploadOnly ? Upload : AlertCircle" class="h-10 w-10 text-amber-400 mb-2" />
-          <p class="text-sm font-medium text-slate-200 mb-1">{{ uploadOnly ? '這台裝置請用上傳' : '無法啟動鏡頭' }}</p>
-          <p class="text-xs text-slate-400 mb-4 max-w-sm">{{ cameraError }}</p>
+        <div v-if="cameraNotice" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-900/90 z-20">
+          <component :is="unavailable ? Upload : AlertCircle" class="h-10 w-10 text-amber-400 mb-2" />
+          <p class="text-sm font-medium text-slate-200 mb-1">{{ cameraNotice.title }}</p>
+          <p class="text-xs text-slate-400 mb-4 max-w-sm">{{ cameraNotice.detail }}</p>
           <Button size="sm" variant="secondary" @click="triggerFileInput">
             <Upload class="h-3.5 w-3.5 mr-1.5" /> 改用檔案上傳
           </Button>
@@ -143,6 +143,7 @@ import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
 import { Camera, AlertCircle, Upload, Sun, Compass, Activity } from 'lucide-vue-next'
 import { useFieldCaptureSupport } from '@/src/composables/useDeviceGate'
+import { cameraUnavailableReason, type CameraUnavailable } from '@/src/utils/device-policy'
 import type { CaptureQuality, CaptureSource } from '@/src/composables/useHandover'
 
 export type CapturePayload = {
@@ -151,8 +152,8 @@ export type CapturePayload = {
   quality: CaptureQuality | null
 }
 
-const { fieldCapture } = useFieldCaptureSupport()
-const uploadOnly = ref(false)
+const { coarsePointer } = useFieldCaptureSupport()
+const unavailable = ref<CameraUnavailable | null>(null)
 
 const props = withDefaults(
   defineProps<{
@@ -178,6 +179,11 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const isCameraReady = ref(false)
 const cameraError = ref<string | null>(null)
+const cameraNotice = computed<CameraUnavailable | null>(() => {
+  if (unavailable.value) return unavailable.value
+  if (cameraError.value) return { title: '無法啟動鏡頭', detail: cameraError.value }
+  return null
+})
 
 // AR 感測狀態
 const tiltAngle = ref(0)
@@ -233,17 +239,20 @@ const hudStatusText = computed(() => {
 
 async function startCamera() {
   cameraError.value = null
-  uploadOnly.value = false
+  unavailable.value = null
   hasFrameMeasurement.value = false
   hasOrientationMeasurement.value = false
   /*
-   * 桌機不開鏡頭：筆電 webcam 拍不到房間角落，而傾角偵測靠 DeviceOrientation，
-   * 桌機量不到角度。畫質差又沒有水平資訊的照片，存證效力比使用者自己用手機
-   * 拍完再上傳更低，所以這裡直接導向上傳。
+   * 先分辨裝置、網址安全性與瀏覽器支援情況，避免在非 HTTPS 網址上
+   * 讀取不存在的 navigator.mediaDevices 而顯示原始 JavaScript 錯誤。
    */
-  if (!fieldCapture.value) {
-    uploadOnly.value = true
-    cameraError.value = '請改用下方的「上傳」選擇照片，或改用手機開啟這個頁面當場拍攝。'
+  const reason = cameraUnavailableReason({
+    coarsePointer: coarsePointer.value,
+    isSecureContext: typeof window !== 'undefined' && window.isSecureContext,
+    hasMediaDevices: typeof navigator !== 'undefined' && !!navigator.mediaDevices,
+  })
+  if (reason) {
+    unavailable.value = reason
     return
   }
   await nextTick()
