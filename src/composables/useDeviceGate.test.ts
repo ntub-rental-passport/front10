@@ -32,6 +32,25 @@ function fakeWindow(coarse: boolean, width: number) {
 }
 
 describe('createDeviceGate', () => {
+  it('exposes the raw coarse-pointer signal', () => {
+    const touch = createDeviceGate(fakeWindow(true, 390).win)
+    expect(touch.coarsePointer.value).toBe(true)
+    touch.stop()
+
+    const mouse = createDeviceGate(fakeWindow(false, 1440).win)
+    expect(mouse.coarsePointer.value).toBe(false)
+    mouse.stop()
+  })
+
+  it('updates coarsePointer when the pointer changes', () => {
+    const browser = fakeWindow(true, 390)
+    const gate = createDeviceGate(browser.win)
+    expect(gate.coarsePointer.value).toBe(true)
+    browser.setCoarse(false)
+    expect(gate.coarsePointer.value).toBe(false)
+    gate.stop()
+  })
+
   it('blocks immediately and updates on resize and pointer changes', () => {
     const browser = fakeWindow(true, 390)
     const gate = createDeviceGate(browser.win)
@@ -50,6 +69,7 @@ describe('createDeviceGate', () => {
     vi.stubGlobal('window', undefined)
     const gate = createDeviceGate(undefined)
     expect(gate.blocked.value).toBe(false)
+    expect(gate.coarsePointer.value).toBe(false)
     gate.stop()
     vi.unstubAllGlobals()
   })
