@@ -88,7 +88,8 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), payment=()" always;
+    # 點交存證需要本站相機；跨站 iframe 仍不可使用。麥克風維持關閉。
+    add_header Permissions-Policy "camera=(self), microphone=(), payment=()" always;
     # HSTS：2026-08-19 由觀察值 600 調整為正式值 31536000（1 年）。
     # 調長前提已滿足：全站 HTTPS 運作正常、certbot 自動續期排程已設定。
     # 意義：瀏覽器在期限內「只」以 HTTPS 連本站，連使用者手動輸入 http:// 也會自動改寫，
