@@ -25,7 +25,7 @@ BACKUP_ROOT="$HOME/backups"
 WORK="$BACKUP_ROOT/rentmate-backup-$STAMP"
 mkdir -p "$WORK/key" "$WORK/host"
 
-# 讀 .env 取得學校資料庫的密碼（切換到學校機器之後才需要）
+# 讀 .env 供其他備份步驟使用；資料庫連線以 compose 的 fastapi 設定為準。
 set -a; . "$(dirname "$0")/../.env"; set +a
 
 echo "=========================================="
@@ -34,16 +34,39 @@ echo "=========================================="
 
 # ---------- 1. MySQL 資料庫 ----------
 # --single-transaction：對 InnoDB 做一致性快照，過程中不鎖表、不中斷服務
-# 密碼透過容器環境變數取用，不出現在指令列
-#
-# 2026-10-02 起資料庫在學校的機器上（140.131.114.242），不再是這裡的 mysql 容器。
-# 還是借 mysql 容器來跑：它有 mysqldump（fastapi 容器沒有），只是改成連學校那台。
-# 密碼從 .env 讀進容器，不出現在指令列。
+# 2026-10-02 起資料庫在學校的機器上。mysql 服務只在不能對外連線的
+# backend_net；臨時客戶端要接 frontend_net 才能連到學校資料庫。
+# .env 的 SCHOOL_DB_PASSWORD 可能與 compose 實際給 fastapi 的連線不同。
+# 從 compose 取正式連線設定，密碼只經由程序環境傳給 mysqldump，不印出或寫進腳本。
+# --no-tablespaces 避免一般資料庫帳號缺少 PROCESS 權限時匯出失敗。
 echo "[1/5] 匯出 MySQL 資料庫..."
-docker compose run --rm --no-deps \
-  -e SCHOOL_DB_PASSWORD="$SCHOOL_DB_PASSWORD" mysql sh -c \
-  'exec mysqldump -h 140.131.114.242 -urentmate -p"$SCHOOL_DB_PASSWORD" --single-transaction --routines --triggers "115-RentMate"' \
-  > "$WORK/db.sql"
+python3 - "$WORK/db.sql" <<'PYDB'
+import json
+import os
+import subprocess
+import sys
+import urllib.parse
+
+config = json.loads(subprocess.check_output(
+    ["docker", "compose", "config", "--format", "json"], text=True,
+))
+url = urllib.parse.urlsplit(config["services"]["fastapi"]["environment"]["DATABASE_URL"])
+database_name = urllib.parse.unquote(url.path.lstrip("/"))
+if url.hostname != "140.131.114.242" or url.username != "rentmate" or database_name != "115-RentMate" or not url.password:
+    raise SystemExit("正式資料庫連線設定不符合預期，停止備份")
+
+env = os.environ.copy()
+env["MYSQL_PWD"] = urllib.parse.unquote(url.password)
+with open(sys.argv[1], "wb") as dump:
+    subprocess.run(
+        ["docker", "run", "--rm", "--network", "rentmate_frontend_net",
+         "-e", "MYSQL_PWD", "mysql:8.4", "mysqldump",
+         "-h", url.hostname, "-u", url.username,
+         "--single-transaction", "--routines", "--triggers", "--no-tablespaces",
+         database_name],
+        env=env, stdout=dump, check=True,
+    )
+PYDB
 echo "      $(wc -l < "$WORK/db.sql") 行、$(du -h "$WORK/db.sql" | cut -f1)"
 
 # ---------- 1b. 後端 SQLite ----------
