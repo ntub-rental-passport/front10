@@ -5,7 +5,9 @@ dist/
 dist-ssr/
 coverage/
 logs/
-node_modules/
+# 不要加尾斜線：`node_modules/` 只擋目錄，擋不住一個叫 node_modules 的符號連結。
+# 2026-10-02 就是這樣讓一個指向開發機絕對路徑的連結進了公開 repo。
+node_modules
 __pycache__/
 *.py[cod]
 *.db
