@@ -52,7 +52,7 @@ watch(isSidebarPinned, (value) => {
 </script>
 
 <template>
-  <div class="flex h-[100dvh] w-full bg-muted/20">
+  <div class="app-layout flex h-[100dvh] w-full bg-muted/20">
     <!-- Desktop Sidebar -->
     <aside
       v-if="!hidesDesktopSidebar"
