@@ -1,96 +1,51 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, ssrContextKey, type Ref } from 'vue'
-import Subscription from './subscription.vue'
+import { describe, expect, it } from 'vitest'
+import {
+  annualSavings,
+  billingAmount,
+  monthlyEquivalent,
+  planFeatures,
+  quotaPercent,
+  subscriptionPlans,
+} from '@/src/utils/subscription-plans'
 
-interface Plan { key: 'free' | 'plus' | 'pro'; monthlyPrice: number }
-interface Checkout {
-  billingCycle: Ref<'monthly' | 'yearly'>
-  currentPlan: Ref<string>
-  selectedPlan: Ref<string | null>
-  paymentSuccess: Ref<string | null>
-  cardHolder: Ref<string>
-  cardNumber: Ref<string>
-  expiry: Ref<string>
-  cvc: Ref<string>
-  agreed: Ref<boolean>
-  canPay: Ref<boolean>
-  paymentAmount: Ref<number>
-  plans: Plan[]
-  choosePlan: (plan: Plan) => void
-  completePayment: () => void
-}
-
-function checkout(): Checkout {
-  vi.useFakeTimers()
-  vi.setSystemTime(new Date(2026, 8, 23, 12))
-  const component = Subscription as unknown as {
-    setup: (props: object, context: { expose: () => void }) => Checkout
-  }
-  const app = createSSRApp({ render: () => null })
-  app.provide(ssrContextKey, { modules: new Set<string>() })
-  const state = app.runWithContext(() => component.setup({}, { expose: () => {} }))
-  state.choosePlan(state.plans[1])
-  state.cardHolder.value = 'Test User'
-  state.cardNumber.value = '4242 4242 4242 4242'
-  state.expiry.value = '09/26'
-  state.cvc.value = '123'
-  state.agreed.value = true
-  return state
-}
-
-afterEach(() => vi.useRealTimers())
-
-describe('subscription checkout', () => {
-  it('accepts the current expiry month and clears card data after demo checkout', () => {
-    const state = checkout()
-    expect(state.canPay.value).toBe(true)
-    state.completePayment()
-    expect(state.currentPlan.value).toBe('plus')
-    expect(state.paymentSuccess.value).toBe('plus')
-    expect(state.selectedPlan.value).toBeNull()
-    expect([state.cardHolder.value, state.cardNumber.value, state.expiry.value, state.cvc.value]).toEqual(['', '', '', ''])
-    expect(state.agreed.value).toBe(false)
+describe('business plan subscription catalog', () => {
+  it.each([
+    ['landlord', 199, 1990, 399, 3990, '165.83', '332.50'],
+    ['tenant', 49, 490, 99, 990, '40.83', '82.50'],
+  ] as const)(
+    'uses exact tax-inclusive prices for %s, without rounding the annual charge',
+    (role, plusMonthly, plusAnnual, proMonthly, proAnnual, plusAverage, proAverage) => {
+      const [free, plus, pro] = subscriptionPlans[role]
+      expect(billingAmount(free!, 'yearly')).toBe(0)
+      expect(billingAmount(plus!, 'monthly')).toBe(plusMonthly)
+      expect(billingAmount(plus!, 'yearly')).toBe(plusAnnual)
+      expect(billingAmount(pro!, 'monthly')).toBe(proMonthly)
+      expect(billingAmount(pro!, 'yearly')).toBe(proAnnual)
+      expect(monthlyEquivalent(plus!)).toBe(plusAverage)
+      expect(monthlyEquivalent(pro!)).toBe(proAverage)
+      expect(annualSavings(plus!)).toBe(plusMonthly * 2)
+      expect(annualSavings(pro!)).toBe(proMonthly * 2)
+    },
+  )
+  it('keeps the property, room, team and AI limits from the report', () => {
+    const landlord = planFeatures.landlord
+    expect(landlord.find((row) => row.label === '管理物件')?.values).toEqual(['1 個', '5 個', '20 個'])
+    expect(landlord.find((row) => row.label === '管理房間')?.values).toEqual(['5 間', '30 間', '100 間'])
+    expect(landlord.find((row) => row.label === '管理者席次（含擁有者）')?.values).toEqual([
+      '1 席',
+      '1 席',
+      '3 席',
+    ])
+    expect(planFeatures.tenant.find((row) => row.label === 'AI 契約分析')?.values).toEqual([
+      '驗證帳號贈送 1 次',
+      '每月 2 次',
+      '每月 5 次',
+    ])
   })
-
-  it.each(['08/26', '00/27', '13/27', '1/27', 'ab/cd'])('rejects invalid or expired date %s', expiry => {
-    const state = checkout()
-    state.expiry.value = expiry
-    expect(state.canPay.value).toBe(false)
-    state.completePayment()
-    expect(state.currentPlan.value).toBe('free')
-  })
-
-  it('rejects a blank holder, nonnumeric card, invalid CVC and missing consent', () => {
-    const state = checkout()
-    state.cardHolder.value = '   '
-    expect(state.canPay.value).toBe(false)
-    state.cardHolder.value = 'Test User'
-    state.cardNumber.value = 'abcdefghijklmnop'
-    expect(state.canPay.value).toBe(false)
-    state.cardNumber.value = '4242424242424242'
-    state.cvc.value = 'abc'
-    expect(state.canPay.value).toBe(false)
-    state.cvc.value = '1234'
-    expect(state.canPay.value).toBe(true)
-    state.agreed.value = false
-    expect(state.canPay.value).toBe(false)
-  })
-
-  it('shows the full annual charge for annual billing', () => {
-    const state = checkout()
-    expect(state.paymentAmount.value).toBe(299)
-    state.billingCycle.value = 'yearly'
-    expect(state.paymentAmount.value).toBe(2976)
-    state.choosePlan(state.plans[2])
-    expect(state.paymentAmount.value).toBe(5964)
-  })
-
-  it('switches back to Free without a checkout', () => {
-    const state = checkout()
-    state.completePayment()
-    state.choosePlan(state.plans[0])
-    expect(state.currentPlan.value).toBe('free')
-    expect(state.selectedPlan.value).toBeNull()
-    expect(state.paymentSuccess.value).toBeNull()
+  it('does not turn unknown usage into zero and caps overflowing progress bars', () => {
+    expect(quotaPercent(null, 5)).toBeNull()
+    expect(quotaPercent(0, 5)).toBe(0)
+    expect(quotaPercent(2, 5)).toBe(40)
+    expect(quotaPercent(8, 5)).toBe(100)
   })
 })

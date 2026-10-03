@@ -2,6 +2,7 @@ import {
   Bell,
   CheckSquare,
   ClipboardList,
+  CreditCard,
   FileText,
   Home,
   PiggyBank,
@@ -29,6 +30,7 @@ export function useNavigation() {
     { icon: Zap, label: '停電通報', path: '/app/outage' },
     { icon: ClipboardList, label: '備忘錄', path: '/app/notes' },
     { icon: Bell, label: '通知中心', path: '/app/notifications' },
+    { icon: CreditCard, label: '方案與訂閱', path: '/app/subscription' },
   ]
 
   const accountItem: NavItem = { icon: User, label: '我的帳戶', path: '/app/account' }

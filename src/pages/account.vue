@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import {
   AlertTriangle,
   Bell,
   Check,
   ChevronRight,
   CircleUserRound,
+  CreditCard,
   Download,
   FileLock2,
   Headphones,
@@ -143,6 +144,13 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
         <ChevronRight :size="18" class="header-chevron" />
       </div>
     </header>
+
+    <section class="account-plan-entry" aria-label="方案與訂閱">
+      <span class="account-plan-icon"><CreditCard :size="24" /></span>
+      <div><small>目前方案 · Free 租屋入門</small><h2>方案權益與功能</h2><p>查看 AI 分析額度、附件容量與可用功能，找到適合你的租屋方案。</p></div>
+      <RouterLink to="/app/account/plan">查看我的權益 <ChevronRight :size="16" /></RouterLink>
+      <RouterLink to="/app/subscription">比較訂閱方案 <ChevronRight :size="16" /></RouterLink>
+    </section>
 
     <section class="account-grid" aria-label="帳戶設定">
       <article class="account-card profile-card">
@@ -393,6 +401,23 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
 </template>
 
 <style scoped>
+.account-plan-entry {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid #ddd8ef;
+  border-radius: 18px;
+  background: linear-gradient(110deg, #f3f0ff, #fff);
+}
+.account-plan-icon { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 14px; background: #e7e0fb; color: #5746b5; flex-shrink: 0; }
+.account-plan-entry > div { flex: 1; }
+.account-plan-entry small { color: #5746b5; font-size: 12px; }
+.account-plan-entry h2 { margin: 5px 0; font-size: 19px; font-weight: 750; }
+.account-plan-entry p { font-size: 12px; color: #76768b; line-height: 1.8; }
+.account-plan-entry a { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 14px; border: 1px solid #ddd8ef; border-radius: 10px; font-size: 12px; color: #5746b5; font-weight: 650; background: white; }
+.account-plan-entry a:first-of-type { background: #5746b5; border-color: #5746b5; color: white; }
+@media (max-width: 1000px) { .account-plan-entry { flex-wrap: wrap; } .account-plan-entry > div { flex-basis: calc(100% - 70px); } .account-plan-entry a { flex: 1; } }
 .account-page {
   --account-primary: #4f46e5;
   --account-primary-dark: #3730a3;

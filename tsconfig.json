@@ -17,5 +17,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["src/components/layouts/AuthShell.vue"]
+  "exclude": ["node_modules", "dist", "outputs", "src/components/layouts/AuthShell.vue"]
 }
