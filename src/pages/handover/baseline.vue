@@ -552,7 +552,7 @@ function fmtDate(iso: string) {
         </div>
       </section>
 
-      <Card v-else>
+      <Card v-else-if="!busy && !error">
         <CardContent class="pt-6 text-center text-muted-foreground space-y-2">
           <Building2 class="h-8 w-8 mx-auto" />
           <p>目前沒有可用的租客合約，請先建立租約後再進行點交。</p>

@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import OperationalError
 
 # 載入 .env 檔案
 load_dotenv()
@@ -38,5 +39,14 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except OperationalError as error:
+        # Only connection failures become 503; schema/query errors must remain errors.
+        code = error.orig.args[0] if getattr(error.orig, 'args', ()) else None
+        if error.connection_invalidated or code in (2002, 2003, 2006, 2013, 2055):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="資料庫暫時無法連線，無法讀取或儲存資料。請稍後重新載入；這不代表你的資料不存在。",
+            ) from error
+        raise
     finally:
         db.close() # 執行完 API 後自動關閉連線，還給連線池，防止連線溢滿
