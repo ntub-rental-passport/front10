@@ -19,6 +19,7 @@ import {
 } from 'lucide-vue-next'
 import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import { useLandlordSettings } from '@/src/composables/useLandlordSettings'
+import { subscriptionPlans } from '@/src/utils/subscription-plans'
 
 type SettingsCategory = 'workspace' | 'notifications' | 'data' | 'support' | 'legal' | 'security'
 
@@ -37,6 +38,7 @@ const query = ref('')
 const activeCategory = ref<SettingsCategory>('workspace')
 const { properties, rooms, loading } = useLandlordWorkspace()
 const { state, session, completeness } = useLandlordSettings()
+const currentPlan = subscriptionPlans.landlord[0]!
 
 const categories: Array<{ key: SettingsCategory; label: string; icon: typeof UserRound }> = [
   { key: 'workspace', label: '帳號與工作區', icon: UserRound },
@@ -50,7 +52,7 @@ const categories: Array<{ key: SettingsCategory; label: string; icon: typeof Use
 const items = computed<SettingsItem[]>(() => [
   { key: 'account', category: 'workspace', title: '帳號資料', description: '更新名稱、聯絡手機與工作區名稱。', path: '/landlord/settings/account', icon: UserRound, badge: completeness.value === 100 ? '完整' : `${completeness.value}%`, tone: completeness.value === 100 ? 'success' : 'warning' },
   { key: 'team', category: 'workspace', title: '團隊成員', description: '邀請夥伴並設定管理、帳務或檢視權限。', path: '/landlord/settings/team', icon: Users, badge: `${state.members.length + 1} 位` },
-  { key: 'plan', category: 'workspace', title: '方案權益與功能', description: '查看目前方案、管理規模與可用功能。', path: '/landlord/settings/plan', icon: Crown, badge: '免費方案', tone: 'success' },
+  { key: 'plan', category: 'workspace', title: '方案權益與功能', description: '查看目前方案、使用額度與可用功能。', path: '/landlord/settings/plan', icon: Crown, badge: currentPlan.name, tone: 'success' },
   { key: 'notifications', category: 'notifications', title: '通知偏好', description: '設定租金、合約與報修通知的提醒方式。', path: '/landlord/settings/notifications', icon: Bell, badge: state.lineBound ? 'LINE 已綁定' : 'LINE 未綁定', tone: state.lineBound ? 'success' : 'warning' },
   { key: 'data', category: 'data', title: '資料匯出與備份', description: '匯出房務、租客及租約資料，方便備份交接。', path: '/landlord/settings/data', icon: Download, badge: '可使用', tone: 'success' },
   { key: 'activity', category: 'data', title: '操作紀錄', description: '查看設定、租客及房務資料的重要異動。', path: '/landlord/settings/activity', icon: Activity, badge: `${state.audit.length} 筆` },
@@ -95,7 +97,7 @@ const healthIssues = computed(() => Number(!state.lineBound) + Number(completene
         </div>
         <div class="metric"><small>管理規模</small><strong>{{ loading ? '—' : `${properties.length} 棟 / ${rooms.length} 間` }}</strong></div>
         <div class="metric"><small>目前出租</small><strong>{{ rentedRooms }} 間</strong></div>
-        <div class="metric"><small>目前方案</small><strong>免費方案</strong></div>
+        <div class="metric"><small>目前方案</small><RouterLink to="/landlord/settings/plan"><strong>{{ currentPlan.name }} →</strong></RouterLink></div>
         <div class="metric"><small>系統狀態</small><strong class="text-[#4f7657]">正常運行</strong></div>
       </div>
     </section>

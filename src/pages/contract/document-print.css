@@ -1,0 +1,28 @@
+/* This must be global: scoped document styles cannot reach the app's scroll containers.
+   Gate every rule on the rendered sheet so other routes keep their own print layout. */
+@media print {
+  html:has(.contract-document-page .doc-sheet),
+  body:has(.contract-document-page .doc-sheet),
+  body:has(.contract-document-page .doc-sheet) #app,
+  body:has(.contract-document-page .doc-sheet) .app-layout,
+  body:has(.contract-document-page .doc-sheet) .app-layout > main,
+  body:has(.contract-document-page .doc-sheet) .app-layout > main > div {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    max-width: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  body:has(.contract-document-page .doc-sheet) > :not(#app),
+  body:has(.contract-document-page .doc-sheet) .app-layout > :not(main),
+  body:has(.contract-document-page .doc-sheet) .app-layout > main > footer {
+    display: none !important;
+  }
+}

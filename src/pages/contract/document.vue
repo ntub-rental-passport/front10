@@ -150,3 +150,4 @@ onMounted(async () => {
 </template>
 
 <style scoped src="./document.css"></style>
+<style src="./document-print.css"></style>
