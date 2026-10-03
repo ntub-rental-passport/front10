@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import {
@@ -63,6 +63,8 @@ const uploadError = ref('')
 const copySuccess = ref(false)
 const activeTab = ref('preview')
 const ocrResult = ref<ContractOcrResult | null>(null)
+const resultSummary = ref<HTMLElement | null>(null)
+const showUploadPanel = ref(false)
 
 const defaultLanguageHints = ['zh-TW', 'en']
 const maxFileSize = 20 * 1024 * 1024
@@ -167,6 +169,14 @@ function formatFileSize(size: number): string {
 function openFilePicker(mode: FilePickerMode = 'replace'): void {
   filePickerMode.value = mode
   fileInput.value?.click()
+}
+
+async function toggleUploadPanel(): Promise<void> {
+  showUploadPanel.value = !showUploadPanel.value
+  if (showUploadPanel.value) {
+    await nextTick()
+    document.getElementById('ocr-upload-panel')?.scrollIntoView({ block: 'start' })
+  }
 }
 
 function resetOcrState(keepFile = true): void {
@@ -380,6 +390,13 @@ async function sendToOcr(files: File[]): Promise<void> {
         : '分級 OCR 完成，可以檢視契約文字與規則抽取結果'
     saveContractOcrResult(result)
     activeTab.value = 'preview'
+    showUploadPanel.value = false
+    await nextTick()
+    resultSummary.value?.focus({ preventScroll: true })
+    resultSummary.value?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    })
     if (result.aiReview?.status === 'pending' && result.aiReview.jobId) {
       void pollAiReview(result.aiReview.jobId)
     }
@@ -536,7 +553,7 @@ function onDragLeave(): void {
       </div>
     </header>
 
-    <section class="capability-grid" aria-label="OCR 支援能力">
+    <section v-if="!canAnalyze" class="capability-grid" aria-label="OCR 支援能力">
       <article class="capability-card">
         <div class="capability-icon capability-icon--image"><ImageIcon /></div>
         <div>
@@ -570,7 +587,7 @@ function onDragLeave(): void {
       </article>
     </section>
 
-    <section class="ocr-workspace">
+    <section v-show="!canAnalyze || showUploadPanel" id="ocr-upload-panel" class="ocr-workspace">
       <div class="section-heading">
         <div>
           <p class="section-kicker">UPLOAD & RECOGNIZE</p>
@@ -765,6 +782,55 @@ function onDragLeave(): void {
       </Button>
     </section>
 
+    <section
+      v-if="canAnalyze"
+      ref="resultSummary"
+      class="result-summary"
+      tabindex="-1"
+      aria-labelledby="result-summary-title"
+    >
+      <div class="result-summary-heading">
+        <div class="result-summary-copy">
+          <p class="result-complete"><CheckCircle2 aria-hidden="true" />OCR 辨識完成</p>
+          <h2 id="result-summary-title">契約已就緒，下一步校對內容</h2>
+          <p class="result-file-name">
+            {{ ocrResult?.fileName }} · 共 {{ ocrResult?.pageCount }} 頁
+          </p>
+          <p>下方可預覽辨識文字，進入編輯器即可依原稿逐頁校對，再進行契約分析。</p>
+        </div>
+        <Button size="lg" class="editor-primary-button" @click="enterContractEditor">
+          <PenLine aria-hidden="true" />
+          進入契約編輯
+          <ArrowRight aria-hidden="true" />
+        </Button>
+      </div>
+      <div class="result-summary-tools">
+        <p v-if="ocrResult?.aiReview?.status === 'pending'" role="status">
+          AI 正在背景複核，你可以先開始校對。
+        </p>
+        <p v-else>請先確認姓名、金額與日期等重要資訊。</p>
+        <Button
+          variant="outline"
+          :aria-expanded="showUploadPanel"
+          aria-controls="ocr-upload-panel"
+          @click="toggleUploadPanel"
+        >
+          {{ showUploadPanel ? '收起上傳區' : '檢視或更換檔案' }}
+          <ChevronDown aria-hidden="true" :class="{ 'rotate-180': showUploadPanel }" />
+        </Button>
+      </div>
+      <div v-if="uploadError" class="status-message status-message--error" role="alert">
+        <AlertTriangle aria-hidden="true" /><span>{{ uploadError }}</span>
+      </div>
+      <div
+        v-for="warning in ocrResult?.warnings || []"
+        :key="warning"
+        class="status-message status-message--warning"
+      >
+        <AlertTriangle aria-hidden="true" /><span>{{ warning }}</span>
+      </div>
+    </section>
+
     <Tabs v-if="canAnalyze" v-model="activeTab" class="result-tabs">
       <TabsList class="result-tab-list">
         <TabsTrigger value="preview">契約預覽</TabsTrigger>
@@ -784,60 +850,63 @@ function onDragLeave(): void {
             >
           </CardHeader>
           <CardContent class="result-content">
-            <div class="result-metrics">
-              <div>
-                <span>檔案名稱</span>
-                <strong>{{ ocrResult?.fileName }}</strong>
+            <details class="recognition-details">
+              <summary>辨識詳細資訊</summary>
+              <div class="result-metrics">
+                <div>
+                  <span>檔案名稱</span>
+                  <strong>{{ ocrResult?.fileName }}</strong>
+                </div>
+                <div>
+                  <span>檔案格式</span>
+                  <strong>{{ ocrResult?.mimeType }}</strong>
+                </div>
+                <div>
+                  <span>辨識頁數</span>
+                  <strong>{{ ocrResult?.pageCount }} 頁</strong>
+                </div>
+                <div>
+                  <span>OCR 引擎</span>
+                  <strong>{{ ocrResult?.engine }}</strong>
+                </div>
+                <div v-if="ocrResult?.aiReview">
+                  <span>
+                    {{ ocrResult.aiReview.status === 'pending' ? '分級 AI 背景複核' : '欄位抽取' }}
+                  </span>
+                  <strong v-if="ocrResult.aiReview.status === 'completed'">
+                    {{ ocrResult.aiReview.model }} · {{ ocrResult.aiReview.fieldCount }} 個欄位
+                    <template v-if="ocrResult.aiReview.cropCount">
+                      · {{ ocrResult.aiReview.cropCount }} 個裁切區域
+                    </template>
+                  </strong>
+                  <strong v-else-if="ocrResult.aiReview.status === 'pending'">
+                    已先取得 {{ ocrResult.aiReview.ruleFieldCount }} 個規則欄位，背景複核
+                    {{ ocrResult.aiReview.targetFieldIds.length }} 個低信心欄位
+                  </strong>
+                  <strong v-else-if="ocrResult.aiReview.status === 'skipped'">
+                    規則式抽取 · {{ ocrResult.aiReview.ruleFieldCount }} 個欄位
+                  </strong>
+                  <strong v-else>AI 未完成，已採用規則式欄位結果</strong>
+                </div>
+                <div v-if="ocrResult?.timings">
+                  <span>第一、二層耗時</span>
+                  <strong>
+                    Google {{ formatProcessingTime(ocrResult.timings.googleVisionMs) }} · 規則
+                    {{ formatProcessingTime(ocrResult.timings.ruleExtractionMs) }}
+                  </strong>
+                </div>
+                <div v-if="ocrResult?.aiReview?.performanceMetrics">
+                  <span>背景 AI 效能</span>
+                  <strong>
+                    Prompt
+                    {{ formatProcessingTime(ocrResult.aiReview.performanceMetrics.promptEvalMs) }} ·
+                    {{ ocrResult.aiReview.performanceMetrics.tokensPerSecond }} tokens/s
+                  </strong>
+                </div>
               </div>
-              <div>
-                <span>檔案格式</span>
-                <strong>{{ ocrResult?.mimeType }}</strong>
-              </div>
-              <div>
-                <span>辨識頁數</span>
-                <strong>{{ ocrResult?.pageCount }} 頁</strong>
-              </div>
-              <div>
-                <span>OCR 引擎</span>
-                <strong>{{ ocrResult?.engine }}</strong>
-              </div>
-              <div v-if="ocrResult?.aiReview">
-                <span>
-                  {{ ocrResult.aiReview.status === 'pending' ? '分級 AI 背景複核' : '欄位抽取' }}
-                </span>
-                <strong v-if="ocrResult.aiReview.status === 'completed'">
-                  {{ ocrResult.aiReview.model }} · {{ ocrResult.aiReview.fieldCount }} 個欄位
-                  <template v-if="ocrResult.aiReview.cropCount">
-                    · {{ ocrResult.aiReview.cropCount }} 個裁切區域
-                  </template>
-                </strong>
-                <strong v-else-if="ocrResult.aiReview.status === 'pending'">
-                  已先取得 {{ ocrResult.aiReview.ruleFieldCount }} 個規則欄位，背景複核
-                  {{ ocrResult.aiReview.targetFieldIds.length }} 個低信心欄位
-                </strong>
-                <strong v-else-if="ocrResult.aiReview.status === 'skipped'">
-                  規則式抽取 · {{ ocrResult.aiReview.ruleFieldCount }} 個欄位
-                </strong>
-                <strong v-else>AI 未完成，已採用規則式欄位結果</strong>
-              </div>
-              <div v-if="ocrResult?.timings">
-                <span>第一、二層耗時</span>
-                <strong>
-                  Google {{ formatProcessingTime(ocrResult.timings.googleVisionMs) }} · 規則
-                  {{ formatProcessingTime(ocrResult.timings.ruleExtractionMs) }}
-                </strong>
-              </div>
-              <div v-if="ocrResult?.aiReview?.performanceMetrics">
-                <span>背景 AI 效能</span>
-                <strong>
-                  Prompt
-                  {{ formatProcessingTime(ocrResult.aiReview.performanceMetrics.promptEvalMs) }} ·
-                  {{ ocrResult.aiReview.performanceMetrics.tokensPerSecond }} tokens/s
-                </strong>
-              </div>
-            </div>
+            </details>
 
-            <div class="recognized-text">
+            <div class="recognized-text" tabindex="0" role="region" aria-label="契約辨識文字">
               {{ ocrResult?.text }}
             </div>
           </CardContent>

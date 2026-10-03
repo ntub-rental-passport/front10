@@ -708,7 +708,7 @@ async function exportAnalysisReport(): Promise<void> {
         <Button variant="outline" @click="router.push('/app/contract/document')">
           <FileText :size="17" /> 檢視契約內容
         </Button>
-        <Button variant="outline" @click="router.push('/app/contract')">
+        <Button variant="outline" @click="router.push('/app/contract/scanner')">
           重新上傳
         </Button>
       </div>

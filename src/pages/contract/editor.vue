@@ -1240,7 +1240,7 @@ function jumpToMissingField(fieldId: string): void {
 }
 
 function returnToOcr(): void {
-  router.push('/app/contract')
+  router.push('/app/contract/scanner')
 }
 </script>
 

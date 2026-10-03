@@ -967,6 +967,108 @@
   color: #fff !important;
 }
 
+.result-summary {
+  scroll-margin-top: 96px;
+  border: 1px solid #cdc7ff;
+  border-radius: 18px;
+  padding: 24px;
+  background: linear-gradient(120deg, #f4f2ff, #fff);
+}
+
+.result-summary:focus-visible {
+  outline: 2px solid var(--contract-primary);
+  outline-offset: 4px;
+}
+
+.result-summary-heading,
+.result-summary-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.result-summary-copy {
+  min-width: 0;
+}
+
+.result-summary-copy h2 {
+  margin: 8px 0;
+  font-size: clamp(20px, 2.5vw, 26px);
+  font-weight: 800;
+}
+
+.result-summary p {
+  margin: 0;
+  color: var(--contract-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.result-summary .result-complete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--contract-primary);
+  font-weight: 700;
+}
+
+.result-complete svg {
+  width: 20px;
+  height: 20px;
+}
+
+.result-summary .result-file-name {
+  margin-bottom: 6px;
+  color: var(--contract-ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.editor-primary-button {
+  min-height: 56px;
+  min-width: 224px;
+  flex-shrink: 0;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 5px 16px #5145b52b;
+}
+
+.result-summary-tools {
+  margin-top: 20px;
+  border-top: 1px solid #e2def6;
+  padding-top: 16px;
+}
+
+.recognition-details summary {
+  cursor: pointer;
+  color: var(--contract-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recognition-details[open] summary {
+  margin-bottom: 12px;
+}
+
+@container contract-page (max-width: 760px) {
+  .result-summary {
+    padding: 20px;
+  }
+
+  .result-summary-heading,
+  .result-summary-tools {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .editor-primary-button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 .result-tabs {
   min-width: 0;
 }
