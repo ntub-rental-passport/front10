@@ -140,6 +140,31 @@ export function useHandover() {
     })
   }
 
+  /** 同一個房間一次建立多個項目。逐筆送出；中途失敗時已建立的保留，回傳沒建成的名稱。 */
+  async function addItems(room: string, names: string[]) {
+    if (!store.currentPropertyId) return
+    const rentalId = Number(store.currentPropertyId)
+    return perform(async () => {
+      const failed: string[] = []
+      let lastError = ''
+      for (const name of names) {
+        try {
+          const item = await inspectionRequest<HandoverItem>('/items', 'POST', {
+            room,
+            name,
+            rental_id: rentalId,
+          })
+          store.items.push(item)
+        } catch (cause) {
+          failed.push(name)
+          lastError = cause instanceof Error ? cause.message : '新增失敗'
+        }
+      }
+      if (failed.length) error.value = `以下項目沒有新增成功：${failed.join('、')}（${lastError}）`
+      return failed
+    })
+  }
+
   async function removeItem(id: string) {
     await perform(async () => {
       await inspectionRequest(`/items/${id}`, 'DELETE')
@@ -229,6 +254,7 @@ export function useHandover() {
     selectProperty,
     itemsOfCurrentProperty,
     addItem,
+    addItems,
     removeItem,
     addEvidence,
     removeEvidence,

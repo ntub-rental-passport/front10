@@ -7,6 +7,7 @@
 沒有任何租約時回空陣列，由前端顯示空狀態；不得回填示範資料。
 """
 import datetime
+import logging
 import re
 
 from cryptography.exceptions import InvalidTag
@@ -17,6 +18,8 @@ from sqlalchemy.orm import Session, selectinload
 from auth.security import CurrentUser, get_current_user
 from db import models
 from db.database import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/dashboard",
@@ -112,21 +115,35 @@ def list_contracts(
     user: CurrentUser = Depends(get_current_user),
 ):
     """這個使用者的租約與每期帳單。沒有租約就回空陣列。"""
-    try:
-        rentals = (
-            db.query(models.Rental)
-            .options(selectinload(models.Rental.bills))
-            .filter(models.Rental.user_id == user.id, models.Rental.rental_status == "active")
-            .order_by(models.Rental.created_at.asc())
-            .all()
-        )
-    except InvalidTag as error:
-        # 解密在載入列時就發生（EncryptedText 是 row-level 處理）。
-        # 金鑰換過時要說清楚，不能讓儀表板顯示成「沒有租約」。
+    # 解密在載入列時就發生（EncryptedText 是 row-level 處理），一次查全部的話，
+    # 只要其中一份租約解不開（例如用舊金鑰存的），整個儀表板就壞掉，
+    # 其他正常的租約也選不到。所以先只查明文 id，再逐份載入。
+    rental_ids = [
+        row.id
+        for row in db.query(models.Rental.id)
+        .filter(models.Rental.user_id == user.id, models.Rental.rental_status == "active")
+        .order_by(models.Rental.created_at.asc())
+        .all()
+    ]
+
+    rentals = []
+    for rental_id in rental_ids:
+        try:
+            rentals.append(
+                db.query(models.Rental)
+                .options(selectinload(models.Rental.bills))
+                .filter(models.Rental.id == rental_id)
+                .one()
+            )
+        except (InvalidTag, ValueError):
+            logger.error("Dashboard: rental %s could not be decrypted; skipped", rental_id)
+
+    if rental_ids and not rentals:
+        # 全部都解不開才報錯；金鑰換過時要說清楚，不能讓儀表板顯示成「沒有租約」。
         raise HTTPException(
             status_code=500,
             detail="租約個資無法解密，加密金鑰可能已變更。請聯絡系統管理員核對金鑰。",
-        ) from error
+        )
 
     return [
         _contract_json(rental, ACCENTS[index % len(ACCENTS)])

@@ -30,6 +30,7 @@ import {
   Search,
   FileDown,
   FileText,
+  X,
 } from 'lucide-vue-next'
 
 import {
@@ -83,7 +84,7 @@ const {
   currentProperty,
   selectProperty,
   itemsOfCurrentProperty,
-  addItem,
+  addItems,
   removeItem,
   addEvidence,
   retryAnalysis,
@@ -96,14 +97,43 @@ const {
 // ---------- 新增點交項目 ---------- //
 
 const showAddItemDialog = ref(false)
-const newItem = ref({ room: '', name: '' })
+// 同一個房間可以一次輸入多個物品，按「新增」才一起送出
+const newRoom = ref('')
+const newNames = ref<string[]>([])
+const nameDraft = ref('')
+
+// 輸入框裡還沒按加號的文字也算在內，免得使用者以為打了就會送出
+const pendingNames = computed(() => {
+  const draft = nameDraft.value.trim()
+  return draft ? [...newNames.value, draft] : newNames.value
+})
+
+function addDraftName() {
+  const name = nameDraft.value.trim()
+  if (!name) return
+  newNames.value.push(name)
+  nameDraft.value = ''
+}
+
+function removeName(index: number) {
+  newNames.value.splice(index, 1)
+}
 
 async function submitAddItem() {
   if (!currentProperty.value) return
-  if (!newItem.value.room || !newItem.value.name) return
-  const saved = await addItem({ room: newItem.value.room, name: newItem.value.name })
-  if (!saved) return
-  newItem.value = { room: '', name: '' }
+  const room = newRoom.value.trim()
+  if (!room || pendingNames.value.length === 0) return
+  const failed = await addItems(room, pendingNames.value)
+  if (!failed) return
+  if (failed.length) {
+    // 只留下沒建成的，讓使用者可以直接再按一次
+    newNames.value = failed
+    nameDraft.value = ''
+    return
+  }
+  newRoom.value = ''
+  newNames.value = []
+  nameDraft.value = ''
   showAddItemDialog.value = false
 }
 
@@ -338,24 +368,55 @@ function fmtDate(iso: string) {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>新增點交項目</DialogTitle>
-              <DialogDescription>填入物品所在房間與名稱。</DialogDescription>
+              <DialogDescription>先填房間，再列出這個房間的所有物品，最後一次新增。</DialogDescription>
             </DialogHeader>
             <div class="space-y-3 py-2">
               <div class="space-y-1">
                 <Label>房間</Label>
-                <Input v-model="newItem.room" placeholder="例如：廚房" />
+                <Input v-model="newRoom" placeholder="例如：客廳" />
               </div>
-              <div class="space-y-1">
-                <Label>物品名稱</Label>
-                <Input v-model="newItem.name" placeholder="例如：抽油煙機" />
+              <div class="space-y-2">
+                <Label for="handover-new-name">物品名稱</Label>
+                <div class="flex items-center gap-2">
+                  <Input
+                    id="handover-new-name"
+                    v-model="nameDraft"
+                    placeholder="例如：沙發，按 + 或 Enter 加入"
+                    @keydown.enter.prevent="addDraftName"
+                  />
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    aria-label="加入這項物品"
+                    :disabled="!nameDraft.trim()"
+                    @click="addDraftName"
+                  >
+                    <Plus class="h-4 w-4" />
+                  </Button>
+                </div>
+                <div
+                  v-for="(name, index) in newNames"
+                  :key="`${index}-${name}`"
+                  class="flex items-center gap-2"
+                >
+                  <Input :model-value="name" readonly tabindex="-1" class="bg-muted/40" />
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    :aria-label="`移除 ${name}`"
+                    @click="removeName(index)"
+                  >
+                    <X class="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" @click="showAddItemDialog = false">取消</Button>
               <Button
-                :disabled="busy || !newItem.room.trim() || !newItem.name.trim()"
+                :disabled="busy || !newRoom.trim() || pendingNames.length === 0"
                 @click="submitAddItem"
-                >新增</Button
+                >新增 {{ pendingNames.length || '' }} 項</Button
               >
             </DialogFooter>
           </DialogContent>
