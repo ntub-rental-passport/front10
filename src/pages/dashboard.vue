@@ -251,6 +251,9 @@ const {
             <RouterLink to="/app/contract/scanner" class="inline-block text-xs font-semibold text-slate-900 underline">
               前往契約辨識
             </RouterLink>
+            <RouterLink to="/app/join-lease" class="ml-3 inline-block text-xs font-semibold text-slate-900 underline">
+              房東給了邀請碼？加入租約
+            </RouterLink>
           </div>
 
           <div

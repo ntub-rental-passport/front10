@@ -22,6 +22,8 @@ const router = createRouter({
   routes: [
     { path: '/', component: () => import('@/src/pages/home.vue') },
     { path: '/maintenance', component: () => import('@/src/pages/maintenance.vue') },
+    // 房東給的租約邀請（QR／連結）。不需登入就能看概要，加入時再登入租客帳號。
+    { path: '/invite/:token', component: () => import('@/src/pages/invite.vue') },
     {
       path: '/login',
       alias: '/auth/login',
@@ -54,6 +56,7 @@ const router = createRouter({
         { path: 'settings', component: () => import('@/src/pages/landlord/settings.vue') },
         { path: 'settings/plan', component: () => import('@/src/components/subscription/PlanBenefitsPage.vue'), props: { role: 'landlord' } },
         { path: 'settings/:section', component: () => import('@/src/pages/landlord/settings-detail.vue') },
+        { path: 'join/:token', component: () => import('@/src/pages/landlord/join.vue') },
       ],
     },
     {
@@ -167,6 +170,7 @@ const router = createRouter({
           ],
         },
         { path: 'account', component: () => import('@/src/pages/account.vue') },
+        { path: 'join-lease', component: () => import('@/src/pages/join-lease.vue') },
         { path: 'subscription', component: () => import('@/src/components/subscription/SubscriptionPage.vue'), props: { role: 'tenant' } },
         { path: 'account/plan', component: () => import('@/src/components/subscription/PlanBenefitsPage.vue'), props: { role: 'tenant' } },
         { path: 'notifications', component: () => import('@/src/pages/notifications.vue') },

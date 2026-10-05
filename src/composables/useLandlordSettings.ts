@@ -1,14 +1,39 @@
 import { computed, reactive } from 'vue'
 import { getAuthSession } from '@/src/composables/useAuth'
+import {
+  LANDLORD_WORKSPACE_CHANGED_EVENT,
+  activeWorkspaceOwnerId,
+} from '@/src/services/landlordApiClient'
+import {
+  changeTeamRole,
+  fetchAudit,
+  fetchLandlordSettings,
+  fetchTeam,
+  inviteTeamMember,
+  removeTeamMember,
+  saveLandlordNotifications,
+  saveLandlordProfile,
+  type AuditEvent,
+  type MemberRole,
+  type TeamMember,
+} from '@/src/services/landlordWorkspaceApi'
 
-export type LandlordMemberRole = 'manager' | 'accounting' | 'viewer'
+/**
+ * 房東設定、操作紀錄與團隊成員：全部存在後端（/api/landlord/settings、/audit、/team）。
+ *
+ * 以前存在 localStorage，而且 state 只在模組載入時讀一次：換帳號登入會把前一個
+ * 帳號的設定寫進下一個帳號。現在依「帳號 + 工作區」快取，切換時重新讀取；
+ * 操作紀錄由伺服器在動作成功後寫入，這裡只讀不寫。
+ */
+
+export type LandlordMemberRole = MemberRole
 
 export interface LandlordMember {
   id: string
   email: string
   name: string
   role: LandlordMemberRole
-  status: 'active' | 'pending'
+  status: 'active' | 'pending' | 'expired'
   joinedAt: string
 }
 
@@ -19,13 +44,15 @@ export interface LandlordAuditEvent {
   title: string
   detail: string
   result: 'success' | 'warning'
+  actor: string
 }
 
 export interface LandlordSettingsState {
   displayName: string
+  email: string
+  emailVerified: boolean
   phone: string
   workspaceName: string
-  lineBound: boolean
   emailNotifications: boolean
   rentReminders: boolean
   contractReminders: boolean
@@ -33,12 +60,11 @@ export interface LandlordSettingsState {
   reminderDays: number
   members: LandlordMember[]
   audit: LandlordAuditEvent[]
-}
-
-const STORAGE_KEY = 'rentmate-landlord-settings-v1'
-
-function storageKey(): string {
-  return `${STORAGE_KEY}:${getAuthSession()?.email.trim().toLowerCase() || 'anonymous'}`
+  loaded: boolean
+  loading: boolean
+  error: string
+  /** 成員切換到別人的工作區時，設定與團隊只有擁有者能看。 */
+  ownerOnly: boolean
 }
 
 function defaultState(): LandlordSettingsState {
@@ -46,124 +72,156 @@ function defaultState(): LandlordSettingsState {
   const name = session?.nickname?.trim() || session?.email.split('@')[0] || '房東'
   return {
     displayName: name,
+    email: session?.email ?? '',
+    emailVerified: Boolean(session?.emailVerified),
     phone: '',
     workspaceName: `${name}的房東工作區`,
-    lineBound: false,
     emailNotifications: true,
     rentReminders: true,
     contractReminders: true,
     repairNotifications: true,
     reminderDays: 30,
     members: [],
-    audit: [
-      {
-        id: 'workspace-created',
-        at: new Date().toISOString(),
-        category: '帳戶',
-        title: '建立房東工作區',
-        detail: '工作區已建立並完成基本初始化。',
-        result: 'success',
-      },
-    ],
+    audit: [],
+    loaded: false,
+    loading: false,
+    error: '',
+    ownerOnly: false,
   }
 }
 
-function readState(): LandlordSettingsState {
-  const fallback = defaultState()
-  if (typeof window === 'undefined') return fallback
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(storageKey()) || '{}')
-    return {
-      ...fallback,
-      ...stored,
-      members: Array.isArray(stored.members) ? stored.members : fallback.members,
-      audit: Array.isArray(stored.audit) ? stored.audit : fallback.audit,
-    }
-  } catch {
-    return fallback
-  }
+const state = reactive<LandlordSettingsState>(defaultState())
+let loadedFor = ''
+let activeLoad: Promise<void> | null = null
+let listening = false
+
+function cacheKey(): string {
+  const session = getAuthSession()
+  return `${session?.userId ?? session?.email ?? ''}@${activeWorkspaceOwnerId() ?? 'own'}`
 }
 
-const state = reactive<LandlordSettingsState>(readState())
-
-function persist(): void {
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(storageKey(), JSON.stringify(state))
-  }
+function toMember(item: TeamMember): LandlordMember {
+  return { id: String(item.id), email: item.email, name: item.name, role: item.role, status: item.status, joinedAt: item.joined_at ?? item.invited_at }
 }
 
-function log(category: string, title: string, detail: string, result: 'success' | 'warning' = 'success') {
-  state.audit.unshift({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    at: new Date().toISOString(),
-    category,
-    title,
-    detail,
-    result,
+function toAudit(item: AuditEvent): LandlordAuditEvent {
+  return { id: String(item.id), at: item.at, category: item.category, title: item.title, detail: item.detail, result: item.result, actor: item.actor }
+}
+
+function applySettings(settings: Awaited<ReturnType<typeof fetchLandlordSettings>>): void {
+  Object.assign(state, {
+    displayName: settings.display_name,
+    email: settings.email,
+    emailVerified: settings.email_verified,
+    phone: settings.phone,
+    workspaceName: settings.workspace_name,
+    emailNotifications: settings.email_notifications,
+    rentReminders: settings.rent_reminders,
+    contractReminders: settings.contract_reminders,
+    repairNotifications: settings.repair_notifications,
+    reminderDays: settings.reminder_days,
   })
-  state.audit = state.audit.slice(0, 100)
-  persist()
+}
+
+async function load(force = false): Promise<void> {
+  const key = cacheKey()
+  if (key !== loadedFor) {
+    Object.assign(state, defaultState())
+    loadedFor = key
+  } else if (!force && (state.loaded || activeLoad)) {
+    return activeLoad ?? undefined
+  }
+  state.loading = true
+  state.error = ''
+  state.ownerOnly = Boolean(activeWorkspaceOwnerId() && activeWorkspaceOwnerId() !== getAuthSession()?.userId)
+  const request = (async () => {
+    try {
+      const [settings, audit, team] = await Promise.allSettled([fetchLandlordSettings(), fetchAudit(), fetchTeam()])
+      if (key !== loadedFor) return
+      if (settings.status === 'fulfilled') applySettings(settings.value)
+      if (audit.status === 'fulfilled') state.audit = audit.value.items.map(toAudit)
+      if (team.status === 'fulfilled') state.members = team.value.items.map(toMember)
+      const failure = [settings, audit].find((item) => item.status === 'rejected') as PromiseRejectedResult | undefined
+      if (failure && !state.ownerOnly) state.error = failure.reason instanceof Error ? failure.reason.message : '設定讀取失敗'
+      state.loaded = true
+    } finally {
+      if (key === loadedFor) state.loading = false
+      activeLoad = null
+    }
+  })()
+  activeLoad = request
+  return request
+}
+
+async function reloadAudit(): Promise<void> {
+  try {
+    state.audit = (await fetchAudit()).items.map(toAudit)
+  } catch {
+    // 操作紀錄讀不到不影響剛完成的動作
+  }
 }
 
 export function useLandlordSettings() {
+  if (!listening && typeof window !== 'undefined') {
+    listening = true
+    window.addEventListener(LANDLORD_WORKSPACE_CHANGED_EVENT, () => void load(true))
+  }
+  void load()
   const session = getAuthSession()
   const completeness = computed(() => {
-    const checks = [state.displayName, session?.email, state.phone, state.workspaceName]
+    const checks = [state.displayName, state.email, state.phone, state.workspaceName]
     return Math.round((checks.filter(Boolean).length / checks.length) * 100)
   })
 
-  function saveProfile(payload: Pick<LandlordSettingsState, 'displayName' | 'phone' | 'workspaceName'>) {
-    state.displayName = payload.displayName.trim()
-    state.phone = payload.phone.trim()
-    state.workspaceName = payload.workspaceName.trim()
-    persist()
-    log('帳戶', '更新帳號資料', '顯示名稱、聯絡手機或工作區名稱已更新。')
+  async function saveProfile(payload: { displayName: string; phone: string; workspaceName: string }): Promise<void> {
+    applySettings(await saveLandlordProfile({
+      display_name: payload.displayName.trim(),
+      phone: payload.phone.trim(),
+      workspace_name: payload.workspaceName.trim(),
+    }))
+    await reloadAudit()
   }
 
-  function saveNotifications(payload: Pick<LandlordSettingsState, 'emailNotifications' | 'rentReminders' | 'contractReminders' | 'repairNotifications' | 'reminderDays'>) {
-    Object.assign(state, payload)
-    persist()
-    log('通知', '更新通知偏好', `合約到期提醒設定為提前 ${payload.reminderDays} 天。`)
+  async function saveNotifications(payload: Pick<LandlordSettingsState, 'emailNotifications' | 'rentReminders' | 'contractReminders' | 'repairNotifications' | 'reminderDays'>): Promise<void> {
+    applySettings(await saveLandlordNotifications({
+      email_notifications: payload.emailNotifications,
+      rent_reminders: payload.rentReminders,
+      contract_reminders: payload.contractReminders,
+      repair_notifications: payload.repairNotifications,
+      reminder_days: payload.reminderDays,
+    }))
+    await reloadAudit()
   }
 
-  function inviteMember(email: string, role: LandlordMemberRole) {
-    const cleanEmail = email.trim().toLowerCase()
-    if (!cleanEmail || state.members.some((member) => member.email === cleanEmail)) return false
-    state.members.push({
-      id: `${Date.now()}`,
-      email: cleanEmail,
-      name: cleanEmail.split('@')[0] || cleanEmail,
-      role,
-      status: 'pending',
-      joinedAt: new Date().toISOString(),
-    })
-    persist()
-    log('團隊', '發送成員邀請', `已邀請 ${cleanEmail} 加入工作區。`)
-    return true
+  /** 邀請成員。回傳邀請連結（站內路徑）與對方是否已收到站內通知。 */
+  async function inviteMember(email: string, role: LandlordMemberRole): Promise<{ path: string; notified: boolean }> {
+    const result = await inviteTeamMember(email.trim().toLowerCase(), role)
+    state.members = (await fetchTeam()).items.map(toMember)
+    await reloadAudit()
+    return { path: result.path, notified: result.notified }
   }
 
-  function removeMember(id: string) {
-    const member = state.members.find((item) => item.id === id)
+  async function changeMemberRole(id: string, role: LandlordMemberRole): Promise<void> {
+    await changeTeamRole(Number(id), role)
+    state.members = (await fetchTeam()).items.map(toMember)
+    await reloadAudit()
+  }
+
+  async function removeMember(id: string): Promise<void> {
+    await removeTeamMember(Number(id))
     state.members = state.members.filter((item) => item.id !== id)
-    persist()
-    if (member) log('團隊', '移除成員', `${member.email} 已從工作區移除。`, 'warning')
-  }
-
-  function toggleLine() {
-    state.lineBound = !state.lineBound
-    persist()
-    log('通知', state.lineBound ? '完成 LINE 綁定' : '解除 LINE 綁定', state.lineBound ? 'LINE 通知已啟用。' : 'LINE 通知已停用。')
+    await reloadAudit()
   }
 
   return {
     state,
     session,
     completeness,
+    refresh: () => load(true),
     saveProfile,
     saveNotifications,
     inviteMember,
+    changeMemberRole,
     removeMember,
-    toggleLine,
-    log,
   }
 }

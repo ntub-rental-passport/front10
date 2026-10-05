@@ -64,7 +64,7 @@ class TenantLeaseScopeTest(unittest.TestCase):
         lease = profile.leases[0]
         today = date.today()
         for changes in [
-            {"status": "pending"},
+            {"status": "pending", "start_date": today + timedelta(days=1)},
             {"status": "ended"},
             {"status": "terminated"},
             {"start_date": today + timedelta(days=1)},
@@ -81,6 +81,22 @@ class TenantLeaseScopeTest(unittest.TestCase):
                 self.db.commit()
                 result = list_tenant_leases(db=self.db, current_user=self.current_user)
                 self.assertFalse(result["items"][0]["effective"])
+
+    def test_pending_lease_becomes_effective_on_start_date(self):
+        # 沒有排程會把 pending 改成 active；起租日一到就依日期視為生效
+        profile = self.db.query(LandlordTenant).filter_by(email=self.current_user.email).one()
+        profile.leases[0].status = "pending"
+        self.db.commit()
+        result = list_tenant_leases(db=self.db, current_user=self.current_user)
+        self.assertTrue(result["items"][0]["effective"])
+
+    def test_binding_overrides_email_match(self):
+        profile = self.db.query(LandlordTenant).filter_by(email=self.current_user.email).one()
+        profile.leases[0].tenant_user_id = self.other_user.id
+        self.db.commit()
+        self.assertEqual(list_tenant_leases(db=self.db, current_user=self.current_user)["items"], [])
+        rooms = sorted(item["room"] for item in list_tenant_leases(db=self.db, current_user=self.other_user)["items"])
+        self.assertEqual(rooms, ["101", "102"])
 
 
 if __name__ == "__main__":

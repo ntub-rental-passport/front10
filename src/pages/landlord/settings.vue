@@ -51,14 +51,14 @@ const categories: Array<{ key: SettingsCategory; label: string; icon: typeof Use
 
 const items = computed<SettingsItem[]>(() => [
   { key: 'account', category: 'workspace', title: '帳號資料', description: '更新名稱、聯絡手機與工作區名稱。', path: '/landlord/settings/account', icon: UserRound, badge: completeness.value === 100 ? '完整' : `${completeness.value}%`, tone: completeness.value === 100 ? 'success' : 'warning' },
-  { key: 'team', category: 'workspace', title: '團隊成員', description: '邀請夥伴並設定管理、帳務或檢視權限。', path: '/landlord/settings/team', icon: Users, badge: `${state.members.length + 1} 位` },
+  { key: 'team', category: 'workspace', title: '團隊成員', description: '邀請夥伴並設定管理、帳務或檢視權限。', path: '/landlord/settings/team', icon: Users, badge: `${state.members.filter((member) => member.status === 'active').length + 1} 位` },
   { key: 'plan', category: 'workspace', title: '方案權益與功能', description: '查看目前方案、使用額度與可用功能。', path: '/landlord/settings/plan', icon: Crown, badge: currentPlan.name, tone: 'success' },
-  { key: 'notifications', category: 'notifications', title: '通知偏好', description: '設定租金、合約與報修通知的提醒方式。', path: '/landlord/settings/notifications', icon: Bell, badge: state.lineBound ? 'LINE 已綁定' : 'LINE 未綁定', tone: state.lineBound ? 'success' : 'warning' },
+  { key: 'notifications', category: 'notifications', title: '通知偏好', description: '設定租金、合約與報修通知的提醒方式。', path: '/landlord/settings/notifications', icon: Bell, badge: state.rentReminders || state.contractReminders || state.repairNotifications ? '站內通知' : '已關閉', tone: state.rentReminders || state.contractReminders || state.repairNotifications ? 'success' : 'warning' },
   { key: 'data', category: 'data', title: '資料匯出與備份', description: '匯出房務、租客及租約資料，方便備份交接。', path: '/landlord/settings/data', icon: Download, badge: '可使用', tone: 'success' },
   { key: 'activity', category: 'data', title: '操作紀錄', description: '查看設定、租客及房務資料的重要異動。', path: '/landlord/settings/activity', icon: Activity, badge: `${state.audit.length} 筆` },
   { key: 'support', category: 'support', title: '使用說明與意見回饋', description: '查看常見操作方式，或回報使用問題。', path: '/landlord/settings/support', icon: CircleHelp },
   { key: 'legal', category: 'legal', title: '隱私權與服務條款', description: '查看資料政策、使用條款與系統版本。', path: '/landlord/settings/legal', icon: BookOpen, badge: 'v1.2.0' },
-  { key: 'security', category: 'security', title: '登入與安全', description: '檢查登入信箱、裝置狀態與資料安全。', path: '/landlord/settings/security', icon: ShieldCheck, badge: session?.emailVerified ? '正常' : '待驗證', tone: session?.emailVerified ? 'success' : 'warning' },
+  { key: 'security', category: 'security', title: '登入與安全', description: '檢查登入信箱、裝置狀態與資料安全。', path: '/landlord/settings/security', icon: ShieldCheck, badge: state.emailVerified ? '正常' : '待驗證', tone: state.emailVerified ? 'success' : 'warning' },
 ])
 
 const visibleItems = computed(() => {
@@ -72,7 +72,7 @@ const visibleItems = computed(() => {
 
 const activeLabel = computed(() => categories.find((item) => item.key === activeCategory.value)?.label)
 const rentedRooms = computed(() => rooms.value.filter((room) => room.status === 'rented').length)
-const healthIssues = computed(() => Number(!state.lineBound) + Number(completeness.value < 100))
+const healthIssues = computed(() => Number(!state.emailVerified) + Number(completeness.value < 100))
 </script>
 
 <template>
@@ -104,7 +104,7 @@ const healthIssues = computed(() => Number(!state.lineBound) + Number(completene
 
     <section class="grid overflow-hidden rounded-[1.3rem] border border-[#e2dccf] bg-white/80 sm:grid-cols-3">
       <RouterLink to="/landlord/settings/account" class="health-card"><CheckCircle2 :class="completeness === 100 ? 'text-[#5b8263]' : 'text-[#bd7b2b]'" /><span><small>帳號完整度</small><b>{{ completeness }}%</b></span><ChevronRight /></RouterLink>
-      <RouterLink to="/landlord/settings/notifications" class="health-card"><Bell :class="state.lineBound ? 'text-[#5b8263]' : 'text-[#bd7b2b]'" /><span><small>LINE 通知</small><b>{{ state.lineBound ? '已完成綁定' : '尚未綁定' }}</b></span><ChevronRight /></RouterLink>
+      <RouterLink to="/landlord/settings/notifications" class="health-card"><Bell :class="state.rentReminders ? 'text-[#5b8263]' : 'text-[#bd7b2b]'" /><span><small>自動提醒</small><b>{{ state.rentReminders || state.contractReminders ? '已開啟（站內通知）' : '已關閉' }}</b></span><ChevronRight /></RouterLink>
       <RouterLink to="/landlord/settings/security" class="health-card"><ShieldCheck class="text-[#5b8263]" /><span><small>設定健康度</small><b>{{ healthIssues ? `${healthIssues} 個項目待處理` : '狀態良好' }}</b></span><ChevronRight /></RouterLink>
     </section>
 

@@ -7,6 +7,11 @@ import {
   fetchTenants,
   type LandlordTenant,
 } from '@/src/services/landlordTenantApi'
+import { getAuthSession } from '@/src/composables/useAuth'
+import {
+  LANDLORD_WORKSPACE_CHANGED_EVENT,
+  activeWorkspaceOwnerId,
+} from '@/src/services/landlordApiClient'
 
 export type LandlordWorkspaceScope =
   | 'property'
@@ -28,26 +33,51 @@ const error = ref('')
 const lastSyncedAt = ref('')
 let activeRequest: Promise<void> | null = null
 let listenersReady = false
+// 這份快取屬於哪個帳號的哪個工作區。換帳號或切換工作區時先清空，
+// 不讓前一個帳號的租客資料殘留在畫面上（2026-09-24 稽核 A 項）。
+let loadedFor = ''
+
+function cacheKey(): string {
+  const session = getAuthSession()
+  return `${session?.userId ?? session?.email ?? ''}@${activeWorkspaceOwnerId() ?? 'own'}`
+}
+
+function resetCache(): void {
+  properties.value = []
+  tenants.value = []
+  propertyDataReady.value = false
+  tenantDataReady.value = false
+  initialized.value = false
+  lastSyncedAt.value = ''
+}
 
 function allTenantParams(): URLSearchParams {
   return new URLSearchParams({
     quick_filter: 'all',
     status: 'all',
     page: '1',
-    page_size: '100',
+    page_size: '500',
   })
 }
 
 export async function refreshLandlordWorkspace(): Promise<void> {
-  if (activeRequest) return activeRequest
+  const key = cacheKey()
+  if (activeRequest && key === loadedFor) return activeRequest
+  if (key !== loadedFor) {
+    resetCache()
+    loadedFor = key
+  }
 
   loading.value = true
   error.value = ''
-  activeRequest = (async () => {
+  const request = (async () => {
     const [propertyResult, tenantResult] = await Promise.allSettled([
       fetchProperties(),
       fetchTenants(allTenantParams()),
     ])
+
+    // 請求途中換了帳號或工作區：這批結果已經不屬於畫面上的那個人，丟掉
+    if (key !== loadedFor) return
 
     const messages: string[] = []
     if (propertyResult.status === 'fulfilled') {
@@ -68,11 +98,13 @@ export async function refreshLandlordWorkspace(): Promise<void> {
     initialized.value = true
     if (messages.length < 2) lastSyncedAt.value = new Date().toISOString()
   })().finally(() => {
-    loading.value = false
-    activeRequest = null
+    if (activeRequest === request) {
+      loading.value = false
+      activeRequest = null
+    }
   })
-
-  return activeRequest
+  activeRequest = request
+  return request
 }
 
 export function notifyLandlordWorkspaceUpdated(scope: LandlordWorkspaceScope): void {
@@ -90,6 +122,9 @@ function ensureWorkspaceListeners(): void {
   })
   window.addEventListener('storage', (event) => {
     if (event.key === STORAGE_KEY) void refreshLandlordWorkspace()
+  })
+  window.addEventListener(LANDLORD_WORKSPACE_CHANGED_EVENT, () => {
+    void refreshLandlordWorkspace()
   })
 }
 

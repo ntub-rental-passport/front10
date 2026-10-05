@@ -311,8 +311,11 @@ CREATE TABLE `landlord_leases` (
   `contract_id` VARCHAR(100) DEFAULT NULL,
   `status` ENUM('pending','active','ended','terminated') NOT NULL DEFAULT 'active',
   `moved_out_at` DATE DEFAULT NULL,
+  `tenant_user_id` INT DEFAULT NULL COMMENT '接受邀請後綁定的租客帳號',
+  `tenant_bound_at` DATETIME(6) DEFAULT NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT `fk_landlord_leases_tenant_user` FOREIGN KEY (`tenant_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_landlord_leases_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `landlord_tenants`(`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_landlord_leases_property` FOREIGN KEY (`property_id`) REFERENCES `landlord_properties`(`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_landlord_leases_room` FOREIGN KEY (`room_id`) REFERENCES `landlord_rooms`(`id`) ON DELETE RESTRICT,
@@ -423,6 +426,154 @@ CREATE TABLE `repair_ticket_photos` (
   FOREIGN KEY (`event_id`) REFERENCES `repair_ticket_events`(`id`) ON DELETE SET NULL,
   FOREIGN KEY (`uploaded_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
   INDEX `idx_repair_photos_ticket` (`ticket_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- ============ 4b. 房東工作區：合約附件、帳務、邀請、設定、團隊 ============
+
+CREATE TABLE `landlord_lease_files` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `lease_id` INT NOT NULL,
+  `stored_name` VARCHAR(64) NOT NULL COMMENT '伺服器產生的檔名（LEASE_FILE_DIR 下）',
+  `original_name` VARCHAR(255) NOT NULL,
+  `content_type` VARCHAR(100) NOT NULL,
+  `size_bytes` INT NOT NULL,
+  `uploaded_by` INT DEFAULT NULL,
+  `uploaded_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`lease_id`) REFERENCES `landlord_leases`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`uploaded_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  INDEX `idx_landlord_lease_files_lease` (`lease_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `landlord_charges` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `landlord_id` INT NOT NULL,
+  `lease_id` INT NOT NULL,
+  `kind` ENUM('rent','water','electricity','other') NOT NULL DEFAULT 'rent',
+  `title` VARCHAR(100) NOT NULL,
+  `period_start` DATE NOT NULL,
+  `period_end` DATE NOT NULL,
+  `due_date` DATE NOT NULL,
+  `amount` INT NOT NULL COMMENT '建立當下固定，改租金不回頭改舊帳',
+  `voided_at` DATETIME(6) DEFAULT NULL,
+  `void_reason` TEXT DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`landlord_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`lease_id`) REFERENCES `landlord_leases`(`id`) ON DELETE RESTRICT,
+  UNIQUE KEY `uq_landlord_charge_period` (`lease_id`, `kind`, `period_start`),
+  INDEX `idx_landlord_charges_landlord_due` (`landlord_id`, `due_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `landlord_charge_payments` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `charge_id` INT NOT NULL,
+  `amount` INT NOT NULL COMMENT '負數代表沖銷',
+  `paid_on` DATE NOT NULL,
+  `method` VARCHAR(30) NOT NULL DEFAULT 'other',
+  `note` TEXT DEFAULT NULL,
+  `recorded_by` INT DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`charge_id`) REFERENCES `landlord_charges`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`recorded_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  INDEX `idx_landlord_charge_payments_charge` (`charge_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `landlord_charge_events` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `charge_id` INT NOT NULL,
+  `kind` VARCHAR(30) NOT NULL,
+  `detail` TEXT NOT NULL,
+  `actor_user_id` INT DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`charge_id`) REFERENCES `landlord_charges`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`actor_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  INDEX `idx_landlord_charge_events_charge` (`charge_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `landlord_expenses` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `landlord_id` INT NOT NULL,
+  `title` VARCHAR(100) NOT NULL,
+  `category` VARCHAR(30) NOT NULL,
+  `amount` INT NOT NULL,
+  `spent_on` DATE NOT NULL,
+  `property_id` INT DEFAULT NULL,
+  `repair_ticket_id` INT DEFAULT NULL,
+  `note` TEXT DEFAULT NULL,
+  `recorded_by` INT DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`landlord_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`property_id`) REFERENCES `landlord_properties`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`repair_ticket_id`) REFERENCES `repair_tickets`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`recorded_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  INDEX `idx_landlord_expenses_landlord_date` (`landlord_id`, `spent_on`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `lease_invitations` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `landlord_id` INT NOT NULL,
+  `lease_id` INT NOT NULL,
+  `invited_email` VARCHAR(254) DEFAULT NULL COMMENT '指定收件人；NULL 代表接受後要房東確認',
+  `token_hash` CHAR(64) NOT NULL COMMENT '連結／QR 的 token，只存 SHA-256',
+  `code_hash` CHAR(64) NOT NULL COMMENT '手動邀請碼，只存 SHA-256',
+  `status` ENUM('pending','accepted','revoked') NOT NULL DEFAULT 'pending',
+  `expires_at` DATETIME(6) NOT NULL,
+  `accepted_by` INT DEFAULT NULL,
+  `accepted_at` DATETIME(6) DEFAULT NULL,
+  `revoked_at` DATETIME(6) DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`landlord_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`lease_id`) REFERENCES `landlord_leases`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`accepted_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  UNIQUE KEY `uq_lease_invitations_token` (`token_hash`),
+  UNIQUE KEY `uq_lease_invitations_code` (`code_hash`),
+  INDEX `idx_lease_invitations_lease` (`lease_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `landlord_settings` (
+  `landlord_id` INT NOT NULL PRIMARY KEY,
+  `phone` VARBINARY(255) DEFAULT NULL COMMENT '聯絡手機（加密）',
+  `workspace_name` VARCHAR(100) DEFAULT NULL,
+  `email_notifications` BOOLEAN NOT NULL DEFAULT TRUE,
+  `rent_reminders` BOOLEAN NOT NULL DEFAULT TRUE,
+  `contract_reminders` BOOLEAN NOT NULL DEFAULT TRUE,
+  `repair_notifications` BOOLEAN NOT NULL DEFAULT TRUE,
+  `reminder_days` INT NOT NULL DEFAULT 30,
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`landlord_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `landlord_audit_events` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `landlord_id` INT NOT NULL COMMENT '工作區擁有者',
+  `actor_user_id` INT DEFAULT NULL COMMENT '實際操作的人（可能是團隊成員）',
+  `category` VARCHAR(30) NOT NULL,
+  `title` VARCHAR(200) NOT NULL,
+  `detail` TEXT DEFAULT NULL,
+  `result` ENUM('success','warning') NOT NULL DEFAULT 'success',
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`landlord_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`actor_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  INDEX `idx_landlord_audit_events_landlord` (`landlord_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `landlord_team_members` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `owner_id` INT NOT NULL,
+  `email` VARCHAR(254) NOT NULL,
+  `role` ENUM('manager','accounting','viewer') NOT NULL DEFAULT 'viewer',
+  `status` ENUM('pending','active','revoked') NOT NULL DEFAULT 'pending',
+  `member_user_id` INT DEFAULT NULL,
+  `token_hash` CHAR(64) DEFAULT NULL,
+  `expires_at` DATETIME(6) DEFAULT NULL,
+  `invited_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `accepted_at` DATETIME(6) DEFAULT NULL,
+  `revoked_at` DATETIME(6) DEFAULT NULL,
+  FOREIGN KEY (`owner_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`member_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  UNIQUE KEY `uq_landlord_team_member_email` (`owner_id`, `email`),
+  UNIQUE KEY `uq_landlord_team_member_token` (`token_hash`),
+  INDEX `idx_landlord_team_members_member` (`member_user_id`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 

@@ -18,8 +18,10 @@ import {
   createProperty,
   createRooms,
   deleteProperty,
+  deleteRoom,
   fetchProperties,
   updateProperty,
+  updateRoom,
   type LandlordProperty,
   type PropertyRoom,
   type PropertyRoomStatus,
@@ -44,6 +46,8 @@ const editingBuildingId = ref<number | null>(null)
 const batchMode = ref(true)
 const buildingForm = ref({ name: '', address: '', city: '臺北市' })
 const roomForm = ref({ numbers: '', floor: '', area: '', rent: '' })
+const roomEditing = ref(false)
+const roomEditForm = ref<{ number: string; status: 'vacant' | 'turnover' | 'maintenance'; floor: string; area: string; rent: string }>({ number: '', status: 'vacant', floor: '', area: '', rent: '' })
 
 const allRooms = computed(() => buildings.value.flatMap((building) => building.rooms))
 const current = computed(
@@ -218,6 +222,79 @@ async function addRooms() {
     notifyLandlordWorkspaceUpdated('property')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '房間建立失敗。'
+  } finally {
+    saving.value = false
+  }
+}
+
+function roomNote(room: PropertyRoom): string {
+  if (room.status === 'rented') {
+    return room.scheduled_move_out ? `預定 ${displayDate(room.scheduled_move_out)} 退租` : '租約生效中'
+  }
+  if (room.next_tenant && room.next_lease_start) return `${displayDate(room.next_lease_start)} 起由 ${room.next_tenant} 入住`
+  if (room.needs_turnover) return '剛退租，待整理'
+  return room.status === 'maintenance' ? '維修中，暫不出租' : '尚無租客'
+}
+
+function openRoomDetail(room: PropertyRoom) {
+  roomDetail.value = room
+  roomEditing.value = false
+}
+
+function startRoomEdit() {
+  const room = roomDetail.value
+  if (!room) return
+  roomEditForm.value = {
+    number: room.number,
+    status: room.status === 'maintenance' ? 'maintenance' : room.needs_turnover ? 'turnover' : 'vacant',
+    floor: room.floor === null ? '' : String(room.floor),
+    area: room.area === null ? '' : String(room.area),
+    rent: room.expected_rent === null ? '' : String(room.expected_rent),
+  }
+  error.value = ''
+  roomEditing.value = true
+}
+
+async function saveRoom() {
+  const room = roomDetail.value
+  if (!room || !current.value || !roomEditForm.value.number.trim()) return
+  saving.value = true
+  error.value = ''
+  try {
+    const form = roomEditForm.value
+    await updateRoom(current.value.id, room.id, {
+      number: form.number.trim(),
+      status: form.status,
+      floor: form.floor === '' ? null : Number(form.floor),
+      area: form.area === '' ? null : Number(form.area),
+      expected_rent: form.rent === '' ? null : Number(form.rent),
+    })
+    roomDetail.value = null
+    success.value = `房間 ${form.number.trim()} 已更新。`
+    await loadProperties(current.value.id)
+    notifyLandlordWorkspaceUpdated('property')
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '房間更新失敗。'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removeRoom() {
+  const room = roomDetail.value
+  if (!room || !current.value) return
+  if (!window.confirm(`刪除房間 ${room.number}？有租約紀錄的房間無法刪除。`)) return
+  saving.value = true
+  error.value = ''
+  try {
+    await deleteRoom(current.value.id, room.id)
+    roomDetail.value = null
+    success.value = `房間 ${room.number} 已刪除。`
+    await loadProperties(current.value.id)
+    notifyLandlordWorkspaceUpdated('property')
+  } catch (cause) {
+    roomDetail.value = null
+    error.value = cause instanceof Error ? cause.message : '房間刪除失敗。'
   } finally {
     saving.value = false
   }
@@ -464,9 +541,7 @@ onMounted(() => loadProperties())
                   </td>
                   <td>
                     <p class="font-semibold">{{ room.tenant ?? '—' }}</p>
-                    <span class="text-xs text-[#8a918c]">{{
-                      room.status === 'rented' ? '聯絡資料已建立' : '尚無租客'
-                    }}</span>
+                    <span class="text-xs text-[#8a918c]">{{ roomNote(room) }}</span>
                   </td>
                   <td class="font-semibold">{{ money(room.rent) }}</td>
                   <td>{{ displayDate(room.lease_end) }}</td>
@@ -476,7 +551,7 @@ onMounted(() => loadProperties())
                       <button
                         class="icon-btn"
                         :aria-label="`查看 ${room.number}`"
-                        @click="roomDetail = room"
+                        @click="openRoomDetail(room)"
                       >
                         <Eye />
                       </button>
@@ -710,20 +785,52 @@ onMounted(() => loadProperties())
             </div>
             <button class="icon-btn" aria-label="關閉" @click="roomDetail = null"><X /></button>
           </header>
-          <dl class="detail-list">
+          <dl v-if="!roomEditing" class="detail-list">
             <dt>狀態</dt>
-            <dd>{{ statusMeta[roomDetail.status].label }}</dd>
+            <dd>{{ statusMeta[roomDetail.status].label }}{{ roomDetail.needs_turnover ? '（待整理）' : '' }}</dd>
             <dt>租客</dt>
             <dd>{{ roomDetail.tenant ?? '尚無租客' }}</dd>
             <dt>預計／目前月租</dt>
             <dd>{{ money(roomDetail.rent) }}</dd>
             <dt>合約到期</dt>
             <dd>{{ displayDate(roomDetail.lease_end) }}</dd>
+            <template v-if="roomDetail.scheduled_move_out">
+              <dt>預定退租</dt>
+              <dd>{{ displayDate(roomDetail.scheduled_move_out) }}</dd>
+            </template>
+            <template v-if="roomDetail.next_tenant">
+              <dt>下一位租客</dt>
+              <dd>{{ roomDetail.next_tenant }}（{{ displayDate(roomDetail.next_lease_start) }} 起）</dd>
+            </template>
             <dt>樓層</dt>
             <dd>{{ roomDetail.floor ?? '—' }}</dd>
             <dt>坪數</dt>
             <dd>{{ roomDetail.area ? `${roomDetail.area} 坪` : '—' }}</dd>
           </dl>
+          <form v-else class="room-edit" @submit.prevent="saveRoom">
+            <label>房號<input v-model="roomEditForm.number" required maxlength="50" /></label>
+            <label>狀態
+              <select v-model="roomEditForm.status" :disabled="roomDetail.status === 'rented'">
+                <option value="vacant">空房，可出租</option>
+                <option value="turnover">待整理（剛退租）</option>
+                <option value="maintenance">維修中，暫不出租</option>
+              </select>
+              <small v-if="roomDetail.status === 'rented'">有生效中的租約，狀態固定為已出租。</small>
+            </label>
+            <label>樓層<input v-model="roomEditForm.floor" type="number" /></label>
+            <label>坪數<input v-model="roomEditForm.area" type="number" min="0" step="0.1" /></label>
+            <label>預計月租<input v-model="roomEditForm.rent" type="number" min="0" /></label>
+          </form>
+          <footer class="room-actions">
+            <template v-if="!roomEditing">
+              <button class="btn-danger" :disabled="saving || roomDetail.status === 'rented'" @click="removeRoom"><Trash2 class="h-4 w-4" />刪除房間</button>
+              <button class="btn-primary" @click="startRoomEdit"><Pencil class="h-4 w-4" />編輯房間</button>
+            </template>
+            <template v-else>
+              <button class="btn-secondary" @click="roomEditing = false">取消</button>
+              <button class="btn-primary" :disabled="saving" @click="saveRoom">{{ saving ? '儲存中…' : '儲存' }}</button>
+            </template>
+          </footer>
         </section>
       </div>
     </Teleport>
@@ -835,4 +942,9 @@ td {
 .detail-list dd {
   @apply font-bold;
 }
+.room-edit { @apply grid gap-3 p-5 sm:grid-cols-2; }
+.room-edit label { @apply grid gap-1.5 text-sm font-bold; }
+.room-edit input, .room-edit select { @apply w-full rounded-xl border border-[#ded7ca] bg-white px-3 py-2.5 font-normal outline-none focus:ring-4 focus:ring-[#dcebdd]; }
+.room-edit small { @apply text-xs font-normal text-[#7a827c]; }
+.room-actions { @apply flex justify-end gap-2 border-t border-[#e4ded2] p-4; }
 </style>

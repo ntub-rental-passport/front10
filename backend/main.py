@@ -12,9 +12,11 @@ from routers import admin, auth, contract, garbage, landlord_properties, landlor
 from routers import notes, households, scheduled_notifications, platform_settings_api
 from routers import content_api, dashboard, repairs, inbox_api, admin_notifications_api, ai_usage_api, admin_user_records_api
 from routers import admin_repairs_api, subsidy_reminders
+from routers import landlord_finance, landlord_contracts, landlord_workspace_api, lease_invitations
 from notifications.garbage_service import dispatch_due
 from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
 from admin import monitoring_service
+from notifications import landlord_reminders
 
 # ---------------------------------------------------------------
 # 應用程式的 log
@@ -46,6 +48,7 @@ if engine is not None:
 @asynccontextmanager
 async def lifespan(app):
     async def reminders_loop():
+        landlord_tick = 0
         # 兩個排程器共用同一個迴圈，但各自 try/except ——
         # 包在一起的話，垃圾車提醒炸掉會連帶讓後台排程整輪被跳過，
         # 而它們之間沒有任何關係。
@@ -58,6 +61,13 @@ async def lifespan(app):
                 await asyncio.to_thread(dispatch_scheduled_notifications)
             except Exception:
                 logging.getLogger(__name__).exception('Scheduled notification dispatcher failed')
+            # 房東的收租／合約到期自動提醒：每小時一輪就夠（每筆每個階段只送一次）
+            if landlord_tick % 180 == 0:
+                try:
+                    await asyncio.to_thread(landlord_reminders.dispatch_due)
+                except Exception:
+                    logging.getLogger(__name__).exception('Landlord reminder dispatcher failed')
+            landlord_tick += 1
             await asyncio.sleep(20)
     async def monitor_loop():
         # 後台監控。獨立一個任務、不跟上面的派送共用迴圈：探測最久要等
@@ -113,6 +123,11 @@ app.include_router(contract.router)
 app.include_router(auth.router)
 app.include_router(landlord_properties.router)
 app.include_router(landlord_tenants.router)
+app.include_router(landlord_finance.router)
+app.include_router(landlord_contracts.router)
+app.include_router(landlord_workspace_api.router)
+app.include_router(lease_invitations.landlord_router)
+app.include_router(lease_invitations.public_router)
 app.include_router(tenant_leases.router)
 app.include_router(admin.router)
 app.include_router(garbage.router)
