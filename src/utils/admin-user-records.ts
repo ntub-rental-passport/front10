@@ -43,7 +43,7 @@ export function realDepositView(record: RealDepositRecord): UserDepositView {
     address: record.address,
     // 跟 realAccountToRow 同一套 id，之後要連到對方的詳情頁可以直接用
     landlordUserId: `real-${record.landlordId}`,
-    tenantUserId: record.tenantId === null ? '' : `real-${record.tenantId}`,
+    tenantUserId: record.tenantId === null ? null : `real-${record.tenantId}`,
     monthlyRent: record.monthlyRent,
     landlordDeclared: record.landlordDeclared,
     tenantDeclared: record.tenantDeclared,

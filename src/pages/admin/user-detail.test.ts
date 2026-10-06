@@ -1,14 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp } from 'vue'
+import { createSSRApp, ref } from 'vue'
 import { defineComponent, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import { joinUserDirectory, realAccountToRow, type UserDirectoryRow } from '@/src/utils/admin-user-directory'
+import { joinUserCases, joinUserDirectory, realAccountToRow, type UserDirectoryRow } from '@/src/utils/admin-user-directory'
 import { seedAdminUsers } from '@/src/mocks/admin/users'
 import { seedSubscriptions } from '@/src/mocks/admin/subscription'
 import { seedAccountUsage } from '@/src/mocks/admin/usage'
 import UserDetail from './user-detail.vue'
 
-const state = vi.hoisted(() => ({ row: null as UserDirectoryRow | null }))
+const state = vi.hoisted(() => ({
+  row: null as UserDirectoryRow | null,
+  ticketsState: 'ready' as 'ready' | 'error',
+}))
+vi.mock('@/src/composables/admin/useAdminMaintenance', () => ({
+  useAdminMaintenance: () => ({ ticketViews: ref([]), loadState: ref(state.ticketsState), reload: vi.fn() }),
+}))
 vi.mock('@/src/composables/admin/useAdminDirectory', () => ({
   useAdminDirectory: () => ({ rowOf: () => state.row, setRealAccountStatus: vi.fn() }),
 }))
@@ -40,6 +46,7 @@ vi.mock('@/components/ui/select/index', () => {
 })
 
 beforeEach(() => {
+  state.ticketsState = 'ready'
   vi.useFakeTimers()
   vi.setSystemTime(new Date(2026, 9, 6, 12))
 })
@@ -185,5 +192,38 @@ describe('帳號計數用量', () => {
     expect(html).toContain('空間人數 4 / 3 人（含付費者）')
     expect(html.match(/超出上限/g)).toHaveLength(2)
     expect(html).toContain('超出方案上限')
+  })
+})
+
+
+describe('真實帳號的報修工單卡', () => {
+  const realRow = () => realAccountToRow({
+    id: 7, email: 'real@example.com', displayName: '真實租客', roles: ['user'],
+    status: 'active', emailVerified: true, createdAt: null, lastLoginAt: null,
+  })
+
+  it('顯示關聯工單及待處理數，並可導向工單頁', async () => {
+    state.row = joinUserCases(realRow(), [], [{
+      id: 'R-real-7', address: '真實報修地址', tenantUserId: 'real-7', landlordUserId: 'real-3',
+      category: 'leak', description: '漏水', status: 'submitted', createdAt: '2026-10-01',
+      notifiedAt: null, firstResponseAt: null, completedAt: null, timeline: [], adminNote: '',
+      interventionRequested: false, manuallyQueued: false, overdue: true,
+    }])
+    const html = await renderToString(createSSRApp(UserDetail))
+    expect(html).toContain('R-real-7')
+    expect(html).toContain('真實報修地址')
+    expect(html).toContain('1 件逾期')
+    expect(html).toContain('在工單頁查看全部')
+    expect(html).not.toContain('沒有相關的報修工單。')
+  })
+
+  it('讀不到時呈現提示，不聲稱沒有相關工單或待處理數為零', async () => {
+    state.row = realRow()
+    state.ticketsState = 'error'
+    const html = await renderToString(createSSRApp(UserDetail))
+    expect(html).toContain('讀不到伺服器上的報修工單')
+    expect(html).toContain('讀不到工單資料')
+    expect(html).not.toContain('沒有相關的報修工單。')
+    expect(html).not.toContain('0 件')
   })
 })

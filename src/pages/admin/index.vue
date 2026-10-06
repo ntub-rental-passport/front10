@@ -50,11 +50,11 @@ void loadAiUsage()
 const { events } = useAdminAudit()
 const { settings } = useAdminSettings()
 const { tickets, ticketViews, stats: maintenanceStats } = useAdminMaintenance()
-const { records: depositRecords, stats: depositStats } = useAdminDeposits()
+const { records: depositRecords, stats: depositStats, loadState: depositsState, reload: reloadDeposits } = useAdminDeposits()
 
 // ── 真實資料：系統健康條、最近登入 ──────────────────────────────────
 //
-// 這兩個是本頁唯一打真實後端的區塊（其餘都是展示資料，見下方個別區塊的註解）。
+// 押金統計另合併真實與展示來源，報修工單也已讀後端；見各區塊的來源註解。
 const { rows: directoryRows, realAccounts, realAccountsLoading, realAccountsError } = useAdminDirectory()
 const { dbPool, requests, services, serverNow } = useSystemHealth()
 
@@ -119,7 +119,7 @@ const suspendedNote = computed(() => {
 })
 
 const depositSegments = computed(() =>
-  depositMatchDistribution(depositRecords.value).map((entry) => ({
+  (depositStats.value === null ? [] : depositMatchDistribution(depositRecords.value)).map((entry) => ({
     label: depositMatchLabels[entry.match],
     value: entry.value,
     // 只有「不符」用警示色，其餘留在藍紫色系
@@ -183,7 +183,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
     <!--
       ⚠️ 資料標記約定見 src/utils/admin-data-marking.md。
       一句話：標的是「真實」不是「展示」—— 真實區塊加 data-real="true"，
-      沒標的一律視為展示資料。
+      未標的區塊包含展示與混合來源，押金統計的來源見下方說明。
     -->
 
     <!--
@@ -193,9 +193,9 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       頁面標題已經移到頂部列（見 src/utils/admin-page-title.ts），所以這一列
       現在是內容區的第一個東西。
 
-      展示資料（無 data-real）：四個數字都是 src/mocks 種子資料算出來的。
+      押金不符合併真實與展示押金，屬混合來源，不加 data-real。
       「今日待處理」與頂部列待辦抽屜的徽章同一個來源（useAdminQueue），
-      不會對不起來。押金不符沒有 trend —— 這批種子資料沒有歷史快照可以比，
+      不會對不起來。押金不符沒有 trend —— 押金資料沒有歷史快照可以比，
       寧可留白也不假造一個趨勢。
     -->
     <div>
@@ -256,7 +256,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           <InlineStat
             :icon="AlertTriangle"
             label="押金不符"
-            :value="depositStats.mismatchedCount"
+            :value="depositStats?.mismatchedCount ?? (depositsState === 'error' ? '讀不到真實資料' : '讀取中')"
             to="/admin/users?alert=deposit-mismatch"
           />
         </div>
@@ -307,7 +307,9 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         :segments="roleSegments"
         :note="suspendedNote"
       />
+      <!-- 押金對帳是混合來源；真實資料讀不到時不拿展示數字充當總計。 -->
       <DonutStatCard
+        v-if="depositStats"
         title="押金對帳結果"
         to="/admin/users?alert=deposit-mismatch"
         :center-value="depositRecords.length"
@@ -315,6 +317,14 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         :segments="depositSegments"
         :note="`房東聲明總額 NT$${depositStats.declaredTotal.toLocaleString('zh-TW')}`"
       />
+      <Card v-else class="rounded-3xl">
+        <CardHeader class="p-5 pb-2">
+          <CardTitle class="text-sm font-medium">押金對帳結果</CardTitle>
+        </CardHeader>
+        <CardContent class="px-5 pb-5">
+          <AdminLoadNotice :state="depositsState" what="真實押金資料" @retry="reloadDeposits" />
+        </CardContent>
+      </Card>
     </section>
 
     <!-- 報修案件流動 -->

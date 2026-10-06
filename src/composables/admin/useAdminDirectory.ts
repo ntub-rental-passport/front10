@@ -1,8 +1,8 @@
 import { computed, ref, watch } from 'vue'
 import { useNow } from '../useNow'
 import { adminUsersCollection } from './useAdminUsers'
-import { adminMaintenanceCollection } from './useAdminMaintenance'
-import { adminDepositCollection } from './useAdminDeposits'
+import { useAdminMaintenance } from './useAdminMaintenance'
+import { useAdminDeposits } from './useAdminDeposits'
 import { adminSubscriptionCollection } from './useAdminSubscription'
 import { adminSettings } from './useAdminSettings'
 import {
@@ -17,7 +17,7 @@ import {
   isFilterActive,
   joinUserDirectory,
   planDistribution,
-  realAccountToRow,
+  joinRealUserDirectory,
   type UserDirectoryFilter,
   type UserDirectoryRow,
 } from '@/src/utils/admin-user-directory'
@@ -37,9 +37,8 @@ const demoUsage = seedAccountUsage(usageUsers, seedSubscriptions(usageUsers), ne
  * 這裡接的是兩種性質完全不同的資料：
  *
  *   真實帳號  資料庫裡真的存在的人。停用會讓對方立刻登不進來。
- *             沒有訂閱／工單，那些關聯資料只存在於展示資料集。押金對帳與
- *             點交存證由詳情頁另外向後端讀（adminUserRecordsApi.ts），列表的
- *             「押金不符」警示還不含真實帳號。
+ *             列表的押金與工單接全站 API；詳情頁的押金對帳與
+ *             點交存證仍另外向後端讀（adminUserRecordsApi.ts）。
  *   展示資料  為了呈現各模組而生成的假資料，彼此以固定 id 互相指涉。
  *
  * 兩者併在同一張表裡。畫面上原本會標出每一列是哪一種；網站目前不對外開放，
@@ -51,8 +50,6 @@ const demoUsage = seedAccountUsage(usageUsers, seedSubscriptions(usageUsers), ne
  * 回得到原本的篩選結果，也不必重打一次 API。
  */
 const filter = ref<UserDirectoryFilter>({ ...emptyUserDirectoryFilter })
-
-const realRows = ref<UserDirectoryRow[]>([])
 
 /**
  * 後端回傳的原始帳號。
@@ -76,12 +73,10 @@ async function loadRealAccounts(): Promise<void> {
   if (accounts === null) {
     // 讀不到就誠實說讀不到，不要用展示資料魚目混珠 ——
     // 管理員會以為畫面上這些就是全部的真實帳號。
-    realRows.value = []
     realAccounts.value = []
     realAccountsError.value =
       '讀不到帳號資料。請確認伺服器已啟動，且目前登入的是管理員帳號。'
   } else {
-    realRows.value = accounts.map(realAccountToRow)
     realAccounts.value = accounts
   }
 
@@ -91,6 +86,9 @@ async function loadRealAccounts(): Promise<void> {
 
 export function useAdminDirectory() {
   const now = useNow()
+  const { realRecords: realDeposits, demoRecords: demoDeposits, loadState: depositsState, reload: reloadDeposits } = useAdminDeposits()
+  const { ticketViews: realTickets, loadState: ticketsState, reload: reloadTickets } = useAdminMaintenance()
+  const realRows = computed(() => joinRealUserDirectory(realAccounts.value, realDeposits.value, realTickets.value))
   // 第一次使用時才打 API；之後從詳情頁返回不重打
   if (!loadedOnce) {
     loadedOnce = true
@@ -101,8 +99,9 @@ export function useAdminDirectory() {
     joinUserDirectory(
       {
         users: adminUsersCollection.value,
-        tickets: adminMaintenanceCollection.value,
-        deposits: adminDepositCollection.value,
+        // 展示工單來源已移除；真實工單只接到真實帳號。
+        tickets: [],
+        deposits: demoDeposits.value,
         subscriptions: adminSubscriptionCollection.value,
         usageByUserId: demoUsage,
       },
@@ -154,9 +153,6 @@ export function useAdminDirectory() {
       throw new Error('這個帳號無法停用。')
     }
     const updated = await updateAccountStatus(row.realAccountId, status, reason)
-    realRows.value = realRows.value.map((item) =>
-      item.realAccountId === updated.id ? realAccountToRow(updated) : item,
-    )
     // 原始帳號也要換掉，否則「停用中」那格 KPI 不會跟著動
     realAccounts.value = realAccounts.value.map((item) =>
       item.id === updated.id ? updated : item,
@@ -174,6 +170,10 @@ export function useAdminDirectory() {
     planSegments,
     adminTotal,
     realAccounts,
+    depositsState,
+    ticketsState,
+    reloadDeposits,
+    reloadTickets,
     realAccountsLoading,
     realAccountsError,
     reloadRealAccounts: loadRealAccounts,

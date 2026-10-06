@@ -95,6 +95,8 @@ const {
   planRole,
   adminTotal,
   realAccounts,
+  depositsState,
+  ticketsState,
   realAccountsLoading,
   realAccountsError,
   reloadRealAccounts,
@@ -203,6 +205,9 @@ async function toggleStatus(row: UserDirectoryRow): Promise<void> {
 }
 
 function depositLabel(row: UserDirectoryRow): string {
+  if (row.realAccountId !== undefined && depositsState.value !== 'ready') {
+    return depositsState.value === 'error' ? '讀不到押金資料' : '讀取中'
+  }
   if (row.deposits.length === 0) return '—'
   if (row.mismatchedDepositCount > 0) return `${row.mismatchedDepositCount} 筆不符`
   const pending = row.deposits.filter((item) => item.match === 'pending').length
@@ -697,7 +702,10 @@ function displayName(row: UserDirectoryRow): string {
                   class="whitespace-nowrap"
                   :class="row.overdueTicketCount > 0 ? 'font-semibold text-destructive' : ''"
                 >
-                  <span v-if="row.openTicketCount === 0" class="text-muted-foreground">—</span>
+                  <span v-if="row.realAccountId !== undefined && ticketsState !== 'ready'" class="text-muted-foreground">
+                    {{ ticketsState === 'error' ? '讀不到工單資料' : '讀取中' }}
+                  </span>
+                  <span v-else-if="row.openTicketCount === 0" class="text-muted-foreground">—</span>
                   <span v-else>
                     {{ row.openTicketCount }} 件
                     <template v-if="row.overdueTicketCount > 0">
