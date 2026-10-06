@@ -46,7 +46,6 @@ function user(id: string, registeredAt: string, over: Partial<AdminUser> = {}): 
     email: `${id}@example.com`,
     nickname: null,
     role: 'user',
-    adminRole: null,
     status: 'active',
     lastLoginAt: null,
     emailVerified: true,

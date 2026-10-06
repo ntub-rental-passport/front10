@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  adminRoleCounts,
+  adminCount,
   emptyUserDirectoryFilter,
   filterUserDirectory,
   isFilterActive,
@@ -26,7 +26,6 @@ function user(id: string, over: Partial<AdminUser> = {}): AdminUser {
     email: `${id}@example.com`,
     nickname: null,
     role: 'user',
-    adminRole: null,
     status: 'active',
     emailVerified: true,
     registeredAt: '2026-01-01T00:00:00.000Z',
@@ -393,13 +392,17 @@ describe('planDistribution', () => {
   })
 })
 
-describe('adminRoleCounts', () => {
+describe('adminCount', () => {
+  it('空名冊回傳 0', () => {
+    expect(adminCount([])).toBe(0)
+  })
+
   it('只計管理員，租客與房東不算', () => {
     const rows = joinUserDirectory(
       sources({
         users: [
-          user('a', { role: 'admin', adminRole: 'super' }),
-          user('b', { role: 'admin', adminRole: 'admin' }),
+          user('a', { role: 'admin' }),
+          user('b', { role: 'admin' }),
           user('c', { role: 'landlord' }),
           user('d'),
         ],
@@ -407,20 +410,20 @@ describe('adminRoleCounts', () => {
       EXPIRING_SOON_DAYS,
     )
 
-    expect(adminRoleCounts(rows)).toEqual({ super: 1, admin: 1 })
+    expect(adminCount(rows)).toBe(2)
   })
 
-  it('adminRole 為 null 的管理員視為超級管理員', () => {
+  it('只有一位管理員時回傳 1', () => {
     const rows = joinUserDirectory(
-      sources({ users: [user('a', { role: 'admin', adminRole: null })] }),
+      sources({ users: [user('a', { role: 'admin' })] }),
       EXPIRING_SOON_DAYS,
     )
-    expect(adminRoleCounts(rows)).toEqual({ super: 1, admin: 0 })
+    expect(adminCount(rows)).toBe(1)
   })
 
-  it('沒有管理員時兩者皆為 0', () => {
+  it('沒有管理員時回傳 0', () => {
     const rows = joinUserDirectory(sources({ users: [user('a')] }), EXPIRING_SOON_DAYS)
-    expect(adminRoleCounts(rows)).toEqual({ super: 0, admin: 0 })
+    expect(adminCount(rows)).toBe(0)
   })
 })
 
@@ -451,17 +454,15 @@ describe('realAccountToRow', () => {
     lastLoginAt: '2026-09-13T00:00:00.000Z',
   }
 
-  it('帶 admin 角色的就是超級管理員', () => {
+  it('帶 admin 角色的就是管理員', () => {
     // 後台刻意不做「網頁上新增管理員」，資料庫裡帶 admin 的人
     // 都是由能登入伺服器的人用 manage_admin.py 授予的
     const row = realAccountToRow({ ...base, roles: ['tenant', 'admin'] })
     expect(row.user.role).toBe('admin')
-    expect(row.user.adminRole).toBe('super')
   })
 
   it('房東與租客不是管理員', () => {
     expect(realAccountToRow({ ...base, roles: ['landlord'] }).user.role).toBe('landlord')
-    expect(realAccountToRow({ ...base, roles: ['landlord'] }).user.adminRole).toBeNull()
     expect(realAccountToRow({ ...base, roles: ['tenant'] }).user.role).toBe('user')
   })
 

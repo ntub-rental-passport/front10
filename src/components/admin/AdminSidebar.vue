@@ -6,8 +6,7 @@ import { ShieldCheck } from 'lucide-vue-next'
 import { navIcon } from './nav-icons'
 import ThemeToggle from './ThemeToggle.vue'
 import { useNow } from '@/src/composables/useNow'
-import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
-import { adminRoleLabels } from '@/src/utils/admin-rbac'
+import { adminNavGroups } from '@/src/utils/admin-rbac'
 import { formatDateTime } from '@/src/utils/admin-format'
 
 /**
@@ -22,8 +21,7 @@ import { formatDateTime } from '@/src/utils/admin-format'
  *
  * ## 分組標題只有一項時不顯示
  *
- * RBAC 會依角色過濾：一般管理員的「系統」組只剩「系統監控」一項。一條分組
- * 標題底下只掛一個項目，看起來像程式出錯，所以那種情況直接平鋪。
+ * 分組標題底下只掛一個項目，看起來像程式出錯，所以那種情況直接平鋪。
  *
  * ## 底部為什麼沒有登出
  *
@@ -31,7 +29,6 @@ import { formatDateTime } from '@/src/utils/admin-format'
  * 東西（例如一個是登出、一個是切換帳號）。一個出口就好。
  */
 const route = useRoute()
-const { visibleNavGroups, currentAdminRole } = useAdminRbac()
 const now = useNow()
 
 const clock = computed(() => formatDateTime(now.value.toISOString()))
@@ -64,7 +61,7 @@ function isActive(path: string): boolean {
     </RouterLink>
 
     <nav class="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-      <div v-for="group in visibleNavGroups" :key="group.label" class="space-y-1">
+      <div v-for="group in adminNavGroups" :key="group.label" class="space-y-1">
         <!-- 只剩一項時不畫分組標題，見檔頭說明 -->
         <p
           v-if="group.items.length > 1"
@@ -95,7 +92,7 @@ function isActive(path: string): boolean {
     >
       <div class="min-w-0">
         <p class="truncate font-medium text-sidebar-surface-foreground/70">
-          {{ adminRoleLabels[currentAdminRole] }}
+          管理員
         </p>
         <!-- 時間到整分才跳，不是從載入起算每 60 秒（見 clock-tick.ts） -->
         <p class="mt-0.5 tabular-nums text-sidebar-surface-foreground/55">{{ clock }}</p>

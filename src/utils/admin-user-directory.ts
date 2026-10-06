@@ -5,7 +5,7 @@
  * 這個檔案負責把散在各 collection 的資料接成一列一列的使用者，以及套用列表的篩選條件。
  */
 
-import type { AdminRole, AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admin/users'
+import type { AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admin/users'
 import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import type { PlanId, Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
@@ -130,9 +130,7 @@ export interface RealAccountInput {
  * 呈現各模組而生成的，彼此以固定 id 互相指涉。所以這裡一律給空值，
  * 讓畫面顯示「—」，而不是編造數字。
  *
- * adminRole 一律是 'super'：後台沒有、也刻意不做「網頁上新增管理員」的
- * 功能，管理員只能由能登入伺服器的人用 manage_admin.py 授予。
- * 所以資料庫裡帶 admin 角色的人，就是最高權限的那一群。
+ * 管理員只能由能登入伺服器的人用 manage_admin.py 授予，後台不提供新增管理員。
  */
 export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
   const isAdmin = account.roles.includes('admin')
@@ -150,7 +148,6 @@ export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
       email: account.email,
       nickname: account.displayName,
       role,
-      adminRole: isAdmin ? 'super' : null,
       status: account.status === 'suspended' ? 'suspended' : 'active',
       emailVerified: account.emailVerified,
       registeredAt: account.createdAt ?? '',
@@ -330,14 +327,8 @@ export function planDistribution(
   return segments
 }
 
-/** 管理員權限角色人數。adminRole 為 null 時視為超級管理員，與詳情頁的預設值一致。 */
-export function adminRoleCounts(rows: UserDirectoryRow[]): Record<AdminRole, number> {
-  const counts: Record<AdminRole, number> = { super: 0, admin: 0 }
-  for (const row of rows) {
-    if (row.user.role !== 'admin') continue
-    counts[row.user.adminRole ?? 'super'] += 1
-  }
-  return counts
+export function adminCount(rows: UserDirectoryRow[]): number {
+  return rows.filter((row) => row.user.role === 'admin').length
 }
 
 /** 五軸皆為 AND 疊加 */

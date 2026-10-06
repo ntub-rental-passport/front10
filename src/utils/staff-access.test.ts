@@ -8,7 +8,6 @@ function make(overrides: Partial<AdminUser> = {}): AdminUser {
     email: 'admin@rentmate.tw',
     nickname: '系統管理員',
     role: 'admin',
-    adminRole: 'super',
     status: 'active',
     emailVerified: true,
     registeredAt: '2026-01-01T00:00:00.000Z',
@@ -21,7 +20,7 @@ describe('resolveStaffAccess', () => {
   it('啟用中的管理員帳號可以通過', () => {
     const result = resolveStaffAccess([make()], 'admin@rentmate.tw')
     expect(result.reason).toBeNull()
-    expect(result.user?.adminRole).toBe('super')
+    expect(result.user?.role).toBe('admin')
   })
 
   it('大小寫與前後空白不影響比對', () => {
@@ -38,7 +37,7 @@ describe('resolveStaffAccess', () => {
   })
 
   it('租客或房東帳號不能從內部入口登入', () => {
-    const tenant = make({ email: 'amy@example.com', role: 'user', adminRole: null })
+    const tenant = make({ email: 'amy@example.com', role: 'user' })
     expect(resolveStaffAccess([tenant], 'amy@example.com')).toEqual({
       user: null,
       reason: 'not-staff',
