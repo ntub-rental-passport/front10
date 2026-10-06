@@ -26,10 +26,13 @@ import { dropDemoDuplicates } from '@/src/utils/admin-user-list'
 import { seedAdminUsers } from '@/src/mocks/admin/users'
 import { seedSubscriptions } from '@/src/mocks/admin/subscription'
 import { seedAccountUsage } from '@/src/mocks/admin/usage'
+import { isAdminDemoEnabled } from '@/src/utils/admin-demo'
 
 // 用量不跟著展示帳號的停用、角色或方案操作重算，才能監控異動後是否超額。
-const usageUsers = seedAdminUsers()
-const demoUsage = seedAccountUsage(usageUsers, seedSubscriptions(usageUsers), new Date())
+const demoUsage = isAdminDemoEnabled() ? (() => {
+  const usageUsers = seedAdminUsers()
+  return seedAccountUsage(usageUsers, seedSubscriptions(usageUsers), new Date())
+})() : {}
 
 /**
  * 使用者管理的資料來源。
@@ -41,8 +44,8 @@ const demoUsage = seedAccountUsage(usageUsers, seedSubscriptions(usageUsers), ne
  *             點交存證仍另外向後端讀（adminUserRecordsApi.ts）。
  *   展示資料  為了呈現各模組而生成的假資料，彼此以固定 id 互相指涉。
  *
- * 兩者併在同一張表裡。畫面上原本會標出每一列是哪一種；網站目前不對外開放，
- * 2026-09-28 決定不再標示（見 src/utils/admin-data-marking.md）。
+ * 本地開發時兩者併在同一張表裡，正式站只有真實帳號。
+ * 畫面不另外標示展示資料（見 src/utils/admin-data-marking.md）。
  * 列表頁的「停用」只給真實帳號，所以按得到的停用一定會生效。
  * 這件事靠 UserDirectoryRow.realAccountId 表達（有值就是真的）。
  *

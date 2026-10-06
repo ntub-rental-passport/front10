@@ -1,4 +1,5 @@
 import { ref, watch, type Ref } from 'vue'
+import { isAdminDemoEnabled } from '@/src/utils/admin-demo'
 
 const STORAGE_PREFIX = 'rentmate-admin:'
 
@@ -32,11 +33,14 @@ function writeJson(key: string, value: unknown): void {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
-export function createAdminCollection<T>(
+/** 展示 collection 一律是陣列，正式站不用種子或瀏覽器快取就能回傳空值。 */
+export function createAdminCollection<T extends unknown[]>(
   name: string,
   seed: () => T,
   migrate?: (raw: T) => T,
 ): Ref<T> {
+  if (!isAdminDemoEnabled()) return ref([]) as Ref<T>
+
   const existing = registry.get(name)
   if (existing) return existing.target as Ref<T>
 
@@ -75,6 +79,8 @@ export function createAdminCollection<T>(
 }
 
 export function resetAdminData(): void {
+  if (!isAdminDemoEnabled()) return
+
   for (const entry of registry.values()) {
     entry.target.value = entry.seed()
   }
@@ -88,6 +94,15 @@ export function resetAdminData(): void {
     if (key && key.startsWith(STORAGE_PREFIX) && !registeredKeys.has(key)) {
       window.localStorage.removeItem(key)
     }
+  }
+}
+
+/** 舊版曾在正式站留下展示資料；只清後台前綴，保留登入與其他功能的資料。 */
+export function clearLegacyAdminData(): void {
+  if (isAdminDemoEnabled() || !canUseStorage()) return
+  for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+    const key = window.localStorage.key(i)
+    if (key?.startsWith(STORAGE_PREFIX)) window.localStorage.removeItem(key)
   }
 }
 

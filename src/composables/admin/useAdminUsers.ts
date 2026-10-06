@@ -8,6 +8,7 @@ import {
   type AdminUserStatus,
 } from '@/src/mocks/admin-seed'
 import { ADMIN_DATASET_VERSION } from '@/src/utils/admin-collection-migrate'
+import { isAdminDemoEnabled } from '@/src/utils/admin-demo'
 
 export const adminUsersCollection = createAdminCollection<AdminUser[]>(
   `users-${ADMIN_DATASET_VERSION}`,
@@ -23,10 +24,11 @@ export const adminRoleLabels: Record<AdminUserRole, string> = {
 }
 
 /**
- * 登入成功時蓋上時間戳。總覽頁的「近期活躍」就是數這個欄位，
- * 沒有這一步的話那個數字永遠只會是 seed 的靜態值。
+ * 本地登入成功時更新展示帳號，讓疊加的近期活躍數跟著改變。
+ * 真實帳號的登入時間由後端記錄，正式站不寫展示資料。
  */
 export function recordLogin(email: string): void {
+  if (!isAdminDemoEnabled()) return
   const target = email.trim().toLowerCase()
   const user = adminUsersCollection.value.find((item) => item.email.toLowerCase() === target)
   if (!user) return

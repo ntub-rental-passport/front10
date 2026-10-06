@@ -23,10 +23,9 @@ import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
  * 節流）抽屜就會留在畫面上且整頁捲不動。這裡的正確性不依賴動畫完成——
  * open 是 false 時面板就已經在畫面外且 aria-hidden，動畫純粹是裝飾。
  *
- * ## 資料是假的
+ * ## 資料來源
  *
- * 佇列內容全部是展示資料（見 useAdminQueue 的說明），所以這個元件內沒有
- * data-real 標記。畫面上刻意不寫「展示」字樣。
+ * 工單與額度告急都來自後端，與總覽共用 useAdminQueue 的聚合結果。
  */
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()

@@ -49,6 +49,7 @@ export function expiringPreview(
   days: number,
   now: Date = new Date(),
 ): ImpactPreview {
+  if (subscriptions.length === 0) return { count: 0, text: '目前沒有訂閱資料' }
   const count = subscriptions.filter((subscription) => isSubscriptionExpiring(subscription, days, now)).length
   return {
     count,

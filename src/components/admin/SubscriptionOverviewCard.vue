@@ -150,7 +150,7 @@ function selectPlan(planKey: PlanKey): void {
           <Bar :data="chartData" :options="chartOptions" />
         </div>
         <p v-else class="flex h-60 items-center justify-center text-sm text-muted-foreground">
-          目前沒有收款紀錄
+          尚未串接金流，目前沒有收款紀錄
         </p>
       </div>
     </CardContent>

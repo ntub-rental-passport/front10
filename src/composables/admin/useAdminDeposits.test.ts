@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AdminDepositRecord } from '@/src/services/adminUserRecordsApi'
+import { depositMatchDistribution } from '@/src/utils/admin-overview'
 
 const api = vi.hoisted(() => ({ fetchAdminDeposits: vi.fn() }))
 const auth = vi.hoisted(() => ({ getAuthSession: vi.fn() }))
@@ -17,8 +18,23 @@ beforeEach(() => {
   auth.getAuthSession.mockReturnValue({ role: 'admin', userId: '1', accessToken: 'token-1' })
   api.fetchAdminDeposits.mockResolvedValue({ deposits: [deposit] })
 })
+afterEach(() => vi.unstubAllEnvs())
 
 describe('useAdminDeposits', () => {
+  it('正式站押金 KPI 與對帳分布只含真實資料，展示 collection 為空', async () => {
+    vi.stubEnv('DEV', false)
+    const module = await import('./useAdminDeposits')
+    const deposits = module.useAdminDeposits()
+    await module.loadAdminDeposits()
+    expect(deposits.demoRecords.value).toEqual([])
+    expect(deposits.records.value).toEqual(deposits.realRecords.value)
+    expect(deposits.records.value).toHaveLength(1)
+    expect(deposits.stats.value).toEqual({ declaredTotal: 20000, mismatchedCount: 1, pendingCount: 0 })
+    expect(depositMatchDistribution(deposits.records.value)).toEqual([
+      { match: 'matched', value: 0 }, { match: 'mismatched', value: 1 }, { match: 'pending', value: 0 },
+    ])
+  })
+
   it('同時讀取只送一次，成功後保留分開來源並合併統計', async () => {
     const module = await import('./useAdminDeposits')
     const deposits = module.useAdminDeposits()

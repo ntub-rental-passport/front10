@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress/index'
 import { ArrowLeft } from 'lucide-vue-next'
 import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import { followPendingEmails, loadMessages, useAdminNotifications } from '@/src/composables/admin/useAdminNotifications'
-import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
+import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { groupIntoBatches } from '@/src/utils/notif-batch'
 import { formatDateTime } from '@/src/utils/admin-format'
 import {
@@ -29,7 +29,7 @@ const { messages, messagesState } = useAdminNotifications()
 onMounted(() => {
   if (messagesState.value === 'ready') void loadMessages().then(() => followPendingEmails())
 })
-const { users } = useAdminUsers()
+const { rows: directoryRows } = useAdminDirectory()
 
 const batchId = computed(() => String(route.params.batchId ?? ''))
 
@@ -49,7 +49,7 @@ function backToLog(): void {
 }
 
 function nicknameOf(email: string): string | null {
-  return users.value.find((user) => user.email === email)?.nickname ?? null
+  return directoryRows.value.find((row) => row.user.email === email)?.user.nickname ?? null
 }
 
 // 管道標籤與發送紀錄共用 notif-stats，兩頁對同一批資料才不會給出不同說法。

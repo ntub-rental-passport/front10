@@ -64,6 +64,7 @@ import {
 } from '@/src/utils/settings-impact'
 import { sessionLabel } from '@/src/utils/settings-labels'
 import { validateSettings } from '@/src/utils/settings-validate'
+import { isAdminDemoEnabled } from '@/src/utils/admin-demo'
 
 type SettingsKey = keyof SystemSettings
 
@@ -75,7 +76,7 @@ const { logAction } = useAdminAudit()
 type SettingsTab = 'thresholds' | 'security' | 'maintenance'
 
 /** 「重置示範資料」是開發用的工具，正式站不出現 */
-const isDev = import.meta.env.DEV
+const isDev = isAdminDemoEnabled()
 
 const TABS: { value: SettingsTab; label: string }[] = [
   { value: 'thresholds', label: '門檻與提醒' },

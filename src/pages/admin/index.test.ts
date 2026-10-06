@@ -5,10 +5,12 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { DepositStats } from '@/src/composables/admin/useAdminDeposits'
 import Overview from './index.vue'
 import { chartColor } from '@/src/constants/admin-chart'
+import type { AuditRow } from '@/src/utils/admin-audit-sources'
 
 const state = vi.hoisted(() => ({
   stats: null as DepositStats | null,
   loadState: 'error' as 'error' | 'ready',
+  auditRows: [] as AuditRow[],
 }))
 vi.mock('@/src/composables/admin/useAdminDeposits', () => ({
   useAdminDeposits: () => ({
@@ -23,6 +25,9 @@ vi.mock('@/src/composables/admin/useAdminDeposits', () => ({
 vi.mock('@/src/composables/admin/useAdminDirectory', () => ({
   useAdminDirectory: () => ({ rows: ref([]), realAccounts: ref([]), realAccountsLoading: ref(false), realAccountsError: ref('') }),
 }))
+vi.mock('@/src/composables/admin/useAuditLog', () => ({
+  useAuditLog: () => ({ rows: ref(state.auditRows), loading: ref(false), serverFailed: ref(false), reload: vi.fn() }),
+}))
 
 vi.mock('@/src/composables/useTickingNow', () => ({ useTickingNow: () => ref(new Date()) }))
 vi.mock('@/src/composables/admin/useSystemHealth', () => ({
@@ -32,6 +37,7 @@ vi.mock('@/src/composables/admin/useSystemHealth', () => ({
 beforeEach(() => {
   state.stats = null
   state.loadState = 'error'
+  state.auditRows = []
 })
 
 async function render() {
@@ -52,7 +58,7 @@ describe('總覽混合押金統計', () => {
     expect(html).not.toContain('筆記錄')
   })
 
-  it('成功時呈現合併筆數、聲明總額與警示色，押金區塊不標成純真實來源', async () => {
+  it('成功時呈現合併筆數、聲明總額與警示色，依正式站來源標記押金區塊', async () => {
     state.loadState = 'ready'
     state.stats = { declaredTotal: 60000, mismatchedCount: 1, pendingCount: 1 }
     const html = await render()
@@ -64,9 +70,19 @@ describe('總覽混合押金統計', () => {
       .map((match) => match[0])
       .filter((link) => link.includes('href="/admin/users?alert=deposit-mismatch"'))
     expect(depositLinks).toHaveLength(2)
-    expect(depositLinks.every((link) => !link.includes('data-real'))).toBe(true)
+    expect(depositLinks.every((link) => link.includes('data-real="true"'))).toBe(true)
     const depositCard = depositLinks.find((link) => link.includes('押金對帳結果'))!
-    expect(depositCard).not.toContain('data-real')
+    expect(depositCard).toContain('data-real="true"')
     expect(depositCard).toContain(chartColor('danger'))
+  })
+
+  it('最新稽核取共用合併來源的前五筆', async () => {
+    state.auditRows = Array.from({ length: 6 }, (_, index) => ({
+      id: `srv-${index}`, at: new Date().toISOString(), actor: '管理員', action: '使用者管理',
+      target: '真實帳號', detail: `合併稽核第 ${index + 1} 筆`, source: 'server',
+    }))
+    const html = await render()
+    for (let index = 1; index <= 5; index += 1) expect(html).toContain(`合併稽核第 ${index} 筆`)
+    expect(html).not.toContain('合併稽核第 6 筆')
   })
 })
