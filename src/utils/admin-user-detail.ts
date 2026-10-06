@@ -18,8 +18,7 @@ import { isHandoverDamage, type HandoverOutcome, type HandoverResult } from './a
  *
  * warn／danger 在這個後台的意思是「你必須動手」。「租客未聲明押金」
  * 「點交還沒比對」都是在等租客，管理員能做的只有等 —— 給它們琥珀色，
- * 管理員會以為有事要處理，點進去卻發現無事可做。租補頁的政府審核步驟
- * 也是同一個原則（見 governmentStepVisual）。
+ * 管理員會以為有事要處理，點進去卻發現無事可做。
  */
 
 export function accountStatusTone(status: 'active' | 'suspended'): StatusDotTone {

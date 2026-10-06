@@ -4,10 +4,9 @@ import { resolvePageTitle } from './admin-page-title'
 
 describe('resolvePageTitle', () => {
   it('靜態頁用各頁原本的 h1 文字，不是導覽標籤', () => {
-    // 這三頁的 h1 比導覽標籤更具體，頂部列要用具體的那個
+    // 這兩頁的 h1 比導覽標籤更具體，頂部列要用具體的那個
     expect(resolvePageTitle('/admin/audit').title).toBe('稽核紀錄查詢')
     expect(resolvePageTitle('/admin/maintenance-tickets').title).toBe('報修工單追蹤')
-    expect(resolvePageTitle('/admin/subsidy').title).toBe('租金補貼審核')
   })
 
   it('靜態頁沒有麵包屑', () => {

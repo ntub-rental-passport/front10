@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import StatusDot from './StatusDot.vue'
-import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { isMaintenanceActive } from '@/src/utils/maintenance'
 
@@ -23,7 +22,6 @@ import { isMaintenanceActive } from '@/src/utils/maintenance'
  * 導覽本身，一句完整的話塞進去會把工具列擠掉。
  */
 const { settings } = useAdminSettings()
-const { canAccessPath } = useAdminRbac()
 
 // 開關打開不代表此刻生效，排程可能尚未開始或已結束
 const active = computed(() => isMaintenanceActive(settings.value))
@@ -34,14 +32,11 @@ const detail = computed(() => {
   // 個別功能可以被功能開關單獨關掉，所以不能說「所有功能開放中」
   return '一般使用者可正常進入'
 })
-
-const canOpenSettings = computed(() => canAccessPath('/admin/settings'))
 </script>
 
 <template>
-  <component
-    :is="canOpenSettings ? RouterLink : 'span'"
-    :to="canOpenSettings ? '/admin/settings' : undefined"
+  <RouterLink
+    to="/admin/settings"
     :title="detail"
     class="hidden items-center rounded-full transition-colors lg:inline-flex"
     :class="active ? undefined : 'px-1 hover:bg-muted'"
@@ -52,5 +47,5 @@ const canOpenSettings = computed(() => canAccessPath('/admin/settings'))
       :label="active ? '維護中' : '服務中'"
       emphasize
     />
-  </component>
+  </RouterLink>
 </template>

@@ -22,7 +22,6 @@ import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
 import { activeWindowDays, countActiveUsers } from '@/src/utils/admin-activity'
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
-import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { useAdminMaintenance } from '@/src/composables/admin/useAdminMaintenance'
 import { useAdminDeposits } from '@/src/composables/admin/useAdminDeposits'
 import { useSystemHealth } from '@/src/composables/admin/useSystemHealth'
@@ -48,7 +47,6 @@ const { usages, alerts, alertCount, loadState: aiUsageState } = useAdminAiUsage(
 void loadAiUsage()
 const { events } = useAdminAudit()
 const { settings } = useAdminSettings()
-const { canAccessPath } = useAdminRbac()
 const { tickets, ticketViews, stats: maintenanceStats } = useAdminMaintenance()
 const { records: depositRecords, stats: depositStats } = useAdminDeposits()
 
@@ -204,12 +202,10 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           這一頁原本只能看、不能做任何事 —— 進來之後想做事得先找到導覽列、
           再點進對應的頁面。
 
-          兩顆都是真的導向存在的路由，而且都過 RBAC：canAccessPath 回 false
-          就整顆不渲染，而不是渲染一顆點了會被擋下來的按鈕。
+          兩顆按鈕直接導向通知管理與內容管理，讓管理員能從總覽開始操作。
         -->
         <div class="flex flex-wrap items-center gap-2">
           <Button
-            v-if="canAccessPath('/admin/notifications')"
             as-child
             size="sm"
             class="rounded-full"
@@ -220,7 +216,6 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
             </RouterLink>
           </Button>
           <Button
-            v-if="canAccessPath('/admin/content')"
             as-child
             size="sm"
             variant="outline"

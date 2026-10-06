@@ -11,8 +11,6 @@ import {
   signOut,
   type AuthRole,
 } from '@/src/composables/useAuth'
-import { canAdminAccessPath } from '@/src/utils/admin-rbac'
-import { getCurrentAdminRole } from '@/src/composables/admin/useAdminRbac'
 import { syncSessionWithServer } from '@/src/composables/useAuth'
 import { isMaintenanceBypassPath } from '@/src/utils/maintenance'
 import { isMaintenanceBlocking, publicSettings, refreshPublicSettings } from '@/src/composables/usePublicSettings'
@@ -68,7 +66,6 @@ const router = createRouter({
         { path: 'users', component: () => import('@/src/pages/admin/users.vue') },
         { path: 'users/:id', component: () => import('@/src/pages/admin/user-detail.vue') },
         { path: 'maintenance-tickets', component: () => import('@/src/pages/admin/maintenance-tickets.vue') },
-        { path: 'subsidy', component: () => import('@/src/pages/admin/subsidy.vue') },
         // 押金退還已併入使用者詳情，保留舊路徑避免既有書籤與稽核紀錄連結 404
         { path: 'deposits', redirect: '/admin/users' },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
@@ -263,10 +260,6 @@ router.beforeEach(async (to) => {
 
   if (requiredRoles && !requiredRoles.includes(session.role)) {
     return resolveRoleHome(session.role)
-  }
-
-  if (to.path.startsWith('/admin') && !canAdminAccessPath(getCurrentAdminRole(), to.path)) {
-    return '/admin'
   }
 
   if (to.path === '/welcome' && !needsNicknameSetup(session)) {

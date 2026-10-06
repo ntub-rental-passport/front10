@@ -62,7 +62,6 @@ import type {
   PlanDistributionSegment,
   UserDirectoryRow,
 } from '@/src/utils/admin-user-directory'
-import type { AdminRole } from '@/src/utils/admin-rbac'
 import { chartColor, chartSeries } from '@/src/constants/admin-chart'
 import { useNow } from '@/src/composables/useNow'
 import { formatDateTime } from '@/src/utils/admin-format'
@@ -89,7 +88,7 @@ const {
   filterActive,
   clearFilter,
   planSegments,
-  adminCounts,
+  adminTotal,
   realAccounts,
   realAccountsLoading,
   realAccountsError,
@@ -105,10 +104,6 @@ const planColors = computed(() => [
   chartColor('series-1'),
   chartColor('series-5'),
 ])
-const adminRoleColors = computed<Record<AdminRole, string>>(() => ({
-  super: chartColor('series-1'),
-  admin: chartColor('series-3'),
-}))
 
 // 再點一次同一個方案就取消篩選，不用特地跑去按「清除篩選」。
 // 圖表搬到列表下方之後，點了圖卻看不到列表變化 —— 所以篩完捲回列表。
@@ -143,15 +138,7 @@ const sourceSegments = computed(() =>
   registrationSources(realAccounts.value).map((s) => ({ label: s.label, value: s.count })),
 )
 
-/**
- * 身分欄的文字。
- *
- * 「超級管理員」與一般管理員分開顯示：前者只能由能登入伺服器的人用
- * manage_admin.py 授予，權限與影響範圍完全不同，混用同一個標籤
- * 會讓人以為後台可以自己加。
- */
 function roleLabel(row: UserDirectoryRow): string {
-  if (row.user.role === 'admin' && row.user.adminRole === 'super') return '超級管理員'
   return adminRoleLabels[row.user.role]
 }
 
@@ -784,7 +771,7 @@ function displayName(row: UserDirectoryRow): string {
     />
 
     <!--
-      甜甜圈要留白給外側標籤所以吃比較多寬度；管理員人數只有兩個數字，
+      甜甜圈要留白給外側標籤所以吃比較多寬度；管理員人數只有一個數字，
       給它等寬只會空一大片。items-start 讓它照內容收高，不被甜甜圈撐平。
     -->
     <div class="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
@@ -795,7 +782,7 @@ function displayName(row: UserDirectoryRow): string {
         :active-plan="filter.plan"
         @select="handlePlanSelect"
       />
-      <AdminRoleCountCard :counts="adminCounts" :colors="adminRoleColors" />
+      <AdminRoleCountCard :count="adminTotal" />
     </div>
 
     <!--

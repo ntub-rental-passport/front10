@@ -37,7 +37,6 @@ import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import {
   adminRoleLabels,
-  getCurrentAdminRole,
   useAdminUsers,
 } from '@/src/composables/admin/useAdminUsers'
 import { useAdminSubscription } from '@/src/composables/admin/useAdminSubscription'
@@ -45,7 +44,6 @@ import {
   useAdminMaintenance,
   type MaintenanceTicketView,
 } from '@/src/composables/admin/useAdminMaintenance'
-import { ADMIN_ROLES, adminRoleLabels as rbacRoleLabels, type AdminRole } from '@/src/utils/admin-rbac'
 import {
   caseSideLabels,
   type UserDepositView,
@@ -103,7 +101,7 @@ const route = useRoute()
 const router = useRouter()
 
 const { rowOf, setRealAccountStatus } = useAdminDirectory()
-const { setStatus, setRole, setAdminRole } = useAdminUsers()
+const { setStatus, setRole } = useAdminUsers()
 const { plans, planOf, changePlan, grantCredits, isExpiringSoon } = useAdminSubscription()
 const { ticketViews } = useAdminMaintenance()
 const { records: handoverRecords } = useAdminHandover()
@@ -116,9 +114,6 @@ useRegisterAdminPageTitle(
   computed(() => route.path),
   computed(() => row.value?.user.nickname ?? row.value?.user.email ?? null),
 )
-
-// 停用帳號與調整角色屬於高風險操作，維持只有超級管理員能執行
-const isSuper = computed(() => getCurrentAdminRole() === 'super')
 
 /**
  * 這一頁看的是不是資料庫裡真的存在的人。
@@ -319,17 +314,12 @@ function analysisPercent(subscription: Subscription, plan: SubscriptionPlan): nu
 }
 
 
-// 身分與權限角色只對展示資料開放。真實帳號在畫面上是唯讀的（見 template），
+// 身分只對展示資料開放。真實帳號在畫面上是唯讀的（見 template），
 // 這裡再擋一次：後端沒有改角色的 API，就算有人繞過畫面呼叫到這裡，
 // 也不能讓它「看起來改了」。
 function handleRoleChange(value: unknown): void {
   if (!row.value || isReal.value) return
   setRole(row.value.user.id, value as AdminUserRole)
-}
-
-function handleAdminRoleChange(value: unknown): void {
-  if (!row.value || isReal.value) return
-  setAdminRole(row.value.user.id, value as AdminRole)
 }
 
 const statusBusy = ref(false)
@@ -490,7 +480,7 @@ function openSendDialog(): void {
             <dt class="text-foreground/70">身分</dt>
             <dd>
               <Select
-                v-if="isSuper && !isReal"
+                v-if="!isReal"
                 :model-value="row.user.role"
                 @update:model-value="handleRoleChange"
               >
@@ -504,25 +494,6 @@ function openSendDialog(): void {
               <span v-else class="font-medium">{{ adminRoleLabels[row.user.role] }}</span>
             </dd>
 
-            <template v-if="row.user.role === 'admin'">
-              <dt class="text-foreground/70">權限角色</dt>
-              <dd>
-                <Select
-                  v-if="isSuper && !isReal"
-                  :model-value="row.user.adminRole ?? 'super'"
-                  @update:model-value="handleAdminRoleChange"
-                >
-                  <SelectTrigger class="h-8 w-32"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="adminRole in ADMIN_ROLES" :key="adminRole" :value="adminRole">
-                      {{ rbacRoleLabels[adminRole] }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <span v-else class="font-medium">{{ rbacRoleLabels[row.user.adminRole ?? 'super'] }}</span>
-              </dd>
-            </template>
-
             <dt class="text-foreground/70">註冊於</dt>
             <dd>{{ formatDate(row.user.registeredAt) }}</dd>
 
@@ -535,15 +506,12 @@ function openSendDialog(): void {
             </dd>
           </dl>
 
-          <p v-if="!isSuper" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
-            調整角色與停用帳號僅限超級管理員，以上為唯讀。
-          </p>
           <!--
             真實帳號的角色不開放從網頁改：後端沒有這支 API，而且這是刻意的 ——
-            超級管理員只能由能登入伺服器的人用 manage_admin.py 授予（見 admin.py）。
+            管理員只能由能登入伺服器的人用 manage_admin.py 授予（見 admin.py）。
           -->
-          <p v-else-if="isReal" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
-            身分與權限角色在這裡是唯讀，需要由系統管理者在伺服器上調整。
+          <p v-if="isReal" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
+            身分在這裡是唯讀，需要由系統管理者在伺服器上調整。
           </p>
 
           <p
@@ -563,7 +531,6 @@ function openSendDialog(): void {
               發送通知
             </Button>
             <Button
-              v-if="isSuper"
               :variant="row.user.status === 'active' ? 'destructive' : 'outline'"
               :disabled="statusBusy"
               @click="toggleStatus"
@@ -575,7 +542,7 @@ function openSendDialog(): void {
 
         <!--
           原本頂部那四張 text-2xl 的大卡片。它們是「這個人的資料」而不是頁面
-          等級的 KPI，所以併進左欄，用跟工單／租補詳情同一種重點資料格。
+          等級的 KPI，所以併進左欄，用跟工單詳情同一種重點資料格。
           異常才上色：不符、逾期用實心紅 chip，其餘安靜。
         -->
         <dl class="grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl bg-muted/40 p-5 text-sm">

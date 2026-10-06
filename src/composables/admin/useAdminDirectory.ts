@@ -10,7 +10,7 @@ import {
   type AdminAccount,
 } from '@/src/services/adminUsersApi'
 import {
-  adminRoleCounts,
+  adminCount,
   emptyUserDirectoryFilter,
   filterUserDirectory,
   isFilterActive,
@@ -97,20 +97,6 @@ export function useAdminDirectory() {
         plans: adminPlans.value,
       },
       adminSettings.value.subscriptionExpiringSoonDays,
-    ).map((row) =>
-      // 展示資料裡的管理員一律降為一般管理員。
-      //
-      // 「超級管理員」在這個系統有明確定義：由能登入伺服器的人用
-      // manage_admin.py 授予的那幾位（實務上就是開發團隊自己）。
-      // 讓假資料佔用這個身分，會讓「超級管理員有幾位」這個數字失去意義。
-      //
-      // ⚠️ adminRole 是 null 的也要改寫，不能只改 'super'：
-      // adminRoleCounts 對 null 的處理是 `adminRole ?? 'super'`，
-      // 放著不管的話，列表顯示「管理員」但統計卡把它算進超級管理員 ——
-      // 畫面上兩個數字對不起來。2026-09-14 實測踩到。
-      row.user.role === 'admin'
-        ? { ...row, user: { ...row.user, adminRole: 'admin' as const } }
-        : row,
     ),
   )
 
@@ -125,7 +111,7 @@ export function useAdminDirectory() {
 
   // 圖表刻意吃全量 rows，不吃 filteredRows —— 見 planDistribution 的註解
   const planSegments = computed(() => planDistribution(rows.value, adminPlans.value))
-  const adminCounts = computed(() => adminRoleCounts(rows.value))
+  const adminTotal = computed(() => adminCount(rows.value))
 
   const filterActive = computed(() => isFilterActive(filter.value))
 
@@ -170,7 +156,7 @@ export function useAdminDirectory() {
     clearFilter,
     rowOf,
     planSegments,
-    adminCounts,
+    adminTotal,
     realAccounts,
     realAccountsLoading,
     realAccountsError,
