@@ -96,18 +96,25 @@ def _add_months(value: date, months: int) -> date:
     return date(year, month, min(value.day, calendar.monthrange(year, month)[1]))
 
 
-def _prorated_amount(monthly_rent: int, start: date, end: date) -> int:
-    """[start, end] 這段期間的租金：整月照月租，最後不足一個月依天數比例。"""
+def _months_from(anchor: date, offset: int) -> date:
+    """起租日往後第 offset 個月的同一天（遇到小月份取月底）。一律從起租日算，不從上一期累加，
+    否則 31 號起租遇到 30 天的月份，之後每一期都會漂移一天。"""
+    return _add_months(anchor, offset)
+
+
+def _period_amount(monthly_rent: int, anchor: date, first_month: int, end: date) -> int:
+    """從起租日後第 first_month 個月開始、到 end 為止的租金：整月照月租，不足一個月依天數比例。"""
     total = 0
-    cursor = start
-    while cursor <= end:
-        next_cursor = _add_months(cursor, 1)
-        if next_cursor - timedelta(days=1) <= end:
+    offset = first_month
+    while _months_from(anchor, offset) <= end:
+        month_start = _months_from(anchor, offset)
+        month_end = _months_from(anchor, offset + 1) - timedelta(days=1)
+        if month_end <= end:
             total += monthly_rent
         else:
-            days = (end - cursor).days + 1
-            total += round(monthly_rent * days / (next_cursor - cursor).days)
-        cursor = next_cursor
+            days = (end - month_start).days + 1
+            total += round(monthly_rent * days / ((month_end - month_start).days + 1))
+        offset += 1
     return total
 
 
@@ -118,15 +125,15 @@ def rent_periods(lease: LandlordLease, until: date) -> list[tuple[date, date, da
     periods = []
     index = 0
     while True:
-        start = _add_months(lease.start_date, index * step)
+        start = _months_from(lease.start_date, index * step)
         if start > last_day:
             break
-        end = min(_add_months(lease.start_date, (index + 1) * step) - timedelta(days=1), last_day)
+        end = min(_months_from(lease.start_date, (index + 1) * step) - timedelta(days=1), last_day)
         day = min(lease.payment_day or 1, calendar.monthrange(start.year, start.month)[1])
         due = max(date(start.year, start.month, day), start)
         if due > until:
             break
-        periods.append((start, end, due, _prorated_amount(lease.monthly_rent, start, end)))
+        periods.append((start, end, due, _period_amount(lease.monthly_rent, lease.start_date, index * step, end)))
         index += 1
     return periods
 
@@ -141,9 +148,14 @@ def _landlord_leases(db: Session, landlord_id: int) -> list[LandlordLease]:
     )
 
 
-def ensure_rent_charges(db: Session, landlord_id: int, until: date) -> int:
-    """補產生到 until 為止的租金期數。已存在的不動（金額固定）。回傳新增幾筆。"""
+def ensure_rent_charges(db: Session, landlord_id: int, until: date, lease_ids: set[int] | None = None) -> int:
+    """補產生到 until 為止的租金期數。已存在的不動（金額固定）。回傳新增幾筆。
+
+    lease_ids 有給就只處理那幾份（租客首頁要看自己那份的整段租期）。
+    """
     leases = _landlord_leases(db, landlord_id)
+    if lease_ids is not None:
+        leases = [lease for lease in leases if lease.id in lease_ids]
     if not leases:
         return 0
     existing = {
@@ -208,6 +220,8 @@ def _charge_dict(charge: LandlordCharge, today: date, month_start: date | None =
         for event in sorted(charge.events, key=lambda item: item.id, reverse=True)
     ]
     reminded = [event for event in charge.events if event.kind == "reminded"]
+    reports = [event for event in charge.events if event.kind == "tenant_reported"]
+    latest_report = max(reports, key=lambda event: event.id) if reports and balance > 0 else None
     return {
         "id": charge.id,
         "lease_id": charge.lease_id,
@@ -232,6 +246,8 @@ def _charge_dict(charge: LandlordCharge, today: date, month_start: date | None =
         "voided": bool(charge.voided_at),
         "void_reason": charge.void_reason,
         "reminded_at": max((event.created_at for event in reminded), default=None),
+        # 租客回報已繳、房東還沒確認收齊：畫面要提醒房東去對帳入帳
+        "tenant_report": None if not latest_report else {"at": latest_report.created_at, "detail": latest_report.detail},
         "payments": [
             {"id": payment.id, "amount": payment.amount, "paid_on": payment.paid_on, "method": payment.method,
              "note": payment.note, "created_at": payment.created_at}
@@ -269,6 +285,11 @@ def _owned_charge(db: Session, landlord_id: int, charge_id: int) -> LandlordChar
     if not charge:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "找不到這筆帳款。")
     return charge
+
+
+def _email_enabled(db: Session, landlord: User) -> bool:
+    from routers.landlord_workspace_api import settings_for
+    return settings_for(db, landlord).email_notifications
 
 
 def _money(value: int) -> str:
@@ -433,6 +454,7 @@ def remind_charge(charge_id: int, request: Request, db: Session = Depends(get_db
         title=f"{charge.title}待繳 {_money(balance)}",
         body=f"{lease.property.name} {lease.room.number} 的{charge.title}尚有 {_money(balance)} 未繳（{timing}）。已繳費請告知房東確認入帳。",
         category="帳務", source_label="房東催繳", created_by=f"landlord:{landlord.id}",
+        email=_email_enabled(db, landlord),
     )
     actor = landlord_actor(request, landlord)
     db.add(LandlordChargeEvent(charge_id=charge.id, kind="reminded", actor_user_id=actor.id, detail=f"已送出站內提醒給 {tenant_user.email}"))

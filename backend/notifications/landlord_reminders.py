@@ -5,7 +5,7 @@
 - 合約到期提醒（contract_reminders）：租約剩下「提前天數」與 7 天時，各通知房東一次。
   已經建好續約的不提醒。
 
-Email 不在這裡寄：寄信要經過後台的寄送佇列與 SMTP 設定，這裡只送站內。
+房東在通知偏好開著「Email 通知」且 SMTP 有設定時，同一則提醒也寄 Email（見 user_notify）。
 """
 import logging
 from datetime import date, timedelta
@@ -33,7 +33,7 @@ RENT_STAGES = (
 )
 
 
-def _rent_reminders(db, landlord: User, today: date) -> int:
+def _rent_reminders(db, landlord: User, today: date, email: bool = False) -> int:
     from routers.landlord_finance import _paid, ensure_rent_charges
 
     ensure_rent_charges(db, landlord.id, today + timedelta(days=3))
@@ -65,13 +65,14 @@ def _rent_reminders(db, landlord: User, today: date) -> int:
             body=f"{lease.property.name} {lease.room.number} 的{charge.title}到期日為 {charge.due_date.isoformat()}，"
                  f"尚有 NT${balance:,} 未繳。已繳費請告知房東確認入帳。",
             category="帳務", source_label="收租提醒", created_by="system",
+            email=email,
         )
         db.add(LandlordChargeEvent(charge_id=charge.id, kind=stage[0], detail=f"系統自動提醒租客（{stage[2]}）"))
         sent += 1
     return sent
 
 
-def _contract_reminders(db, landlord: User, today: date, reminder_days: int) -> int:
+def _contract_reminders(db, landlord: User, today: date, reminder_days: int, email: bool = False) -> int:
     leases = (
         db.query(LandlordLease).join(LandlordTenant, LandlordLease.tenant_id == LandlordTenant.id)
         .options(joinedload(LandlordLease.tenant), joinedload(LandlordLease.property), joinedload(LandlordLease.room))
@@ -95,6 +96,7 @@ def _contract_reminders(db, landlord: User, today: date, reminder_days: int) -> 
             body=f"{lease.property.name} {lease.room.number} 的租約將於 {lease.end_date.isoformat()} 到期，請確認是否續約。",
             category="租約", source_label="合約到期提醒", created_by="system",
             action_url="/landlord/contracts", action_label="查看合約",
+            email=email,
         )
         db.add(LandlordTenantActivity(tenant_id=lease.tenant_id, kind=kind, detail=f"系統提醒房東：租約 {days_left} 天後到期"))
         sent += 1
@@ -119,9 +121,9 @@ def dispatch_due(today: date | None = None, session_factory=None) -> dict:
             settings = settings_for(db, landlord)
             try:
                 if settings.rent_reminders:
-                    totals["rent"] += _rent_reminders(db, landlord, today)
+                    totals["rent"] += _rent_reminders(db, landlord, today, settings.email_notifications)
                 if settings.contract_reminders:
-                    totals["contract"] += _contract_reminders(db, landlord, today, settings.reminder_days)
+                    totals["contract"] += _contract_reminders(db, landlord, today, settings.reminder_days, settings.email_notifications)
                 db.commit()
             except Exception:
                 # 一位房東的資料有問題，不能讓其他房東的提醒停擺

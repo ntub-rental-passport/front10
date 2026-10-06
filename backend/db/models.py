@@ -227,9 +227,11 @@ class Bill(Base):
 
 class InspectionItem(Base):
     __tablename__ = 'inspection_items'
-    __table_args__ = (Index('idx_inspection_items_rental', 'rental_id'),)
+    __table_args__ = (Index('idx_inspection_items_rental', 'rental_id'), Index('idx_inspection_items_lease', 'lease_id'),)
     id = Column(Integer, primary_key=True, nullable=False, autoincrement=True)
-    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='CASCADE'), nullable=False)
+    # 屬於租客自己存的合約（rental_id）或房東平台上的租約（lease_id），兩者恰好一個
+    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='CASCADE'), nullable=True)
+    lease_id = Column(Integer, ForeignKey('landlord_leases.id', ondelete='CASCADE'), nullable=True)
     room_name = Column(String(100), nullable=False)
     item_name = Column(String(100), nullable=False)
     category = Column(String(20), nullable=False, default='furniture')
@@ -244,9 +246,10 @@ class InspectionItem(Base):
 
 class InspectionRecord(Base):
     __tablename__ = 'inspection_records'
-    __table_args__ = (Index('idx_inspection_rental_type', 'rental_id', 'type'),)
+    __table_args__ = (Index('idx_inspection_rental_type', 'rental_id', 'type'), Index('idx_inspection_records_lease', 'lease_id'),)
     id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
-    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='CASCADE'), nullable=False)
+    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='CASCADE'), nullable=True)
+    lease_id = Column(Integer, ForeignKey('landlord_leases.id', ondelete='CASCADE'), nullable=True)
     type = Column(Enum('check_in','check_out', validate_strings=True, create_constraint=True), nullable=False)
     photo_url = Column(String(512), nullable=False)
     capture_source = Column(Enum('camera', 'file', validate_strings=True, create_constraint=True),

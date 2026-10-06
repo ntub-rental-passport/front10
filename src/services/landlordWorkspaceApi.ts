@@ -39,6 +39,8 @@ export interface LandlordCharge {
   voided: boolean
   void_reason: string | null
   reminded_at: string | null
+  /** 租客回報已繳、房東還沒確認收齊 */
+  tenant_report: { at: string; detail: string } | null
   payments: LandlordChargePayment[]
   events: Array<{ kind: string; detail: string; at: string }>
 }
@@ -143,6 +145,30 @@ export interface LandlordContract {
   renewed_by_lease_id: number | null
   files: ContractFile[]
   created_at: string
+}
+
+export interface InspectionEvidence {
+  id: string
+  phase: 'baseline' | 'checkout'
+  url: string
+  capturedAt: string
+  aiLabel: string
+  note: string
+  userNote: string | null
+  integrityNote?: string
+}
+
+export interface LeaseInspectionItem {
+  id: string
+  room: string
+  name: string
+  evidences: InspectionEvidence[]
+  diff: { type: string; summary: string; confidence: number } | null
+}
+
+/** 租客在這份租約上做的點交存證（房東唯讀）。 */
+export function fetchLeaseInspection(leaseId: number) {
+  return landlordRequest<{ items: LeaseInspectionItem[] }>(`/landlord/contracts/${leaseId}/inspection`)
 }
 
 export function fetchContracts() {

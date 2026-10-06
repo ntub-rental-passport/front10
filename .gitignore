@@ -82,6 +82,3 @@ client_secret*.json
 # 使用者上傳的照片（點交存證、報修、輪播圖）：含住家內部與個人資訊，絕不可進版控
 backend/uploads/
 uploads/
-
-# 組員的環境檔（含密鑰），只在本機整理用，絕不提交
-env/

@@ -52,3 +52,24 @@ export function recordBillPayment(
 export function undoBillPayment(billId: string): Promise<RentalContract['cycles'][number]> {
   return dashboardRequest(`/bills/${billId}/payment`, 'DELETE')
 }
+
+/** 房東平台租約：回報已繳款（通知房東確認入帳，不會直接標成已繳）。 */
+export async function reportLandlordPayment(
+  cycleId: string,
+  payload: { paid_at: string; payment_method: PaymentMethod; payment_note: string },
+): Promise<RentalContract['cycles'][number]> {
+  const token = getAuthSession()?.accessToken
+  if (!token) throw new Error('請先登入後再回報繳款。')
+  const chargeId = cycleId.replace('charge:', '')
+  const base = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/api\/?$/, '')
+  const response = await fetch(`${base}/api/tenant/landlord-leases/charges/${chargeId}/report`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(typeof body?.detail === 'string' ? body.detail : `回報失敗（${response.status}），請稍後重試。`)
+  }
+  return body
+}

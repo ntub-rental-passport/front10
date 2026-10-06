@@ -197,3 +197,20 @@ def delete_file(lease_id: int, file_id: int, request: Request, db: Session = Dep
     db.commit()
     (file_directory() / stored).unlink(missing_ok=True)
     return {"deleted_id": file_id}
+
+
+@router.get("/{lease_id}/inspection")
+def lease_inspection(lease_id: int, db: Session = Depends(get_db), landlord: User = Depends(get_landlord_workspace)):
+    """租客在這份租約上做的點交存證（入住／退租照片與辨識結果）。房東只能看，不能改。"""
+    from db.models import InspectionItem
+    from routers.inspection import item_json
+
+    _owned_lease(db, landlord.id, lease_id)
+    items = (
+        db.query(InspectionItem)
+        .options(joinedload(InspectionItem.baseline), joinedload(InspectionItem.checkout))
+        .filter(InspectionItem.lease_id == lease_id)
+        .order_by(InspectionItem.room_name, InspectionItem.id)
+        .all()
+    )
+    return {"items": [item_json(item) for item in items]}

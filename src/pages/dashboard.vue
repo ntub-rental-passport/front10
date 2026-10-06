@@ -276,10 +276,10 @@ const {
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
                     <p :class="['truncate text-sm font-bold transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedText : ['text-slate-900', accentStyles[contract.accent].hoverText]]">{{ contract.title }}</p>
-                    <p :class="['truncate text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-500', accentStyles[contract.accent].hoverSubText]]">{{ contract.city }} · {{ contract.landlord }}</p>
+                    <p :class="['truncate text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-500', accentStyles[contract.accent].hoverSubText]]">{{ contract.city }} · {{ contract.landlord }}<template v-if="contract.source === 'landlord'"> · 房東平台</template></p>
                   </div>
                   <RouterLink
-                    :to="`/app/contract/document?rental=${contract.id}`"
+                    :to="contract.source === 'landlord' ? `/app/landlord-lease/${contract.id.replace('lease:', '')}` : `/app/contract/document?rental=${contract.id}`"
                     :class="['shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors', isPathUnderMaintenance('/app/contract') ? 'opacity-60' : '', selectedContractId === contract.id ? 'border-white/50 bg-white/20 text-white hover:bg-white/30' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700']"
                     @click.stop
                   >
@@ -521,7 +521,13 @@ const {
                         {{ describeDaysLeft(cycleItem.daysLeft) }}
                       </p>
                       <p v-else-if="cycleItem.cycle.paidAt" class="mt-0.5 text-[11px] text-slate-400">
-                        {{ formatDate(cycleItem.cycle.paidAt) }} · {{ paymentMethodLabel(cycleItem.cycle.paymentMethod) }}
+                        {{ formatDate(cycleItem.cycle.paidAt) }} · {{ cycleItem.cycle.source === 'landlord' ? '房東已確認' : paymentMethodLabel(cycleItem.cycle.paymentMethod) }}
+                      </p>
+                      <p v-if="cycleItem.cycle.tenantReport" class="mt-0.5 text-[11px] font-medium text-sky-600">
+                        已回報繳款，待房東確認
+                      </p>
+                      <p v-if="cycleItem.cycle.source === 'landlord' && !cycleItem.cycle.paidAt && cycleItem.cycle.paidAmount" class="mt-0.5 text-[11px] text-slate-500">
+                        房東已收 {{ formatCurrency(cycleItem.cycle.paidAmount) }}
                       </p>
                     </td>
                     <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatDate(cycleItem.cycle.dueDate) }}</td>
@@ -544,8 +550,12 @@ const {
                         @click.stop="openPaymentDialog(cycleItem.cycle.id)"
                       >
                         <Check class="mr-1 h-3 w-3" aria-hidden="true" />
-                        標記已繳
+                        {{ cycleItem.cycle.source === 'landlord' ? (cycleItem.cycle.tenantReport ? '再次回報' : '回報已繳') : '標記已繳' }}
                       </Button>
+                      <span
+                        v-else-if="cycleItem.cycle.paidAt && cycleItem.cycle.source === 'landlord'"
+                        class="text-[11px] font-medium text-emerald-700"
+                      >房東已確認</span>
                       <Button
                         v-else-if="cycleItem.cycle.paidAt"
                         size="sm"

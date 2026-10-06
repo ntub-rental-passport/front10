@@ -53,6 +53,7 @@ export interface LandlordPayment {
   carried: boolean
   reminded: boolean
   remindedAt: string | null
+  tenantReport: { at: string; detail: string } | null
   activities: string[]
   payments: LandlordCharge['payments']
 }
@@ -114,6 +115,7 @@ function toPayment(charge: LandlordCharge): LandlordPayment {
     carried: charge.carried,
     reminded: Boolean(charge.reminded_at),
     remindedAt: charge.reminded_at,
+    tenantReport: charge.tenant_report,
     activities: charge.events.map((event) => `${new Date(event.at).toLocaleDateString('zh-TW')} ${event.detail}`),
     payments: charge.payments,
   }

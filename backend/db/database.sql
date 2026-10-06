@@ -219,21 +219,6 @@ CREATE TABLE `bills` (
   INDEX `idx_bills_due_unpaid` (`due_date`, `paid_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `inspection_records` (
-  `id` INT AUTO_INCREMENT PRIMARY KEY,
-  `rental_id` INT NOT NULL,
-  `type` ENUM('check_in','check_out') NOT NULL,
-  `photo_url` VARCHAR(512) NOT NULL,
-  `capture_source` ENUM('camera','file') NOT NULL DEFAULT 'file' COMMENT '照片來源：camera=現場鏡頭拍攝、file=檔案上傳或舊資料',
-  `capture_quality` JSON DEFAULT NULL COMMENT '現場拍攝量到的 brightness/sharpness/isLevel；檔案上傳為 NULL',
-  `item_name` VARCHAR(100) DEFAULT NULL,
-  `room_name` VARCHAR(100) DEFAULT NULL,
-  `vlm_result` JSON DEFAULT NULL COMMENT 'NVIDIA VLM 生成的結構化損傷判斷',
-  `user_note` TEXT DEFAULT NULL,
-  `captured_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE CASCADE,
-  INDEX `idx_inspection_rental_type` (`rental_id`, `type`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `message_boards` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -714,9 +699,30 @@ CREATE TABLE `admin_audit_logs` (
   INDEX `idx_audit_actor_time` (`actor_user_id`, `created_at`),
   INDEX `idx_audit_target` (`target_type`, `target_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 點交照片紀錄（2026-10-06 移到 landlord_leases 之後，才能直接宣告 lease_id 外鍵）
+CREATE TABLE `inspection_records` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `rental_id` INT DEFAULT NULL COMMENT '租客自己存的合約；與 lease_id 恰好一個',
+  `lease_id` INT DEFAULT NULL COMMENT '房東平台上的租約',
+  `type` ENUM('check_in','check_out') NOT NULL,
+  `photo_url` VARCHAR(512) NOT NULL,
+  `capture_source` ENUM('camera','file') NOT NULL DEFAULT 'file' COMMENT '照片來源：camera=現場鏡頭拍攝、file=檔案上傳或舊資料',
+  `capture_quality` JSON DEFAULT NULL COMMENT '現場拍攝量到的 brightness/sharpness/isLevel；檔案上傳為 NULL',
+  `item_name` VARCHAR(100) DEFAULT NULL,
+  `room_name` VARCHAR(100) DEFAULT NULL,
+  `vlm_result` JSON DEFAULT NULL COMMENT 'NVIDIA VLM 生成的結構化損傷判斷',
+  `user_note` TEXT DEFAULT NULL,
+  `captured_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`lease_id`) REFERENCES `landlord_leases`(`id`) ON DELETE CASCADE,
+  INDEX `idx_inspection_rental_type` (`rental_id`, `type`),
+  INDEX `idx_inspection_records_lease` (`lease_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `inspection_items` (
   `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  `rental_id` INT NOT NULL,
+  `rental_id` INT DEFAULT NULL COMMENT '租客自己存的合約；與 lease_id 恰好一個',
+  `lease_id` INT DEFAULT NULL COMMENT '房東平台上的租約',
   `room_name` VARCHAR(100) NOT NULL,
   `item_name` VARCHAR(100) NOT NULL,
   `category` VARCHAR(20) NOT NULL DEFAULT 'furniture',
@@ -726,9 +732,11 @@ CREATE TABLE `inspection_items` (
   `version` INT NOT NULL DEFAULT 0,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`lease_id`) REFERENCES `landlord_leases`(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`baseline_record_id`) REFERENCES `inspection_records`(`id`) ON DELETE SET NULL,
   FOREIGN KEY (`checkout_record_id`) REFERENCES `inspection_records`(`id`) ON DELETE SET NULL,
-  INDEX `idx_inspection_items_rental` (`rental_id`)
+  INDEX `idx_inspection_items_rental` (`rental_id`),
+  INDEX `idx_inspection_items_lease` (`lease_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 

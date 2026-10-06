@@ -93,6 +93,7 @@ def _contract_json(rental: models.Rental, accent: str) -> dict:
         "electricityPlan": rental.electricity_fee_type or "契約未載明",
         "waterPlan": rental.water_fee_rule or "契約未載明",
         "accent": accent,
+        "source": "self",
         "cycles": [_bill_json(bill) for bill in sorted(rental.bills, key=lambda b: b.period_index)],
     }
 
@@ -145,10 +146,30 @@ def list_contracts(
             detail="租約個資無法解密，加密金鑰可能已變更。請聯絡系統管理員核對金鑰。",
         )
 
-    return [
+    own = [
         _contract_json(rental, ACCENTS[index % len(ACCENTS)])
         for index, rental in enumerate(rentals)
     ]
+    return own + _landlord_contracts(db, user, len(own))
+
+
+def _landlord_contracts(db: Session, user: CurrentUser, offset: int) -> list[dict]:
+    """房東平台上、這位租客已加入的租約（見 routers/tenant_landlord_leases.py）。
+
+    出錯只記 log、不影響自己存的合約 —— 房東那邊的資料有問題，不能讓租客首頁整個打不開。
+    """
+    if getattr(user, "role", "tenant") != "tenant":
+        return []
+    account = db.get(models.User, user.id)
+    if not account:
+        return []
+    try:
+        from routers.tenant_landlord_leases import landlord_contracts_for
+        return landlord_contracts_for(db, account, ACCENTS, offset)
+    except Exception:
+        db.rollback()
+        logger.exception("Dashboard: landlord leases for user %s failed", user.id)
+        return []
 
 
 @router.put("/bills/{bill_id}/payment")

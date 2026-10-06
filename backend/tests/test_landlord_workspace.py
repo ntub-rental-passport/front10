@@ -18,8 +18,8 @@ from db.database import Base, get_db
 from db.models import (InboxMessage, LandlordCharge, LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant,
                        LeaseInvitation, User, UserRole)
 from notifications import landlord_reminders
-from routers import (landlord_contracts, landlord_finance, landlord_properties, landlord_tenants, landlord_workspace_api,
-                     lease_invitations, repairs, tenant_leases)
+from routers import (inspection, landlord_contracts, landlord_finance, landlord_properties, landlord_tenants,
+                     landlord_workspace_api, lease_invitations, repairs, tenant_landlord_leases, tenant_leases)
 
 OWNER, TENANT, MEMBER, OUTSIDER, OTHER_TENANT = 1, 2, 3, 4, 5
 TODAY = datetime.date.today()
@@ -73,7 +73,8 @@ class LandlordWorkspaceTests(unittest.TestCase):
         app = FastAPI()
         for router in (landlord_tenants.router, landlord_properties.router, landlord_finance.router,
                        landlord_contracts.router, landlord_workspace_api.router, lease_invitations.landlord_router,
-                       lease_invitations.public_router, tenant_leases.router, repairs.router):
+                       lease_invitations.public_router, tenant_leases.router, repairs.router,
+                       tenant_landlord_leases.router, inspection.router):
             app.include_router(router)
 
         def test_db():
@@ -196,6 +197,16 @@ class LandlordWorkspaceTests(unittest.TestCase):
         self.assertEqual(reversed_['paid'], 0)
         self.assertEqual(len(reversed_['payments']), 2)
 
+    def test_rent_periods_do_not_drift_after_short_months(self):
+        lease = LandlordLease(start_date=datetime.date(2026, 1, 31), end_date=datetime.date(2026, 6, 15),
+                              monthly_rent=30000, payment_day=5, payment_frequency='monthly', status='active')
+        periods = landlord_finance.rent_periods(lease, datetime.date(2027, 1, 1))
+        self.assertEqual([(p[0].isoformat(), p[1].isoformat()) for p in periods[:3]],
+                         [('2026-01-31', '2026-02-27'), ('2026-02-28', '2026-03-30'), ('2026-03-31', '2026-04-29')])
+        self.assertTrue(all(p[3] == 30000 for p in periods[:-1]))
+        # 最後一期 5/31 ～ 6/15：16 天 / 30 天
+        self.assertEqual(periods[-1][3], round(30000 * 16 / 30))
+
     def test_trend_reports_six_months(self):
         rows = self.ok(self.call('GET', '/api/landlord/finance/trend'))['items']
         self.assertEqual(len(rows), 6)
@@ -302,6 +313,24 @@ class LandlordWorkspaceTests(unittest.TestCase):
         self.assertEqual(audit[0]['title'], '確認收款')
         self.assertEqual(audit[0]['actor'], 'member@test.example')
 
+    def test_repair_timeline_records_acting_member(self):
+        self.join('manager')
+        with self.Session() as db:
+            db.get(LandlordLease, 1).tenant_user_id = TENANT
+            db.commit()
+        ticket = self.ok(self.call('POST', '/api/repairs', user=TENANT, role='tenant', json={
+            'target': 'lease:1', 'location': '浴室', 'equipment': '熱水器', 'description': '沒有熱水',
+            'urgency': 'soon', 'phone': '0912000000', 'photos': []}), 201)
+        self.ok(self.call('POST', f'/api/repairs/{ticket["id"]}/read', user=MEMBER, workspace=OWNER))
+        updated = self.ok(self.call('PATCH', f'/api/repairs/{ticket["id"]}', user=MEMBER, workspace=OWNER, json={
+            'updates': {'status': 'processing'}, 'event': {'title': '已安排師傅'}}))
+        names = [item['actorName'] for item in updated['timeline']]
+        self.assertEqual(names[0], None)  # 租客提交
+        self.assertEqual(names[-1], 'member（團隊成員）')
+        with self.Session() as db:
+            from db.models import RepairTicketEvent
+            self.assertEqual(db.query(RepairTicketEvent).order_by(RepairTicketEvent.id.desc()).first().actor_user_id, MEMBER)
+
     def test_non_member_cannot_switch_workspace(self):
         self.assertEqual(self.call('GET', '/api/landlord/tenants', user=OUTSIDER, workspace=OWNER).status_code, 403)
 
@@ -323,6 +352,25 @@ class LandlordWorkspaceTests(unittest.TestCase):
             'repair_notifications': True, 'reminder_days': 45}))
         again = self.ok(self.call('GET', '/api/landlord/settings'))
         self.assertEqual((again['display_name'], again['reminder_days'], again['contract_reminders']), ('林大房東', 45, False))
+
+    def test_reminder_email_follows_preference(self):
+        from notifications import user_notify
+        sent = []
+        with patch.object(user_notify, 'email_available', return_value=True),                 patch.object(user_notify, 'start_email_delivery', side_effect=lambda ids: sent.extend(ids)):
+            with self.Session() as db:
+                db.get(LandlordLease, 1).tenant_user_id = TENANT
+                db.commit()
+            charge = self.ok(self.call('GET', '/api/landlord/finance/charges'))['items'][0]
+            self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/remind'))
+            self.assertEqual(len(sent), 1)
+            with self.Session() as db:
+                message = db.query(InboxMessage).filter_by(user_id=TENANT).one()
+                self.assertEqual(message.email_state, 'pending')
+            self.ok(self.call('PUT', '/api/landlord/settings/notifications', json={
+                'email_notifications': False, 'rent_reminders': True, 'contract_reminders': True,
+                'repair_notifications': True, 'reminder_days': 30}))
+            self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/remind'))
+            self.assertEqual(len(sent), 1)
 
     def test_automatic_rent_reminder_sent_once(self):
         with self.Session() as db:
@@ -362,6 +410,68 @@ class LandlordWorkspaceTests(unittest.TestCase):
         self.ok(self.call('GET', '/api/landlord/overview/tasks'))
         self.ok(self.add_tenant(), 201)
         landlord_reminders.dispatch_due(TODAY, self.Session)
+
+    # ---------------- 租客端看房東租約 ----------------
+
+    def bind_tenant(self):
+        with self.Session() as db:
+            db.get(LandlordLease, 1).tenant_user_id = TENANT
+            db.commit()
+
+    def test_tenant_dashboard_lists_landlord_lease_read_only(self):
+        self.bind_tenant()
+        with self.Session() as db:
+            contracts = tenant_landlord_leases.landlord_contracts_for(db, db.get(User, TENANT), ('sky',), 0)
+        self.assertEqual(len(contracts), 1)
+        contract = contracts[0]
+        self.assertEqual((contract['source'], contract['title']), ('landlord', '松江路 101'))
+        self.assertTrue(contract['cycles'])
+        self.assertTrue(all(cycle['rentAmount'] == 15000 for cycle in contract['cycles'][1:-1]))
+        with self.Session() as db:
+            self.assertEqual(tenant_landlord_leases.landlord_contracts_for(db, db.get(User, OTHER_TENANT), ('sky',), 0), [])
+
+    def test_tenant_payment_report_notifies_landlord_without_marking_paid(self):
+        self.bind_tenant()
+        with self.Session() as db:
+            cycle = tenant_landlord_leases.landlord_contracts_for(db, db.get(User, TENANT), ('sky',), 0)[0]['cycles'][0]
+        charge_id = int(cycle['id'].split(':')[1])
+        result = self.ok(self.call('POST', f'/api/tenant/landlord-leases/charges/{charge_id}/report', user=TENANT,
+                                   role='tenant', json={'paid_at': TODAY.isoformat(), 'payment_method': 'bank-transfer',
+                                                        'payment_note': '末五碼 12345'}))
+        self.assertIsNone(result['paidAt'])
+        self.assertIn('12345', result['tenantReport']['detail'])
+        charges = self.ok(self.call('GET', f'/api/landlord/finance/charges?month={TODAY.strftime("%Y-%m")}'))['items']
+        reported = next(item for item in charges if item['id'] == charge_id)
+        self.assertEqual(reported['paid'], 0)
+        self.assertIsNotNone(reported['tenant_report'])
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).filter_by(user_id=OWNER, category='帳務').count(), 1)
+        self.assertEqual(self.call('POST', f'/api/tenant/landlord-leases/charges/{charge_id}/report', user=OTHER_TENANT,
+                                   role='tenant', json={'paid_at': TODAY.isoformat()}).status_code, 404)
+
+    def test_tenant_can_read_lease_and_attachment(self):
+        self.bind_tenant()
+        uploaded = self.ok(self.call('POST', '/api/landlord/contracts/1/files', json={'name': '租約.pdf', 'data': PDF}), 201)
+        detail = self.ok(self.call('GET', '/api/tenant/landlord-leases/1', user=TENANT, role='tenant'))
+        self.assertEqual([item['name'] for item in detail['files']], ['租約.pdf'])
+        download = self.call('GET', f'/api/tenant/landlord-leases/1/files/{uploaded["id"]}', user=TENANT, role='tenant')
+        self.assertTrue(download.content.startswith(b'%PDF-'))
+        self.assertEqual(self.call('GET', '/api/tenant/landlord-leases/1', user=OTHER_TENANT, role='tenant').status_code, 404)
+
+    def test_inspection_on_landlord_lease_is_visible_to_landlord(self):
+        self.bind_tenant()
+        targets = self.ok(self.call('GET', '/api/inspection/properties', user=TENANT, role='tenant'))
+        self.assertIn('lease:1', [item['id'] for item in targets])
+        item = self.ok(self.call('POST', '/api/inspection/items', user=TENANT, role='tenant',
+                                 json={'rental_id': 'lease:1', 'room': '客廳', 'name': '沙發'}), 201)
+        self.assertEqual(item['propertyId'], 'lease:1')
+        listed = self.ok(self.call('GET', '/api/inspection/items?rental_id=lease:1', user=TENANT, role='tenant'))
+        self.assertEqual([entry['name'] for entry in listed], ['沙發'])
+        self.assertEqual(self.call('POST', '/api/inspection/items', user=OTHER_TENANT, role='tenant',
+                                   json={'rental_id': 'lease:1', 'room': '客廳', 'name': '桌子'}).status_code, 404)
+        landlord_view = self.ok(self.call('GET', '/api/landlord/contracts/1/inspection'))['items']
+        self.assertEqual([entry['name'] for entry in landlord_view], ['沙發'])
+        self.assertEqual(self.call('GET', '/api/landlord/contracts/1/inspection', user=OUTSIDER).status_code, 404)
 
     def test_overview_tasks_come_from_data(self):
         items = self.ok(self.call('GET', '/api/landlord/overview/tasks'))['items']

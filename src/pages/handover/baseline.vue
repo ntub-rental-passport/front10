@@ -342,6 +342,9 @@ function fmtDate(iso: string) {
             </div>
           </div>
 
+          <p v-if="currentProperty?.source === 'landlord'" class="mt-3 rounded-md bg-sky-50 p-2 text-xs text-sky-800">
+            這是房東平台上的租約：你在這裡的點交照片與辨識結果，房東也看得到（只能看、不能改），退租時雙方可以對照。
+          </p>
           <div v-if="currentProperty" class="mt-4 grid grid-cols-3 gap-2 text-sm">
             <div class="rounded-md border p-2">
               <div class="text-xs text-muted-foreground">已存證</div>

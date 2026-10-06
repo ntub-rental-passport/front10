@@ -36,6 +36,8 @@ export interface RepairTimelineItem {
   title: string
   detail?: string
   actorRole?: 'tenant' | 'landlord' | 'system'
+  /** 房東端由團隊成員操作時的名稱，例如「小陳（團隊成員）」；其他情況沒有 */
+  actorName?: string | null
 }
 
 export interface RepairSupplement {
