@@ -32,6 +32,7 @@ describe('changePlan', () => {
     sub.expiresAt = new Date(2026, 0, 1).toISOString()
     changePlan(sub.id, 'landlord', 'plus')
     expect(sub).toMatchObject({
+      startedAt: now.toISOString(),
       planKey: 'plus',
       billingCycle: 'monthly',
       active: true,
@@ -44,21 +45,28 @@ describe('changePlan', () => {
       '方案調整為「Plus 進階管理」',
     )
   })
-  it('Free 升級保留未來的到期日', () => {
+  it('Free 升級丟棄原本未來的到期日，從首次付款重建排程', () => {
     const sub = current()
-    const expiresAt = sub.expiresAt
+    sub.expiresAt = new Date(2026, 11, 1).toISOString()
     changePlan(sub.id, 'tenant', 'plus')
     expect(sub.billingCycle).toBe('monthly')
-    expect(sub.expiresAt).toBe(expiresAt)
+    expect(sub.startedAt).toBe(now.toISOString())
+    expect(sub.expiresAt).toBe(new Date(2026, 1, 28, 12).toISOString())
   })
   it('付費互換保留週期，到 Free 則清除計費週期', () => {
     const sub = current()
     sub.planKey = 'plus'
     sub.billingCycle = 'yearly'
     const expiresAt = sub.expiresAt
+    const startedAt = sub.startedAt
     changePlan(sub.id, 'tenant', 'pro')
+    expect(sub.startedAt).toBe(startedAt)
     expect(sub.billingCycle).toBe('yearly')
     expect(sub.expiresAt).toBe(expiresAt)
+    changePlan(sub.id, 'tenant', 'plus')
+    expect(sub.startedAt).toBe(startedAt)
+    expect(sub.expiresAt).toBe(expiresAt)
+    expect(sub.billingCycle).toBe('yearly')
     changePlan(sub.id, 'tenant', 'free')
     expect(sub.billingCycle).toBeNull()
     expect(effectivePlanKey(sub, now)).toBe('free')
@@ -75,6 +83,8 @@ describe('changePlan', () => {
     changePlan(sub.id, 'tenant', 'pro')
     expect(sub.active).toBe(true)
     expect(sub.billingCycle).toBe('monthly')
+    expect(sub.startedAt).toBe(now.toISOString())
+    expect(sub.expiresAt).toBe(new Date(2026, 1, 28, 12).toISOString())
   })
   it('跨角色與管理員拒絕調整，無效 id 與不變的方案不寫稽核', () => {
     const sub = current()
