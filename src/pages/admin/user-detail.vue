@@ -98,6 +98,7 @@ import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { fetchAdminAudit, type ServerAuditEvent } from '@/src/services/adminAuditApi'
 import { latestSuspension, suspensionNote } from '@/src/utils/admin-audit-sources'
 import { planInclusions } from '@/src/utils/admin-plan-summary'
+import { accountUsageLimits } from '@/src/utils/admin-usage'
 
 const route = useRoute()
 const router = useRouter()
@@ -132,13 +133,16 @@ const now = useNow()
 
 const subscriptionStatusFlags = computed(() => {
   const current = row.value
-  if (!current?.subscription) return []
+  if (!current) return []
+  const plan = userPlan(current.user, current.subscription, now.value)
+  if (!plan) return []
   return subscriptionFlags({
-    active: current.subscription.active,
-    planKey: current.subscription.planKey,
-    role: current.subscription.role,
-    expiringSoon: isExpiringSoon(current.subscription),
+    active: current.subscription?.active ?? true,
+    planKey: current.subscription?.planKey ?? plan.key,
+    role: plan.role,
+    expiringSoon: current.subscription ? isExpiringSoon(current.subscription) : false,
     quotaExhausted: current.quotaExhausted,
+    overLimit: current.overLimit,
   })
 })
 
@@ -239,6 +243,16 @@ function usagePercent(used: number, quota: number): number {
 const effectivePlan = computed(() =>
   row.value ? userPlan(row.value.user, row.value.subscription, now.value) : null,
 )
+const countUsage = computed(() => accountUsageLimits(effectivePlan.value, row.value?.usage ?? null))
+const landlordMetrics = computed(() => {
+  const usage = countUsage.value
+  if (usage?.role !== 'landlord') return []
+  return [
+    { label: '管理物件', unit: '個', suffix: '', ...usage.properties },
+    { label: '管理房間', unit: '間', suffix: '', ...usage.rooms },
+    { label: '管理者席次', unit: '席', suffix: '（含擁有者）', ...usage.seats },
+  ]
+})
 const subscriptionPlanKey = computed<PlanKey>(() =>
   row.value?.subscription?.active ? row.value.subscription.planKey : 'free',
 )
@@ -517,18 +531,26 @@ function openSendDialog(): void {
         -->
         <dl class="grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl bg-muted/40 p-5 text-sm">
           <div class="space-y-0.5">
-            <dt class="text-xs text-foreground/70">AI 用量</dt>
+            <dt class="text-xs text-foreground/70">{{ row.user.role === 'landlord' ? '物件' : 'AI 用量' }}</dt>
             <dd class="font-semibold tabular-nums">
-              <template v-if="analysisUsage">
+              <template v-if="countUsage?.role === 'landlord'">
+                {{ countUsage.properties.used }} / {{ countUsage.properties.limit }}
+              </template>
+              <span v-else-if="row.user.role === 'landlord'" class="font-normal text-muted-foreground">讀不到用量</span>
+              <template v-else-if="analysisUsage">
                 {{ analysisUsage.used }} / {{ analysisUsage.available }}
               </template>
               <span v-else class="font-normal text-muted-foreground">—</span>
             </dd>
           </div>
           <div class="space-y-0.5">
-            <dt class="text-xs text-foreground/70">儲存用量</dt>
+            <dt class="text-xs text-foreground/70">{{ row.user.role === 'landlord' ? '房間' : '儲存用量' }}</dt>
             <dd class="font-semibold tabular-nums">
-              <template v-if="tenantSubscription">{{ storageLabel(tenantSubscription.storageUsedMb) }}</template>
+              <template v-if="countUsage?.role === 'landlord'">
+                {{ countUsage.rooms.used }} / {{ countUsage.rooms.limit }}
+              </template>
+              <span v-else-if="row.user.role === 'landlord'" class="font-normal text-muted-foreground">讀不到用量</span>
+              <template v-else-if="tenantSubscription">{{ storageLabel(tenantSubscription.storageUsedMb) }}</template>
               <span v-else class="font-normal text-muted-foreground">—</span>
             </dd>
           </div>
@@ -638,7 +660,56 @@ function openSendDialog(): void {
                 </div>
               </div>
 
-              <p v-if="!row.subscription" class="text-sm text-muted-foreground">用量：尚未串接</p>
+              <div v-if="effectivePlan.role === 'landlord'" class="grid gap-4 sm:grid-cols-3">
+                <template v-if="countUsage?.role === 'landlord'">
+                  <div v-for="metric in landlordMetrics" :key="metric.label" class="space-y-1.5">
+                    <p class="text-sm tabular-nums">
+                      {{ metric.label }} {{ metric.used }} / {{ metric.limit }} {{ metric.unit }}{{ metric.suffix }}
+                    </p>
+                    <Progress
+                      :model-value="usagePercent(metric.used, metric.limit)"
+                      :class="metric.overLimit ? '[&>div]:bg-accent' : ''"
+                    />
+                    <StatusDot v-if="metric.overLimit" tone="warn" label="超出上限" emphasize />
+                  </div>
+                </template>
+                <template v-else>
+                  <p v-for="label in ['管理物件', '管理房間', '管理者席次（含擁有者）']" :key="label" class="text-sm text-muted-foreground">
+                    {{ label }}：讀不到用量
+                  </p>
+                </template>
+              </div>
+              <div v-else class="space-y-4">
+                <template v-if="countUsage?.role === 'tenant'">
+                  <div class="space-y-1.5">
+                    <p class="text-sm tabular-nums">共享空間 {{ countUsage.sharedSpaces.used }} / {{ countUsage.sharedSpaces.limit }} 個</p>
+                    <Progress
+                      :model-value="usagePercent(countUsage.sharedSpaces.used, countUsage.sharedSpaces.limit)"
+                      :class="countUsage.sharedSpaces.overLimit ? '[&>div]:bg-accent' : ''"
+                    />
+                    <StatusDot v-if="countUsage.sharedSpaces.overLimit" tone="warn" label="超出上限" emphasize />
+                  </div>
+                  <div v-for="space in countUsage.ownedSpaces" :key="space.id" class="space-y-1.5">
+                    <p class="text-sm font-medium">{{ space.name }}</p>
+                    <p class="text-sm tabular-nums">空間人數 {{ space.used }} / {{ space.limit }} 人（含付費者）</p>
+                    <Progress
+                      :model-value="usagePercent(space.used, space.limit)"
+                      :class="space.overLimit ? '[&>div]:bg-accent' : ''"
+                    />
+                    <StatusDot v-if="space.overLimit" tone="warn" label="超出上限" emphasize />
+                  </div>
+                  <p v-for="space in row.usage?.tenant?.joinedSpaces" :key="space.id" class="text-sm text-muted-foreground">
+                    加入 {{ space.ownerName ?? '姓名未知的建立者' }} 的空間（共 {{ space.memberCount }} 人），不佔此帳號額度
+                  </p>
+                  <p v-if="countUsage.ownedSpaces.length === 0 && !row.usage?.tenant?.joinedSpaces.length" class="text-sm text-muted-foreground">
+                    尚未建立共享空間
+                  </p>
+                </template>
+                <template v-else>
+                  <p class="text-sm text-muted-foreground">共享空間：讀不到用量</p>
+                  <p class="text-sm text-muted-foreground">空間人數：讀不到用量</p>
+                </template>
+              </div>
               <div v-if="tenantSubscription && analysisUsage" class="grid gap-4 sm:grid-cols-2">
                 <div class="space-y-1.5">
                   <div class="flex justify-between gap-2 text-sm">
@@ -657,6 +728,10 @@ function openSendDialog(): void {
                   </div>
                   <Progress :model-value="usagePercent(tenantSubscription.storageUsedMb, storageLimit)" />
                 </div>
+              </div>
+              <div v-else-if="effectivePlan.role === 'tenant'" class="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
+                <p>AI 契約分析：尚未串接</p>
+                <p>附件容量：尚未串接</p>
               </div>
 
               <div v-if="effectivePlan.role === 'tenant'" class="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted/40 p-4">

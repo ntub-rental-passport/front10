@@ -9,6 +9,8 @@ import type { AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admi
 import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
 import type { Subscription } from '@/src/mocks/admin/subscription'
+import type { AccountUsage } from '@/src/types/admin-usage'
+import { accountUsageLimits } from './admin-usage'
 import { depositGap, depositMatchOf, type DepositMatch } from './admin-deposit'
 import type { MaintenanceStatus } from './admin-maintenance'
 import {
@@ -101,8 +103,11 @@ export interface UserDirectoryRow {
    * 區分真假的地方，兩個欄位可能不同步，一個不會。
    */
   realAccountId?: number
-  /** 沒有訂閱記錄時為 null，仍適用該角色的 Free，實際用量未知。 */
+  /** 沒有訂閱記錄時為 null，仍適用該角色的 Free。 */
   subscription: Subscription | null
+  /** null 表示讀不到或不適用，計數為零必須有來源資料。 */
+  usage: AccountUsage | null
+  overLimit: boolean
   deposits: UserDepositView[]
   tickets: UserTicketView[]
   openTicketCount: number
@@ -122,6 +127,7 @@ export interface RealAccountInput {
   emailVerified: boolean
   createdAt: string | null
   lastLoginAt: string | null
+  usage?: AccountUsage | null
 }
 
 
@@ -130,7 +136,7 @@ export interface RealAccountInput {
  *
  * 真實帳號沒有訂閱、押金、工單這些關聯資料 —— 那些是展示資料集為了
  * 呈現各模組而生成的，彼此以固定 id 互相指涉。所以這裡一律給空值，
- * 用量顯示尚未串接，方案則由角色決定 Free，避免編造使用紀錄。
+ * 計數用量只取後端回傳，方案則由角色決定 Free，避免編造使用紀錄。
  *
  * 管理員只能由能登入伺服器的人用 manage_admin.py 授予，後台不提供新增管理員。
  */
@@ -141,6 +147,7 @@ export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
     : account.roles.includes('landlord')
       ? 'landlord'
       : 'user'
+  const usage = account.usage ?? null
 
   return {
     realAccountId: account.id,
@@ -156,6 +163,8 @@ export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
       lastLoginAt: account.lastLoginAt,
     },
     subscription: null,
+    usage,
+    overLimit: accountUsageLimits(userPlan({ role }, null), usage)?.overLimit ?? false,
     deposits: [],
     tickets: [],
     openTicketCount: 0,
@@ -172,6 +181,7 @@ export interface UserDirectorySources {
   tickets: MaintenanceTicket[]
   deposits: DepositRecord[]
   subscriptions: Subscription[]
+  usageByUserId?: Record<string, AccountUsage>
 }
 
 /**
@@ -191,6 +201,7 @@ export function joinUserDirectory(
     const subscription = subscriptions.find(
       (item) => item.userId === user.id && item.role === planRoleOf(user.role),
     ) ?? null
+    const usage = sources.usageByUserId?.[user.id] ?? null
 
     const userDeposits: UserDepositView[] = deposits
       .filter((item) => item.tenantUserId === user.id || item.landlordUserId === user.id)
@@ -212,6 +223,8 @@ export function joinUserDirectory(
     return {
       user,
       subscription,
+      usage,
+      overLimit: accountUsageLimits(userPlan(user, subscription, now), usage)?.overLimit ?? false,
       deposits: userDeposits,
       tickets: userTickets,
       openTicketCount: userTickets.filter((item) => item.open).length,
@@ -228,12 +241,14 @@ export type UserAlert =
   | 'ticket-overdue'
   | 'subscription-expiring'
   | 'quota-exhausted'
+  | 'over-limit'
 
 export const userAlertLabels: Record<UserAlert, string> = {
   'deposit-mismatch': '押金金額不符',
   'ticket-overdue': '工單逾期',
   'subscription-expiring': '訂閱即將到期',
   'quota-exhausted': '額度已用滿',
+  'over-limit': '超出方案上限',
 }
 
 export interface UserDirectoryFilter {
@@ -289,6 +304,8 @@ function matchesAlert(row: UserDirectoryRow, alert: UserDirectoryFilter['alert']
       return row.subscriptionExpiring
     case 'quota-exhausted':
       return row.quotaExhausted
+    case 'over-limit':
+      return row.overLimit
     default:
       return true
   }

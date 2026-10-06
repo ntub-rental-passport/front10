@@ -65,6 +65,14 @@ async function render(query: Record<string, string | string[]>) {
 }
 
 describe('使用者列表 query 預選', () => {
+  it('over-limit query 預選且僅列出超出帳號，列表亮出警示', async () => {
+    const { html, directory } = await render({ alert: 'over-limit' })
+    expect(directory.filter.value.alert).toBe('over-limit')
+    expect(directory.filteredRows.value.length).toBeGreaterThan(0)
+    expect(directory.filteredRows.value.every((row) => row.overLimit)).toBe(true)
+    expect(html).toContain('data-model-value="over-limit"')
+    expect(html).toContain('超出方案上限')
+  })
   it('房東 Plus query 預選兩個篩選與甜甜圈角色，確實只列出對應方案', async () => {
     const { html, directory } = await render({ role: 'landlord', plan: 'landlord-plus' })
     expect(directory.filter.value).toMatchObject({ role: 'landlord', plan: 'landlord-plus' })

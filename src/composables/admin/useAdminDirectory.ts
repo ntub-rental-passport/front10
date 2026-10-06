@@ -23,6 +23,13 @@ import {
 } from '@/src/utils/admin-user-directory'
 import type { PlanRole } from '@/src/utils/subscription-plans'
 import { dropDemoDuplicates } from '@/src/utils/admin-user-list'
+import { seedAdminUsers } from '@/src/mocks/admin/users'
+import { seedSubscriptions } from '@/src/mocks/admin/subscription'
+import { seedAccountUsage } from '@/src/mocks/admin/usage'
+
+// 用量不跟著展示帳號的停用、角色或方案操作重算，才能監控異動後是否超額。
+const usageUsers = seedAdminUsers()
+const demoUsage = seedAccountUsage(usageUsers, seedSubscriptions(usageUsers), new Date())
 
 /**
  * 使用者管理的資料來源。
@@ -97,6 +104,7 @@ export function useAdminDirectory() {
         tickets: adminMaintenanceCollection.value,
         deposits: adminDepositCollection.value,
         subscriptions: adminSubscriptionCollection.value,
+        usageByUserId: demoUsage,
       },
       adminSettings.value.subscriptionExpiringSoonDays,
       now.value,

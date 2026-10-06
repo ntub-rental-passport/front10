@@ -681,6 +681,9 @@ function displayName(row: UserDirectoryRow): string {
 
                 <TableCell class="whitespace-nowrap">
                   <span :class="row.user.role === 'admin' ? 'text-muted-foreground' : ''">{{ userPlan(row.user, row.subscription, now)?.name ?? '—' }}</span>
+                  <div v-if="row.overLimit" class="mt-1">
+                    <StatusDot tone="warn" :label="userAlertLabels['over-limit']" emphasize />
+                  </div>
                 </TableCell>
 
                 <TableCell
