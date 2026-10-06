@@ -51,8 +51,8 @@ export const TENANT_ROUTE_OPTIONS: TenantRouteOption[] = [
 
   { url: '/app/subsidy', label: '租屋補貼總覽', group: '補貼' },
   { url: '/app/subsidy/apply', label: '補貼申請', group: '補貼' },
-  { url: '/app/subsidy/upload', label: '補貼文件補件', group: '補貼' },
-  { url: '/app/subsidy/progress', label: '補貼進度查詢', group: '補貼' },
+  { url: '/app/subsidy/upload', label: '補貼文件準備', group: '補貼' },
+  { url: '/app/subsidy/progress', label: '補貼申請後提醒', group: '補貼' },
 
   { url: '/app/repairs', label: '報修工單', group: '居住' },
   { url: '/app/handover', label: '交屋點交', group: '居住' },

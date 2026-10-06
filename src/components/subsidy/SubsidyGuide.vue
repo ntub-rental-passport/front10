@@ -5,8 +5,8 @@ import SubsidyJourney from './SubsidyJourney.vue'
 import heroImage from '@/src/assets/subsidy/01-rent-subsidy-hero.png'
 import eligibilityImage from '@/src/assets/subsidy/02-eligibility-check.png'
 import housingImage from '@/src/assets/subsidy/03-housing-check.png'
-import documentsImage from '@/src/assets/subsidy/04-application-documents.png'
-import progressImage from '@/src/assets/subsidy/05-progress-followup.png'
+import SubsidyReminders from './SubsidyReminders.vue'
+import { createChecklistPdf } from '@/src/utils/subsidy-checklist-pdf'
 import {
   ArrowUpRight,
   ArrowRight,
@@ -42,7 +42,7 @@ const tabs = [
   ['資格初步檢核', '/app/subsidy/calculator'],
   ['房屋條件確認', '/app/subsidy/housing'],
   ['申請準備', '/app/subsidy/apply'],
-  ['進度與補件', '/app/subsidy/progress'],
+  ['申請後提醒', '/app/subsidy/progress'],
   ['追繳協助', '/app/subsidy/recovery'],
 ]
 const page = computed(() => route.path.split('/').pop())
@@ -204,7 +204,7 @@ const documents = computed(() => [
     : []),
 ])
 const prepared = computed(() => documents.value.filter((d) => checked.value.includes(d.id)).length)
-const progress = reactive({ status: '', date: '', deadline: '' })
+const exporting = ref(false)
 const recovery = reactive({ received: '', deadline: '', reason: '', question: '' })
 const feedback = ref('')
 const faqQuery = ref('')
@@ -240,16 +240,23 @@ function download(text: string, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
   feedback.value = '已產生下載檔案，請妥善保存；未送交政府。'
 }
-function exportChecklist() {
-  download(
-    'RentMate｜115 年租補申請準備清單\n' +
-      documents.value
-        .map((d) => `${checked.value.includes(d.id) ? '已準備' : '待準備'}｜${d.title}：${d.help}`)
-        .join('\n') +
-      '\n房屋條件請另行查證。\n正式申請：' +
-      sources.portal,
-    'RentMate-租補準備清單.txt',
-  )
+async function exportChecklist() {
+  exporting.value = true
+  feedback.value = ''
+  try {
+    const bytes = await createChecklistPdf(documents.value, checked.value)
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'RentMate-租補準備清單.pdf'
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    feedback.value = '已下載 PDF 條列清單，不含租約個資；未送交政府。'
+  } catch {
+    feedback.value = 'PDF 產生失敗，請稍後重試。'
+  } finally {
+    exporting.value = false
+  }
 }
 function exportRecovery() {
   download(
@@ -306,7 +313,7 @@ function exportRecovery() {
       <div v-else>
         <strong>還沒有存檔的租約</strong>
         <small>
-          下面的欄位請手動輸入。先在
+          請對照自己的租約填寫；申請資料直接填在政府網站。也可先在
           <RouterLink to="/app/contract/scanner">契約辨識</RouterLink>
           存檔一份終版契約，就能自動帶入。
         </small>
@@ -555,7 +562,8 @@ function exportRecovery() {
               租期與 {{ coverage.rocYear }} 年沒有重疊，這份租約無法用來申請今年的租補。
             </p>
             <p v-else-if="coverage.monthsInYear < 12">
-              租期涵蓋 {{ coverage.rocYear }} 年其中 {{ coverage.monthsInYear }} 個月。租補按月核計，可申請的月份以租期內為限。
+              租期涵蓋 {{ coverage.rocYear }} 年其中
+              {{ coverage.monthsInYear }} 個月。租補按月核計，可申請的月份以租期內為限。
             </p>
             <p v-else>租期涵蓋 {{ coverage.rocYear }} 年全年。</p>
             <p v-if="coverage.ended">這份租約已經到期；若已續約或搬家，請以新租約申請。</p>
@@ -651,8 +659,30 @@ function exportRecovery() {
       </aside>
     </div>
 
-    <div v-else-if="page === 'apply' || page === 'upload'" class="content-grid">
-      <section class="panel">
+    <div v-else-if="page === 'apply' || page === 'upload'" class="application-layout">
+      <section class="panel result application-steps">
+        <div class="application-heading">
+          <div>
+            <span class="eyebrow">在政府網站完成申請</span>
+            <h2>政府網站的 5 個步驟</h2>
+          </div>
+          <a class="primary" :href="sources.portal" target="_blank" rel="noopener noreferrer"
+            >前往政府網站申請 <ArrowUpRight :size="16"
+          /></a>
+        </div>
+        <ol class="official-steps">
+          <li>驗證身分</li>
+          <li>填寫資料</li>
+          <li>上傳文件</li>
+          <li>核對並送出</li>
+          <li>取得案件編號</li>
+        </ol>
+        <p>
+          申請、查詢及補件都由你直接在政府網站操作。RentMate
+          不代辦、不連線查詢案件，也不處理驗證碼。
+        </p>
+      </section>
+      <section class="panel preparation-panel">
         <span class="eyebrow">03 / 文件與填表</span>
         <h2>帶著準備好的資料，再去申請</h2>
         <p>此處只勾選準備狀態，不收取或上傳證件。選擇適用情況，產生你的清單。</p>
@@ -673,8 +703,8 @@ function exportRecovery() {
         <p aria-live="polite">
           已準備 {{ prepared }} / {{ documents.length }} 項（自行勾選，未驗證內容）
         </p>
-        <button class="primary" @click="exportChecklist">
-          <FileText :size="16" />下載準備清單
+        <button class="primary" :disabled="exporting" @click="exportChecklist">
+          <FileText :size="16" />{{ exporting ? '產生 PDF 中…' : '下載準備清單（PDF）' }}
         </button>
         <h3>房屋查證資料，另行留存</h3>
         <p>
@@ -688,12 +718,19 @@ function exportRecovery() {
           <li>帳戶資料及切結內容；在官方頁面逐項核對。</li>
         </ul>
       </section>
-      <aside>
-        <section v-if="applicationFields.length" class="panel copy-panel">
+      <aside class="application-data">
+        <section class="panel copy-panel">
           <h2>官網要填、租約上已經有的資料</h2>
           <p>在官網填表時逐格複製貼上，送出前請再對照一次你的租約原本。</p>
-          <ul class="copy-list">
-            <li v-for="field in applicationFields" :key="field.key">
+          <p v-if="!applicationFields.length">
+            目前沒有可帶入的租約欄位。你仍可下載清單，並對照自己的租約在官網填寫。
+          </p>
+          <ul v-else class="copy-list">
+            <li
+              v-for="field in applicationFields"
+              :key="field.key"
+              :class="{ 'wide-field': field.key === 'address' || field.warning }"
+            >
               <div>
                 <span class="copy-label">{{ field.label }}</span>
                 <strong class="copy-value">{{ displayValue(field) }}</strong>
@@ -717,34 +754,12 @@ function exportRecovery() {
           </ul>
           <p v-if="copyError" class="copy-warning" role="alert">{{ copyError }}</p>
           <p class="copy-note">
-            ⚠️ 官網要上傳的是<strong>雙方實際簽署的租約影本</strong>。RentMate「檢視契約」印出的是由欄位回拼的核對稿，不等於正本，不能拿去送件。
+            ⚠️
+            官網要上傳的是<strong>雙方實際簽署的租約影本</strong>。RentMate「檢視契約」印出的是由欄位回拼的核對稿，不等於正本，不能拿去送件。
           </p>
           <p class="copy-note">
-            戶籍地址、撥款帳戶、家庭成員不在租約上，請在官網直接填寫。RentMate 不收取任何證件或帳戶資料。
+            租約未提供的出生日期、聯絡方式、戶籍／通訊地址、家庭成員及撥款帳戶，請自行在官網填寫。本助手不收取身分證照片、健保卡照片、健保卡號或撥款帳戶資料。
           </p>
-        </section>
-        <section class="panel result">
-          <img
-            class="topic-art"
-            :src="documentsImage"
-            alt="整理租約與申請文件"
-            width="1254"
-            height="1254"
-            loading="lazy"
-            decoding="async"
-          />
-          <h2>政府網站的 5 個步驟</h2>
-          <ol class="steps">
-            <li>驗證身分</li>
-            <li>填寫資料</li>
-            <li>上傳文件</li>
-            <li>核對資料並送出</li>
-            <li>取得案件流水編號</li>
-          </ol>
-          <p>在官方完成送出才算提出申請；拿到編號也不代表審核通過。</p>
-          <a class="primary" :href="sources.portal" target="_blank" rel="noopener noreferrer"
-            >前往政府網站申請／補件 <ArrowUpRight :size="16"
-          /></a>
         </section>
         <section class="panel">
           <h3>文件看不懂？</h3>
@@ -755,78 +770,18 @@ function exportRecovery() {
     </div>
 
     <div v-else-if="page === 'progress'" class="content-grid">
-      <section class="panel">
-        <span class="eyebrow">04 / 申請後</span>
-        <h2>進度與補件備忘</h2>
-        <div class="empty-state">
-          <ClipboardCheck :size="34" />
-          <h3>尚未連結政府案件</h3>
-          <p>RentMate 無法讀取你的官方審查進度。先到政府網站點選「進度查詢」，再依通知記下待辦。</p>
-          <a class="primary" :href="sources.portal" target="_blank" rel="noopener noreferrer"
-            >前往官方查詢／補件 <ArrowUpRight :size="16"
-          /></a>
-        </div>
-        <form
-          @submit.prevent="
-            download(
-              'RentMate｜本人手動記錄，非官方同步\n狀態：' +
-                progress.status +
-                '\n查詢日：' +
-                progress.date +
-                '\n通知所載補件期限：' +
-                (progress.deadline || '無／待確認'),
-              'RentMate-租補進度備忘.txt',
-            )
-          "
-        >
-          <h3>手動整理這次查詢</h3>
-          <label
-            >官方查詢或通知所示狀態<select v-model="progress.status" required>
-              <option value="">請選擇</option>
-              <option>已送出／待審查</option>
-              <option>需補件</option>
-              <option>已核定</option>
-              <option>未核准</option>
-              <option>停止補貼／收到追繳通知</option>
-              <option>其他／需詢問承辦</option>
-            </select></label
-          >
-          <div class="form-grid">
-            <label>查詢日期<input v-model="progress.date" type="date" required /></label
-            ><label
-              >通知所載補件期限（如有）<input v-model="progress.deadline" type="date"
-            /></label>
-          </div>
-          <button class="primary" type="submit">下載手動備忘</button>
-        </form>
-      </section>
-      <aside>
-        <section class="panel">
-          <img
-            class="topic-art"
-            :src="progressImage"
-            alt="核對通知、行事曆與申請進度"
-            width="1254"
-            height="1254"
-            loading="lazy"
-            decoding="async"
-          />
-          <h2>收到補件通知後</h2>
-          <ol>
-            <li>核對通知年度、案件與缺少項目。</li>
-            <li>確認期限，不以 RentMate 預估取代通知。</li>
-            <li>至政府網站選對年度補件入口，上傳指定文件。</li>
-            <li>保留送出紀錄，再查官方是否收到。</li>
-          </ol>
-          <RouterLink to="/app/subsidy/upload">整理補件文件 →</RouterLink>
-        </section>
-        <section class="panel">
-          <h3>搬家或續約了？</h3>
-          <p>
-            重新確認租約及房屋條件，向承辦確認需要的異動文件與期限。舊戶帶入不代表所有資料自動更新。
-          </p>
-          <RouterLink to="/app/subsidy/housing">重新確認房屋 →</RouterLink>
-        </section>
+      <div class="panel"><span class="eyebrow">04 / 申請後提醒</span><SubsidyReminders /></div>
+      <aside class="panel result">
+        <h2>案件進度，直接向政府確認</h2>
+        <p>
+          RentMate
+          不讀取或保存官方審查狀態。查詢、身分驗證與補件都請直接在政府網站完成，收到通知後依官方期限處理。
+        </p>
+        <a class="primary" :href="sources.portal" target="_blank" rel="noopener noreferrer"
+          >前往政府網站查詢／補件 <ArrowUpRight :size="16"
+        /></a>
+        <p>不需向 RentMate 提供身分證或健保卡照片、健保卡號、案件編號。</p>
+        <RouterLink to="/app/notifications">開啟 RentMate 通知中心 →</RouterLink>
       </aside>
     </div>
 
@@ -911,7 +866,11 @@ function exportRecovery() {
           資格與法規：<a href="tel:0277298003">02-7729-8003</a
           ><br />個案與追繳：請聯絡通知上的地方承辦。
         </p>
-        <small
+        <small v-if="page === 'progress'"
+          >申請日期與提醒設定會存於你的 RentMate
+          帳號；不會送交政府，也不代表已向政府提出申請。</small
+        >
+        <small v-else
           >本頁輸入及勾選僅供當次使用，離開頁面不保留；需要留存請下載。下載檔案不會送交政府。</small
         >
       </div>
@@ -1801,6 +1760,94 @@ summary:focus-visible {
   }
   .action-card:hover {
     transform: none;
+  }
+}
+.application-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 24px;
+  align-items: start;
+}
+.application-layout .panel {
+  margin-bottom: 0;
+}
+.application-steps {
+  grid-column: 1 / -1;
+}
+.application-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.official-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+  counter-reset: application-step;
+}
+.official-steps li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 0;
+  padding: 12px 0;
+  font-weight: 600;
+}
+.official-steps li::before {
+  counter-increment: application-step;
+  content: counter(application-step);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #5146a0;
+  color: white;
+}
+.application-data {
+  min-width: 0;
+  display: grid;
+  gap: 20px;
+}
+.application-data .copy-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.application-data .copy-list li {
+  margin: 0;
+  min-width: 0;
+}
+.application-data .copy-value {
+  overflow-wrap: anywhere;
+}
+.application-data .copy-list li.wide-field {
+  grid-column: 1 / -1;
+}
+.primary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+@media (max-width: 1050px) {
+  .application-layout {
+    grid-template-columns: 1fr;
+  }
+  .official-steps {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .official-steps {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .application-data .copy-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -8,6 +8,7 @@ import {
   Zap,
 } from 'lucide-vue-next'
 
+import { listStoredContracts } from '@/src/services/contractApi'
 import powerLightingImage from '@/src/assets/outage/01 .png'
 import powerBatteryImage from '@/src/assets/outage/08.png'
 import powerNoticeImage from '@/src/assets/outage/16.png'
@@ -64,6 +65,7 @@ export interface OutagePageTabItem {
 }
 
 // 響應式狀態
+let addressFromContractLoaded = false
 const rentalAddress = ref('台北市大安區和平東路二段')
 const events = ref<UtilityEvent[]>([])
 const featuredSourceUpdatedAt = ref('尚未載入')
@@ -165,10 +167,21 @@ function getOfficialCardClass(utilityType: UtilityType): string {
 }
 
 export function useOutageData() {
-  onMounted(() => {
-    if (events.value.length === 0) {
-      fetchOutages()
+  onMounted(async () => {
+    if (events.value.length > 0) return
+    // 預設查詢地址取自使用者最新存檔的租約；沒有租約或讀取失敗就用預設值。
+    // listStoredContracts 只選明文欄位，不會因為解密問題失敗。
+    if (!addressFromContractLoaded) {
+      addressFromContractLoaded = true
+      try {
+        const stored = await listStoredContracts()
+        const address = stored.find((contract) => contract.address?.trim())?.address?.trim()
+        if (address) rentalAddress.value = address
+      } catch {
+        // 未登入或網路錯誤：沿用預設地址
+      }
     }
+    fetchOutages()
   })
 
   return {

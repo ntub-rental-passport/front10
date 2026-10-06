@@ -26,6 +26,8 @@ export interface ContractAutofillData {
   paymentDay: number
   paymentFrequency: 'monthly' | 'bimonthly' | 'quarterly'
   sourceFileName: string
+  /** 使用者選的原檔：合約頁存檔時一併上傳成附件。 */
+  sourceFile?: File
   sourceText: string
   fields: ContractAutofillField[]
   missingLabels: string[]

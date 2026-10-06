@@ -1,13 +1,14 @@
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session, joinedload
 
 from db.database import get_db
 from db.models import LandlordLease, LandlordProperty, LandlordRoom, User
-from auth.security import get_current_landlord
+from auth.landlord_workspace import get_landlord_workspace, landlord_actor, record_audit
+from routers import landlord_lease_rules as rules
 
 
 router = APIRouter(prefix="/api/landlord/properties", tags=["Landlord properties"])
@@ -73,31 +74,37 @@ def _owned_property(db: Session, landlord_id: int, property_id: int) -> Landlord
 
 
 def _current_lease(room: LandlordRoom) -> LandlordLease | None:
+    """正在生效的租約。還沒起租的不算，房間不會因為一份未來租約就顯示已出租。"""
     today = date.today()
-    leases = sorted(room.leases, key=lambda item: (item.start_date, item.id), reverse=True)
-    return next(
-        (
-            lease
-            for lease in leases
-            if lease.status in ACTIVE_LEASE_STATUSES
-            and lease.moved_out_at is None
-            and lease.end_date >= today
-        ),
-        None,
-    )
+    effective = [lease for lease in room.leases if rules.is_effective(lease, today)]
+    return max(effective, key=lambda item: (item.start_date, item.id)) if effective else None
+
+
+def _next_lease(room: LandlordRoom) -> LandlordLease | None:
+    today = date.today()
+    upcoming = [lease for lease in room.leases if rules.is_upcoming(lease, today)]
+    return min(upcoming, key=lambda item: (item.start_date, item.id)) if upcoming else None
 
 
 def _room_dict(room: LandlordRoom) -> dict[str, object]:
     lease = _current_lease(room)
+    upcoming = _next_lease(room)
+    today = date.today()
     return {
         "id": room.id,
         "number": room.number,
         "status": "rented" if lease else ("maintenance" if room.status == "maintenance" else "vacant"),
+        # 空房但還沒整理好（剛退租）；畫面仍算空房，另外標示待整備
+        "needs_turnover": not lease and room.status == "turnover",
         "tenant": lease.tenant.name if lease else None,
         "rent": lease.monthly_rent if lease else room.expected_rent,
-        "lease_end": lease.end_date if lease else None,
+        "expected_rent": room.expected_rent,
+        "lease_end": rules.occupied_until(lease) if lease else None,
+        "scheduled_move_out": lease.moved_out_at if lease and lease.moved_out_at and lease.moved_out_at > today else None,
+        "next_lease_start": upcoming.start_date if upcoming else None,
+        "next_tenant": upcoming.tenant.name if upcoming else None,
         "floor": room.floor,
-        "area": room.area,
+        "area": float(room.area) if room.area is not None else None,
     }
 
 
@@ -113,7 +120,7 @@ def _property_dict(property_item: LandlordProperty) -> dict[str, object]:
 
 @router.get("")
 def list_properties(
-    db: Session = Depends(get_db), landlord: User = Depends(get_current_landlord)
+    db: Session = Depends(get_db), landlord: User = Depends(get_landlord_workspace)
 ):
     properties = (
         db.query(LandlordProperty)
@@ -133,7 +140,8 @@ def list_properties(
 def create_property(
     payload: PropertyPayload,
     db: Session = Depends(get_db),
-    landlord: User = Depends(get_current_landlord),
+    landlord: User = Depends(get_landlord_workspace),
+    request: Request = None,
 ):
     duplicate = db.query(LandlordProperty).filter(
         LandlordProperty.landlord_id == landlord.id,
@@ -147,6 +155,7 @@ def create_property(
         address=(payload.address or "").strip() or None,
         city=(payload.city or "").strip() or None,
     )
+    record_audit(db, landlord, landlord_actor(request, landlord) if request else landlord, "房務", "新增棟別", payload.name)
     db.add(property_item)
     db.commit()
     db.refresh(property_item)
@@ -158,7 +167,8 @@ def update_property(
     property_id: int,
     payload: PropertyPayload,
     db: Session = Depends(get_db),
-    landlord: User = Depends(get_current_landlord),
+    landlord: User = Depends(get_landlord_workspace),
+    request: Request = None,
 ):
     property_item = _owned_property(db, landlord.id, property_id)
     duplicate = db.query(LandlordProperty).filter(
@@ -168,6 +178,7 @@ def update_property(
     ).first()
     if duplicate:
         raise HTTPException(status_code=409, detail="已有相同名稱的棟別。")
+    record_audit(db, landlord, landlord_actor(request, landlord) if request else landlord, "房務", "更新棟別", payload.name)
     property_item.name = payload.name
     property_item.address = (payload.address or "").strip() or None
     property_item.city = (payload.city or "").strip() or None
@@ -179,7 +190,8 @@ def update_property(
 def delete_property(
     property_id: int,
     db: Session = Depends(get_db),
-    landlord: User = Depends(get_current_landlord),
+    landlord: User = Depends(get_landlord_workspace),
+    request: Request = None,
 ):
     property_item = _owned_property(db, landlord.id, property_id)
     if property_item.rooms:
@@ -189,6 +201,7 @@ def delete_property(
         )
 
     deleted = {"deleted_id": property_item.id, "name": property_item.name}
+    record_audit(db, landlord, landlord_actor(request, landlord) if request else landlord, "房務", "刪除棟別", property_item.name, "warning")
     db.delete(property_item)
     db.commit()
     return deleted
@@ -199,13 +212,15 @@ def create_rooms(
     property_id: int,
     payload: RoomBatchPayload,
     db: Session = Depends(get_db),
-    landlord: User = Depends(get_current_landlord),
+    landlord: User = Depends(get_landlord_workspace),
+    request: Request = None,
 ):
     property_item = _owned_property(db, landlord.id, property_id)
     existing = {room.number for room in property_item.rooms}
     duplicates = sorted(existing.intersection(payload.numbers))
     if duplicates:
         raise HTTPException(status_code=409, detail=f"房號已存在：{', '.join(duplicates)}")
+    record_audit(db, landlord, landlord_actor(request, landlord) if request else landlord, "房務", "新增房間", f"{property_item.name}：{'、'.join(payload.numbers)}")
     for number in payload.numbers:
         db.add(
             LandlordRoom(
@@ -227,7 +242,8 @@ def update_room(
     room_id: int,
     payload: RoomUpdatePayload,
     db: Session = Depends(get_db),
-    landlord: User = Depends(get_current_landlord),
+    landlord: User = Depends(get_landlord_workspace),
+    request: Request = None,
 ):
     property_item = _owned_property(db, landlord.id, property_id)
     room = next((item for item in property_item.rooms if item.id == room_id), None)
@@ -240,10 +256,32 @@ def update_room(
     )
     if duplicate:
         raise HTTPException(status_code=409, detail="此房號已存在。")
+    record_audit(db, landlord, landlord_actor(request, landlord) if request else landlord, "房務", "更新房間", f"{property_item.name} {payload.number.strip()}")
     room.number = payload.number.strip()
+    # 有生效租約時房間一定是出租中，不能被改成空房或維修
     room.status = "occupied" if lease else payload.status
     room.floor = payload.floor
     room.area = payload.area
     room.expected_rent = payload.expected_rent
     db.commit()
     return _room_dict(room)
+
+
+@router.delete("/{property_id}/rooms/{room_id}")
+def delete_room(
+    property_id: int,
+    room_id: int,
+    db: Session = Depends(get_db),
+    landlord: User = Depends(get_landlord_workspace),
+    request: Request = None,
+):
+    property_item = _owned_property(db, landlord.id, property_id)
+    room = next((item for item in property_item.rooms if item.id == room_id), None)
+    if not room:
+        raise HTTPException(status_code=404, detail="找不到房東名下的房間。")
+    if room.leases:
+        raise HTTPException(status_code=409, detail="這間房有租約紀錄，為保留租客與帳務歷史，無法刪除。可改成維修中或停用。")
+    record_audit(db, landlord, landlord_actor(request, landlord) if request else landlord, "房務", "刪除房間", f"{property_item.name} {room.number}", "warning")
+    db.delete(room)
+    db.commit()
+    return {"deleted_id": room_id}

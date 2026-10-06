@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cryptography.exceptions import InvalidTag
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -39,6 +39,8 @@ from auth.security import get_current_admin, get_current_landlord, get_current_t
 from db import models
 from db.database import get_db
 from routers.inspection import compress_image
+
+from routers import landlord_lease_rules as lease_rules
 
 router = APIRouter(prefix="/api/repairs", tags=["家具設備報修"])
 
@@ -107,7 +109,9 @@ def _stored_path(photo: models.RepairTicketPhoto) -> Path:
 # ---------------------------------------------------------------
 
 def current_actor(
+    request: Request,
     authorization: str | None = Header(default=None),
+    x_landlord_workspace: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> tuple[models.User, str]:
     if not authorization or not authorization.startswith("Bearer "):
@@ -116,7 +120,12 @@ def current_actor(
     if role == "tenant":
         return get_current_tenant(authorization, db), "tenant"
     if role == "landlord":
-        return get_current_landlord(authorization, db), "landlord"
+        # 團隊成員切換到擁有者的工作區時，以擁有者的身分看工單（權限同房務：檢視者只讀）
+        from auth.landlord_workspace import resolve_workspace
+        owner, workspace_role = resolve_workspace(db, get_current_landlord(authorization, db), x_landlord_workspace)
+        if workspace_role in ("viewer", "accounting") and request.method not in ("GET", "HEAD", "OPTIONS"):
+            raise HTTPException(403, "你在這個工作區沒有處理報修的權限。")
+        return owner, "landlord"
     # 管理員只讀不寫：後台要看得到工單與照片才判斷得了爭議（見 admin_repairs_api.py）。
     # 能改工單的仍然只有租客與房東，_apply_updates 不收 admin。
     if role == "admin":
@@ -129,18 +138,9 @@ def _email_matches(column, email: str):
 
 
 def _tenant_leases(db: Session, user: models.User) -> list[models.LandlordLease]:
-    """租客在房東平台上的租約：與 /api/tenant/leases 相同的比對規則（信箱）。"""
-    profiles = (
-        db.query(models.LandlordTenant)
-        .options(
-            joinedload(models.LandlordTenant.leases).joinedload(models.LandlordLease.property),
-            joinedload(models.LandlordTenant.leases).joinedload(models.LandlordLease.room),
-        )
-        .filter(_email_matches(models.LandlordTenant.email, user.email),
-                models.LandlordTenant.deleted_at.is_(None))
-        .all()
-    )
-    return [lease for profile in profiles for lease in profile.leases]
+    """租客在房東平台上的租約：與 /api/tenant/leases 相同的規則（帳號綁定，舊資料比對信箱）。"""
+    from routers.tenant_leases import tenant_visible_leases
+    return tenant_visible_leases(db, user)
 
 
 def _landlord_lease_ids(db: Session, user: models.User) -> set[int]:
@@ -558,8 +558,7 @@ def list_targets(db: Session = Depends(get_db), user: models.User = Depends(get_
             "tenant": lease.tenant.name if lease.tenant else "",
             "phone": "", "startDate": lease.start_date.isoformat(), "endDate": lease.end_date.isoformat(),
             "status": lease.status, "kind": "lease",
-            "effective": lease.status == "active" and lease.moved_out_at is None
-                         and lease.start_date <= today <= lease.end_date,
+            "effective": lease_rules.is_effective(lease, today),
         })
     try:
         rentals = db.query(models.Rental).filter(models.Rental.user_id == user.id).all()
@@ -594,6 +593,27 @@ def list_tickets(db: Session = Depends(get_db), actor=Depends(current_actor)):
     return {"items": [_ticket_json(db, ticket, role) for ticket in tickets]}
 
 
+def _notify_landlord_of_new_ticket(db: Session, ticket: models.RepairTicket) -> None:
+    """房東在通知偏好開著「報修通知」時，新報修送一則站內通知。"""
+    from notifications.user_notify import notify_user
+    from routers.landlord_workspace_api import settings_for
+
+    lease = db.query(models.LandlordLease).options(
+        joinedload(models.LandlordLease.tenant), joinedload(models.LandlordLease.property),
+        joinedload(models.LandlordLease.room)).filter(models.LandlordLease.id == ticket.lease_id).first()
+    landlord = db.get(models.User, lease.tenant.landlord_id) if lease else None
+    if not landlord or not settings_for(db, landlord).repair_notifications:
+        return
+    urgency = {"emergency": "緊急", "soon": "盡快", "normal": "一般"}.get(ticket.urgency, "")
+    notify_user(
+        db, landlord,
+        title=f"新報修（{urgency}）：{ticket.equipment or ticket.location or '設備'}",
+        body=f"{lease.property.name} {lease.room.number} 的 {lease.tenant.name} 提出報修：{ticket.description[:120]}",
+        category="系統", source_label="報修通知", created_by="system",
+        action_url="/landlord/maintenance", action_label="查看報修",
+    )
+
+
 @router.post("", status_code=201)
 def create_ticket(payload: CreatePayload, db: Session = Depends(get_db),
                   user: models.User = Depends(get_current_tenant)):
@@ -626,6 +646,8 @@ def create_ticket(payload: CreatePayload, db: Session = Depends(get_db),
         event = _add_event(db, ticket, user, "tenant", "租客提交報修",
                            f"附上 {len(payload.photos)} 張照片" if payload.photos else None, kind="status")
         _add_photos(db, ticket, user, payload.photos, "report", event.id, written)
+        if ticket.lease_id:
+            _notify_landlord_of_new_ticket(db, ticket)
         db.commit()
     except Exception:
         db.rollback()

@@ -25,7 +25,9 @@ export async function inspectionRequest<T>(
     throw new Error(
       typeof body?.detail === 'string'
         ? body.detail
-        : `點交操作失敗（${response.status}），請稍後重試。`,
+        : response.status >= 500
+          ? '點交服務暫時無法讀取或儲存資料，請稍後重新載入。這不代表你的租約或存證不存在。'
+          : `點交操作失敗（${response.status}），請稍後重試。`,
     )
   }
   return response.status === 204 ? (undefined as T) : response.json()

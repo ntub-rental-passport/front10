@@ -30,7 +30,6 @@ import {
   fetchTenantOptions,
   fetchTenantSummary,
   fetchTenants,
-  inviteTenantToLine,
   moveOutTenant,
   previewTenantCsv,
   updateTenant,
@@ -40,11 +39,11 @@ import {
 } from '@/src/services/landlordTenantApi'
 import ContractOcrImport from '@/src/components/landlord/ContractOcrImport.vue'
 import type { ContractAutofillData } from '@/src/utils/landlord-contract-import'
-import {
-  notifyContractsUpdated,
-  saveContractImportMetadata,
-} from '@/src/utils/landlord-contract-sync'
+import LeaseInviteDialog from '@/src/components/landlord/LeaseInviteDialog.vue'
 import { notifyLandlordWorkspaceUpdated } from '@/src/composables/useLandlordWorkspace'
+import { uploadContractFile } from '@/src/services/landlordWorkspaceApi'
+import { LANDLORD_WORKSPACE_CHANGED_EVENT, readFileAsDataUrl } from '@/src/services/landlordApiClient'
+import { useEventListener } from '@vueuse/core'
 
 type QuickFilter = 'all' | 'occupied' | 'expiring' | 'unbound' | 'incomplete' | 'moved_out'
 const summary = ref<TenantSummary>({
@@ -123,7 +122,7 @@ const quickFilters = computed(() => [
   { value: 'all' as const, label: '全部', count: filterCounts.value.all ?? 0 },
   { value: 'occupied' as const, label: '已入住', count: filterCounts.value.occupied ?? 0 },
   { value: 'expiring' as const, label: '即將到期', count: filterCounts.value.expiring ?? 0 },
-  { value: 'unbound' as const, label: '未綁 LINE', count: filterCounts.value.unbound ?? 0 },
+  { value: 'unbound' as const, label: '未綁帳號', count: filterCounts.value.unbound ?? 0 },
   { value: 'incomplete' as const, label: '資料待補', count: filterCounts.value.incomplete ?? 0 },
   { value: 'moved_out' as const, label: '已退租', count: filterCounts.value.moved_out ?? 0 },
 ])
@@ -151,12 +150,14 @@ const leaseLabel: Record<string, string> = {
   pending: '待入住',
   incomplete: '待補資料',
 }
+// 欄位名稱沿用 line_status，內容是租客帳號綁定（接受租約邀請），不是 LINE
 const lineLabel: Record<string, string> = {
   unbound: '未綁定',
-  invited: '邀請已發送',
+  invited: '已邀請',
   bound: '已綁定',
-  expired: '綁定失效',
+  expired: '邀請過期',
 }
+const inviteOpen = ref(false)
 const completenessItems = computed(() =>
   selected.value
     ? ([
@@ -165,7 +166,7 @@ const completenessItems = computed(() =>
         ['房間指派', selected.value.completeness.room],
         ['租約資料', selected.value.completeness.lease],
         ['收款資料', selected.value.completeness.payment],
-        ['LINE 綁定', selected.value.completeness.line],
+        ['帳號綁定', selected.value.completeness.line],
       ] as Array<[string, boolean]>)
     : [],
 )
@@ -380,20 +381,20 @@ async function saveTenant() {
     const saved = editingId.value
       ? await updateTenant(editingId.value, payload())
       : await createTenant(payload())
-    if (pendingContractOcr.value) {
-      saveContractImportMetadata({
-        tenantId: saved.id,
-        leaseId: saved.lease_id,
-        contractId: saved.contract_id,
-        sourceFileName: pendingContractOcr.value.sourceFileName,
-        importedByOcr: true,
-        importedAt: new Date().toISOString(),
-      })
-    } else {
-      notifyContractsUpdated()
+    // OCR 用的那份合約原檔一併存成這份租約的附件（以前只在瀏覽器記檔名）
+    let attachmentNote = ''
+    const sourceFile = pendingContractOcr.value?.sourceFile
+    if (sourceFile && saved.lease_id) {
+      try {
+        await uploadContractFile(saved.lease_id, sourceFile.name, await readFileAsDataUrl(sourceFile))
+        attachmentNote = '合約原檔已存為附件。'
+      } catch (cause) {
+        attachmentNote = `但合約原檔沒有存成附件：${cause instanceof Error ? cause.message : '上傳失敗'}，可到合約管理補上。`
+      }
     }
+    pendingContractOcr.value = null
     tenantDialog.value = false
-    success.value = editingId.value ? '租客資料已更新。' : '租客已新增。'
+    success.value = `${editingId.value ? '租客資料已更新。' : '租客已新增。'}${attachmentNote}`
     await loadAll(saved.id)
     notifyLandlordWorkspaceUpdated('tenant')
   } catch (cause) {
@@ -409,9 +410,10 @@ async function completeMoveOut() {
   try {
     const saved = await moveOutTenant(selected.value.id, { ...moveOutForm })
     moveOutDialog.value = false
-    success.value = '退租已完成，歷史紀錄已保留。'
+    success.value = saved.scheduled_move_out
+      ? `已排定 ${saved.scheduled_move_out} 退租；在那之前房間仍算出租中，歷史紀錄會保留。`
+      : '退租已完成，歷史紀錄已保留。'
     await loadAll(saved.id)
-    notifyContractsUpdated()
     notifyLandlordWorkspaceUpdated('tenant')
   } catch (cause) {
     formError.value = cause instanceof Error ? cause.message : '退租處理失敗。'
@@ -423,16 +425,22 @@ async function openMoveOut(tenant: LandlordTenant) {
   await selectTenant(tenant.id)
   moveOutDialog.value = true
 }
-async function sendLineInvite() {
-  if (!selected.value) return
-  try {
-    const result = await inviteTenantToLine(selected.value.id)
-    success.value = result.mock ? '已產生測試邀請；LINE API 尚未正式串接。' : 'LINE 邀請已發送。'
-    await selectTenant(selected.value.id)
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '邀請產生失敗。'
+function openInvite() {
+  if (!selected.value?.lease_id) {
+    error.value = '這位租客還沒有租約，請先建立租約再邀請。'
+    return
   }
+  inviteOpen.value = true
 }
+async function onInviteChanged() {
+  if (!selected.value) return
+  await loadAll(selected.value.id)
+  notifyLandlordWorkspaceUpdated('tenant')
+}
+useEventListener(window, LANDLORD_WORKSPACE_CHANGED_EVENT, () => {
+  selected.value = null
+  void loadAll()
+})
 function clearFilters() {
   keywordInput.value = ''
   keyword.value = ''
@@ -486,7 +494,6 @@ async function confirmImport() {
     const result = await confirmTenantCsv(csvPreview.value.preview_token)
     importResult.value = `匯入完成：成功 ${result.created_count} 筆，失敗 ${result.error_count} 筆。`
     await loadAll()
-    notifyContractsUpdated()
     notifyLandlordWorkspaceUpdated('tenant')
   } catch (cause) {
     importResult.value = cause instanceof Error ? cause.message : 'CSV 匯入失敗。'
@@ -509,7 +516,7 @@ onMounted(async () => {
         </p>
         <h1 class="text-3xl font-black tracking-tight sm:text-4xl">租客管理</h1>
         <p class="mt-2 text-sm text-[#778078]">
-          集中管理租客資料、租約狀態、房間、租金與 LINE 綁定狀態。
+          集中管理租客資料、租約狀態、房間、租金與租客帳號綁定狀態。
         </p>
       </div>
       <div class="flex gap-2">
@@ -653,7 +660,7 @@ onMounted(async () => {
                   <th>房號</th>
                   <th>租約期間</th>
                   <th>月租／押金</th>
-                  <th>LINE</th>
+                  <th>帳號</th>
                   <th>狀態</th>
                   <th>操作</th>
                 </tr>
@@ -879,11 +886,11 @@ onMounted(async () => {
               class="btn-secondary"
               ><Wrench class="h-4 w-4" />新增報修</RouterLink
             ><button
-              v-if="selected.line_status !== 'bound'"
+              v-if="selected.lease_status !== 'moved_out'"
               class="btn-secondary"
-              @click="sendLineInvite"
+              @click="openInvite"
             >
-              <Link2 class="h-4 w-4" />LINE 邀請</button
+              <Link2 class="h-4 w-4" />{{ selected.line_status === 'bound' ? '帳號綁定' : '邀請加入' }}</button
             ><button
               v-if="selected.lease_status !== 'moved_out'"
               class="col-span-2 rounded-full border border-[#e4bcb4] px-4 py-2.5 text-sm font-bold text-[#a55247]"
@@ -902,6 +909,15 @@ onMounted(async () => {
       </aside>
     </section>
 
+    <LeaseInviteDialog
+      :open="inviteOpen"
+      :lease-id="selected?.lease_id ?? null"
+      :tenant-name="selected?.name ?? ''"
+      :tenant-email="selected?.email ?? null"
+      :room-label="selected ? `${selected.property_name ?? ''} ${selected.room_number ?? ''}` : ''"
+      @close="inviteOpen = false"
+      @changed="onInviteChanged"
+    />
     <Teleport to="body"
       ><div v-if="tenantDialog" class="backdrop" @click.self="tenantDialog = false">
         <section
@@ -1028,8 +1044,8 @@ onMounted(async () => {
               <div
                 class="rounded-[1.25rem] border border-dashed border-[#ded8cc] bg-[#fbfaf6] px-4 py-3 text-sm leading-6 text-[#747d76]"
               >
-                LINE 綁定請到通知設定產生綁定碼，租客再透過 LINE 完成綁定，不需要在這裡手動輸入 LINE
-                ID。
+                Email 請填租客登入 RentMate 用的信箱。建立後可在租客詳情按「邀請加入」，租客用這個信箱接受邀請，
+                帳款提醒與報修就會連到他的帳號。
               </div>
 
               <section class="space-y-3">

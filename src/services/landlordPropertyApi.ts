@@ -1,4 +1,5 @@
 import { getAuthSession } from '@/src/composables/useAuth'
+import { workspaceHeaders } from '@/src/services/landlordApiClient'
 
 export type PropertyRoomStatus = 'rented' | 'vacant' | 'maintenance'
 
@@ -6,11 +7,27 @@ export interface PropertyRoom {
   id: number
   number: string
   status: PropertyRoomStatus
+  /** 空房但剛退租、還沒整理好 */
+  needs_turnover: boolean
   tenant: string | null
   rent: number | null
+  expected_rent: number | null
   lease_end: string | null
+  /** 已排定、但還沒到的退租日 */
+  scheduled_move_out: string | null
+  /** 已簽約、還沒起租的下一位租客 */
+  next_lease_start: string | null
+  next_tenant: string | null
   floor: number | null
   area: number | null
+}
+
+export interface RoomUpdatePayload {
+  number: string
+  status: 'vacant' | 'turnover' | 'maintenance'
+  floor?: number | null
+  area?: number | null
+  expected_rent?: number | null
 }
 
 export interface LandlordProperty {
@@ -45,6 +62,7 @@ async function api<T>(path: string, init: FetchInit = {}): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      ...workspaceHeaders(),
       ...init.headers,
     },
   }).catch(() => {
@@ -77,4 +95,12 @@ export function createRooms(propertyId: number, payload: RoomBatchPayload) {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export function updateRoom(propertyId: number, roomId: number, payload: RoomUpdatePayload) {
+  return api<PropertyRoom>(`/${propertyId}/rooms/${roomId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function deleteRoom(propertyId: number, roomId: number) {
+  return api<{ deleted_id: number }>(`/${propertyId}/rooms/${roomId}`, { method: 'DELETE' })
 }

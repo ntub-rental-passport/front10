@@ -248,8 +248,11 @@ const {
             <p class="text-xs leading-relaxed">
               上傳租約並完成校對後，選擇「這是最終簽署版」存檔，這裡就會顯示每期帳單與繳費進度。
             </p>
-            <RouterLink to="/app/contract" class="inline-block text-xs font-semibold text-slate-900 underline">
+            <RouterLink to="/app/contract/scanner" class="inline-block text-xs font-semibold text-slate-900 underline">
               前往契約辨識
+            </RouterLink>
+            <RouterLink to="/app/join-lease" class="ml-3 inline-block text-xs font-semibold text-slate-900 underline">
+              房東給了邀請碼？加入租約
             </RouterLink>
           </div>
 
@@ -276,7 +279,7 @@ const {
                     <p :class="['truncate text-xs transition-colors', selectedContractId === contract.id ? accentStyles[contract.accent].selectedSubText : ['text-slate-500', accentStyles[contract.accent].hoverSubText]]">{{ contract.city }} · {{ contract.landlord }}</p>
                   </div>
                   <RouterLink
-                    to="/app/contract"
+                    :to="`/app/contract/document?rental=${contract.id}`"
                     :class="['shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors', isPathUnderMaintenance('/app/contract') ? 'opacity-60' : '', selectedContractId === contract.id ? 'border-white/50 bg-white/20 text-white hover:bg-white/30' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700']"
                     @click.stop
                   >

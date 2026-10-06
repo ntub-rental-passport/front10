@@ -34,10 +34,10 @@ const steps = [
   },
   {
     title: '申請後，記得追蹤下一步',
-    label: '進度追蹤',
+    label: '申請後提醒',
     image: progress,
-    description: '到官方確認進度，整理通知與補件期限，留下每次查詢的備忘。',
-    action: '查看進度與補件指引',
+    description: '記錄申請日期，設定站內提醒，再自行到政府網站確認進度。',
+    action: '設定申請後提醒',
     path: 'progress',
   },
 ]

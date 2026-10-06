@@ -1,4 +1,5 @@
 import { getAuthSession } from '@/src/composables/useAuth'
+import { workspaceHeaders } from '@/src/services/landlordApiClient'
 import type { RepairTicket } from '@/src/composables/useRepairTickets'
 import type { TenantLeaseOption } from '@/src/services/tenantLeaseApi'
 
@@ -27,6 +28,7 @@ async function repairRequest<T>(path: string, method = 'GET', data?: unknown): P
     credentials: 'include',
     headers: {
       Authorization: `Bearer ${token}`,
+      ...workspaceHeaders(),
       ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),

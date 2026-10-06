@@ -106,7 +106,7 @@ async function recognize(): Promise<void> {
 
 function applyAll(): void {
   if (!extracted.value) return
-  emit('apply', extracted.value)
+  emit('apply', { ...extracted.value, sourceFile: selectedFile.value ?? undefined })
   applied.value = true
 }
 </script>

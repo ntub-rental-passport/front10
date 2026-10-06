@@ -42,7 +42,7 @@ export function usePlanOverview(role: PlanRole) {
           used: 1 + settings.state.members.filter((m) => m.status === 'active').length,
           limit: 1,
           unit: '席',
-          note: '含擁有者；依本機成員名冊，不含待接受邀請',
+          note: '含擁有者；依團隊成員名冊，不含待接受邀請',
         },
       ]
     }

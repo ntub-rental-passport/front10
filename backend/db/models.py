@@ -2,7 +2,7 @@
 import datetime
 from sqlalchemy import Boolean, Column, Date, DateTime, Time, Enum, Float, Integer, BigInteger, String, Text, DECIMAL, JSON, ForeignKey, UniqueConstraint, CheckConstraint, Index, CHAR
 from sqlalchemy.dialects.mysql import DATETIME, DOUBLE, LONGTEXT, TINYINT
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import deferred, relationship
 from sqlalchemy.ext.hybrid import hybrid_method
 from db.database import Base
 from db.encrypted_fields import EncryptedText
@@ -308,13 +308,16 @@ class LandlordTenant(Base):
     id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
     landlord_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     name = Column(String(100), nullable=False)
-    phone = Column(EncryptedText(255), nullable=False)
+    # 加密個資「用到才載入」：載入租客列時不解密，只有真的讀這幾個欄位才解。
+    # 這樣某一筆用舊金鑰存的資料解不開時，只影響那一格，不會讓整份清單、帳務或
+    # 排程提醒全部失敗（2026-10-05 共用資料庫裡有兩筆別台金鑰寫入的資料）。
+    phone = deferred(Column(EncryptedText(255), nullable=False), group='pii')
     email = Column(String(254), nullable=True)
-    national_id = Column(EncryptedText(255), nullable=True)
+    national_id = deferred(Column(EncryptedText(255), nullable=True), group='pii')
     birth_date = Column(Date, nullable=True)
-    contact_address = Column(EncryptedText(512), nullable=True)
+    contact_address = deferred(Column(EncryptedText(512), nullable=True), group='pii')
     emergency_name = Column(String(100), nullable=True)
-    emergency_phone = Column(EncryptedText(255), nullable=True)
+    emergency_phone = deferred(Column(EncryptedText(255), nullable=True), group='pii')
     notes = Column(Text, nullable=True)
     line_user_id = Column(String(255), nullable=True)
     line_status = Column(Enum('unbound','invited','bound','expired', validate_strings=True, create_constraint=True), nullable=False, default='unbound')
@@ -346,10 +349,16 @@ class LandlordLease(Base):
     contract_id = Column(String(100), nullable=True)
     status = Column(Enum('pending','active','ended','terminated', validate_strings=True, create_constraint=True), nullable=False, default='active')
     moved_out_at = Column(Date, nullable=True)
+    # 租客接受邀請後綁定的帳號。租客端的授權依這個 user id，不再只比對 email。
+    tenant_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    tenant_bound_at = Column(Timestamp, nullable=True)
     created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
     updated_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     tenant = relationship("LandlordTenant", back_populates="leases")
+
+    files = relationship("LandlordLeaseFile", back_populates="lease", cascade="all, delete-orphan",
+                         order_by="LandlordLeaseFile.id")
 
     property = relationship("LandlordProperty")
 
@@ -384,6 +393,157 @@ class LandlordTenantActivity(Base):
     occurred_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
 
     tenant = relationship("LandlordTenant", back_populates="activities")
+
+class LandlordLeaseFile(Base):
+    """合約附件：檔案存在伺服器磁碟（LEASE_FILE_DIR），這裡只記伺服器產生的檔名。"""
+    __tablename__ = 'landlord_lease_files'
+    __table_args__ = (Index('idx_landlord_lease_files_lease', 'lease_id'),)
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    lease_id = Column(Integer, ForeignKey('landlord_leases.id', ondelete='CASCADE'), nullable=False)
+    stored_name = Column(String(64), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    uploaded_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    uploaded_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+    lease = relationship("LandlordLease", back_populates="files")
+
+class LandlordCharge(Base):
+    """應收帳款：每一期、每一種費用一筆。金額在建立當下固定，之後改租金不會回頭改舊帳。"""
+    __tablename__ = 'landlord_charges'
+    __table_args__ = (
+        UniqueConstraint('lease_id', 'kind', 'period_start', name='uq_landlord_charge_period'),
+        Index('idx_landlord_charges_landlord_due', 'landlord_id', 'due_date'),
+    )
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    landlord_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    lease_id = Column(Integer, ForeignKey('landlord_leases.id', ondelete='RESTRICT'), nullable=False)
+    kind = Column(Enum('rent','water','electricity','other', validate_strings=True, create_constraint=True), nullable=False, default='rent')
+    title = Column(String(100), nullable=False)
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=False)
+    amount = Column(Integer, nullable=False)
+    voided_at = Column(Timestamp, nullable=True)
+    void_reason = Column(Text, nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+    lease = relationship("LandlordLease")
+    payments = relationship("LandlordChargePayment", back_populates="charge", cascade="all, delete-orphan",
+                            order_by="LandlordChargePayment.id")
+    events = relationship("LandlordChargeEvent", back_populates="charge", cascade="all, delete-orphan",
+                          order_by="LandlordChargeEvent.id")
+
+class LandlordChargePayment(Base):
+    """實收紀錄：只新增；記錯了用一筆負數沖銷，不改不刪，帳才對得起來。"""
+    __tablename__ = 'landlord_charge_payments'
+    __table_args__ = (Index('idx_landlord_charge_payments_charge', 'charge_id'),)
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    charge_id = Column(Integer, ForeignKey('landlord_charges.id', ondelete='CASCADE'), nullable=False)
+    amount = Column(Integer, nullable=False)
+    paid_on = Column(Date, nullable=False)
+    method = Column(String(30), nullable=False, default='other')
+    note = Column(Text, nullable=True)
+    recorded_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+    charge = relationship("LandlordCharge", back_populates="payments")
+
+class LandlordChargeEvent(Base):
+    __tablename__ = 'landlord_charge_events'
+    __table_args__ = (Index('idx_landlord_charge_events_charge', 'charge_id'),)
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    charge_id = Column(Integer, ForeignKey('landlord_charges.id', ondelete='CASCADE'), nullable=False)
+    kind = Column(String(30), nullable=False)
+    detail = Column(Text, nullable=False)
+    actor_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+    charge = relationship("LandlordCharge", back_populates="events")
+
+class LandlordExpense(Base):
+    __tablename__ = 'landlord_expenses'
+    __table_args__ = (Index('idx_landlord_expenses_landlord_date', 'landlord_id', 'spent_on'),)
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    landlord_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    title = Column(String(100), nullable=False)
+    category = Column(String(30), nullable=False)
+    amount = Column(Integer, nullable=False)
+    spent_on = Column(Date, nullable=False)
+    property_id = Column(Integer, ForeignKey('landlord_properties.id', ondelete='SET NULL'), nullable=True)
+    repair_ticket_id = Column(Integer, ForeignKey('repair_tickets.id', ondelete='SET NULL'), nullable=True)
+    note = Column(Text, nullable=True)
+    recorded_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+class LeaseInvitation(Base):
+    """房東邀請租客加入租約。token 與邀請碼只存雜湊；接受後在租約上記下租客帳號。"""
+    __tablename__ = 'lease_invitations'
+    __table_args__ = (
+        UniqueConstraint('token_hash', name='uq_lease_invitations_token'),
+        UniqueConstraint('code_hash', name='uq_lease_invitations_code'),
+        Index('idx_lease_invitations_lease', 'lease_id', 'status'),
+    )
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    landlord_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    lease_id = Column(Integer, ForeignKey('landlord_leases.id', ondelete='CASCADE'), nullable=False)
+    invited_email = Column(String(254), nullable=True)
+    token_hash = Column(CHAR(64), nullable=False)
+    code_hash = Column(CHAR(64), nullable=False)
+    status = Column(Enum('pending','accepted','revoked', validate_strings=True, create_constraint=True), nullable=False, default='pending')
+    expires_at = Column(Timestamp, nullable=False)
+    accepted_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    accepted_at = Column(Timestamp, nullable=True)
+    revoked_at = Column(Timestamp, nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+    lease = relationship("LandlordLease")
+
+class LandlordSettings(Base):
+    __tablename__ = 'landlord_settings'
+    landlord_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, primary_key=True)
+    phone = Column(EncryptedText(255), nullable=True)
+    workspace_name = Column(String(100), nullable=True)
+    email_notifications = Column(Boolean, nullable=False, default=True)
+    rent_reminders = Column(Boolean, nullable=False, default=True)
+    contract_reminders = Column(Boolean, nullable=False, default=True)
+    repair_notifications = Column(Boolean, nullable=False, default=True)
+    reminder_days = Column(Integer, nullable=False, default=30)
+    updated_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class LandlordAuditEvent(Base):
+    """房東工作區的操作紀錄：由伺服器在動作成功後寫入，前端不能自己記。"""
+    __tablename__ = 'landlord_audit_events'
+    __table_args__ = (Index('idx_landlord_audit_events_landlord', 'landlord_id', 'created_at'),)
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    landlord_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    actor_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    category = Column(String(30), nullable=False)
+    title = Column(String(200), nullable=False)
+    detail = Column(Text, nullable=True)
+    result = Column(Enum('success','warning', validate_strings=True, create_constraint=True), nullable=False, default='success')
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+class LandlordTeamMember(Base):
+    """房東工作區的團隊成員。成員用自己的房東帳號登入，切換到擁有者的工作區操作。"""
+    __tablename__ = 'landlord_team_members'
+    __table_args__ = (
+        UniqueConstraint('owner_id', 'email', name='uq_landlord_team_member_email'),
+        UniqueConstraint('token_hash', name='uq_landlord_team_member_token'),
+        Index('idx_landlord_team_members_member', 'member_user_id', 'status'),
+    )
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    email = Column(String(254), nullable=False)
+    role = Column(Enum('manager','accounting','viewer', validate_strings=True, create_constraint=True), nullable=False, default='viewer')
+    status = Column(Enum('pending','active','revoked', validate_strings=True, create_constraint=True), nullable=False, default='pending')
+    member_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    token_hash = Column(CHAR(64), nullable=True)
+    expires_at = Column(Timestamp, nullable=True)
+    invited_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+    accepted_at = Column(Timestamp, nullable=True)
+    revoked_at = Column(Timestamp, nullable=True)
 
 class RepairTicket(Base):
     __tablename__ = 'repair_tickets'

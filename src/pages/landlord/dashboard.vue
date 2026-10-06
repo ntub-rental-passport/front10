@@ -18,7 +18,7 @@ import { useRepairTickets } from '@/src/composables/useRepairTickets'
 import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 
 const { rooms, tenants } = useLandlordWorkspace()
-const { payments, total, received, awaiting, rate, monthLabel } = useLandlordFinance()
+const { payments, total, received, awaiting, overdue, rate, monthLabel, trend, error: financeError } = useLandlordFinance()
 const { tickets, loading: repairsLoading, error: repairsError, load: refreshRepairs } = useRepairTickets()
 
 const rentedRooms = computed(() => rooms.value.filter((room) => room.status === 'rented').length)
@@ -26,13 +26,25 @@ const occupancyRate = computed(() => rooms.value.length
   ? Math.round((rentedRooms.value / rooms.value.length) * 100)
   : 0)
 const pendingPayments = computed(() => payments.value.filter((item) => item.status !== 'paid'))
+const todayKey = (() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` })()
+// 「今日」：到期日已到或已過的帳款、尚未讀取或緊急的報修、30 天內到期的合約
+const dueTodayPayments = computed(() => pendingPayments.value.filter((item) => item.due <= todayKey))
+const urgentRepairs = computed(() => openRepairs.value.filter((item) => item.status === 'pending' || item.urgency === 'emergency'))
 const completedPayments = computed(() => payments.value.filter((item) => item.status === 'paid').length)
 const openRepairs = computed(() => tickets.value.filter((item) => !['completed', 'canceled'].includes(item.status)))
 const contractReminders = computed(() => tenants.value.filter((item) =>
   item.lease_status === 'expiring' || item.lease_status === 'expired',
 ))
 const incompleteTenants = computed(() => tenants.value.filter((item) => item.completeness.percent < 100))
-const todayTasks = computed(() => pendingPayments.value.length + openRepairs.value.length + contractReminders.value.length)
+const todayTasks = computed(() => dueTodayPayments.value.length + urgentRepairs.value.length + contractReminders.value.length)
+const collectionMessage = computed(() => {
+  if (financeError.value) return { title: '帳務資料讀取失敗', body: financeError.value }
+  if (!total.value) return { title: '本月還沒有到期的帳款', body: '新增有效租約後，系統會依租約自動產生每期應收。' }
+  if (overdue.value > 0) return { title: '有逾期款項待追蹤', body: `逾期未收 ${money(overdue.value)}，可到收款工作台確認收款或發送提醒。` }
+  if (rate.value >= 100) return { title: '本月帳款已全數收齊', body: '所有到期帳款都已確認入帳。' }
+  return { title: '收款進行中', body: `本月收款率為 ${rate.value}%，尚未到期的帳款不算逾期。` }
+})
+const trendBars = computed(() => trend.value.map((point) => ({ ...point, height: point.rate ?? 0 })))
 const money = (value: number) => `NT$${value.toLocaleString('zh-TW')}`
 
 const stats = computed(() => [
@@ -63,7 +75,7 @@ const stats = computed(() => [
   {
     title: '今日待處理',
     value: repairsError.value || repairsLoading.value ? '—' : `${todayTasks.value} 件`,
-    note: repairsError.value ? '報修資料讀取失敗' : repairsLoading.value ? '正在讀取報修資料…' : `報修 ${openRepairs.value.length} · 合約 ${contractReminders.value.length} · 收款 ${pendingPayments.value.length}`,
+    note: repairsError.value ? '報修資料讀取失敗' : repairsLoading.value ? '正在讀取報修資料…' : `報修 ${urgentRepairs.value.length} · 合約 ${contractReminders.value.length} · 收款 ${dueTodayPayments.value.length}`,
     trend: '查看全部',
     icon: Wrench,
     tone: 'purple',
@@ -71,10 +83,10 @@ const stats = computed(() => [
 ])
 
 const priorities = computed(() => [
-  { label: '待收款', detail: `${pendingPayments.value.length} 筆待收 · 總額 ${money(awaiting.value)}`, count: `${pendingPayments.value.length} 筆`, icon: WalletCards },
-  { label: '報修處理中', detail: repairsError.value ? '讀不到報修資料' : repairsLoading.value ? '正在讀取…' : `${openRepairs.value.length} 件尚未結案`, count: repairsError.value || repairsLoading.value ? '—' : `${openRepairs.value.length} 件`, icon: Wrench },
-  { label: '合約提醒', detail: `即將到期或已到期 ${contractReminders.value.length} 份`, count: `${contractReminders.value.length} 份`, icon: FileText },
-  { label: '租客資料', detail: `${incompleteTenants.value.length} 位租客待補資料`, count: `${incompleteTenants.value.length} 位`, icon: Users },
+  { label: '待收款', detail: `${pendingPayments.value.length} 筆待收 · 總額 ${money(awaiting.value)}`, count: `${pendingPayments.value.length} 筆`, icon: WalletCards, to: '/landlord/finance' },
+  { label: '報修處理中', detail: repairsError.value ? '讀不到報修資料' : repairsLoading.value ? '正在讀取…' : `${openRepairs.value.length} 件尚未結案`, count: repairsError.value || repairsLoading.value ? '—' : `${openRepairs.value.length} 件`, icon: Wrench, to: '/landlord/maintenance' },
+  { label: '合約提醒', detail: `即將到期或已到期 ${contractReminders.value.length} 份`, count: `${contractReminders.value.length} 份`, icon: FileText, to: '/landlord/contracts' },
+  { label: '租客資料', detail: `${incompleteTenants.value.length} 位租客待補資料`, count: `${incompleteTenants.value.length} 位`, icon: Users, to: '/landlord/tenants' },
 ])
 
 const toneClasses: Record<string, string> = {
@@ -94,10 +106,11 @@ const toneClasses: Record<string, string> = {
         <p class="mt-2 text-sm text-[#778078]">掌握收租進度、入住率、報修與合約提醒。</p>
       </div>
       <div class="flex items-center gap-2">
-        <button
+        <RouterLink
+          to="/landlord/finance"
           class="inline-flex items-center gap-2 rounded-full border border-[#dfd9cc] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm"
         >
-          <CalendarDays class="h-4 w-4" />{{ monthLabel }}</button
+          <CalendarDays class="h-4 w-4" />{{ monthLabel }}</RouterLink
         ><RentalCenterPopover />
       </div>
     </header>
@@ -166,8 +179,8 @@ const toneClasses: Record<string, string> = {
             class="mt-5 flex flex-col gap-3 rounded-2xl bg-[#eaf5eb] p-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
-              <p class="font-bold">收款表現良好！</p>
-              <p class="text-sm text-[#66766a]">本月收款率為 {{ rate }}%，資料會隨財務管理的收款紀錄同步更新。</p>
+              <p class="font-bold">{{ collectionMessage.title }}</p>
+              <p class="text-sm text-[#66766a]">{{ collectionMessage.body }}</p>
             </div>
             <RouterLink
               to="/landlord/finance"
@@ -184,10 +197,11 @@ const toneClasses: Record<string, string> = {
           <p class="mt-1 text-sm text-[#7a827c]">先看待處理項目，再安排工作順序。</p>
         </div>
         <div class="space-y-3 p-4">
-          <div
+          <RouterLink
             v-for="item in priorities"
             :key="item.label"
-            class="flex items-center gap-3 rounded-2xl border border-[#e5dfd3] p-3"
+            :to="item.to"
+            class="flex items-center gap-3 rounded-2xl border border-[#e5dfd3] p-3 transition-colors hover:bg-[#f4f7f1]"
           >
             <span class="grid h-10 w-10 place-items-center rounded-full bg-[#e9f4ea] text-[#5b8263]"
               ><component :is="item.icon" class="h-4 w-4"
@@ -199,7 +213,7 @@ const toneClasses: Record<string, string> = {
             <span class="rounded-full bg-[#edf5ed] px-2.5 py-1 text-xs font-bold text-[#5b8263]">{{
               item.count
             }}</span>
-          </div>
+          </RouterLink>
         </div>
       </article>
     </section>
@@ -209,21 +223,22 @@ const toneClasses: Record<string, string> = {
         <div class="flex items-center justify-between">
           <div>
             <h2 class="text-xl font-black">近 6 個月收款趨勢</h2>
-            <p class="mt-1 text-sm text-[#7a827c]">快速掌握租金收款變化。</p>
+            <p class="mt-1 text-sm text-[#7a827c]">各月到期帳款的收款率。</p>
           </div>
           <span class="rounded-full bg-[#f2eee5] px-3 py-1 text-xs font-bold">近 6 個月</span>
         </div>
         <div class="mt-7 flex h-36 items-end gap-3 border-b border-[#ddd6ca] px-2">
           <div
-            v-for="(height, index) in [42, 58, 51, 74, 68, 86]"
-            :key="index"
-            class="flex flex-1 flex-col items-center justify-end gap-2"
+            v-for="point in trendBars"
+            :key="point.month"
+            class="flex h-full flex-1 flex-col items-center justify-end gap-2"
+            :title="point.total ? `${point.label}：應收 ${money(point.total)}，已收 ${money(point.received)}` : `${point.label}：沒有到期帳款`"
           >
             <div
               class="w-full max-w-12 rounded-t-lg bg-[#6e9274]"
-              :style="{ height: `${height}%` }"
+              :style="{ height: `${Math.max(point.rate === null ? 0 : 2, point.height)}%` }"
             />
-            <span class="text-[11px] text-[#7b827d]">{{ index + 2 }}月</span>
+            <span class="text-[11px] text-[#7b827d]">{{ point.label }}</span>
           </div>
         </div>
       </article>

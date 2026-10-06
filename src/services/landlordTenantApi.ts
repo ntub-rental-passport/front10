@@ -1,4 +1,5 @@
 import { getAuthSession } from '@/src/composables/useAuth'
+import { workspaceHeaders } from '@/src/services/landlordApiClient'
 
 export type LeaseStatus =
   | 'occupied'
@@ -44,6 +45,11 @@ export interface LandlordTenant {
   payment_frequency: string | null
   contract_id: string | null
   lease_status: LeaseStatus
+  /** 已排定、但還沒到的退租日 */
+  scheduled_move_out: string | null
+  /** 租客已接受邀請、綁定平台帳號 */
+  account_bound: boolean
+  property_address: string
   days_left: number | null
   effective: boolean
   completeness: Completeness
@@ -113,6 +119,7 @@ async function api<T>(path: string, init: FetchInit = {}): Promise<T> {
     headers: {
       ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       Authorization: `Bearer ${token}`,
+      ...workspaceHeaders(),
       ...init.headers,
     },
   }).catch(() => {
@@ -159,12 +166,6 @@ export function updateTenantLease(id: number, payload: LeaseUpdatePayload) {
 }
 export function moveOutTenant(id: number, payload: Record<string, unknown>) {
   return api<LandlordTenant>(`/${id}/move-out`, { method: 'POST', body: JSON.stringify(payload) })
-}
-export function inviteTenantToLine(id: number) {
-  return api<{ status: string; invite_url: string; expires_at: string; mock: boolean }>(
-    `/${id}/line-invite`,
-    { method: 'POST' },
-  )
 }
 export function previewTenantCsv(file: File) {
   const form = new FormData()

@@ -31,7 +31,7 @@ const tabs = [
   { path: '/app/subsidy/calculator', label: '資格初步檢核' },
   { path: '/app/subsidy/housing', label: '房屋條件確認' },
   { path: '/app/subsidy/apply', label: '申請準備' },
-  { path: '/app/subsidy/progress', label: '進度與補件' },
+  { path: '/app/subsidy/progress', label: '申請後提醒' },
   { path: '/app/subsidy/recovery', label: '追繳協助' },
 ]
 </script>

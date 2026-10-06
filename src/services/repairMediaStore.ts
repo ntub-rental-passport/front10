@@ -6,6 +6,7 @@
  * （與點交存證同一套做法），雙方都能看到同一張照片。
  */
 import { getAuthSession } from '@/src/composables/useAuth'
+import { workspaceHeaders } from '@/src/services/landlordApiClient'
 
 export interface RepairPhotoRef {
   id: string
@@ -123,7 +124,7 @@ export async function getRepairPhotoUrl(id: string, ticketId?: string): Promise<
   try {
     const response = await fetch(`${API_BASE}/repairs/${ticketId}/photos/${id}`, {
       credentials: 'include',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, ...workspaceHeaders() },
     })
     if (!response.ok) return ''
     const url = URL.createObjectURL(await response.blob())

@@ -13,9 +13,14 @@ import {
   Wrench,
   X,
 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import LandlordNotificationBell from '@/src/components/landlord/LandlordNotificationBell.vue'
-import { signOut } from '@/src/composables/useAuth'
+import { getAuthSession, signOut } from '@/src/composables/useAuth'
+import {
+  activeWorkspaceOwnerId,
+  setActiveWorkspaceOwnerId,
+} from '@/src/services/landlordApiClient'
+import { fetchWorkspaces, type WorkspaceOption } from '@/src/services/landlordWorkspaceApi'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,6 +36,32 @@ const navItems = [
   { label: '方案與訂閱', path: '/landlord/subscription', icon: Sparkles },
   { label: '設定', path: '/landlord/settings', icon: Settings },
 ]
+
+// 工作區：自己的，加上以團隊成員身分加入的。選擇存在 sessionStorage（依帳號區分）。
+const workspaces = ref<WorkspaceOption[]>([])
+const selectedOwnerId = ref(activeWorkspaceOwnerId() ?? getAuthSession()?.userId ?? '')
+const currentWorkspace = computed(() =>
+  workspaces.value.find((item) => String(item.owner_id) === selectedOwnerId.value) ?? workspaces.value[0] ?? null,
+)
+
+async function loadWorkspaces(): Promise<void> {
+  try {
+    workspaces.value = (await fetchWorkspaces()).items
+    // 被移出工作區後，存著的選擇已經無效：回到自己的
+    if (!workspaces.value.some((item) => String(item.owner_id) === selectedOwnerId.value)) {
+      switchWorkspace(String(workspaces.value[0]?.owner_id ?? ''))
+    }
+  } catch {
+    workspaces.value = []
+  }
+}
+
+function switchWorkspace(ownerId: string): void {
+  selectedOwnerId.value = ownerId
+  setActiveWorkspaceOwnerId(ownerId)
+}
+
+onMounted(loadWorkspaces)
 
 function isActive(path: string): boolean {
   return path === '/landlord' ? route.path === path : route.path.startsWith(path)
@@ -103,10 +134,21 @@ async function handleSignOut(): Promise<void> {
         <div class="flex items-center justify-between text-[11px] text-[#7b827d]">
           <span>目前工作區</span
           ><span class="rounded-full bg-[#e7f2e8] px-2 py-0.5 font-bold text-[#52775a]"
-            >擁有者</span
+            >{{ currentWorkspace?.role_label ?? '擁有者' }}</span
           >
         </div>
-        <p class="mt-1.5 text-sm font-bold">我的出租物件</p>
+        <select
+          v-if="workspaces.length > 1"
+          class="mt-1.5 w-full rounded-lg border border-[#e1dbce] bg-white px-2 py-1.5 text-sm font-bold"
+          aria-label="切換工作區"
+          :value="selectedOwnerId"
+          @change="switchWorkspace(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="item in workspaces" :key="item.owner_id" :value="String(item.owner_id)">
+            {{ item.name }}{{ item.role === 'owner' ? '' : `（${item.role_label}）` }}
+          </option>
+        </select>
+        <p v-else class="mt-1.5 text-sm font-bold">{{ currentWorkspace?.name ?? '我的出租物件' }}</p>
       </div>
 
       <nav class="mt-4 space-y-1.5" aria-label="房東管理導覽">
