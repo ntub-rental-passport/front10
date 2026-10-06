@@ -11,6 +11,14 @@ from db.models import User
 router = APIRouter(tags=['Admin user records'])
 
 
+@router.get('/api/admin/deposits')
+def read_all_deposits(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+) -> dict:
+    return {'deposits': user_records.all_deposits(db)}
+
+
 @router.get('/api/admin/users/{user_id}/records')
 def read_user_records(
     user_id: int,
