@@ -77,6 +77,7 @@ function subscription(over: Partial<TenantSubscription> = {}): TenantSubscriptio
     billingCycle: 'monthly',
     aiUsageMonth: usageMonth(),
     freeAiUsed: 0,
+    startedAt: '2026-01-01T00:00:00.000Z',
     expiresAt: '2026-12-31T00:00:00.000Z',
     aiUsed: 1,
     storageUsedMb: 10,
@@ -338,7 +339,7 @@ describe('isQuotaExhausted', () => {
 
   it('沒有訂閱或角色為房東時為 false', () => {
     expect(isQuotaExhausted(null, true)).toBe(false)
-    expect(isQuotaExhausted({ id: 'l', userId: 'l', role: 'landlord', planKey: 'plus', active: true, billingCycle: 'monthly', expiresAt: '', trialEndsAt: null }, true)).toBe(false)
+    expect(isQuotaExhausted({ id: 'l', userId: 'l', role: 'landlord', planKey: 'plus', active: true, billingCycle: 'monthly', startedAt: '', expiresAt: '', trialEndsAt: null }, true)).toBe(false)
   })
 })
 
@@ -377,7 +378,7 @@ describe('角色方案分布與篩選', () => {
     subscriptions: [
       subscription({ userId: 'trial', planKey: 'free', trialEndsAt: '2026-08-20T00:00:00.000Z' }),
       subscription({ userId: 'inactive', planKey: 'pro', active: false }),
-      { id: 'l', userId: 'landlord', role: 'landlord', planKey: 'free', billingCycle: null, active: true, trialEndsAt: '2026-08-20T00:00:00.000Z', expiresAt: '' },
+      { id: 'l', userId: 'landlord', role: 'landlord', planKey: 'free', billingCycle: null, active: true, trialEndsAt: '2026-08-20T00:00:00.000Z', startedAt: '', expiresAt: '' },
     ],
   }), 14, now)
 

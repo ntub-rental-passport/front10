@@ -15,6 +15,8 @@ import QuotaProgressCard, { type QuotaProgressItem } from '@/src/components/admi
 import StatTile from '@/src/components/admin/StatTile.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
 import InlineStat from '@/src/components/admin/InlineStat.vue'
+import SubscriptionOverviewCard from '@/src/components/admin/SubscriptionOverviewCard.vue'
+import { adminSubscriptionCollection } from '@/src/composables/admin/useAdminSubscription'
 import TrendAreaCard from '@/src/components/admin/TrendAreaCard.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { loadAiUsage, useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
@@ -53,7 +55,7 @@ const { records: depositRecords, stats: depositStats } = useAdminDeposits()
 // ── 真實資料：系統健康條、最近登入 ──────────────────────────────────
 //
 // 這兩個是本頁唯一打真實後端的區塊（其餘都是展示資料，見下方個別區塊的註解）。
-const { realAccounts, realAccountsLoading, realAccountsError } = useAdminDirectory()
+const { rows: directoryRows, realAccounts, realAccountsLoading, realAccountsError } = useAdminDirectory()
 const { dbPool, requests, services, serverNow } = useSystemHealth()
 
 // 開關打開不代表此刻生效，排程可能尚未開始或已結束
@@ -278,6 +280,12 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         </div>
       </CardContent>
     </Card>
+
+    <!--
+      展示資料（無 data-real）：人數沿用 useAdminDirectory 的真實＋展示帳號，
+      收款由 adminSubscriptionCollection 的本機種子訂閱推算，尚未串接金流。
+    -->
+    <SubscriptionOverviewCard :rows="directoryRows" :subscriptions="adminSubscriptionCollection" />
 
     <!-- 平台規模與組成 -->
     <section

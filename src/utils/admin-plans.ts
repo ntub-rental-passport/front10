@@ -6,11 +6,22 @@ import {
   monthlyEquivalent,
   planLimits,
   subscriptionPlans,
+  type BillingCycle,
   type PlanKey,
   type PlanRole,
 } from './subscription-plans'
 
 export const TRIAL_DAYS = 14
+
+/** 每次從首次付款日推算並夾到月底，避免二月讓後續月份永久漂到 28 日。 */
+export function billingDate(startedAt: Date, cycle: BillingCycle, periods = 1): Date {
+  const date = new Date(startedAt)
+  date.setDate(1)
+  date.setMonth(date.getMonth() + periods * (cycle === 'monthly' ? 1 : 12))
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+  date.setDate(Math.min(startedAt.getDate(), lastDay))
+  return date
+}
 
 export function getPlan(role: PlanRole, key: PlanKey) {
   return subscriptionPlans[role].find((plan) => plan.key === key)!

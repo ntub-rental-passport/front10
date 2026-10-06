@@ -1,5 +1,5 @@
-import { createRandom, daysAgo, daysAhead, intBetween } from './helpers'
-import { TRIAL_DAYS, getPlanLimits, usageMonth } from '@/src/utils/admin-plans'
+import { createRandom, daysAgo, daysAhead, intBetween, monthsAgo } from './helpers'
+import { TRIAL_DAYS, billingDate, getPlanLimits, usageMonth } from '@/src/utils/admin-plans'
 import type { BillingCycle, PlanKey, PlanRole } from '@/src/utils/subscription-plans'
 import { seedAdminUsers, type AdminUser } from './users'
 
@@ -8,6 +8,7 @@ interface SubscriptionBase {
   userId: string
   planKey: PlanKey
   billingCycle: BillingCycle | null
+  startedAt: string
   expiresAt: string
   active: boolean
   trialEndsAt: string | null
@@ -43,6 +44,7 @@ const PLAN_CYCLE: PlanKey[] = ['free', 'plus', 'pro', 'plus', 'pro', 'free']
 
 export function seedSubscriptions(users: AdminUser[] = seedAdminUsers()): Subscription[] {
   const random = createRandom(302558)
+  const now = new Date()
   const indexes: Record<PlanRole, number> = { tenant: 0, landlord: 0 }
   return users.flatMap((user): Subscription[] => {
     if (user.role === 'admin') return []
@@ -54,18 +56,35 @@ export function seedSubscriptions(users: AdminUser[] = seedAdminUsers()): Subscr
     const active = user.status === 'active'
     const trialEndsAt =
       active && index % 6 === 5 ? daysAhead(intBetween(random, 1, TRIAL_DAYS - 1)) : null
+    let startedAt: string
+    let expiresAt: string
+    if (!billingCycle) {
+      startedAt = user.registeredAt
+      expiresAt = !active ? daysAgo(3) : daysAhead(intBetween(random, 15, 27))
+    } else {
+      // 月繳保留即將到期情境；其餘開始日分散，年繳收款才不會集中在同一月份。
+      const soon = billingCycle === 'monthly' && index % 3 === 1
+      const nextWeek = new Date(now)
+      nextWeek.setDate(nextWeek.getDate() + 7)
+      const day = soon ? nextWeek.getDate() : intBetween(random, 1, 28)
+      // 停用者保留至少一期已付款歷史，再於某個過去的續扣日前取消。
+      const minimumMonths = active ? 1 : billingCycle === 'yearly' ? 13 : 2
+      startedAt = monthsAgo(intBetween(random, minimumMonths, 18), day)
+      const start = new Date(startedAt)
+      let period = 1
+      let next = billingDate(start, billingCycle, period)
+      while (next <= now) next = billingDate(start, billingCycle, ++period)
+      expiresAt = (active ? next : billingDate(start, billingCycle, period - 1)).toISOString()
+    }
     const common = {
       id: `sub-${user.id}`,
       userId: user.id,
       planKey,
       billingCycle,
+      startedAt,
+      expiresAt,
       active,
       trialEndsAt,
-      expiresAt: !active
-        ? daysAgo(3)
-        : daysAhead(
-            index % 3 === 1 ? 7 : intBetween(random, 15, billingCycle === 'yearly' ? 360 : 27),
-          ),
     }
     if (role === 'landlord') return [{ ...common, role }]
     const limits = getPlanLimits(role, trialEndsAt ? 'plus' : active ? planKey : 'free')

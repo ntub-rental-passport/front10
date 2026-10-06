@@ -5,14 +5,14 @@ import { adminSettings } from './useAdminSettings'
 import { seedSubscriptions, type Subscription } from '@/src/mocks/admin/subscription'
 import { ADMIN_DATASET_VERSION, discardLegacy } from '@/src/utils/admin-collection-migrate'
 import { isSubscriptionExpiring } from '@/src/utils/admin-user-directory'
-import { getPlan, planRoleOf } from '@/src/utils/admin-plans'
+import { billingDate, getPlan, planRoleOf } from '@/src/utils/admin-plans'
 import { subscriptionPlans, type PlanKey, type PlanRole } from '@/src/utils/subscription-plans'
 
-// role 是新版才有的欄位，舊的共用方案資料不能套進兩套獨立的方案。
+// 缺少付費開始日就無法推算歷史扣款，舊展示資料整批重建。
 export const adminSubscriptionCollection = createAdminCollection<Subscription[]>(
   `subscriptions-${ADMIN_DATASET_VERSION}`,
   seedSubscriptions,
-  discardLegacy(seedSubscriptions, 'role'),
+  discardLegacy(seedSubscriptions, 'startedAt'),
 )
 const subscriptions = adminSubscriptionCollection
 
@@ -38,15 +38,9 @@ export function useAdminSubscription() {
     } else if (wasFree) {
       subscription.billingCycle = 'monthly'
       const now = new Date()
-      if (!(new Date(subscription.expiresAt).getTime() > now.getTime())) {
-        // 月底升級時夾到下個月最後一天，避免 1/31 變成 3 月才扣款。
-        const next = new Date(now)
-        next.setDate(1)
-        next.setMonth(next.getMonth() + 1)
-        const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()
-        next.setDate(Math.min(now.getDate(), lastDay))
-        subscription.expiresAt = next.toISOString()
-      }
+      subscription.startedAt = now.toISOString()
+      // Free 的到期日沒有計費意義，升級後必須從首次付款重建下一期日期。
+      subscription.expiresAt = billingDate(now, 'monthly').toISOString()
     }
     subscription.planKey = planKey
     subscription.active = true

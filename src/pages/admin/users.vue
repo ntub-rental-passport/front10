@@ -129,6 +129,33 @@ watch(
   { immediate: true },
 )
 
+// 訂閱總覽帶角色與方案進來；只接受列表已有的篩選值，避免無效 query 清空結果。
+watch(
+  () => route.query.role,
+  (value) => {
+    if (value === 'landlord' || value === 'user' || value === 'admin' || value === 'all') {
+      filter.value.role = value
+      if (value === 'landlord' || value === 'user') {
+        planRole.value = value === 'landlord' ? 'landlord' : 'tenant'
+      }
+    }
+  },
+  { immediate: true },
+)
+watch(
+  () => route.query.plan,
+  (value) => {
+    if (value === 'all') filter.value.plan = value
+    for (const role of ['landlord', 'tenant'] as const) {
+      for (const plan of subscriptionPlans[role]) {
+        const key = `${role}-${plan.key}` as const
+        if (value === key) filter.value.plan = key
+      }
+    }
+  },
+  { immediate: true },
+)
+
 const alertOptions = Object.keys(userAlertLabels) as UserAlert[]
 
 /*
