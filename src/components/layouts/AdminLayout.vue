@@ -39,6 +39,7 @@ import { useAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
 import { useAdminIdleLogout } from '@/src/composables/admin/useAdminIdleLogout'
 import { loadAdminSettings } from '@/src/composables/admin/useAdminSettings'
+import { clearLegacyAdminData } from '@/src/composables/admin/useAdminStore'
 import { ADMIN_IDLE_MINUTES } from '@/src/utils/admin-idle'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
 import { adminNavGroups } from '@/src/utils/admin-rbac'
@@ -51,6 +52,7 @@ const router = useRouter()
 // 後台各頁直接讀 adminSettings（門檻、額度），進後台時向後端讀一次。
 // 通知中心的告警由後端自己產生，每 60 秒重讀，右上角的未讀數才會跟著變
 onMounted(() => {
+  clearLegacyAdminData()
   void loadAdminSettings()
   startAdminNotificationPolling()
 })

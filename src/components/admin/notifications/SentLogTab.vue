@@ -19,7 +19,7 @@ import {
   useAdminNotifications,
   TEST_SOURCE_LABEL,
 } from '@/src/composables/admin/useAdminNotifications'
-import { useAdminUsers } from '@/src/composables/admin/useAdminUsers'
+import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { groupIntoBatches, singleRecipientOf, type NotifBatch } from '@/src/utils/notif-batch'
 import { formatDateTime } from '@/src/utils/admin-format'
 import {
@@ -38,7 +38,7 @@ const { messages, messagesState } = useAdminNotifications()
 onMounted(() => {
   if (messagesState.value === 'ready') void loadMessages().then(() => followPendingEmails())
 })
-const { users } = useAdminUsers()
+const { rows: directoryRows } = useAdminDirectory()
 
 // 一次發送一列。逐筆展開會讓一次 57 人的群發塞滿整頁，把先前的紀錄推出視野；
 // 想看細節（收件人清單、已讀比例）改進批次詳情頁，這裡的列只負責讓人找到那一次發送。
@@ -60,7 +60,7 @@ const batches = computed(() =>
 function recipientSummary(batch: NotifBatch): string {
   const single = singleRecipientOf(batch)
   if (!single) return `${batch.recipientLabel} · ${batch.category}`
-  const name = users.value.find((user) => user.email === single.userEmail)?.nickname
+  const name = directoryRows.value.find((row) => row.user.email === single.userEmail)?.user.nickname
   return name ? `${name}（${single.userEmail}） · ${batch.category}` : `${single.userEmail} · ${batch.category}`
 }
 

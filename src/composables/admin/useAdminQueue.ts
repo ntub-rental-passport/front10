@@ -15,13 +15,13 @@ import { buildQueueGroups, queueTotal, type QueueGroup } from '@/src/utils/admin
  * 出現「徽章說 18 件、抽屜列出 14 件」這種對不起來的狀況 —— 而且不會報錯。
  *
  * 底層的 useAdminMaintenance 與 useAdminAiUsage 都是模組層的單例
- * （前者是 createAdminCollection，後者是從後端讀來的 ref），所以這裡重複呼叫
+ * （都是從後端讀來的 ref），所以這裡重複呼叫
  * 不會產生第二份狀態，三個消費者拿到的一定是同一批資料。
  *
  * ## 資料性質
  *
- * 工單仍是展示資料（src/mocks 的 seedMaintenanceTickets）；額度告急是真的，
- * 來自後端記的 Google Vision 用量（backend/admin/ai_usage.py）。
+ * 工單來自 /api/admin/repairs；額度告急來自後端記的 Google Vision 用量
+ * （backend/admin/ai_usage.py）。
  */
 export interface AdminQueue {
   groups: ComputedRef<QueueGroup[]>

@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import type { AdminAccount } from '@/src/services/adminUsersApi'
 import type { AdminRepairRecord } from '@/src/services/adminRepairApi'
 import { joinUserDirectory } from '@/src/utils/admin-user-directory'
+import { userPlan } from '@/src/utils/admin-plans'
 
 const api = vi.hoisted(() => ({
   fetchAdminAccounts: vi.fn(), updateAccountStatus: vi.fn(),
@@ -11,6 +12,10 @@ const api = vi.hoisted(() => ({
 vi.mock('@/src/services/adminUsersApi', () => api)
 vi.mock('@/src/services/adminUserRecordsApi', () => api)
 vi.mock('@/src/services/adminRepairApi', () => api)
+vi.mock('@/src/mocks/admin/usage', async (original) => {
+  const actual = await original<typeof import('@/src/mocks/admin/usage')>()
+  return { ...actual, seedAccountUsage: vi.fn(actual.seedAccountUsage) }
+})
 vi.mock('@/src/composables/useAuth', () => ({
   getAuthSession: () => ({ role: 'admin', userId: '1', accessToken: 'token' }),
 }))
@@ -41,6 +46,10 @@ beforeEach(() => {
   ] })
   api.fetchAdminRepairs.mockResolvedValue({ items: [repair('1'), repair('2', 'completed'), repair('3', 'canceled')] })
 })
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
 
 async function loaded() {
   const module = await import('./useAdminDirectory')
@@ -50,6 +59,20 @@ async function loaded() {
 }
 
 describe('useAdminDirectory 真實案件關聯', () => {
+  it('正式站只有真實列，不計算展示用量，真實帳號仍適用 Free', async () => {
+    vi.stubEnv('DEV', false)
+    const directory = await loaded()
+    const { seedAccountUsage } = await import('@/src/mocks/admin/usage')
+    expect(directory.rows.value.map((row) => row.user.id)).toEqual(['real-1', 'real-2', 'real-3'])
+    expect(seedAccountUsage).not.toHaveBeenCalled()
+    for (const row of directory.rows.value) {
+      expect(row.subscription).toBeNull()
+      expect(userPlan(row.user, row.subscription)?.key).toBe('free')
+    }
+    const { adminSubscriptionCollection } = await import('./useAdminSubscription')
+    expect(adminSubscriptionCollection.value).toEqual([])
+  })
+
   it('真實帳號拿到自己的押金與工單，展示帳號的資料維持原樣', async () => {
     const directory = await loaded()
     const tenant = directory.rowOf('real-1')!

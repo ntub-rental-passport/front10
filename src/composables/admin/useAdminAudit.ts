@@ -4,6 +4,7 @@ import { adminSettings as settings } from './useAdminSettings'
 import { getAuthSession } from '@/src/composables/useAuth'
 import { filterByRetention } from '@/src/utils/admin-audit-retention'
 import { seedAuditEvents, type AuditActionType, type AuditEvent } from '@/src/mocks/admin-seed'
+import { isAdminDemoEnabled } from '@/src/utils/admin-demo'
 
 const rawEvents = createAdminCollection<AuditEvent[]>('audit', seedAuditEvents)
 
@@ -13,6 +14,7 @@ export function useAdminAudit() {
    * 要傳 `'system'` —— 不然稽核紀錄會寫成「剛好開著頁面的那位管理員」做的。
    */
   function logAction(action: AuditActionType, target: string, detail: string, actor?: string): void {
+    if (!isAdminDemoEnabled()) return
     rawEvents.value.unshift({
       id: newId('ev'),
       at: new Date().toISOString(),

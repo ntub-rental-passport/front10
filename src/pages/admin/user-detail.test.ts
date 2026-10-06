@@ -50,7 +50,10 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date(2026, 9, 6, 12))
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllEnvs()
+})
 
 async function render(role: 'user' | 'landlord' | 'admin', withSubscription = true) {
   const user = seedAdminUsers().find((user) => user.role === role)!
@@ -64,6 +67,7 @@ describe('訂閱與容量角色呈現', () => {
   it('管理員不顯示方案或補發功能', async () => {
     const html = await render('admin')
     expect(html).toContain('管理員帳號不適用方案')
+    expect(html).not.toContain('方案與加購尚未串接金流，目前無法在後台調整')
     expect(html).not.toContain('生效方案')
     expect(html).not.toContain('補發契約檢查包')
   })
@@ -131,6 +135,18 @@ async function renderCurrentRow() {
 }
 
 describe('帳號計數用量', () => {
+  it.each([true, false])('DEV=%s 真實帳號維持 Free，並說明方案與加購無法調整', async (dev) => {
+    vi.stubEnv('DEV', dev)
+    for (const role of ['tenant', 'landlord']) {
+      state.row = realAccountToRow({ ...realAccount, roles: [role] })
+      const html = await renderCurrentRow()
+      expect(html).toContain(role === 'tenant' ? 'Free 租屋入門' : 'Free 基礎管理')
+      expect(html).toContain('方案與加購尚未串接金流，目前無法在後台調整')
+      expect(html).not.toContain('補發契約檢查包')
+      expect(html).not.toContain('下次扣款日')
+    }
+  })
+
   it('真實房東超出物件上限，顯示逐項與整體警示、進度封頂與左欄計數', async () => {
     state.row = realAccountToRow({ ...realAccount, roles: ['landlord'], usage: {
       landlord: { properties: 2, rooms: 5, seats: 1 }, tenant: null,

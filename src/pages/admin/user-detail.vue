@@ -584,6 +584,9 @@ function openSendDialog(): void {
         <Card class="rounded-3xl">
           <CardHeader class="p-5"><CardTitle>訂閱與容量</CardTitle></CardHeader>
           <CardContent class="px-5 pb-5">
+            <p v-if="!row.subscription && row.user.role !== 'admin'" class="mb-4 text-sm text-muted-foreground">
+              方案與加購尚未串接金流，目前無法在後台調整
+            </p>
             <p v-if="row.user.role === 'admin'" class="text-muted-foreground">管理員帳號不適用方案</p>
             <div v-else-if="effectivePlan" class="space-y-4">
               <div class="flex flex-wrap items-start gap-6">

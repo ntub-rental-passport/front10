@@ -37,6 +37,7 @@ beforeEach(() => {
   vi.setSystemTime(now)
 })
 afterEach(() => {
+  vi.unstubAllEnvs()
   vi.clearAllTimers()
   vi.useRealTimers()
 })
@@ -64,6 +65,13 @@ async function render(role?: PlanRole, freeOnly = false, trial = false) {
 }
 
 describe('SubscriptionOverviewCard', () => {
+  it('正式站沒有訂閱資料時說明尚未串接金流', async () => {
+    vi.stubEnv('DEV', false)
+    const html = await renderToString(createSSRApp(SubscriptionOverviewCard, { rows: [], subscriptions: [] }))
+    expect(html).toContain('尚未串接金流，目前沒有收款紀錄')
+    expect(html).not.toContain('data-chart="bar"')
+  })
+
   it('外部控制角色時兩張圖都用對應資料，租客多檢查包系列，預設仍為房東', async () => {
     const landlord = await render()
     expect(landlord).toContain('全部 1 位房東')

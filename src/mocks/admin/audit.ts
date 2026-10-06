@@ -1,4 +1,5 @@
 import { daysAgo } from './helpers'
+import { isAdminDemoEnabled } from '@/src/utils/admin-demo'
 
 /**
  * 稽核紀錄的動作類型，單一來源。
@@ -50,9 +51,11 @@ export function seedAuditEvents(): AuditEvent[] {
 }
 
 /**
- * 種子資料的 id。稽核頁要把它們標成「展示資料」—— 這 8 筆從來沒發生過，
- * 例如「derek.wu 被停用」，不標的話看起來跟真的操作一模一樣。
+ * 種子資料的 id，供本地合併稽核區分從未發生過的事件。
+ * 正式站不合併本地紀錄，也不為了辨識 id 執行種子函式。
  *
  * 用 id 認得出來：logAction 產生的 id 是 `ev-<時間>-<亂數>`，不會跟 `ev-1` 撞。
  */
-export const SEED_AUDIT_EVENT_IDS: ReadonlySet<string> = new Set(seedAuditEvents().map((event) => event.id))
+export const SEED_AUDIT_EVENT_IDS: ReadonlySet<string> = new Set(
+  isAdminDemoEnabled() ? seedAuditEvents().map((event) => event.id) : [],
+)
