@@ -15,7 +15,7 @@ export interface SystemSettings {
   // 到期前幾天，使用者列表開始標示「訂閱即將到期」。
   subscriptionExpiringSoonDays: number
   // 以下為「平台向 AI 廠商購買的額度」，也就是成本側的總量。
-  // 單一使用者能用幾次是方案權益，存在 SubscriptionPlan.features，不在這裡。
+  // 單一使用者能用幾次是方案權益，存在 subscription-plans.ts，不在這裡。
   platformVisionPageQuota: number
   quotaWarnPercent: number
   quotaCriticalPercent: number

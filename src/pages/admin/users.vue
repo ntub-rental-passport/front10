@@ -19,6 +19,8 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select/index'
@@ -57,6 +59,8 @@ import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vu
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
 import { userAlertLabels, type UserAlert } from '@/src/utils/admin-user-directory'
+import { userPlan } from '@/src/utils/admin-plans'
+import { subscriptionPlans } from '@/src/utils/subscription-plans'
 import { realAccountStats, registrationSources } from '@/src/utils/admin-real-accounts'
 import type {
   PlanDistributionSegment,
@@ -88,6 +92,7 @@ const {
   filterActive,
   clearFilter,
   planSegments,
+  planRole,
   adminTotal,
   realAccounts,
   realAccountsLoading,
@@ -96,20 +101,20 @@ const {
   setRealAccountStatus,
 } = useAdminDirectory()
 
-// 對應 planDistribution 的順序：免費、進階、專業、尚未訂閱。
-// 用明度表達層級 —— 方案越高階顏色越深，未訂閱最淡。
+// 對應 Free、Plus、Pro，用明度表達方案越高階顏色越深。
 const planColors = computed(() => [
   chartColor('series-3'),
   chartColor('series-2'),
   chartColor('series-1'),
-  chartColor('series-5'),
 ])
 
 // 再點一次同一個方案就取消篩選，不用特地跑去按「清除篩選」。
 // 圖表搬到列表下方之後，點了圖卻看不到列表變化 —— 所以篩完捲回列表。
 const listCard = ref<HTMLElement | null>(null)
-function handlePlanSelect(planId: PlanDistributionSegment['planId']): void {
-  filter.value.plan = filter.value.plan === planId ? 'all' : planId
+function handlePlanSelect(planKey: PlanDistributionSegment['planKey']): void {
+  const plan = `${planRole.value}-${planKey}` as const
+  filter.value.role = planRole.value === 'landlord' ? 'landlord' : 'user'
+  filter.value.plan = filter.value.plan === plan ? 'all' : plan
   listCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
@@ -451,10 +456,12 @@ function displayName(row: UserDirectoryRow): string {
               <SelectTrigger class="w-32"><SelectValue placeholder="方案" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部方案</SelectItem>
-                <SelectItem value="free">免費方案</SelectItem>
-                <SelectItem value="plus">進階方案</SelectItem>
-                <SelectItem value="pro">專業方案</SelectItem>
-                <SelectItem value="none">尚未訂閱</SelectItem>
+                <SelectGroup v-for="role in (['landlord', 'tenant'] as const)" :key="role">
+                  <SelectLabel>{{ role === 'landlord' ? '房東' : '租客' }}</SelectLabel>
+                  <SelectItem v-for="plan in subscriptionPlans[role]" :key="plan.key" :value="`${role}-${plan.key}`">
+                    {{ plan.name }}
+                  </SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
 
@@ -646,8 +653,7 @@ function displayName(row: UserDirectoryRow): string {
                 </TableCell>
 
                 <TableCell class="whitespace-nowrap">
-                  <span v-if="row.plan">{{ row.plan.name }}</span>
-                  <span v-else class="text-muted-foreground">尚未訂閱</span>
+                  <span :class="row.user.role === 'admin' ? 'text-muted-foreground' : ''">{{ userPlan(row.user, row.subscription, now)?.name ?? '—' }}</span>
                 </TableCell>
 
                 <TableCell
@@ -776,9 +782,9 @@ function displayName(row: UserDirectoryRow): string {
     -->
     <div class="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
       <PlanDistributionCard
+        v-model="planRole"
         :segments="planSegments"
         :colors="planColors"
-        :total="rows.length"
         :active-plan="filter.plan"
         @select="handlePlanSelect"
       />
