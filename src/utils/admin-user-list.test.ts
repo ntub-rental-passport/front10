@@ -29,7 +29,6 @@ function row(id: string, over: Partial<AdminUser> = {}, realAccountId?: number):
       ...over,
     },
     subscription: null,
-    plan: null,
     deposits: [],
     tickets: [],
     openTicketCount: 0,

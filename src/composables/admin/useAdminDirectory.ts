@@ -1,8 +1,9 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useNow } from '../useNow'
 import { adminUsersCollection } from './useAdminUsers'
 import { adminMaintenanceCollection } from './useAdminMaintenance'
 import { adminDepositCollection } from './useAdminDeposits'
-import { adminPlans, adminSubscriptionCollection } from './useAdminSubscription'
+import { adminSubscriptionCollection } from './useAdminSubscription'
 import { adminSettings } from './useAdminSettings'
 import {
   fetchAdminAccounts,
@@ -20,6 +21,7 @@ import {
   type UserDirectoryFilter,
   type UserDirectoryRow,
 } from '@/src/utils/admin-user-directory'
+import type { PlanRole } from '@/src/utils/subscription-plans'
 import { dropDemoDuplicates } from '@/src/utils/admin-user-list'
 
 /**
@@ -81,6 +83,7 @@ async function loadRealAccounts(): Promise<void> {
 }
 
 export function useAdminDirectory() {
+  const now = useNow()
   // 第一次使用時才打 API；之後從詳情頁返回不重打
   if (!loadedOnce) {
     loadedOnce = true
@@ -94,9 +97,9 @@ export function useAdminDirectory() {
         tickets: adminMaintenanceCollection.value,
         deposits: adminDepositCollection.value,
         subscriptions: adminSubscriptionCollection.value,
-        plans: adminPlans.value,
       },
       adminSettings.value.subscriptionExpiringSoonDays,
+      now.value,
     ),
   )
 
@@ -107,10 +110,14 @@ export function useAdminDirectory() {
     ...dropDemoDuplicates(realRows.value, demoRows.value),
   ])
 
-  const filteredRows = computed(() => filterUserDirectory(rows.value, filter.value))
+  const filteredRows = computed(() => filterUserDirectory(rows.value, filter.value, now.value))
 
   // 圖表刻意吃全量 rows，不吃 filteredRows —— 見 planDistribution 的註解
-  const planSegments = computed(() => planDistribution(rows.value, adminPlans.value))
+  const planRole = ref<PlanRole>('landlord')
+  watch(() => filter.value.role, (role) => {
+    if (role === 'landlord' || role === 'user') planRole.value = role === 'landlord' ? 'landlord' : 'tenant'
+  }, { immediate: true })
+  const planSegments = computed(() => planDistribution(rows.value, planRole.value, now.value))
   const adminTotal = computed(() => adminCount(rows.value))
 
   const filterActive = computed(() => isFilterActive(filter.value))
@@ -155,6 +162,7 @@ export function useAdminDirectory() {
     filterActive,
     clearFilter,
     rowOf,
+    planRole,
     planSegments,
     adminTotal,
     realAccounts,

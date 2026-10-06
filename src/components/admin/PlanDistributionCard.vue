@@ -16,6 +16,8 @@ import {
 } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/index'
+import { Button } from '@/components/ui/button/index'
+import type { PlanRole } from '@/src/utils/subscription-plans'
 import { chartColor } from '@/src/constants/admin-chart'
 import type { PlanDistributionSegment } from '@/src/utils/admin-user-directory'
 
@@ -24,12 +26,14 @@ ChartJS.register(ArcElement, Tooltip)
 const props = defineProps<{
   segments: PlanDistributionSegment[]
   colors: string[]
-  total: number
   /** 目前生效的方案篩選，'all' 代表沒有篩選 */
   activePlan: string
 }>()
 
-const emit = defineEmits<{ select: [planId: PlanDistributionSegment['planId']] }>()
+const role = defineModel<PlanRole>({ default: 'landlord' })
+const emit = defineEmits<{ select: [planKey: PlanDistributionSegment['planKey']] }>()
+const total = computed(() => props.segments.reduce((sum, segment) => sum + segment.value, 0))
+const trialCount = computed(() => props.segments.reduce((sum, segment) => sum + segment.trialCount, 0))
 
 const hasData = computed(() => props.segments.some((segment) => segment.value > 0))
 
@@ -52,7 +56,7 @@ const chartData = computed<ChartData<'doughnut'>>(() => ({
       borderWidth: 2,
       // 被選中的那一段推出來，取代原本圖例上的反白
       offset: hasData.value
-        ? visible.value.map((segment) => (segment.planId === props.activePlan ? 8 : 0))
+        ? visible.value.map((segment) => (`${role.value}-${segment.planKey}` === props.activePlan ? 8 : 0))
         : [0],
     },
   ],
@@ -121,7 +125,7 @@ const chartOptions = computed<ChartOptions<'doughnut'>>(() => ({
   responsive: true,
   maintainAspectRatio: false,
   // 留白給外側標籤，否則長標籤會被畫布裁掉
-  layout: { padding: { top: 18, bottom: 18, left: 72, right: 72 } },
+  layout: { padding: { top: 18, bottom: 18, left: 108, right: 108 } },
   plugins: {
     legend: { display: false },
     tooltip: { enabled: hasData.value },
@@ -146,7 +150,7 @@ function segmentAt(event: MouseEvent): PlanDistributionSegment | null {
 
 function handleChartClick(event: MouseEvent): void {
   const segment = segmentAt(event)
-  if (segment) emit('select', segment.planId)
+  if (segment) emit('select', segment.planKey)
 }
 
 function handleChartMove(event: MouseEvent): void {
@@ -158,8 +162,15 @@ function handleChartMove(event: MouseEvent): void {
 <template>
   <Card class="h-full rounded-3xl border-border/70 bg-background/90 shadow-sm">
     <CardHeader class="p-5 pb-2">
-      <CardTitle class="text-sm font-medium">訂閱方案分布</CardTitle>
-      <p class="text-xs text-muted-foreground">全部 {{ total }} 位使用者，點方案可篩選</p>
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex gap-1" role="group" aria-label="方案角色">
+          <Button size="sm" :variant="role === 'landlord' ? 'secondary' : 'ghost'" :aria-pressed="role === 'landlord'" @click="role = 'landlord'">房東</Button>
+          <Button size="sm" :variant="role === 'tenant' ? 'secondary' : 'ghost'" :aria-pressed="role === 'tenant'" @click="role = 'tenant'">租客</Button>
+        </div>
+        <CardTitle class="text-sm font-medium">訂閱方案分布</CardTitle>
+      </div>
+      <p class="text-xs text-muted-foreground">全部 {{ total }} 位{{ role === 'landlord' ? '房東' : '租客' }}，點方案可篩選</p>
+      <p v-if="trialCount > 0" class="text-xs text-muted-foreground">其中 {{ trialCount }} 位試用中</p>
     </CardHeader>
     <CardContent class="px-5 pb-5">
       <!-- 高度壓到與旁邊的管理員人數卡接近，避免一高一矮看起來沒對齊 -->

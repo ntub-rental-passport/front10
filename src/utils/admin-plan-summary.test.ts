@@ -1,31 +1,32 @@
 import { describe, expect, it } from 'vitest'
-
-import { seedPlans } from '@/src/mocks/admin/subscription'
+import { planFeatures, subscriptionPlans } from './subscription-plans'
 import { planInclusions } from './admin-plan-summary'
 
-const plan = (id: string) => seedPlans().find((item) => item.id === id)!
-
 describe('planInclusions', () => {
-  it('免費方案：有額度的寫上限，沒包含的直接說', () => {
-    const rows = planInclusions(plan('free').features)
-    expect(rows.find((row) => row.key === 'contract-analysis')?.text).toBe('3 次／月')
-    expect(rows.find((row) => row.key === 'outage')).toMatchObject({ included: false, text: '不包含' })
-    expect(rows.find((row) => row.key === 'garbage')).toMatchObject({ included: true, text: '包含' })
-  })
+  for (const role of ['landlord', 'tenant'] as const) {
+    for (const [index, plan] of subscriptionPlans[role].entries()) {
+      it(`${plan.name} 使用前台完整權益、順序與規劃標記`, () => {
+        const groups = planInclusions(role, plan.key)
+        expect(groups.map((group) => group.group)).toEqual([
+          ...new Set(planFeatures[role].map((item) => item.group)),
+        ])
+        expect(groups.flatMap((group) => group.items)).toEqual(
+          planFeatures[role].map((feature) => ({
+            label: feature.label,
+            text: feature.values[index],
+            planned: !!feature.planned,
+          })),
+        )
+      })
+    }
+  }
 
-  it('專業方案是無上限', () => {
-    expect(planInclusions(plan('pro').features).find((row) => row.key === 'handover')?.text).toBe('無上限')
-  })
-
-  it('有記錄的用量與加購額度附在後面', () => {
-    const rows = planInclusions(plan('plus').features, {
-      used: { 'contract-analysis': 5 },
-      extraCredits: { 'contract-analysis': 3 },
+  it('只列方案上限，沒有逐人用量或加購混入方案權益', () => {
+    const items = planInclusions('tenant', 'plus').flatMap((group) => group.items)
+    expect(items.find((item) => item.label === 'AI 契約分析')?.text).toBe('每月 2 次')
+    expect(items.find((item) => item.label === '附件總容量')).toMatchObject({
+      text: '1 GB',
+      planned: true,
     })
-    expect(rows.find((row) => row.key === 'contract-analysis')?.text).toBe('20 次／月（已用 5，加購 +3）')
-  })
-
-  it('六項功能都會列出，順序固定', () => {
-    expect(planInclusions(plan('free').features)).toHaveLength(6)
   })
 })

@@ -18,6 +18,74 @@ export interface PlanFeature {
   planned?: boolean
 }
 
+export interface PlanQuota {
+  label: string
+  unit: string
+  limit: number
+}
+
+export interface LandlordPlanLimits {
+  properties: PlanQuota
+  rooms: PlanQuota
+  managers: PlanQuota
+}
+
+export interface TenantPlanLimits {
+  analysis: PlanQuota & { period: 'verified-once' | 'monthly' }
+  storage: PlanQuota
+  sharedSpaces: PlanQuota
+  sharedMembers: PlanQuota
+}
+
+export interface PlanLimitsByRole {
+  landlord: LandlordPlanLimits
+  tenant: TenantPlanLimits
+}
+
+function landlordLimits(properties: number, rooms: number, managers: number): LandlordPlanLimits {
+  return {
+    properties: { label: '管理物件', unit: '個', limit: properties },
+    rooms: { label: '管理房間', unit: '間', limit: rooms },
+    managers: { label: '管理者席次（含擁有者）', unit: '席', limit: managers },
+  }
+}
+
+function tenantLimits(
+  analysis: number,
+  period: TenantPlanLimits['analysis']['period'],
+  storage: number,
+  members: number,
+): TenantPlanLimits {
+  return {
+    analysis: { label: 'AI 契約分析', unit: '次', limit: analysis, period },
+    storage: { label: '附件總容量', unit: 'MB', limit: storage },
+    sharedSpaces: { label: '共享空間', unit: '個', limit: 1 },
+    sharedMembers: { label: '室友共享人數', unit: '人', limit: members },
+  }
+}
+
+// 容量沿用既有畫面的 1 GB = 1024 MB，避免前後台換算不一致。
+export const planLimits: { [R in PlanRole]: Record<PlanKey, PlanLimitsByRole[R]> } = {
+  landlord: {
+    free: landlordLimits(1, 5, 1),
+    plus: landlordLimits(5, 30, 1),
+    pro: landlordLimits(20, 100, 3),
+  },
+  tenant: {
+    free: tenantLimits(1, 'verified-once', 200, 3),
+    plus: tenantLimits(2, 'monthly', 1024, 4),
+    pro: tenantLimits(5, 'monthly', 5120, 6),
+  },
+}
+
+export const tenantCheckPack = {
+  name: '39 元單次契約檢查包',
+  price: 39,
+  analyses: 1,
+  includesReportExport: true,
+  recurring: false,
+} as const
+
 export const subscriptionPlans: Record<PlanRole, SubscriptionPlan[]> = {
   landlord: [
     {

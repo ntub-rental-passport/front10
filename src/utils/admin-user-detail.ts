@@ -1,3 +1,4 @@
+import type { PlanKey, PlanRole } from './subscription-plans'
 import type { StatusDotTone } from '@/src/components/admin/status-dot'
 import type { DepositMatch } from './admin-deposit'
 import { isHandoverDamage, type HandoverOutcome, type HandoverResult } from './admin-handover'
@@ -71,6 +72,8 @@ export interface SubscriptionFlag {
  */
 export function subscriptionFlags(input: {
   active: boolean
+  planKey: PlanKey
+  role: PlanRole
   expiringSoon: boolean
   quotaExhausted: boolean
 }): SubscriptionFlag[] {
@@ -80,7 +83,7 @@ export function subscriptionFlags(input: {
     // 已經停用了，「即將到期」「額度用滿」都不再有意義
     return flags
   }
-  if (input.expiringSoon) flags.push({ label: '即將到期', tone: 'warn' })
-  if (input.quotaExhausted) flags.push({ label: '額度已用滿', tone: 'warn' })
+  if (input.planKey !== 'free' && input.expiringSoon) flags.push({ label: '即將到期', tone: 'warn' })
+  if (input.role === 'tenant' && input.quotaExhausted) flags.push({ label: '額度已用滿', tone: 'warn' })
   return flags
 }
