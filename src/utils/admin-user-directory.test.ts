@@ -179,6 +179,23 @@ describe('joinUserDirectory', () => {
     expect(userPlan(tenantRow.user, tenantRow.subscription)?.name).toBe('Plus 安心租住')
   })
 
+  it('固定展示計數保留，試用結束或降級後重新判斷超出', () => {
+    const landlord = user('u-landlord', { role: 'landlord', status: 'suspended' })
+    const usageByUserId = { [landlord.id]: { landlord: { properties: 5, rooms: 30, seats: 1 }, tenant: null } }
+    const data = sources({
+      users: [landlord], usageByUserId,
+      subscriptions: [{
+        id: 'sub-landlord', userId: landlord.id, role: 'landlord', planKey: 'free',
+        billingCycle: null, active: true, trialEndsAt: '2026-08-20T00:00:00.000Z', startedAt: '', expiresAt: '',
+      }],
+    })
+    const before = joinUserDirectory(data, 14, new Date('2026-08-14T00:00:00.000Z'))[0]
+    const after = joinUserDirectory(data, 14, new Date('2026-08-21T00:00:00.000Z'))[0]
+    expect(before.usage).toEqual(after.usage)
+    expect(before.overLimit).toBe(false)
+    expect(after.overLimit).toBe(true)
+  })
+
   it('與自己無關的案件不會掛上來', () => {
     const rows = joinUserDirectory(
       sources({
@@ -483,6 +500,24 @@ describe('realAccountToRow', () => {
   it('房東與租客不是管理員', () => {
     expect(realAccountToRow({ ...base, roles: ['landlord'] }).user.role).toBe('landlord')
     expect(realAccountToRow({ ...base, roles: ['tenant'] }).user.role).toBe('user')
+  })
+
+  it('API 用量原樣接入，以 Free 上限判斷，停用帳號照樣判斷', () => {
+    const usage = { landlord: { properties: 2, rooms: 5, seats: 1 }, tenant: null }
+    const row = realAccountToRow({ ...base, roles: ['landlord'], status: 'suspended', usage })
+    expect(row.usage).toEqual(usage)
+    expect(row.overLimit).toBe(true)
+    expect(realAccountToRow({ ...base, roles: ['admin', 'landlord'], usage }).overLimit).toBe(false)
+    expect(filterUserDirectory([row, realAccountToRow(base)], {
+      ...emptyUserDirectoryFilter, alert: 'over-limit',
+    })).toEqual([row])
+  })
+
+  it('舊後端缺 usage 與明確 null 都保留未知，不當作零用量', () => {
+    for (const row of [realAccountToRow(base), realAccountToRow({ ...base, usage: null })]) {
+      expect(row.usage).toBeNull()
+      expect(row.overLimit).toBe(false)
+    }
   })
 
   it('id 加前綴，不與展示資料相撞', () => {

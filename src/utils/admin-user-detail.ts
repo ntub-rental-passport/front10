@@ -76,14 +76,17 @@ export function subscriptionFlags(input: {
   role: PlanRole
   expiringSoon: boolean
   quotaExhausted: boolean
+  overLimit?: boolean
 }): SubscriptionFlag[] {
   const flags: SubscriptionFlag[] = []
   if (!input.active) {
     flags.push({ label: '已停用', tone: 'idle' })
-    // 已經停用了，「即將到期」「額度用滿」都不再有意義
+    if (input.overLimit) flags.push({ label: '超出方案上限', tone: 'warn' })
+    // 停用後不追續約與 AI 額度，但資源仍在，超出方案上限仍須監控。
     return flags
   }
   if (input.planKey !== 'free' && input.expiringSoon) flags.push({ label: '即將到期', tone: 'warn' })
   if (input.role === 'tenant' && input.quotaExhausted) flags.push({ label: '額度已用滿', tone: 'warn' })
+  if (input.overLimit) flags.push({ label: '超出方案上限', tone: 'warn' })
   return flags
 }

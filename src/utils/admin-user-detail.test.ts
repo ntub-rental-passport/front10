@@ -51,6 +51,16 @@ describe('subscriptionFlags', () => {
     expect(subscriptionFlags(base)).toEqual([])
   })
 
+  it('超出方案上限是 warn，Free 或已停用仍顯示', () => {
+    expect(subscriptionFlags({ ...base, planKey: 'free', overLimit: true })).toEqual([
+      { label: '超出方案上限', tone: 'warn' },
+    ])
+    expect(subscriptionFlags({ ...base, active: false, overLimit: true })).toEqual([
+      { label: '已停用', tone: 'idle' },
+      { label: '超出方案上限', tone: 'warn' },
+    ])
+  })
+
   it('即將到期與額度已用滿都是 warn，可以同時出現', () => {
     expect(subscriptionFlags({ ...base, expiringSoon: true, quotaExhausted: true })).toEqual([
       { label: '即將到期', tone: 'warn' },
