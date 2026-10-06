@@ -12,7 +12,8 @@ export interface DepositRecord {
   id: string
   address: string
   landlordUserId: string
-  tenantUserId: string
+  /** 配不到租客帳號時為 null，仍保留房東的聲明。 */
+  tenantUserId: string | null
   monthlyRent: number
   /** 房東聲明已收金額 */
   landlordDeclared: number

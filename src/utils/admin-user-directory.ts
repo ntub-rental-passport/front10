@@ -13,6 +13,7 @@ import type { AccountUsage } from '@/src/types/admin-usage'
 import { accountUsageLimits } from './admin-usage'
 import { depositGap, depositMatchOf, type DepositMatch } from './admin-deposit'
 import type { MaintenanceStatus } from './admin-maintenance'
+import type { RealMaintenanceTicket } from './admin-repair'
 import {
   effectivePlanKey,
   getPlanLimits,
@@ -134,8 +135,7 @@ export interface RealAccountInput {
 /**
  * 把資料庫的真實帳號接成列表的一列。
  *
- * 真實帳號沒有訂閱、押金、工單這些關聯資料 —— 那些是展示資料集為了
- * 呈現各模組而生成的，彼此以固定 id 互相指涉。所以這裡一律給空值，
+ * 先整理帳號本身，押金與工單由 joinRealUserDirectory 接真實來源。
  * 計數用量只取後端回傳，方案則由角色決定 Free，避免編造使用紀錄。
  *
  * 管理員只能由能登入伺服器的人用 manage_admin.py 授予，後台不提供新增管理員。
@@ -176,6 +176,56 @@ export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
 }
 
 
+/** 共用案件關聯規則；呼叫端分開傳真實與展示來源，避免兩邊混接。 */
+export function joinUserCases(
+  row: UserDirectoryRow,
+  deposits: DepositRecord[],
+  tickets: (MaintenanceTicket & { overdue?: boolean })[],
+): UserDirectoryRow {
+  const userDeposits: UserDepositView[] = deposits
+    .filter((item) => item.tenantUserId === row.user.id || item.landlordUserId === row.user.id)
+    .map((item) => ({
+      ...item,
+      side: item.tenantUserId === row.user.id ? 'tenant' : 'landlord',
+      match: depositMatchOf(item.landlordDeclared, item.tenantDeclared),
+      gap: depositGap(item.landlordDeclared, item.tenantDeclared),
+    }))
+
+  const userTickets: UserTicketView[] = tickets
+    .filter((item) => item.tenantUserId === row.user.id || item.landlordUserId === row.user.id)
+    .map((item) => ({
+      ...item,
+      side: item.tenantUserId === row.user.id ? 'tenant' : 'landlord',
+      open: isTicketOpen(item.status),
+    }))
+
+  return {
+    ...row,
+    deposits: userDeposits,
+    tickets: userTickets,
+    openTicketCount: userTickets.filter((item) => item.open).length,
+    // 真實工單的逾期是獨立旗標，展示工單則沿用狀態。
+    overdueTicketCount: userTickets.filter((item) =>
+      'overdue' in item ? item.overdue === true : item.status === 'overdue',
+    ).length,
+    mismatchedDepositCount: userDeposits.filter((item) => item.match === 'mismatched').length,
+  }
+}
+
+/** 只在使用者關聯時換 id，工單頁仍使用後端的數字字串。 */
+export function joinRealUserDirectory(
+  accounts: RealAccountInput[],
+  deposits: DepositRecord[],
+  tickets: RealMaintenanceTicket[],
+): UserDirectoryRow[] {
+  const directoryTickets = tickets.map((ticket) => ({
+    ...ticket,
+    landlordUserId: `real-${ticket.landlordUserId}`,
+    tenantUserId: `real-${ticket.tenantUserId}`,
+  }))
+  return accounts.map((account) => joinUserCases(realAccountToRow(account), deposits, directoryTickets))
+}
+
 export interface UserDirectorySources {
   users: AdminUser[]
   tickets: MaintenanceTicket[]
@@ -203,36 +253,19 @@ export function joinUserDirectory(
     ) ?? null
     const usage = sources.usageByUserId?.[user.id] ?? null
 
-    const userDeposits: UserDepositView[] = deposits
-      .filter((item) => item.tenantUserId === user.id || item.landlordUserId === user.id)
-      .map((item) => ({
-        ...item,
-        side: item.tenantUserId === user.id ? 'tenant' : 'landlord',
-        match: depositMatchOf(item.landlordDeclared, item.tenantDeclared),
-        gap: depositGap(item.landlordDeclared, item.tenantDeclared),
-      }))
-
-    const userTickets: UserTicketView[] = tickets
-      .filter((item) => item.tenantUserId === user.id || item.landlordUserId === user.id)
-      .map((item) => ({
-        ...item,
-        side: item.tenantUserId === user.id ? 'tenant' : 'landlord',
-        open: isTicketOpen(item.status),
-      }))
-
-    return {
+    return joinUserCases({
       user,
       subscription,
       usage,
       overLimit: accountUsageLimits(userPlan(user, subscription, now), usage)?.overLimit ?? false,
-      deposits: userDeposits,
-      tickets: userTickets,
-      openTicketCount: userTickets.filter((item) => item.open).length,
-      overdueTicketCount: userTickets.filter((item) => item.status === 'overdue').length,
-      mismatchedDepositCount: userDeposits.filter((item) => item.match === 'mismatched').length,
+      deposits: [],
+      tickets: [],
+      openTicketCount: 0,
+      overdueTicketCount: 0,
+      mismatchedDepositCount: 0,
       subscriptionExpiring: isSubscriptionExpiring(subscription, expiringSoonDays, now),
       quotaExhausted: isQuotaExhausted(subscription, user.emailVerified, now),
-    }
+    }, deposits, tickets)
   })
 }
 

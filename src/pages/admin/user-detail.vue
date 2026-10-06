@@ -106,7 +106,7 @@ const router = useRouter()
 const { rowOf, setRealAccountStatus } = useAdminDirectory()
 const { setStatus, setRole } = useAdminUsers()
 const { changePlan, grantCheckPacks, isExpiringSoon } = useAdminSubscription()
-const { ticketViews } = useAdminMaintenance()
+const { ticketViews, loadState: ticketsState, reload: reloadTickets } = useAdminMaintenance()
 const { records: handoverRecords } = useAdminHandover()
 
 const userId = computed(() => String(route.params.id ?? ''))
@@ -566,7 +566,12 @@ function openSendDialog(): void {
           </div>
           <div class="space-y-1">
             <dt class="text-xs text-foreground/70">工單待處理</dt>
-            <dd class="font-semibold tabular-nums">{{ row.openTicketCount }} 件</dd>
+            <dd class="font-semibold tabular-nums">
+              <span v-if="isReal && ticketsState !== 'ready'" class="font-normal text-muted-foreground">
+                {{ ticketsState === 'error' ? '讀不到工單資料' : '讀取中' }}
+              </span>
+              <template v-else>{{ row.openTicketCount }} 件</template>
+            </dd>
             <dd v-if="row.overdueTicketCount > 0">
               <StatusDot tone="danger" :label="`${row.overdueTicketCount} 件逾期`" emphasize />
             </dd>
@@ -911,22 +916,16 @@ function openSendDialog(): void {
           <CardHeader class="p-5">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <CardTitle>報修工單</CardTitle>
-              <!-- 真實帳號在工單頁也查不到任何東西（原因見下方說明），不給一顆會帶到空頁的按鈕 -->
-              <Button v-if="!isReal" variant="outline" size="sm" @click="goToTickets">
+              <Button variant="outline" size="sm" @click="goToTickets">
                 在工單頁查看全部
                 <ExternalLink class="ml-1 h-3.5 w-3.5" />
               </Button>
             </div>
           </CardHeader>
           <CardContent class="space-y-6 px-5 pb-5">
-            <!--
-              注意：這裡的「沒有」不代表對方沒報修過。前台（租客端與房東端）的報修
-              自 2026-09-30 起存在資料庫（repair_tickets／repair_ticket_events／
-              repair_ticket_photos，API 見 backend/routers/repairs.py），但後台工單頁讀的
-              仍是另一份 adminMaintenanceCollection，兩邊還沒接起來。
-              畫面上不說明這件事（2026-09-28 決定）。
-            -->
-            <p v-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
+            <!-- 真實帳號的案件已接後端；讀取失敗不能顯示成沒有報修過。 -->
+            <AdminLoadNotice v-if="isReal && ticketsState !== 'ready'" :state="ticketsState" what="報修工單" @retry="reloadTickets" />
+            <p v-else-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
 
             <div v-for="group in ticketGroups" :key="group.side" class="space-y-2">
               <h3 class="text-xs font-semibold tracking-wide text-foreground/70">

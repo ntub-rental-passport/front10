@@ -4,6 +4,22 @@
  * 只比對租約雙方各自聲明的金額，不判定押金上限等法規問題 —— 那不在系統管轄範圍。
  */
 
+import type { DepositRecord } from '@/src/mocks/admin/deposit'
+import type { AdminDepositRecord } from '@/src/services/adminUserRecordsApi'
+
+/** 與真實帳號列表使用同一套 id，避免接到展示帳號上。 */
+export function adminDepositToRecord(record: AdminDepositRecord): DepositRecord {
+  return {
+    id: record.id,
+    address: record.address,
+    landlordUserId: `real-${record.landlordId}`,
+    tenantUserId: record.tenantId === null ? null : `real-${record.tenantId}`,
+    monthlyRent: record.monthlyRent,
+    landlordDeclared: record.landlordDeclared,
+    tenantDeclared: record.tenantDeclared,
+  }
+}
+
 export type DepositMatch = 'matched' | 'mismatched' | 'pending'
 
 export const depositMatchLabels: Record<DepositMatch, string> = {
