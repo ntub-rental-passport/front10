@@ -16,7 +16,6 @@ import StatTile from '@/src/components/admin/StatTile.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
 import InlineStat from '@/src/components/admin/InlineStat.vue'
 import SubscriptionOverviewCard from '@/src/components/admin/SubscriptionOverviewCard.vue'
-import { adminSubscriptionCollection } from '@/src/composables/admin/useAdminSubscription'
 import TrendAreaCard from '@/src/components/admin/TrendAreaCard.vue'
 import { useAuditLog } from '@/src/composables/admin/useAuditLog'
 import { loadAiUsage, useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
@@ -288,9 +287,8 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
 
     <!--
       人數沿用 useAdminDirectory（正式站真實、本地疊加展示帳號）。
-      收款尚未串接金流，只在本地由展示訂閱推算，正式站顯示無收款紀錄。
     -->
-    <SubscriptionOverviewCard v-if="usersState === 'ready'" :rows="directoryRows" :subscriptions="adminSubscriptionCollection" />
+    <SubscriptionOverviewCard v-if="usersState === 'ready'" :rows="directoryRows" />
 
     <!-- 平台規模與組成 -->
     <section
