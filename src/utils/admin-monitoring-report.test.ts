@@ -11,7 +11,7 @@ import {
   isHeartbeatStale,
   lastOutageNote,
   monitorOverview,
-  nvidiaBackupNote,
+  primaryModelNote,
   queueView,
   type ConfigItem,
   type MonitorEvent,
@@ -136,7 +136,7 @@ describe('collectAttention', () => {
 
   it('未設定、資料過期（idle）不算 —— 缺的設定只在設定那一段數一次', () => {
     const items = collectAttention({
-      readings: [reading('AI 模型（桌機）', 'unavailable')],
+      readings: [reading('LLM 備援（Ollama）', 'unavailable')],
       queues: [],
       config: null,
       heartbeatStale: false,
@@ -288,12 +288,17 @@ describe('監控卡的補充說明', () => {
     ])
     // 12:00 往回 220 分鐘斷線、100 分鐘前恢復
     expect(lastOutageNote(rows, 'ocr')).toBe('上次斷線：9/27 08:20，持續 2 小時')
-    expect(lastOutageNote(rows, 'llm-desktop')).toBeNull()
+    expect(lastOutageNote(rows, 'llm-ollama')).toBeNull()
   })
 
-  it('NVIDIA 備援有沒有設定，決定桌機一睡是變慢還是直接失敗', () => {
-    expect(nvidiaBackupNote([{ key: 'nvidia', label: '', ok: false, hint: '' }])).toContain('直接失敗')
-    expect(nvidiaBackupNote([{ key: 'nvidia', label: '', ok: true, hint: '' }])).toContain('會改用它')
-    expect(nvidiaBackupNote(null)).toBeNull()
+  it('說明 NVIDIA 主要模型狀態與 Ollama 備援的使用時機', () => {
+    expect(primaryModelNote([{ key: 'nvidia', label: '', ok: false, hint: '' }])).toBe(
+      'NVIDIA 金鑰未設定：每次分析都會落到 CPU 上的 Ollama，會很慢',
+    )
+    expect(primaryModelNote([{ key: 'nvidia', label: '', ok: true, hint: '' }])).toBe(
+      'NVIDIA 是主要模型；Ollama 只在 NVIDIA 失敗時才會用到',
+    )
+    expect(primaryModelNote(null)).toBeNull()
+    expect(primaryModelNote([])).toBeNull()
   })
 })
