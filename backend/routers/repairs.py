@@ -32,7 +32,7 @@ from typing import Any, Literal
 from cryptography.exceptions import InvalidTag
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func
+from sqlalchemy import LargeBinary, func, type_coerce
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from auth.security import get_current_admin, get_current_landlord, get_current_tenant, read_access_token
@@ -211,8 +211,22 @@ def _target_fields(db: Session, ticket: models.RepairTicket) -> dict:
                 "targetKind": "lease",
             }
     if ticket.rental_id:
-        rental = db.get(models.Rental, ticket.rental_id)
+        # 只載入回應需要的明文欄位；整列 Rental 會連其他個資一起解密，
+        # 舊資料若使用不同金鑰，會讓整筆工單無法顯示。
+        rental = db.query(
+            models.Rental.id,
+            models.Rental.contract_tag,
+            models.Rental.address,
+            models.Rental.rental_room,
+            type_coerce(models.Rental.tenant_name, LargeBinary).label("tenant_name_ciphertext"),
+        ).filter(models.Rental.id == ticket.rental_id).first()
         if rental:
+            try:
+                tenant_name = models.Rental.__table__.c.tenant_name.type.process_result_value(
+                    rental.tenant_name_ciphertext, db.get_bind().dialect
+                ) or ""
+            except (InvalidTag, ValueError):
+                tenant_name = ""
             return {
                 "leaseId": f"rental:{rental.id}",
                 "propertyId": f"rental:{rental.id}",
@@ -220,7 +234,7 @@ def _target_fields(db: Session, ticket: models.RepairTicket) -> dict:
                 "property": rental.contract_tag or (rental.address or "")[:16],
                 "address": rental.address or "",
                 "room": rental.rental_room or "",
-                "tenant": rental.tenant_name or "",
+                "tenant": tenant_name,
                 "targetKind": "rental",
             }
     return {"leaseId": "", "propertyId": "", "roomId": "", "property": "（租約已刪除）",
