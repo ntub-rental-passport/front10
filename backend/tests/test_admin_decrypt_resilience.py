@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from auth.security import get_current_admin
 from db.database import get_db
 from db.models import Rental, RepairTicket
-from routers import admin_repairs_api, admin_user_records_api
+from routers import admin_repairs_api, admin_user_records_api, repairs
 from test_admin_repairs import AdminRepairTestCase
 from test_admin_user_records import RecordsTestCase
 
@@ -93,6 +93,75 @@ class RentalDecryptTests(RecordsTestCase):
 
 
 class RepairDecryptTests(AdminRepairTestCase):
+    def test_bad_rental_tenant_name_does_not_hide_admin_or_tenant_tickets(self):
+        from datetime import timedelta, datetime
+
+        today = date.today()
+        rental_address = '臺北市中正區羅斯福路 2 號'
+        rental_room = 'A 室'
+        contract_tag = '測試合約'
+        rental = Rental(
+            user_id=self.tenant.id, address=rental_address, rental_room=rental_room,
+            start_date=today, end_date=today + timedelta(days=365), rent_amount=20000,
+            payment_day=5, total_periods=12, deposit_amount=40000,
+            contract_tag=contract_tag, tenant_name='原始租客',
+        )
+        self.db.add(rental)
+        self.db.flush()
+        normal_rental = Rental(
+            user_id=self.tenant.id, address='臺北市大安區和平東路 1 號', rental_room='B 室',
+            start_date=today, end_date=today + timedelta(days=365), rent_amount=18000,
+            payment_day=5, total_periods=12, deposit_amount=36000,
+            contract_tag='正常合約', tenant_name='正常租客',
+        )
+        self.db.add(normal_rental)
+        self.db.flush()
+        normal_ticket = RepairTicket(
+            tenant_user_id=self.tenant.id, rental_id=normal_rental.id, location='客廳',
+            equipment='燈具', description='正常租客合約報修', urgency='normal',
+            access_permission='contact-first', status='pending', responsibility='pending',
+        )
+        self.db.add(normal_ticket)
+        with patch.dict(os.environ, {'PII_ENCRYPTION_KEY': OTHER_KEY}):
+            rental.tenant_name = '異金鑰租客'
+            self.db.flush()
+        ticket = RepairTicket(
+            tenant_user_id=self.tenant.id, rental_id=rental.id, location='臥室',
+            equipment='冷氣', description='租客合約報修', urgency='normal',
+            access_permission='contact-first', status='pending', responsibility='pending',
+            created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+        )
+        self.db.add(ticket)
+        self.db.commit()
+        ticket_id = ticket.id
+
+        client = client_for(self.engine, admin_repairs_api.router)
+        response = client.get('/api/admin/repairs')
+        self.assertEqual(response.status_code, 200, response.text)
+        items = response.json()['items']
+        broken_view = next(item for item in items if item['id'] == str(ticket_id))
+        self.assertEqual(broken_view['tenant'], '')
+        self.assertEqual(broken_view['address'], rental_address)
+        self.assertEqual(broken_view['property'], contract_tag)
+        self.assertEqual(broken_view['room'], rental_room)
+        normal_view = next(item for item in items if item['id'] == str(normal_ticket.id))
+        self.assertEqual(normal_view['tenant'], '正常租客')
+        self.assertEqual(normal_view['address'], '臺北市大安區和平東路 1 號')
+        self.assertTrue(any(item['tenant'] == '王小明' for item in items))
+        response = client.get(f'/api/admin/repairs/{ticket_id}')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['tenant'], '')
+
+        app = FastAPI()
+        app.include_router(repairs.router)
+        app.dependency_overrides[get_db] = lambda: self.db
+        app.dependency_overrides[repairs.current_actor] = lambda: (self.tenant, 'tenant')
+        tenant_client = TestClient(app)
+        response = tenant_client.get('/api/repairs')
+        self.assertEqual(response.status_code, 200, response.text)
+        tenant_view = next(item for item in response.json()['items'] if item['id'] == str(ticket_id))
+        self.assertEqual(tenant_view['tenant'], '')
+
     def test_one_bad_phone_does_not_hide_any_ticket_or_other_fields(self):
         first_id = self.ticket.id
         self.ticket.phone = '0911111111'
