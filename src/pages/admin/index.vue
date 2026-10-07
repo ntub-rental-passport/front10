@@ -21,6 +21,7 @@ import { useAuditLog } from '@/src/composables/admin/useAuditLog'
 import { loadAiUsage, useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
+import { adminSubscriptionCollection } from '@/src/composables/admin/useAdminSubscription'
 import { activeWindowDays, countActiveUsers } from '@/src/utils/admin-activity'
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
 import { useAdminMaintenance } from '@/src/composables/admin/useAdminMaintenance'
@@ -288,7 +289,11 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
     <!--
       人數沿用 useAdminDirectory（正式站真實、本地疊加展示帳號）。
     -->
-    <SubscriptionOverviewCard v-if="usersState === 'ready'" :rows="directoryRows" />
+    <SubscriptionOverviewCard
+      v-if="usersState === 'ready'"
+      :rows="directoryRows"
+      :subscriptions="adminSubscriptionCollection"
+    />
 
     <!-- 平台規模與組成 -->
     <section

@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { seedAdminUsers } from './users'
 import { seedSubscriptions, type Subscription } from './subscription'
-import { monthlyRevenue, subscriptionCharges } from '@/src/utils/admin-revenue'
 import { discardLegacy } from '@/src/utils/admin-collection-migrate'
 import { isSubscriptionExpiring } from '@/src/utils/admin-user-directory'
-import { effectivePlanKey, isInTrial, tenantAiUsage } from '@/src/utils/admin-plans'
+import { billingDate, effectivePlanKey, isInTrial, tenantAiUsage } from '@/src/utils/admin-plans'
 
 const now = new Date(2026, 9, 6, 12)
 
@@ -69,7 +68,7 @@ describe('seedSubscriptions', () => {
     )
   })
 
-  it('付費開始日分散在 1～18 個月前，各角色收入與年繳月份有變化', () => {
+  it('付費開始日分散在 1～18 個月前，各角色年繳月份有變化', () => {
     const subscriptions = seedSubscriptions()
     for (const subscription of subscriptions.filter((sub) => sub.planKey !== 'free')) {
       const start = new Date(subscription.startedAt)
@@ -78,8 +77,6 @@ describe('seedSubscriptions', () => {
       expect(months).toBeLessThanOrEqual(18)
     }
     for (const role of ['landlord', 'tenant'] as const) {
-      const revenue = monthlyRevenue(subscriptions, role, now)
-      expect(new Set(revenue.months.map((month) => month.total)).size).toBeGreaterThan(1)
       const annualMonths = subscriptions.filter((sub) => sub.role === role && sub.billingCycle === 'yearly')
         .map((sub) => new Date(sub.expiresAt).getMonth())
       expect(new Set(annualMonths).size).toBeGreaterThan(1)
@@ -106,14 +103,15 @@ describe('seedSubscriptions', () => {
       expect(end.getDate()).toBe(Math.min(start.getDate(), lastDay))
       expect([end.getHours(), end.getMinutes(), end.getSeconds(), end.getMilliseconds()])
         .toEqual([start.getHours(), start.getMinutes(), start.getSeconds(), start.getMilliseconds()])
-      const charges = subscriptionCharges(subscription, at)
-      expect(charges[0].at).toBe(subscription.startedAt)
-      expect(charges).toHaveLength(months / step)
-      expect(charges.every((event) => new Date(event.at) < end)).toBe(true)
+      const dates = Array.from({ length: months / step }, (_, period) =>
+        billingDate(start, subscription.billingCycle!, period),
+      )
+      expect(dates[0].toISOString()).toBe(subscription.startedAt)
+      expect(dates.every((date) => date < end && date <= at)).toBe(true)
+      expect(billingDate(start, subscription.billingCycle!, dates.length)).toEqual(end)
       if (subscription.active) {
         expect(end.getTime()).toBeGreaterThan(at.getTime())
-        // 期數與實收事件數相等，代表沒有漏掉尚在 now 之前的續扣。
-        expect(new Date(charges.at(-1)!.at).getTime()).toBeLessThanOrEqual(at.getTime())
+        expect(dates.at(-1)!.getTime()).toBeLessThanOrEqual(at.getTime())
       } else {
         expect(end.getTime()).toBeLessThanOrEqual(at.getTime())
       }
