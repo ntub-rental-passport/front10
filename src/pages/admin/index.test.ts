@@ -51,7 +51,10 @@ async function render() {
 describe('總覽混合押金統計', () => {
   it('真實資料讀不到時 KPI 與圖表都明示，沒有展示資料的總額或空圖', async () => {
     const html = await render()
-    expect(html).toContain('讀不到真實資料')
+    const kpi = [...html.matchAll(/<a\b[\s\S]*?<\/a>/g)]
+      .map((match) => match[0]).find((link) => link.includes('押金不符'))!
+    expect(kpi).toMatch(/<span class="text-2xl[^"]*">—<\/span>/)
+    expect(kpi).toMatch(/<span class="text-xs[^"]*">讀不到<\/span>/)
     expect(html).toContain('押金對帳結果')
     expect(html).toContain('讀不到伺服器上的真實押金資料')
     expect(html).not.toContain('房東聲明總額')

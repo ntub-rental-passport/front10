@@ -60,10 +60,10 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-async function render() {
+async function render(load = true) {
   const { useAdminDirectory } = await import('@/src/composables/admin/useAdminDirectory')
   const directory = useAdminDirectory()
-  await Promise.all([directory.reloadRealAccounts(), directory.reloadDeposits(), directory.reloadTickets()])
+  if (load) await Promise.all([directory.reloadRealAccounts(), directory.reloadDeposits(), directory.reloadTickets()])
   const { default: Overview } = await import('./index.vue')
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/admin', component: Overview }, { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
@@ -107,12 +107,36 @@ describe('正式站總覽使用真實來源', () => {
   it('帳號 API 失敗時不顯示零人、活躍或空成長圖', async () => {
     api.fetchAdminAccounts.mockResolvedValue(null)
     const html = await render()
-    expect(userKpi(html)).toContain('讀不到帳號資料')
+    expect(userKpi(html)).toMatch(/<span class="text-2xl[^"]*">—<\/span>/)
+    expect(userKpi(html)).toMatch(/<span class="text-xs[^"]*">讀不到<\/span>/)
     expect(userKpi(html)).not.toMatch(/>0<\/span>/)
     expect(html).toContain('讀不到伺服器上的帳號資料')
     expect(html).not.toContain('近 7 天活躍')
     expect(html).not.toContain('位使用者')
     expect(html).not.toContain('近 12 個月累計人數')
     expect(charts.lines).toHaveLength(1)
+  })
+
+  it('押金讀不到時數字位置顯示佔位符，原因用小字說明', async () => {
+    api.fetchAdminDeposits.mockResolvedValue(null)
+    const html = await render()
+    const kpi = [...html.matchAll(/<a\b[\s\S]*?<\/a>/g)]
+      .map((match) => match[0]).find((link) => link.includes('押金不符'))!
+    expect(kpi).toMatch(/<span class="text-2xl[^"]*">—<\/span>/)
+    expect(kpi).toMatch(/<span class="text-xs[^"]*">讀不到<\/span>/)
+    expect(kpi).not.toMatch(/>0<\/span>/)
+  })
+
+  it('帳號與押金讀取中時數字位置用省略號，狀態用小字說明', async () => {
+    api.fetchAdminAccounts.mockReturnValue(new Promise(() => {}))
+    api.fetchAdminDeposits.mockReturnValue(new Promise(() => {}))
+    const html = await render(false)
+    const kpis = [...html.matchAll(/<a\b[\s\S]*?<\/a>/g)]
+      .map((match) => match[0]).filter((link) => link.includes('使用者總數') || link.includes('押金不符'))
+    expect(kpis).toHaveLength(2)
+    for (const kpi of kpis) {
+      expect(kpi).toMatch(/<span class="text-2xl[^"]*">…<\/span>/)
+      expect(kpi).toMatch(/<span class="text-xs[^"]*">讀取中<\/span>/)
+    }
   })
 })

@@ -12,7 +12,9 @@
 """
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy.orm import Session
+from cryptography.exceptions import InvalidTag
+from sqlalchemy import LargeBinary, type_coerce
+from sqlalchemy.orm import Session, defer
 
 from admin import repair_notes
 from auth.security import get_current_admin
@@ -22,6 +24,24 @@ from routers.repairs import _ticket_json
 from db.models import User
 
 router = APIRouter(prefix='/api/admin/repairs', tags=['Admin repairs'])
+
+
+def _ticket_rows(db: Session):
+    # 解密發生在整列載入時，所以同一查詢略過 ORM 電話並取原始密文，才能逐筆容錯且不加 N+1。
+    return db.query(
+        models.RepairTicket,
+        type_coerce(models.RepairTicket.phone, LargeBinary).label('phone_ciphertext'),
+    ).options(defer(models.RepairTicket.phone))
+
+
+def _phone_or_empty(db: Session, ciphertext: bytes | None) -> str:
+    try:
+        return models.RepairTicket.__table__.c.phone.type.process_result_value(
+            ciphertext, db.get_bind().dialect
+        ) or ''
+    # ValueError 是舊格式（非 v1 密文）；與 dashboard.py 一致，兩種都只讓這一筆的電話留空
+    except (InvalidTag, ValueError):
+        return ''
 
 
 def _landlord_of(db: Session, ticket: models.RepairTicket) -> models.User | None:
@@ -34,9 +54,9 @@ def _landlord_of(db: Session, ticket: models.RepairTicket) -> models.User | None
     return db.get(models.User, lease.property.landlord_id)
 
 
-def _admin_view(db: Session, ticket: models.RepairTicket, notes: dict) -> dict:
+def _admin_view(db: Session, ticket: models.RepairTicket, notes: dict, phone: str | None = None) -> dict:
     landlord = _landlord_of(db, ticket)
-    data = _ticket_json(db, ticket, 'admin')
+    data = _ticket_json(db, ticket, 'admin', phone=phone)
     data.update({
         # 畫面上與電話裡講的都是這個編號，跟租客、房東看到的同一個
         'ticketNo': data['code'],
@@ -53,22 +73,26 @@ def _admin_view(db: Session, ticket: models.RepairTicket, notes: dict) -> dict:
 def list_repairs(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)) -> dict:
     notes = repair_notes.all_notes()
     tickets = (
-        db.query(models.RepairTicket)
+        _ticket_rows(db)
         .order_by(models.RepairTicket.created_at.desc(), models.RepairTicket.id.desc())
         .all()
     )
     default = dict(repair_notes.FIELDS)
-    return {'items': [_admin_view(db, t, notes.get(str(t.id), default)) for t in tickets]}
+    return {'items': [
+        _admin_view(db, ticket, notes.get(str(ticket.id), default), _phone_or_empty(db, ciphertext))
+        for ticket, ciphertext in tickets
+    ]}
 
 
 @router.get('/{ticket_id}')
 def read_repair(
     ticket_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)
 ) -> dict:
-    ticket = db.get(models.RepairTicket, ticket_id)
-    if ticket is None:
+    row = _ticket_rows(db).filter(models.RepairTicket.id == ticket_id).first()
+    if row is None:
         raise HTTPException(status_code=404, detail='找不到這筆報修。')
-    return _admin_view(db, ticket, repair_notes.notes_for(str(ticket.id)))
+    ticket, ciphertext = row
+    return _admin_view(db, ticket, repair_notes.notes_for(str(ticket.id)), _phone_or_empty(db, ciphertext))
 
 
 @router.patch('/{ticket_id}')
@@ -78,9 +102,10 @@ def update_repair_notes(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ) -> dict:
-    ticket = db.get(models.RepairTicket, ticket_id)
-    if ticket is None:
+    row = _ticket_rows(db).filter(models.RepairTicket.id == ticket_id).first()
+    if row is None:
         raise HTTPException(status_code=404, detail='找不到這筆報修。')
+    ticket, ciphertext = row
     updates = payload.get('updates')
     if not isinstance(updates, dict) or not updates:
         raise HTTPException(status_code=400, detail='沒有要更新的內容。')
@@ -88,4 +113,4 @@ def update_repair_notes(
         notes = repair_notes.update(str(ticket.id), updates)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    return _admin_view(db, ticket, notes)
+    return _admin_view(db, ticket, notes, _phone_or_empty(db, ciphertext))
