@@ -271,7 +271,9 @@ def _inventory(db: Session, ticket: models.RepairTicket) -> dict:
             "moveInPhoto": move_in_photo, "repairCount": repair_count}
 
 
-def _ticket_json(db: Session, ticket: models.RepairTicket, viewer_role: str) -> dict:
+def _ticket_json(
+    db: Session, ticket: models.RepairTicket, viewer_role: str, *, phone: str | None = None
+) -> dict:
     photos = list(ticket.photos)
     by_stage = lambda stage: [p for p in photos if p.stage == stage]  # noqa: E731
     receipts = by_stage("receipt")
@@ -287,10 +289,12 @@ def _ticket_json(db: Session, ticket: models.RepairTicket, viewer_role: str) -> 
             "photos": [_photo_ref(p) for p in attached],
         })
 
-    try:
-        phone = ticket.phone or ""
-    except InvalidTag:
-        phone = ""
+    # 後台可傳入批次解密的電話，避免逐筆讀 deferred 欄位；其他呼叫端沿用原本行為。
+    if phone is None:
+        try:
+            phone = ticket.phone or ""
+        except InvalidTag:
+            phone = ""
 
     return {
         "id": str(ticket.id),

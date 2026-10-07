@@ -242,7 +242,8 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
             :icon="Users"
             data-real="true"
             label="使用者總數"
-            :value="usersState === 'ready' ? users.length : usersState === 'error' ? '讀不到帳號資料' : '讀取中'"
+            :value="usersState === 'ready' ? users.length : usersState === 'error' ? '—' : '…'"
+            :note="usersState === 'ready' ? undefined : usersState === 'error' ? '讀不到' : '讀取中'"
             :trend="usersState === 'ready' ? userGrowthTrendPercent : undefined"
             trend-period="month"
             to="/admin/users"
@@ -259,7 +260,8 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
             :icon="AlertTriangle"
             data-real="true"
             label="押金不符"
-            :value="depositStats?.mismatchedCount ?? (depositsState === 'error' ? '讀不到真實資料' : '讀取中')"
+            :value="depositStats?.mismatchedCount ?? (depositsState === 'error' ? '—' : '…')"
+            :note="depositStats ? undefined : depositsState === 'error' ? '讀不到' : '讀取中'"
             to="/admin/users?alert=deposit-mismatch"
           />
         </div>
