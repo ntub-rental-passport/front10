@@ -1,4 +1,4 @@
-"""桌機 / 雲端 embedding 切換的測試。
+"""RAG 容器 / 雲端 embedding 切換的測試。
 
 重點不是「切得過去」，而是「切錯時會被擋下來」。
 
@@ -9,6 +9,9 @@
 
 import asyncio
 import unittest
+from unittest.mock import AsyncMock, patch
+
+import httpx
 
 from ai import embeddings
 from ai import law_corpus
@@ -43,7 +46,7 @@ class ProviderOrderTest(unittest.TestCase):
         embeddings.os.environ["EMBEDDING_PROVIDER"] = value
 
     def test_default_is_nvidia_only(self):
-        """預設不需要桌機就能跑 —— 桌機是加分項，不是必要條件。"""
+        """預設不需要 RAG 容器就能跑 —— 備援不是必要條件。"""
         embeddings.os.environ.pop("EMBEDDING_PROVIDER", None)
         self.assertEqual(embeddings.provider_order(), ["nvidia"])
 
@@ -260,44 +263,78 @@ class CooldownTest(unittest.TestCase):
         self.assertFalse(upstream_state.is_cooling("沒看過的端點"))
 
 
-class TunnelUrlTest(unittest.TestCase):
-    """隧道網址必須跟 OCR 的 OLLAMA_URL 分開。
-
-    OCR（server/ollama-contract.js）打 {OLLAMA_URL}/api/chat 而且
-    **不帶任何憑證**。把 OLLAMA_URL 指向隧道的話，OCR 會被 Cloudflare
-    Access 回 403 —— 一個本來好好的功能會因為接桌機而壞掉。
-    """
+class LocalEmbeddingConfigurationTest(unittest.IsolatedAsyncioTestCase):
+    """生成與 embedding 分屬不同容器，位址不能互相沿用。"""
 
     def setUp(self):
-        from ai import llm_provider
-        self.llm_provider = llm_provider
-        self.saved = dict(embeddings.os.environ)
-        for key in ("LLM_TUNNEL_URL", "OLLAMA_URL", "LOCAL_EMBEDDING_URL"):
-            embeddings.os.environ.pop(key, None)
+        upstream_state.reset()
+        self.addCleanup(upstream_state.reset)
 
-    def tearDown(self):
-        embeddings.os.environ.clear()
-        embeddings.os.environ.update(self.saved)
+    def test_only_explicit_embedding_url_is_used(self):
+        # 舊環境變數可能殘留，但不能再影響容器位址。
+        with patch.dict(embeddings.os.environ, {
+            "OLLAMA_URL": "http://ollama:11434",
+            "LLM_TUNNEL_URL": "https://retired.example",
+        }, clear=True):
+            self.assertEqual(embeddings._local_base(), "")
+            self.assertFalse(embeddings.is_configured("local"))
+            embeddings.os.environ["LOCAL_EMBEDDING_URL"] = " http://rag:8000/ "
+            self.assertEqual(embeddings._local_base(), "http://rag:8000/")
+            self.assertTrue(embeddings.is_configured("local"))
 
-    def test_tunnel_url_wins(self):
-        embeddings.os.environ["LLM_TUNNEL_URL"] = "https://llm.example.test"
-        embeddings.os.environ["OLLAMA_URL"] = "http://ocr-host:11434"
-        self.assertEqual(self.llm_provider.ollama_base(), "https://llm.example.test")
-        self.assertEqual(embeddings._local_base(), "https://llm.example.test")
+    def test_unset_url_has_no_default(self):
+        with patch.dict(embeddings.os.environ, {}, clear=True):
+            self.assertEqual(embeddings._local_base(), "")
 
-    def test_falls_back_to_ollama_url(self):
-        """本機開發沒有隧道，行為必須跟以前完全一樣。"""
-        embeddings.os.environ["OLLAMA_URL"] = "http://127.0.0.1:11434"
-        self.assertEqual(self.llm_provider.ollama_base(), "http://127.0.0.1:11434")
-        self.assertEqual(embeddings._local_base(), "http://127.0.0.1:11434")
+    async def test_request_sends_no_auth_headers(self):
+        retired_credentials = {
+            "LLM_TUNNEL_API_KEY": "unused",
+            "CF_ACCESS_CLIENT_ID": "unused",
+            "CF_ACCESS_CLIENT_SECRET": "unused",
+        }
+        response = httpx.Response(200, json={
+            "model": embeddings.LOCAL_MODEL_DEFAULT,
+            "data": [{"embedding": [1.0, 2.0]}],
+        }, request=httpx.Request("POST", "http://rag:8000/embed"))
+        client = AsyncMock()
+        client.post.return_value = response
+        with patch.dict(embeddings.os.environ, {
+            "LOCAL_EMBEDDING_URL": "http://rag:8000/", **retired_credentials,
+        }, clear=True), patch("ai.embeddings.httpx.AsyncClient") as factory:
+            factory.return_value.__aenter__.return_value = client
+            result = await embeddings._embed_local(["押金"], input_type="query", timeout=30)
+        self.assertEqual(result, [[1.0, 2.0]])
+        self.assertEqual(client.post.call_args.args, ("http://rag:8000/embed",))
+        self.assertEqual(client.post.call_args.kwargs["json"], {"input": ["押金"], "input_type": "query"})
+        self.assertNotIn("headers", client.post.call_args.kwargs)
+        self.assertEqual(client.post.await_count, 1)
 
-    def test_explicit_embedding_url_wins_over_both(self):
-        embeddings.os.environ["LOCAL_EMBEDDING_URL"] = "http://embed-only:9000"
-        embeddings.os.environ["LLM_TUNNEL_URL"] = "https://llm.example.test"
-        self.assertEqual(embeddings._local_base(), "http://embed-only:9000")
+    async def test_reported_model_must_match(self):
+        response = httpx.Response(200, json={
+            "model": "different-model", "data": [{"embedding": [1.0, 2.0]}],
+        }, request=httpx.Request("POST", "http://rag:8000/embed"))
+        client = AsyncMock()
+        client.post.return_value = response
+        with patch.dict(embeddings.os.environ, {"LOCAL_EMBEDDING_URL": "http://rag:8000"}, clear=True), \
+             patch("ai.embeddings.httpx.AsyncClient") as factory:
+            factory.return_value.__aenter__.return_value = client
+            with self.assertRaises(embeddings.EmbeddingUnavailable):
+                await embeddings._embed_local(["押金"], input_type="query", timeout=30)
+        self.assertEqual(client.post.await_count, 1)
 
-    def test_default_when_nothing_set(self):
-        self.assertEqual(self.llm_provider.ollama_base(), "http://127.0.0.1:11434")
+    async def test_connection_error_sets_cooldown_without_retry(self):
+        client = AsyncMock()
+        client.post.side_effect = httpx.ConnectError("unreachable")
+        with patch.dict(embeddings.os.environ, {
+            "LOCAL_EMBEDDING_URL": "http://rag:8000", "UPSTREAM_COOLDOWN_SECONDS": "60",
+        }, clear=True), patch("ai.embeddings.httpx.AsyncClient") as factory:
+            factory.return_value.__aenter__.return_value = client
+            with self.assertRaisesRegex(embeddings.EmbeddingUnavailable, "RAG 容器 embedding 連不上"):
+                await embeddings._embed_local(["押金"], input_type="query", timeout=30)
+            with self.assertRaisesRegex(embeddings.EmbeddingUnavailable, "冷卻中"):
+                await embeddings._embed_local(["押金"], input_type="query", timeout=30)
+            self.assertTrue(upstream_state.is_cooling("embedding:local"))
+        self.assertEqual(client.post.await_count, 1)
 
 
 class QueryWindowTest(unittest.TestCase):

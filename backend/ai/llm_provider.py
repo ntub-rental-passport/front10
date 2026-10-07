@@ -2,18 +2,16 @@
 
 ## 架構
 
-    使用者 → VM（去識別化）→ ① NVIDIA 免費 API
-                            → ② 自架 Ollama（本機，或經 Cloudflare Tunnel 到桌機）
+    使用者 → VM（去識別化）→ ① NVIDIA 免費 API（主要模型）
+                            → ② VM 上的 Ollama 容器（備援，只有 CPU，較慢）
                             → 兩者皆失敗 → LlmUnavailable → 呼叫端回 503
 
 為什麼要備援：兩條路都會不見。NVIDIA 是免費額度（約 1,000 credits、
-40 req/分），用完就回 401/402/429；Ollama 那端的桌機會睡眠、會斷網、
-口試那天人可能把電腦關了帶去學校 —— 這些都不是假設，是一定會發生的。
+40 req/分），用完就回 401/402/429；VM 上的 Ollama 容器也可能無法連線。
 沒有備援的話，功能就會在最需要它的時候不見。
 
-順序在 2026-09-29 從「Ollama 優先」改為「NVIDIA 優先」：桌機隧道實務上
-沒有架起來，本機 Ollama 也不保證開著，而 gemma3:4b 明顯比 llama-3.1-70b
-慢。把不一定在的那個排第一，只是讓每個請求先付一次連線逾時。
+NVIDIA 優先是因為 CPU 上的 Ollama 較慢，只在主線失敗時才需要等待它。
+VM 上的 Ollama 容器透過私有 Docker 網路以 HTTP 連線，不需要存取憑證。
 
 ## 絕對不做的事
 
@@ -24,15 +22,11 @@ LlmUnavailable，讓呼叫端回 503。曾經的作法是失敗時回一段寫�
 ## 設定
 
     LLM_PROVIDER_ORDER   嘗試順序，預設 "nvidia,ollama"（NVIDIA 為主、Ollama 備援）
-    LLM_TUNNEL_URL       桌機代理的網址（Cloudflare Tunnel）。未設定時沿用 OLLAMA_URL。
-                         ⚠️ 不要直接改 OLLAMA_URL —— 那個被 OCR 佔用了，
-                         而 OCR 的請求不帶憑證，改了會被 Access 擋掉。
-    OLLAMA_URL           本機 Ollama 位址（OCR 也用這個）
+    OLLAMA_URL           Ollama 位址，本機開發預設 http://127.0.0.1:11434
+                         正式環境由 compose 給 fastapi 設為 http://ollama:11434。
+                         VM 的 OCR Ollama 複核會停用，fastapi 使用自己的明確設定。
     OLLAMA_MODEL         合約分析用的模型，預設 gemma3:4b
     OLLAMA_CHAT_MODEL    Law Chat 用的模型（未設定就沿用 OLLAMA_MODEL）
-    LLM_TUNNEL_API_KEY   桌機端代理的 API key（走隧道時才需要）
-    CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET
-                         Cloudflare Access service token
     NVIDIA_API_KEY       沒設定就自動跳過這個 provider
     NVIDIA_MODEL         合約分析用的模型
     NVIDIA_CHAT_MODEL    Law Chat 用的模型（未設定就沿用 NVIDIA_MODEL）
@@ -97,18 +91,8 @@ def _model_for(provider: str, purpose: str) -> str:
 
 
 def ollama_base() -> str:
-    """合約分析要打的 Ollama 位址。
-
-    ⚠️ 為什麼不直接用 OLLAMA_URL：那個變數已經被 OCR 佔用了
-    （server/ollama-contract.js 打 {OLLAMA_URL}/api/chat）。而 OCR 的請求
-    **不帶任何憑證**，也用不同的模型（gemma4:e2b）。把 OLLAMA_URL 指向
-    隧道的話，OCR 會被 Cloudflare Access 擋掉 —— 一個本來好好的功能
-    會因為我們接桌機而壞掉。
-
-    所以隧道有自己的變數。沒設定時沿用 OLLAMA_URL，
-    本機開發（兩者都指向 127.0.0.1:11434）的行為完全不變。
-    """
-    return _env("LLM_TUNNEL_URL") or _env("OLLAMA_URL", "http://127.0.0.1:11434")
+    """fastapi 的 Ollama 位址。正式環境由 compose 指向私有網路上的容器。"""
+    return _env("OLLAMA_URL", "http://127.0.0.1:11434")
 
 
 def _disable_thinking(purpose: str) -> bool:
@@ -127,42 +111,17 @@ def _disable_thinking(purpose: str) -> bool:
 # ---------------------------------------------------------------
 
 
-def tunnel_headers() -> dict[str, str]:
-    """打桌機（Cloudflare Tunnel）要帶的憑證標頭。
-
-    抽出來是因為後台監控也要探測桌機（monitoring_service.probe_llm_desktop）。
-    探測必須帶**完全一樣**的標頭 —— 少帶一個，Cloudflare Access 在邊緣就會
-    擋掉，監控會顯示「桌機連不上」，但其實只是探測自己沒帶憑證。
-    """
-    headers: dict[str, str] = {}
-    if api_key := _env("LLM_TUNNEL_API_KEY"):
-        headers["X-API-Key"] = api_key
-    cf_id, cf_secret = _env("CF_ACCESS_CLIENT_ID"), _env("CF_ACCESS_CLIENT_SECRET")
-    if cf_id and cf_secret:
-        headers["CF-Access-Client-Id"] = cf_id
-        headers["CF-Access-Client-Secret"] = cf_secret
-    return headers
-
-
 async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, purpose: str) -> str:
-    """呼叫 Ollama（本機，或經 Cloudflare Tunnel 連到桌機）。
-
-    憑證以標頭夾帶：
-      - CF-Access-Client-Id / Secret：Cloudflare Access 在邊緣就會驗，
-        沒帶的請求根本不會進到家裡的網路
-      - X-API-Key：桌機端代理的第二道，Access 設定被改壞時仍擋得住
-    """
+    """以 HTTP 呼叫 Ollama；正式環境容器只在私有 Docker 網路上提供服務。"""
     base = ollama_base().rstrip("/")
     if not base:
-        raise LlmUnavailable("未設定 LLM_TUNNEL_URL / OLLAMA_URL")
+        raise LlmUnavailable("未設定 OLLAMA_URL")
     if upstream_state.is_cooling(_OLLAMA_ENDPOINT):
         # 剛剛才確認連不上。再試一次只是讓使用者多等一個連線逾時，
-        # 而備援（NVIDIA）本來就能用 —— 直接跳過。
+        # 直接跳過，讓呼叫端繼續嘗試其他 provider 或回 503。
         raise LlmUnavailable(
-            f"桌機冷卻中（還有 {upstream_state.remaining(_OLLAMA_ENDPOINT):.0f} 秒）"
+            f"Ollama 容器冷卻中（還有 {upstream_state.remaining(_OLLAMA_ENDPOINT):.0f} 秒）"
         )
-
-    headers = tunnel_headers()
 
     payload: dict = {
         "model": _model_for("ollama", purpose),
@@ -180,22 +139,17 @@ async def _call_ollama(prompt: str, *, read_timeout: float, force_json: bool, pu
 
     async def send() -> str:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(f"{base}/api/generate", json=payload, headers=headers)
+            response = await client.post(f"{base}/api/generate", json=payload)
             if response.status_code == 404:
                 logger.error(
                     "Ollama 回 404：請用 ollama list 確認 OLLAMA_MODEL=%s 已安裝，並檢查 OLLAMA_URL 是否指向 Ollama 服務",
                     payload["model"],
                 )
-            if response.status_code in (401, 403):
-                # 這是設定問題不是服務問題，值得單獨標示 ——
-                # 否則會被誤判成「桌機關機」。也因此不該重試。
-                logger.error("Ollama 端點拒絕存取（%s）：檢查 Access service token 與 API key",
-                             response.status_code)
             response.raise_for_status()
             return (response.json().get("response") or "").strip()
 
-    # should_retry 排除連線失敗：桌機關機時重試三次還是關機，
-    # 只是把「退回 NVIDIA」這件事拖慢十幾秒。對方活著只是忙才值得重試。
+    # should_retry 排除連線失敗：容器連不上時重試只是多等十幾秒。
+    # 對方活著只是忙才值得重試。
     try:
         text = await with_retry(send, label="Ollama", should_retry=is_http_transient)
     except (httpx.ConnectError, httpx.ConnectTimeout):
@@ -271,9 +225,7 @@ _PROVIDERS = {
 
 
 def provider_order() -> list[str]:
-    # 預設 nvidia 優先（2026-09-29 決定）：桌機隧道實務上沒架起來，本機
-    # Ollama 也不保證開著，而 gemma3:4b 明顯比 NVIDIA 的 llama-3.1-70b 慢。
-    # 把「不一定在」的那個排第一，只會讓每個請求先付一次連線逾時。
+    # NVIDIA 優先：CPU 上的 Ollama 較慢，只在主線失敗時才需要等待它。
     # Ollama 保留為備援 —— NVIDIA 免費額度用盡時仍有東西接得住。
     raw = _env("LLM_PROVIDER_ORDER", "nvidia,ollama")
     names = [n.strip().lower() for n in raw.split(",") if n.strip()]
