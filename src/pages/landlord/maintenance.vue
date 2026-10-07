@@ -531,7 +531,7 @@ watch(filtered, (items) => {
 
           <details class="timeline-details">
             <summary><span><History />完整時間軸</span><span>{{ selected.timeline.length }} 筆<ChevronDown /></span></summary>
-            <div class="timeline"><div v-for="item in [...selected.timeline].reverse()" :key="item.id"><i /><p><b>{{ item.title }}</b><span class="numeric">{{ formatDateTime(item.at) }}</span></p><small v-if="item.detail">{{ item.detail }}</small></div></div>
+            <div class="timeline"><div v-for="item in [...selected.timeline].reverse()" :key="item.id"><i /><p><b>{{ item.title }}</b><span class="numeric">{{ formatDateTime(item.at) }}</span></p><small v-if="item.actorName">處理人：{{ item.actorName }}</small><small v-if="item.detail">{{ item.detail }}</small></div></div>
           </details>
         </div>
       </aside>

@@ -168,6 +168,7 @@ const router = createRouter({
         },
         { path: 'account', component: () => import('@/src/pages/account.vue') },
         { path: 'join-lease', component: () => import('@/src/pages/join-lease.vue') },
+        { path: 'landlord-lease/:leaseId', component: () => import('@/src/pages/landlord-lease.vue') },
         { path: 'subscription', component: () => import('@/src/components/subscription/SubscriptionPage.vue'), props: { role: 'tenant' } },
         { path: 'account/plan', component: () => import('@/src/components/subscription/PlanBenefitsPage.vue'), props: { role: 'tenant' } },
         { path: 'notifications', component: () => import('@/src/pages/notifications.vue') },

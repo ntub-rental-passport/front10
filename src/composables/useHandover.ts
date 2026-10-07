@@ -19,6 +19,8 @@ export interface CaptureQuality {
 export interface HandoverProperty {
   id: string
   alias: string
+  /** self：自己存的合約；landlord：房東平台上的租約（房東看得到這裡的點交紀錄） */
+  source?: 'self' | 'landlord'
   address: string
   createdAt: string
 }
@@ -54,6 +56,11 @@ export interface HandoverItem {
   evidences: HandoverEvidence[]
   diff?: HandoverDiff
   createdAt: string
+}
+
+/** 自己存的合約送數字；房東平台上的租約送 'lease:5'（後端兩種都收）。 */
+function targetId(id: string): number | string {
+  return id.startsWith('lease:') ? id : Number(id)
 }
 
 export function useHandover() {
@@ -133,7 +140,7 @@ export function useHandover() {
     return perform(async () => {
       const item = await inspectionRequest<HandoverItem>('/items', 'POST', {
         ...payload,
-        rental_id: Number(store.currentPropertyId),
+        rental_id: targetId(store.currentPropertyId),
       })
       store.items.push(item)
       return item
@@ -143,7 +150,7 @@ export function useHandover() {
   /** 同一個房間一次建立多個項目。逐筆送出；中途失敗時已建立的保留，回傳沒建成的名稱。 */
   async function addItems(room: string, names: string[]) {
     if (!store.currentPropertyId) return
-    const rentalId = Number(store.currentPropertyId)
+    const rentalId = targetId(store.currentPropertyId)
     return perform(async () => {
       const failed: string[] = []
       let lastError = ''

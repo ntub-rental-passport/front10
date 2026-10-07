@@ -155,7 +155,8 @@ class RepairDecryptTests(AdminRepairTestCase):
         app = FastAPI()
         app.include_router(repairs.router)
         app.dependency_overrides[get_db] = lambda: self.db
-        app.dependency_overrides[repairs.current_actor] = lambda: (self.tenant, 'tenant')
+        # current_actor 回傳（看資料的身分, 角色, 實際操作的人）；租客兩者是同一人
+        app.dependency_overrides[repairs.current_actor] = lambda: (self.tenant, 'tenant', self.tenant)
         tenant_client = TestClient(app)
         response = tenant_client.get('/api/repairs')
         self.assertEqual(response.status_code, 200, response.text)
@@ -204,12 +205,8 @@ class RepairDecryptTests(AdminRepairTestCase):
             self.db.flush()
         self.db.commit()
         client = client_for(self.engine, admin_repairs_api.router)
-        counts = []
-        for start, end in ((1, 2), (2, 10)):
-            for index in range(start, end):
-                ticket = self.make_ticket(description=f'工單 {index}')
-                ticket.phone = '0922222222'
-            self.db.commit()
+
+        def count_request(expected_items, expected_empty_phones):
             statements = []
 
             def record_sql(conn, cursor, statement, parameters, context, executemany):
@@ -221,9 +218,22 @@ class RepairDecryptTests(AdminRepairTestCase):
             finally:
                 event.remove(self.engine, 'before_cursor_execute', record_sql)
             self.assertEqual(response.status_code, 200, response.text)
-            self.assertEqual(len(response.json()['items']), end)
-            self.assertEqual(sum(item['phone'] == '' for item in response.json()['items']), 1)
-            counts.append(len(statements))
-        # 原本同租約的 2 / 10 筆為 24 / 112 次：關聯與 inventory 仍逐筆查，電話不得再增加。
-        self.assertEqual(counts, [24, 112])
-        self.assertEqual(counts[1] - counts[0], 88)
+            self.assertEqual(len(response.json()['items']), expected_items)
+            self.assertEqual(sum(item['phone'] == '' for item in response.json()['items']), expected_empty_phones)
+            return len(statements)
+
+        for start, end in ((1, 2), (2, 10)):
+            for index in range(start, end):
+                ticket = self.make_ticket(description=f'工單 {index}')
+                ticket.phone = '0922222222'
+            self.db.commit()
+            broken_count = count_request(end, 1)
+            # 同一批資料把壞電話換成正常電話再量一次：容錯路徑不能比正常路徑多查詢。
+            # 不寫死絕對數字 —— 關聯、inventory、團隊成員等既有逐筆查詢會隨其他功能改變。
+            self.ticket.phone = '0911111111'
+            self.db.commit()
+            self.assertEqual(broken_count, count_request(end, 0))
+            with patch.dict(os.environ, {'PII_ENCRYPTION_KEY': OTHER_KEY}):
+                self.ticket.phone = '0911111111'
+                self.db.flush()
+            self.db.commit()

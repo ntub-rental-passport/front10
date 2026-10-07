@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog/index'
@@ -27,6 +27,8 @@ const emit = defineEmits<{
 }>()
 
 const proofInput = ref<HTMLInputElement | null>(null)
+// 房東平台的租約：只是回報給房東，由房東確認入帳；不收憑證檔（後端不存，說了會誤導）
+const isLandlordLease = computed(() => props.targetCycle?.cycle.source === 'landlord')
 const form = ref({
   paidAt: formatIso(startOfToday()),
   method: 'bank-transfer' as PaymentMethod,
@@ -68,7 +70,7 @@ function statusLabel(status: CycleStatus): string {
     <DialogContent class="max-w-lg rounded-[1.75rem] border-slate-200 bg-white p-0">
       <div class="border-b border-slate-100 bg-[#F8FAFC] px-6 py-5">
         <DialogHeader>
-          <DialogTitle class="text-xl font-semibold text-slate-900">記錄本期繳費</DialogTitle>
+          <DialogTitle class="text-xl font-semibold text-slate-900">{{ isLandlordLease ? '回報已繳款' : '記錄本期繳費' }}</DialogTitle>
         </DialogHeader>
         <p class="mt-2 text-sm text-slate-500">
           {{ targetCycle ? `${targetCycle.contractTitle} · 第 ${targetCycle.cycle.periodIndex} 期` : '請確認本期付款資訊與證明。' }}
@@ -125,7 +127,12 @@ function statusLabel(status: CycleStatus): string {
           />
         </div>
 
-        <div class="space-y-2">
+        <p v-if="isLandlordLease" class="rounded-xl bg-sky-50 p-3 text-xs leading-5 text-sky-800">
+          這份租約由房東在平台上管理。送出後會通知房東確認入帳，確認前這期仍顯示未繳。
+          備註可以填轉帳末五碼，方便房東對帳。
+        </p>
+
+        <div v-if="!isLandlordLease" class="space-y-2">
           <Label for="payment-proof">轉帳截圖或憑證</Label>
           <Input
             id="payment-proof"
@@ -148,7 +155,7 @@ function statusLabel(status: CycleStatus): string {
             class="flex-1 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
             @click="emit('submit', { ...form })"
           >
-            儲存繳費紀錄
+            {{ isLandlordLease ? '送出回報' : '儲存繳費紀錄' }}
           </Button>
         </div>
       </div>

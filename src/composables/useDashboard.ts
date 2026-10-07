@@ -9,6 +9,7 @@ import {
 import {
   fetchDashboardContracts,
   recordBillPayment,
+  reportLandlordPayment,
   undoBillPayment,
 } from '@/src/services/dashboardApi'
 import {
@@ -268,15 +269,26 @@ export function useDashboard() {
     // 看起來已繳、重整後又變回未繳的期數。
     actionError.value = ''
     try {
-      const saved = await recordBillPayment(cycle.id, {
-        paid_at: form.paidAt,
-        payment_method: form.method,
-        payment_note: form.note.trim(),
-        payment_proof_name: form.proofName || null,
-      })
+      // 房東平台的租約：只能回報，由房東確認入帳後才算已繳
+      const saved = contract.source === 'landlord'
+        ? await reportLandlordPayment(cycle.id, {
+          paid_at: form.paidAt,
+          payment_method: form.method,
+          payment_note: form.note.trim(),
+        })
+        : await recordBillPayment(cycle.id, {
+          paid_at: form.paidAt,
+          payment_method: form.method,
+          payment_note: form.note.trim(),
+          payment_proof_name: form.proofName || null,
+        })
       Object.assign(cycle, saved)
     } catch (error) {
       actionError.value = error instanceof Error ? error.message : '記錄繳費失敗，請稍後重試。'
+      return
+    }
+    if (contract.source === 'landlord') {
+      paymentDialogOpen.value = false
       return
     }
 

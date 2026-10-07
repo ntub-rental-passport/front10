@@ -113,23 +113,32 @@ def current_actor(
     authorization: str | None = Header(default=None),
     x_landlord_workspace: str | None = Header(default=None),
     db: Session = Depends(get_db),
-) -> tuple[models.User, str]:
+) -> tuple[models.User, str, models.User]:
+    """回傳（看資料用的身分, 角色, 實際操作的人）。
+
+    團隊成員切換到擁有者的工作區時，第一個是擁有者（決定看得到哪些工單），
+    第三個是成員本人（寫進時間軸、記錄誰上傳照片），時間軸才看得出是誰處理的。
+    其他情況兩者相同。
+    """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "請先登入後再使用報修功能。")
     role = read_access_token(authorization[7:]).get("role")
     if role == "tenant":
-        return get_current_tenant(authorization, db), "tenant"
+        user = get_current_tenant(authorization, db)
+        return user, "tenant", user
     if role == "landlord":
-        # 團隊成員切換到擁有者的工作區時，以擁有者的身分看工單（權限同房務：檢視者只讀）
+        # 權限同房務：檢視者與帳務只讀
         from auth.landlord_workspace import resolve_workspace
-        owner, workspace_role = resolve_workspace(db, get_current_landlord(authorization, db), x_landlord_workspace)
+        member = get_current_landlord(authorization, db)
+        owner, workspace_role = resolve_workspace(db, member, x_landlord_workspace)
         if workspace_role in ("viewer", "accounting") and request.method not in ("GET", "HEAD", "OPTIONS"):
             raise HTTPException(403, "你在這個工作區沒有處理報修的權限。")
-        return owner, "landlord"
+        return owner, "landlord", member
     # 管理員只讀不寫：後台要看得到工單與照片才判斷得了爭議（見 admin_repairs_api.py）。
     # 能改工單的仍然只有租客與房東，_apply_updates 不收 admin。
     if role == "admin":
-        return get_current_admin(authorization, db), "admin"
+        user = get_current_admin(authorization, db)
+        return user, "admin", user
     raise HTTPException(403, "報修功能僅限租客與房東使用。")
 
 
@@ -258,12 +267,10 @@ def _inventory(db: Session, ticket: models.RepairTicket) -> dict:
     ) or 0
 
     move_in_status, move_in_photo = "尚無點交紀錄", "尚無入住照片"
-    if ticket.rental_id and (ticket.equipment or ticket.location):
-        candidates = (
-            db.query(models.InspectionItem)
-            .filter(models.InspectionItem.rental_id == ticket.rental_id)
-            .all()
-        )
+    if (ticket.rental_id or ticket.lease_id) and (ticket.equipment or ticket.location):
+        same_place = (models.InspectionItem.lease_id == ticket.lease_id if ticket.lease_id
+                      else models.InspectionItem.rental_id == ticket.rental_id)
+        candidates = db.query(models.InspectionItem).filter(same_place).all()
         match = next(
             (item for item in candidates if item.baseline and (
                 (ticket.equipment and ticket.equipment in (item.item_name or ""))
@@ -285,9 +292,33 @@ def _inventory(db: Session, ticket: models.RepairTicket) -> dict:
             "moveInPhoto": move_in_photo, "repairCount": repair_count}
 
 
+def _team_members(db: Session, ticket: models.RepairTicket) -> dict[int, str]:
+    """房東端的時間軸事件裡，由團隊成員（不是工作區擁有者）做的那些：{user id: 顯示名稱}。"""
+    if not ticket.lease_id:
+        return {}
+    owner_id = (
+        db.query(models.LandlordTenant.landlord_id)
+        .join(models.LandlordLease, models.LandlordLease.tenant_id == models.LandlordTenant.id)
+        .filter(models.LandlordLease.id == ticket.lease_id).scalar()
+    )
+    ids = {e.actor_user_id for e in ticket.events
+           if e.actor_role == "landlord" and e.actor_user_id and e.actor_user_id != owner_id}
+    if not ids:
+        return {}
+    return {user.id: user.display_name or user.email.split("@")[0]
+            for user in db.query(models.User).filter(models.User.id.in_(ids))}
+
+
+def _actor_name(event: models.RepairTicketEvent, members: dict[int, str]) -> str | None:
+    """成員做的事標出是誰；擁有者本人、租客、系統維持原本的稱呼（回 None）。"""
+    name = members.get(event.actor_user_id) if event.actor_user_id else None
+    return f"{name}（團隊成員）" if name else None
+
+
 def _ticket_json(
     db: Session, ticket: models.RepairTicket, viewer_role: str, *, phone: str | None = None
 ) -> dict:
+    members = _team_members(db, ticket)
     photos = list(ticket.photos)
     by_stage = lambda stage: [p for p in photos if p.stage == stage]  # noqa: E731
     receipts = by_stage("receipt")
@@ -359,7 +390,8 @@ def _ticket_json(
         "updatedAt": _iso(ticket.updated_at),
         "timeline": [
             {"id": str(e.id), "at": _iso(e.created_at), "title": e.title,
-             "detail": e.detail or None, "actorRole": e.actor_role}
+             "detail": e.detail or None, "actorRole": e.actor_role,
+             "actorName": _actor_name(e, members)}
             for e in ticket.events
         ],
         # 房東不在平台上的工單，租客可以自行結案
@@ -597,7 +629,7 @@ def list_targets(db: Session = Depends(get_db), user: models.User = Depends(get_
 
 @router.get("")
 def list_tickets(db: Session = Depends(get_db), actor=Depends(current_actor)):
-    user, role = actor
+    user, role, _ = actor
     query = db.query(models.RepairTicket).options(
         selectinload(models.RepairTicket.events), selectinload(models.RepairTicket.photos))
     if role == "tenant":
@@ -620,7 +652,8 @@ def _notify_landlord_of_new_ticket(db: Session, ticket: models.RepairTicket) -> 
         joinedload(models.LandlordLease.tenant), joinedload(models.LandlordLease.property),
         joinedload(models.LandlordLease.room)).filter(models.LandlordLease.id == ticket.lease_id).first()
     landlord = db.get(models.User, lease.tenant.landlord_id) if lease else None
-    if not landlord or not settings_for(db, landlord).repair_notifications:
+    settings = settings_for(db, landlord) if landlord else None
+    if not settings or not settings.repair_notifications:
         return
     urgency = {"emergency": "緊急", "soon": "盡快", "normal": "一般"}.get(ticket.urgency, "")
     notify_user(
@@ -629,6 +662,7 @@ def _notify_landlord_of_new_ticket(db: Session, ticket: models.RepairTicket) -> 
         body=f"{lease.property.name} {lease.room.number} 的 {lease.tenant.name} 提出報修：{ticket.description[:120]}",
         category="系統", source_label="報修通知", created_by="system",
         action_url="/landlord/maintenance", action_label="查看報修",
+        email=settings.email_notifications,
     )
 
 
@@ -680,7 +714,7 @@ def create_ticket(payload: CreatePayload, db: Session = Depends(get_db),
 @router.patch("/{ticket_id}")
 def update_ticket(ticket_id: int, payload: UpdatePayload, db: Session = Depends(get_db),
                   actor=Depends(current_actor)):
-    user, role = actor
+    user, role, acting = actor
     ticket = _load_ticket(db, ticket_id, user, role)
     if ticket.status in TERMINAL_STATUSES:
         raise HTTPException(409, "案件已結束，不能再修改。原始紀錄會完整保留。")
@@ -699,9 +733,9 @@ def update_ticket(ticket_id: int, payload: UpdatePayload, db: Session = Depends(
             ticket.landlord_read_at = datetime.datetime.utcnow()
         kind = "supplement" if payload.photoStage == "supplement" else (
             "status" if "status" in payload.updates else "note")
-        event = _add_event(db, ticket, user, role, payload.event.title, payload.event.detail, kind=kind)
+        event = _add_event(db, ticket, acting, role, payload.event.title, payload.event.detail, kind=kind)
         if payload.photos:
-            _add_photos(db, ticket, user, payload.photos, payload.photoStage, event.id, written)
+            _add_photos(db, ticket, acting, payload.photos, payload.photoStage, event.id, written)
         db.commit()
     except Exception:
         db.rollback()
@@ -713,12 +747,14 @@ def update_ticket(ticket_id: int, payload: UpdatePayload, db: Session = Depends(
 
 
 @router.post("/{ticket_id}/read")
-def mark_read(ticket_id: int, db: Session = Depends(get_db),
-              user: models.User = Depends(get_current_landlord)):
+def mark_read(ticket_id: int, db: Session = Depends(get_db), actor=Depends(current_actor)):
+    user, role, acting = actor
+    if role != "landlord":
+        raise HTTPException(403, "只有房東端可以標示已讀。")
     ticket = _load_ticket(db, ticket_id, user, "landlord")
     if not ticket.landlord_read_at:
         ticket.landlord_read_at = datetime.datetime.utcnow()
-        _add_event(db, ticket, user, "landlord", "房東已讀報修內容", None)
+        _add_event(db, ticket, acting, "landlord", "房東已讀報修內容", None)
         db.commit()
         db.refresh(ticket)
     return _ticket_json(db, ticket, "landlord")
@@ -727,7 +763,7 @@ def mark_read(ticket_id: int, db: Session = Depends(get_db),
 @router.get("/{ticket_id}/photos/{photo_id}")
 def read_photo(ticket_id: int, photo_id: int, db: Session = Depends(get_db), actor=Depends(current_actor)):
     """讀取照片或收據。只有工單雙方看得到；不提供公開網址。"""
-    user, role = actor
+    user, role, _ = actor
     ticket = _load_ticket(db, ticket_id, user, role)
     photo = next((p for p in ticket.photos if p.id == photo_id), None)
     if not photo:

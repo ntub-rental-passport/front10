@@ -15,11 +15,13 @@ import {
   deleteContractFile,
   downloadContractFile,
   fetchContracts,
+  fetchLeaseInspection,
   renewLease,
   uploadContractFile,
   type ContractFile,
   type ContractState,
   type LandlordContract,
+  type LeaseInspectionItem,
 } from '@/src/services/landlordWorkspaceApi'
 import { LANDLORD_WORKSPACE_CHANGED_EVENT, readFileAsDataUrl } from '@/src/services/landlordApiClient'
 import { useEventListener } from '@vueuse/core'
@@ -273,6 +275,30 @@ async function removeFile(file: ContractFile) {
     notify(cause instanceof Error ? cause.message : '刪除失敗', 'error')
   }
 }
+// 點交存證：租客在這份租約上拍的入住／退租照片（唯讀）
+const inspectionOpen = ref(false)
+const inspectionLoading = ref(false)
+const inspectionItems = ref<LeaseInspectionItem[]>([])
+const inspectionRooms = computed(() => {
+  const rooms = new Map<string, LeaseInspectionItem[]>()
+  for (const item of inspectionItems.value) rooms.set(item.room, [...(rooms.get(item.room) ?? []), item])
+  return [...rooms.entries()]
+})
+async function openInspection() {
+  if (!selected.value.leaseId) return
+  inspectionOpen.value = true
+  inspectionLoading.value = true
+  inspectionItems.value = []
+  try {
+    inspectionItems.value = (await fetchLeaseInspection(selected.value.leaseId)).items
+  } catch (cause) {
+    inspectionOpen.value = false
+    notify(cause instanceof Error ? cause.message : '點交紀錄讀取失敗', 'error')
+  } finally {
+    inspectionLoading.value = false
+  }
+}
+const diffLabel: Record<string, string> = { unchanged: '無差異', new_damage: '新增損傷', missing: '物品不見', degraded: '使用痕跡', uncertain: '無法判斷' }
 function clearFilters() { activeTab.value = 'all'; keyword.value = ''; propertyFilter.value = 'all'; stateFilter.value = 'all'; attachmentFilter.value = 'all' }
 function csvCell(value: unknown): string { return `"${String(value ?? '').replaceAll('"', '""')}"` }
 function exportContracts() { const rows = [['合約編號','租客','房屋','房號','起租日','到期日','退租日','月租','押金','繳租日','狀態','附件數'], ...contracts.value.map((item) => [contractNumber(item),item.tenant,item.property,item.room,item.start,item.end,item.movedOutAt ?? '',item.rent,item.deposit,item.paymentDay,stateMeta[item.state].label,item.files.length])]; const url = URL.createObjectURL(new Blob([`﻿${rows.map((row) => row.map(csvCell).join(',')).join('\n')}`], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = 'RentMate-合約清單.csv'; link.click(); URL.revokeObjectURL(url) }
@@ -289,11 +315,21 @@ watch(filtered, (rows) => { if (rows.length && !rows.some((item) => item.id === 
       <div class="toolbar"><div class="tabs"><button v-for="item in tabs" :key="item.value" :class="{active:activeTab === item.value}" @click="activeTab = item.value">{{ item.label }} <b>{{ item.count }}</b></button></div><div class="filters"><label class="search"><Search /><input v-model="keyword" placeholder="搜尋租客、房號、合約編號" /></label><select v-model="propertyFilter"><option value="all">全部棟別</option><option v-for="name in [...new Set(contracts.map(item => item.property))]" :key="name">{{ name }}</option></select><select v-model="stateFilter"><option value="all">全部狀態</option><option value="active">正常</option><option value="expiring">即將到期</option><option value="expired">已逾期</option><option value="upcoming">尚未起租</option><option value="archived">已封存</option></select><select v-model="attachmentFilter"><option value="all">附件狀態</option><option value="uploaded">已上傳</option><option value="missing">缺附件</option></select><button class="clear" @click="clearFilters"><X />清除篩選</button></div></div>
       <div class="work-grid">
         <div class="directory"><header><h2>合約名冊</h2><span>{{ filtered.length }} 筆</span></header><div class="table-wrap"><table><thead><tr><th>合約</th><th>租期</th><th>金額</th><th>到期</th><th>附件</th><th>狀態</th><th>操作</th></tr></thead><tbody><tr v-for="item in filtered" :key="item.id" :class="{selected:item.id === selectedId}" @click="selectedId = item.id"><td><div class="tenant"><span>{{ item.initials }}</span><div><b>{{ item.tenant }}</b><small>{{ item.property }}／{{ item.room }}</small></div></div></td><td><b>{{ displayDate(item.start) }} - {{ displayDate(item.end) }}</b></td><td><b>{{ money(item.rent) }}</b><small>押金 {{ money(item.deposit) }}</small></td><td><span class="badge" :class="stateMeta[item.state].cls">{{ stateMeta[item.state].label }}</span></td><td><span class="badge" :class="item.files.length ? 'green' : 'amber'"><Paperclip />{{ item.files.length ? `${item.files.length} 個附件` : '缺附件' }}</span></td><td><span class="badge" :class="item.renewedByLeaseId ? 'blue' : item.accountBound ? 'green' : 'neutral'">{{ item.renewedByLeaseId ? '已續約' : item.accountBound ? '租客已綁定' : '租客未綁定' }}</span></td><td><button class="more" aria-label="更多操作" @click.stop="selectedId = item.id; openEdit()"><EllipsisVertical /></button></td></tr><tr v-if="!filtered.length"><td colspan="7" class="empty">{{ syncing && !loaded ? '正在讀取合約…' : contracts.length ? '沒有符合條件的合約。' : '還沒有任何合約。按「新增合約」或「上傳合約」建立第一份。' }}</td></tr></tbody></table></div><footer><span>顯示 1 - {{ filtered.length }} 筆，共 {{ filtered.length }} 筆</span><div><button disabled><ChevronLeft /></button><b>1</b><button disabled><ChevronRight /></button></div></footer></div>
-        <aside class="detail"><header><h2>合約檔案</h2><span v-if="hasSelection" class="badge" :class="stateMeta[selected.state].cls">{{ stateMeta[selected.state].label }}</span></header><div v-if="!hasSelection" class="detail-scroll"><p class="empty">選取左側的合約查看詳情。目前沒有合約資料。</p></div><div v-else class="detail-scroll"><section class="profile"><span>{{ selected.initials }}</span><div><h3>{{ selected.tenant }} <em>{{ stateMeta[selected.state].label }}</em></h3><p><Home />{{ selected.property }}／{{ selected.room }}</p></div></section><section class="facts"><div><span>租期</span><b>{{ displayDate(selected.start) }} - {{ displayDate(selected.end) }}</b></div><div><span>月租</span><b>{{ money(selected.rent) }}</b></div><div><span>押金</span><b>{{ money(selected.deposit) }}</b></div><div><span>繳租日</span><b>每月 {{ selected.paymentDay }} 號</b></div><div><span>週期</span><b>{{ frequencyLabel[selected.paymentFrequency] }}</b></div><div><span>附件</span><b>{{ selected.files.length ? `${selected.files.length} 個` : '缺附件' }}</b></div><div v-if="selected.movedOutAt"><span>退租日</span><b>{{ displayDate(selected.movedOutAt) }}</b></div><div><span>租客帳號</span><b>{{ selected.accountBound ? '已綁定' : '未綁定' }}</b></div></section><section class="lifecycle"><h3>合約生命週期</h3><div><i v-for="step in lifecycle" :key="step.label" :class="{ done: step.done }" /></div><ul><li v-for="step in lifecycle" :key="step.label"><b>{{ step.label }}</b><small>{{ step.note ? `${step.note}・` : '' }}{{ displayDate(step.date) }}</small></li></ul></section><section class="attachments"><h3>附件狀態</h3><p v-if="!selected.files.length"><Paperclip />合約主檔 <b>缺附件</b></p><p v-for="file in selected.files" v-else :key="file.id"><FileCheck2 /><button type="button" class="file-link" :title="`下載 ${file.name}`" @click="openFile(file)">{{ file.name }}</button> <button type="button" class="file-remove" :aria-label="`刪除 ${file.name}`" @click="removeFile(file)"><Trash2 /></button></p></section></div><footer v-if="hasSelection"><button class="renew" :disabled="selected.state === 'archived' || Boolean(selected.renewedByLeaseId)" @click="openEdit('renew')"><RefreshCw />{{ selected.renewedByLeaseId ? '已建立續約' : '建立續約' }}</button><div><label><Upload />上傳合約<input type="file" class="hidden" accept=".pdf,image/*" @change="attachToSelected" /></label><button @click="openEdit()"><UserRound />編輯資料</button></div></footer></aside>
+        <aside class="detail"><header><h2>合約檔案</h2><span v-if="hasSelection" class="badge" :class="stateMeta[selected.state].cls">{{ stateMeta[selected.state].label }}</span></header><div v-if="!hasSelection" class="detail-scroll"><p class="empty">選取左側的合約查看詳情。目前沒有合約資料。</p></div><div v-else class="detail-scroll"><section class="profile"><span>{{ selected.initials }}</span><div><h3>{{ selected.tenant }} <em>{{ stateMeta[selected.state].label }}</em></h3><p><Home />{{ selected.property }}／{{ selected.room }}</p></div></section><section class="facts"><div><span>租期</span><b>{{ displayDate(selected.start) }} - {{ displayDate(selected.end) }}</b></div><div><span>月租</span><b>{{ money(selected.rent) }}</b></div><div><span>押金</span><b>{{ money(selected.deposit) }}</b></div><div><span>繳租日</span><b>每月 {{ selected.paymentDay }} 號</b></div><div><span>週期</span><b>{{ frequencyLabel[selected.paymentFrequency] }}</b></div><div><span>附件</span><b>{{ selected.files.length ? `${selected.files.length} 個` : '缺附件' }}</b></div><div v-if="selected.movedOutAt"><span>退租日</span><b>{{ displayDate(selected.movedOutAt) }}</b></div><div><span>租客帳號</span><b>{{ selected.accountBound ? '已綁定' : '未綁定' }}</b></div></section><section class="lifecycle"><h3>合約生命週期</h3><div><i v-for="step in lifecycle" :key="step.label" :class="{ done: step.done }" /></div><ul><li v-for="step in lifecycle" :key="step.label"><b>{{ step.label }}</b><small>{{ step.note ? `${step.note}・` : '' }}{{ displayDate(step.date) }}</small></li></ul></section><section class="attachments"><h3>附件狀態</h3><p v-if="!selected.files.length"><Paperclip />合約主檔 <b>缺附件</b></p><p v-for="file in selected.files" v-else :key="file.id"><FileCheck2 /><button type="button" class="file-link" :title="`下載 ${file.name}`" @click="openFile(file)">{{ file.name }}</button> <button type="button" class="file-remove" :aria-label="`刪除 ${file.name}`" @click="removeFile(file)"><Trash2 /></button></p></section><section class="attachments"><h3>點交存證</h3><p><Home />{{ selected.accountBound ? '租客入住與退租時拍的照片與辨識結果' : '租客接受邀請後，可以在這份租約上做點交存證' }}</p><button type="button" class="inspection-open" :disabled="!selected.accountBound" @click="openInspection">查看點交紀錄</button></section></div><footer v-if="hasSelection"><button class="renew" :disabled="selected.state === 'archived' || Boolean(selected.renewedByLeaseId)" @click="openEdit('renew')"><RefreshCw />{{ selected.renewedByLeaseId ? '已建立續約' : '建立續約' }}</button><div><label><Upload />上傳合約<input type="file" class="hidden" accept=".pdf,image/*" @change="attachToSelected" /></label><button @click="openEdit()"><UserRound />編輯資料</button></div></footer></aside>
       </div>
     </section>
     <Transition name="toast"><div v-if="toast" class="toast" :class="{ error: toastTone === 'error' }" role="status"><component :is="toastTone === 'error' ? AlertTriangle : Check" />{{ toast }}</div></Transition>
     <Teleport to="body">
+      <div v-if="inspectionOpen" class="backdrop" @click.self="inspectionOpen = false"><section class="dialog inspection-dialog" role="dialog" aria-modal="true" aria-labelledby="inspection-title"><header><div><p>{{ selected.tenant }}・{{ selected.property }} {{ selected.room }}</p><h2 id="inspection-title">點交存證</h2></div><button class="close" aria-label="關閉" @click="inspectionOpen = false"><X /></button></header><div class="dialog-scroll">
+        <p v-if="inspectionLoading" class="empty">正在讀取…</p>
+        <p v-else-if="!inspectionItems.length" class="empty">租客還沒有在這份租約上建立點交紀錄。</p>
+        <section v-for="[room, items] in inspectionRooms" :key="room"><h3>{{ room }}</h3>
+          <article v-for="item in items" :key="item.id" class="inspection-item"><b>{{ item.name }}</b>
+            <div class="inspection-photos"><figure v-for="evidence in item.evidences" :key="evidence.id"><img :src="evidence.url" :alt="`${item.name} ${evidence.phase === 'baseline' ? '入住' : '退租'}照片`" /><figcaption><b>{{ evidence.phase === 'baseline' ? '入住' : '退租' }}</b>・{{ evidence.aiLabel }}<small>{{ new Date(evidence.capturedAt).toLocaleString('zh-TW') }}<template v-if="evidence.integrityNote">・{{ evidence.integrityNote }}</template></small><small v-if="evidence.userNote">備註：{{ evidence.userNote }}</small></figcaption></figure><p v-if="!item.evidences.length" class="empty">尚未拍照</p></div>
+            <p v-if="item.diff" class="inspection-diff"><b>比對：{{ diffLabel[item.diff.type] ?? item.diff.type }}</b>（信心 {{ Math.round(item.diff.confidence * 100) }}%）{{ item.diff.summary }}</p>
+          </article>
+        </section>
+      </div></section></div>
       <div v-if="uploadOpen" class="backdrop" @click.self="uploadOpen = false"><section class="dialog upload-dialog"><header><div><p>AI 將先辨識，套用前由你確認</p><h2>上傳合約並自動建檔</h2></div><button class="close" @click="uploadOpen = false"><X /></button></header><div class="p-5"><ContractOcrImport title="AI 分析合約並一鍵填寫" @apply="applyOcr($event, true)" /><button class="mt-4 w-full rounded-full py-2.5 text-sm font-bold text-[#667169] hover:bg-[#f4f1ea]" @click="uploadOpen = false">稍後再處理</button></div></section></div>
       <div v-if="formOpen" class="backdrop" @click.self="formOpen = false"><form class="dialog contract-dialog" @submit.prevent="saveContract"><header><div><p>{{ formMode === 'renew' ? '預填下一期日期並保留現行合約' : formMode === 'edit' ? '更新日期、租金條件或附件' : '一次建立租客與完整租約資料' }}</p><h2>{{ formMode === 'renew' ? '建立或編輯續約' : formMode === 'edit' ? '更新現行合約' : '新增合約' }}</h2></div><button type="button" class="close" @click="formOpen = false"><X /></button></header><div class="dialog-scroll">
         <button v-if="!showCreateOcr" type="button" class="ai-trigger" @click="showCreateOcr = true"><span><FileSearch /><b>有紙本或 PDF？使用 AI 自動填寫</b></span><ChevronRight /></button><ContractOcrImport v-else compact @apply="applyOcr($event)" />
@@ -322,4 +358,13 @@ watch(filtered, (rows) => { if (rows.length && !rows.some((item) => item.id === 
 .badge.blue { @apply border-[#cbdfe7] bg-[#e7f2f6] text-[#3d788a]; }.badge.neutral { @apply border-[#dedbd3] bg-[#f3f1ec] text-[#6f746f]; }
 .toast.error { background: #8f3b31; }
 .detail-scroll .empty { @apply p-6 text-center text-sm text-[#778078]; }
+.inspection-open { @apply mt-2 rounded-full border border-[#c8ddcb] bg-white px-3 py-1.5 text-xs font-bold text-[#55795d] disabled:opacity-50; }
+.inspection-dialog { max-width: 52rem; }
+.inspection-dialog h3 { @apply mt-4 font-black; }
+.inspection-item { @apply mt-3 rounded-2xl border border-[#e4ded2] p-3; }
+.inspection-photos { @apply mt-2 grid gap-3 sm:grid-cols-2; }
+.inspection-photos img { @apply aspect-[4/3] w-full rounded-xl object-cover; }
+.inspection-photos figcaption { @apply mt-1 text-xs; }
+.inspection-photos small { @apply block text-[#788179]; }
+.inspection-diff { @apply mt-2 rounded-xl bg-[#fbf9f3] p-2 text-xs; }
 </style>

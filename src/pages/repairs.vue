@@ -819,7 +819,7 @@ async function submitUnresolved(): Promise<void> {
             <div class="w-full">
               <span>最新動態</span>
               <article v-for="item in latestActivities" :key="item.id">
-                <b>{{ item.title }}</b
+                <b>{{ item.title }}<template v-if="item.actorName">・{{ item.actorName }}</template></b
                 ><time>{{ formatShortDateTime(item.at) }}</time>
                 <p v-if="item.detail">{{ item.detail }}</p>
               </article>
@@ -996,7 +996,7 @@ async function submitUnresolved(): Promise<void> {
               <div v-for="item in allActivities" :key="item.id">
                 <i />
                 <p>
-                  <b>{{ item.title }}</b
+                  <b>{{ item.title }}<template v-if="item.actorName">・{{ item.actorName }}</template></b
                   ><span>{{ formatShortDateTime(item.at) }}</span>
                 </p>
                 <small v-if="item.detail">{{ item.detail }}</small>

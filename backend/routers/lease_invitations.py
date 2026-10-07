@@ -31,6 +31,7 @@ from db.models import (
 )
 from notifications.user_notify import notify_user
 from routers import landlord_lease_rules as rules
+from routers.landlord_workspace_api import settings_for
 
 landlord_router = APIRouter(prefix="/api/landlord/invitations", tags=["Lease invitations (landlord)"])
 public_router = APIRouter(prefix="/api/invitations", tags=["Lease invitations"])
@@ -286,6 +287,7 @@ def _accept(db: Session, invitation: LeaseInvitation, user: User) -> dict:
             body=f"{lease_tenant.name if lease_tenant else '租客'} 已用 {user.email} 加入租約，之後的帳務與報修會連到這個帳號。",
             category="租約", source_label="租約邀請", created_by="system",
             action_url="/landlord/tenants", action_label="查看租客",
+            email=settings_for(db, landlord).email_notifications,
         )
     db.commit()
     return {**_preview(db, invitation, user), "lease_id": invitation.lease_id}

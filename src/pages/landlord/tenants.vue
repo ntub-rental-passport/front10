@@ -1115,7 +1115,7 @@ onMounted(async () => {
                 <div
                   class="rounded-[1.25rem] bg-[#e6f0ec] px-4 py-3 text-xs leading-6 text-[#5f7669]"
                 >
-                  每月繳租日會決定租金排程，以及 LINE 的到期提醒、今日到期提醒與逾期通知時間。
+                  每月繳租日會決定每期帳款的到期日，以及到期前、當天與逾期隔天的自動提醒時間。
                 </div>
               </section>
 
