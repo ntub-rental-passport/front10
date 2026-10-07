@@ -152,13 +152,29 @@ export function buildContractAssessments(input: Partial<ContractOcrResult> | nul
   return results.sort((a, b) => order(a) - order(b))
 }
 
+// Models occasionally ignore the requested language. Use their Chinese description
+// as the display summary rather than inventing a translation or changing evidence.
+function remoteAssessmentTitle(raw: { title: string; description?: unknown }): string {
+  const title = raw.title.trim()
+  const englishWords = title.match(/[A-Za-z]{2,}/g) ?? []
+  if (/[\u3400-\u9fff]/.test(title) && englishWords.filter((word) => !['AI', 'RAG', 'Wi', 'Fi'].includes(word)).length < 2) {
+    return title.slice(0, 200)
+  }
+  const description = typeof raw.description === 'string' ? raw.description.trim() : ''
+  const sentence = description.split(/[。！？\n]/)[0] ?? ''
+  if (/[\u3400-\u9fff]/.test(sentence) && !/[A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){2}/.test(sentence)) {
+    return sentence.length > 48 ? `${sentence.slice(0, 48)}…` : sentence
+  }
+  return '契約條款待確認'
+}
+
 // Neither an LLM confidence score nor a retrieved statute proves a violation.
 export function gateRemoteAssessments(items: unknown, source: 'rag' | 'ai', pages: string[]): ContractAssessment[] {
   if (!Array.isArray(items)) return []
   return items.slice(0, 30).filter((raw) => raw && typeof raw.title === 'string').map((raw, index) => {
     const clause = typeof raw.clause === 'string' ? raw.clause.slice(0, 2000) : ''
     const evidence = locate(pages, clause)
-    return item(`${source}-${index}`, raw.title.slice(0, 200), source === 'ai' && evidence ? 'suggestion' : 'recognition_pending', {
+    return item(`${source}-${index}`, remoteAssessmentTitle(raw), source === 'ai' && evidence ? 'suggestion' : 'recognition_pending', {
       source, sourceLabel: source === 'rag' ? 'RAG 候選疑慮' : 'AI 補充建議', clause,
       description: String(raw.description ?? '').slice(0, 2000), advice: String(raw.advice ?? '').slice(0, 2000),
       ...(evidence ?? {}), priority: raw.severity === 'high' || raw.priority === true,
@@ -167,12 +183,41 @@ export function gateRemoteAssessments(items: unknown, source: 'rag' | 'ai', page
   })
 }
 
+export function isPendingAssessment(item: ContractAssessment): boolean {
+  return ['recognition_pending', 'applicability_pending', 'suggestion'].includes(item.status)
+}
+
+// Merge only matching issues with overlapping original evidence. Sharing a broad
+// topic (e.g. deposits) is not enough to hide a distinct return/payment concern.
+export function reconcileAssessments(items: ContractAssessment[]): ContractAssessment[] {
+  const topic = (entry: ContractAssessment) => {
+    if (entry.ruleId === 'review-period' || /審閱.*(?:不足|少於|未滿|短於)|review.*(?:short|insufficient)/i.test(entry.title)) return 'review-period'
+    if (entry.ruleId === 'deposit-limit' || /押金.*(?:超過|超收|超額|上限)|deposit.*(?:exceed|limit)/i.test(entry.title)) return 'deposit-limit'
+    return ''
+  }
+  const sameEvidence = (a: ContractAssessment, b: ContractAssessment) => {
+    const sources = (entry: ContractAssessment) => [entry.clause, entry.focusText, ...(entry.details ?? []).map((detail) => detail.focusText)]
+      .filter((text): text is string => typeof text === 'string').map(compact).filter((text) => text.length >= 12)
+    return sources(a).some((left) => sources(b).some((right) => left.includes(right) || right.includes(left)))
+  }
+  const confirmed = items.filter((entry) => entry.status === 'confirmed')
+  const kept: ContractAssessment[] = []
+  for (const entry of items) {
+    const key = topic(entry)
+    if (isPendingAssessment(entry) && key && confirmed.some((other) => topic(other) === key && sameEvidence(other, entry))) continue
+    if (isPendingAssessment(entry) && kept.some((other) => isPendingAssessment(other)
+      && compact(other.title) === compact(entry.title) && sameEvidence(other, entry))) continue
+    kept.push(entry)
+  }
+  return kept
+}
+
 export function summarizeAssessments(items: ContractAssessment[]) {
   const confirmed = items.filter((entry) => entry.status === 'confirmed' && entry.severity)
   return { total: confirmed.length, high: confirmed.filter((entry) => entry.severity === 'high').length,
     medium: confirmed.filter((entry) => entry.severity === 'medium').length,
     low: confirmed.filter((entry) => entry.severity === 'low').length,
-    pending: items.filter((entry) => ['recognition_pending', 'applicability_pending'].includes(entry.status)).length }
+    pending: items.filter(isPendingAssessment).length }
 }
 
 export function evaluateRiskMetrics(cases: Array<{ items: ContractAssessment[]; highRuleIds: string[]; inapplicableFieldIds?: string[] }>) {

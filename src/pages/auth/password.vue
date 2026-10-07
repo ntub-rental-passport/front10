@@ -138,7 +138,7 @@ function restart() {
           </div>
           <template v-else>
             <h2 ref="heading" class="login-section-title" tabindex="-1">{{ changing ? '為帳戶換一組新密碼' : pending ? '驗證信箱，設定新密碼' : '忘記密碼了嗎？' }}</h2>
-            <p class="password-intro">{{ changing ? '輸入目前密碼以確認是您本人，再設定新密碼。' : pending ? `請查看 ${email} 的收件匣，輸入驗證碼。` : '輸入註冊時使用的電子信箱，我們會寄送驗證碼，協助您重新設定密碼。' }}</p>
+            <p class="password-intro">{{ changing ? '輸入目前密碼以確認是您本人，再設定新密碼。' : pending ? `若 ${email} 符合密碼重設條件，請至收件匣查收驗證碼。` : '輸入註冊時使用的電子信箱，我們會為符合重設條件的帳號寄送驗證碼。' }}</p>
 
             <form v-if="!changing && !pending" class="auth-page-form" novalidate :aria-busy="busy" @submit.prevent="sendCode">
               <div class="auth-field-block">
@@ -152,6 +152,11 @@ function restart() {
 
             <form v-else class="auth-page-form" novalidate :aria-busy="busy" @submit.prevent="submitPassword">
               <p v-if="notice && !changing" class="password-notice" role="status">{{ notice }}</p>
+              <p v-if="!changing" class="password-footnote">
+                使用 Google 建立、尚未設定 RentMate 密碼的帳號，不會收到重設驗證碼，請
+                <RouterLink :to="loginLink" class="auth-inline-link">返回登入並選擇 Google 登入</RouterLink>。
+                內部管理員帳號不適用此流程，請聯絡系統管理人員處理。
+              </p>
               <div v-if="!changing" class="auth-field-block">
                 <Label for="reset-code" class="auth-field-label">信箱驗證碼</Label>
                 <div class="auth-input-wrap"><KeyRound class="auth-input-icon" /><Input id="reset-code" v-model="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位數驗證碼" required :disabled="busy" class="auth-input auth-input--with-leading auth-input--default" aria-describedby="code-help" /></div>

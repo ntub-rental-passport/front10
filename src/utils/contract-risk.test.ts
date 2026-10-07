@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildContractAssessments, evaluateRiskMetrics, gateRemoteAssessments, summarizeAssessments } from './contract-risk'
+import { buildContractAssessments, evaluateRiskMetrics, gateRemoteAssessments, reconcileAssessments, isPendingAssessment, summarizeAssessments } from './contract-risk'
 import { getPropertyIdentification } from '@/shared/contract-applicability.js'
 import { extractContractFieldCandidates } from '@/shared/contract-field-extraction.js'
 import { isValidContractFieldFormat } from '@/shared/contract-field-validation.js'
 import type { ContractFieldReview } from './contract-ocr'
 import { existsSync, readFileSync } from 'node:fs'
+import { analyzeContractFields } from '../../server/contract-field-gate.js'
 
 const review = (value: string, sourceValue: string): ContractFieldReview => ({ value, sourceValue, confidence: 'high', reviewState: 'verified' })
 const assess = (text: string, fieldReviews: Record<string, ContractFieldReview> = {}, pageTexts = [text]) => buildContractAssessments({ text, pageTexts, fieldReviews })
@@ -39,6 +40,38 @@ describe('適用性先於缺漏與風險', () => {
 })
 
 describe('可追溯的數值規則', () => {
+  const rentClause = '第三條 租金約定及支付\n承租人每月租金為新臺幣 NT$18,000，每期應繳納1個月，並於每月5日前支付。'
+  const depositClauses = [
+    '第四條 押金約定及返還\n押金由租賃雙方約定為2個月租金，金額為新臺幣 NT$40,000（最高不得超過二個月租金之總額）。',
+    '第四條 押金約定及返還\nNT$40,000（最高不得超過二個月租金之總額）。',
+  ]
+  it.each(depositClauses)('金額無元字仍確認超額，不被兩個月制式文字抵消：%s', (depositClause) => {
+    const pageTexts = [rentClause, depositClause]
+    const text = pageTexts.join('\n')
+    const { fieldReviews } = analyzeContractFields({ text, pageTexts, visionPages: [] })
+    expect(fieldReviews.deposit.value).toBe('NT$40,000')
+    const risk = assess(text, fieldReviews as Record<string, ContractFieldReview>, pageTexts).find((item) => item.ruleId === 'deposit-limit')
+    expect(risk).toMatchObject({ status: 'confirmed', severity: 'high' })
+    expect(risk?.metrics).toContainEqual({ label: '超出兩個月部分', value: 4000 })
+    expect(risk?.details?.map((entry) => entry.pageIndex)).toEqual([0, 1])
+    for (const entry of risk!.details!) expect(pageTexts[entry.pageIndex!]).toContain(entry.focusText)
+  })
+  it('上限內、修訂金額與混列費用不誤報為已確認超額', () => {
+    expect(rules(`${rentClause}${depositClauses[0]!.replace('40,000', '36,000')}`)).not.toContain('deposit-limit')
+    expect(rules(`${rentClause}${depositClauses[0]}雙方更正押金為36,000元。`)).not.toContain('deposit-limit')
+    expect(rules(`${rentClause}押金金額：NT$40,000，包含預付租金。`)).not.toContain('deposit-limit')
+    expect(rules(`${rentClause}押金金額：NT$40,000。押金金額：NT$36,000。`)).not.toContain('deposit-limit')
+    expect(rules(`${rentClause}第四條 押金約定及返還\n設備費NT$40,000。`)).not.toContain('deposit-limit')
+  })
+  it.skipIf(!existsSync('outputs/deposit-pdf-pages.json'))('使用者新北市契約文字層：完整欄位流程確認超額4000元', () => {
+    const pageTexts = JSON.parse(readFileSync('outputs/deposit-pdf-pages.json', 'utf8')) as string[]
+    const text = pageTexts.join('\n\n')
+    const { fieldReviews } = analyzeContractFields({ text, pageTexts, visionPages: [] })
+    const risk = assess(text, fieldReviews as Record<string, ContractFieldReview>, pageTexts).find((item) => item.ruleId === 'deposit-limit')
+    expect(risk).toMatchObject({ severity: 'high', status: 'confirmed' })
+    expect(risk?.metrics).toContainEqual({ label: '超出兩個月部分', value: 4000 })
+    expect(risk?.details?.every((entry) => entry.pageIndex === 1)).toBe(true)
+  })
   it('兩日格式有效，已核對原文才觸發審閱期規則', () => {
     expect(isValidContractFieldFormat('days', '2 日')).toBe(true)
     const text = '審閱日數：2日。'
@@ -57,7 +90,8 @@ describe('可追溯的數值規則', () => {
     expect(assess(text, fields).find((item) => item.ruleId === 'deposit-limit')?.severity).toBe('high')
     expect(summarizeAssessments(assess(text)).high).toBe(1)
     expect(summarizeAssessments(assess(text + '双方更正押金為36,000元。', fields)).high).toBe(0)
-    expect(summarizeAssessments(assess(text, { ...fields, deposit: review('NT$54,000', '找不到的原文') })).high).toBe(0)
+    expect(summarizeAssessments(assess(text, { ...fields, deposit: review('NT$54,000', '找不到的原文') })).high).toBe(1)
+    expect(summarizeAssessments(assess(text, { ...fields, deposit: review('NT$36,000', '找不到的原文') })).high).toBe(0)
     expect(summarizeAssessments(assess('每月租金：18,000元。設備買賣價款：54,000元。')).high).toBe(0)
   })
 })
@@ -114,6 +148,46 @@ it.skipIf(!existsSync('logs/contract-pages-verification.json'))('本機九頁 PD
 })
 
 describe('AI 候選與成效統計', () => {
+  it('同一原文的審閱期規則與 AI 候選只顯示規則；不同問題保留', () => {
+    const clause = '審閱日數：1日（契約審閱期間至少三日）。'
+    const local = assess(clause, { review_days: review('1 日', clause) })
+    const remote = gateRemoteAssessments([
+      { title: '契約審閱期間不足三日', clause, description: '只有1日' },
+      { title: '契約審閱期間不足三日', clause: '另一處的審閱期間及附件有爭議' },
+      { title: '審閱簽章待確認', clause },
+    ], 'rag', [clause])
+    const merged = reconcileAssessments([...remote, ...local])
+    expect(merged.some((entry) => entry.id === 'rag-0')).toBe(false)
+    expect(merged.some((entry) => entry.id === 'rag-1')).toBe(true)
+    expect(merged.some((entry) => entry.id === 'rag-2')).toBe(true)
+    expect(merged.some((entry) => entry.ruleId === 'review-period' && entry.status === 'confirmed')).toBe(true)
+  })
+  it('待確認包含 AI 建議，摘要與分頁共用計數；AI 空回應仍保留押金風險', () => {
+    const text = '每月租金：NT$18,000。押金金額：NT$40,000。'
+    const local = assess(text, { rent: review('NT$18,000', ''), deposit: review('NT$40,000', '舊的欄位定位') })
+    const remote = gateRemoteAssessments([
+      { title: '押金金額超收', clause: '押金金額：NT$40,000。' },
+      { title: '押金返還程序需要確認', clause: '押金金額：NT$40,000。' },
+    ], 'ai', [text])
+    const merged = reconcileAssessments([...local, ...remote])
+    expect(merged.some((entry) => entry.id === 'ai-0')).toBe(false)
+    expect(merged.some((entry) => entry.id === 'ai-1')).toBe(true)
+    expect(summarizeAssessments(merged).pending).toBe(merged.filter(isPendingAssessment).length)
+    expect(summarizeAssessments(reconcileAssessments([...local, ...gateRemoteAssessments([], 'ai', [text])])).high).toBe(1)
+  })
+  it.each([
+    'missing house tax ID or position diagram',
+    'deposit amount ambiguous and possibly exceeds legal limit',
+    'management fee clause unclear（第五條）',
+  ])('英文標題 %s 使用中文說明摘要，保留證據與待確認狀態', (title) => {
+    const description = '契約相關約定需要進一步核對。請確認原文。'
+    const [entry] = gateRemoteAssessments([{ title, description, clause: '原文', severity: 'high' }], 'rag', ['原文'])
+    expect(entry).toMatchObject({ title: '契約相關約定需要進一步核對', description, clause: '原文', priority: true, status: 'recognition_pending', severity: null })
+  })
+  it('保留中文標題；全英文結果顯示中性標題而不捏造翻譯', () => {
+    const entries = gateRemoteAssessments([{ title: 'AI 建議核對押金', description: '說明' }, { title: 'unclear terms', description: 'Please check the contract.' }], 'ai', [])
+    expect(entries.map((entry) => entry.title)).toEqual(['AI 建議核對押金', '契約條款待確認'])
+  })
   it('模型高信心、法條引用及自行指定頁碼都不能直接分級', () => {
     const items = gateRemoteAssessments([{ title: '疑慮', severity: 'high', confidence: 0.99, pageIndex: 0, clause: '不存在原文', legalBasis: ['L01'] }], 'rag', ['實際契約'])
     expect(items[0]).toMatchObject({ severity: null, status: 'recognition_pending', pageIndex: null, priority: true })

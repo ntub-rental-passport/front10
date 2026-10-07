@@ -1,7 +1,7 @@
 import type { ContractAssessment } from './contract-risk'
 import type { ContractFieldReview } from './contract-ocr'
 
-export const CLAUSE_RULE_VERSION = '2026-09-17.3'
+export const CLAUSE_RULE_VERSION = '2026-10-07.2'
 const legalUrl = 'https://www.ey.gov.tw/File/43BC094940995CFC?A=C'
 const impacts: Record<string, string> = {
   'review-waiver': '簽署放棄審閱的聲明，可能妨礙充分閱讀及提出修改。',
@@ -103,12 +103,18 @@ export function evaluateClauseRisks(pages: string[], reviews: Record<string, Con
   for (const clause of clauses) {
     const value = actual(clause)
     if (!value) continue
-    const rent = value.match(/(?:每月租金|月租金)[:：為](?:新台幣|NT\$)?([\d,]+)元/)
-    if (rent) rents.push({ value: number(rent[1]!), clause })
-    const deposit = value.match(/(?:押金金額|押租保證金|押金)[:：為]([^。；]{0,100})/)
+    // NT$ is explicit currency even without 元; accept the combined 新臺幣 NT$ label.
+    const moneyPattern = /(?:(?:新台幣)?NT\$([0-9]+(?:,[0-9]{3})*)(?![0-9]|[,.][0-9])(?:元)?|(?:新台幣)?([0-9]+(?:,[0-9]{3})*)元)/
+    const rent = value.match(new RegExp(`(?:每月租金|月租金)[:：為]${moneyPattern.source}`))
+    if (rent) rents.push({ value: number(rent[1] || rent[2]!), clause })
+    const deposit = value.match(/(?:押金金額|押租保證金|押金)(?:由租賃雙方約定)?(?:[:：為]|約定為)([^。；]{0,100})/)
+      // A heading may be followed directly by the amount, with no repeated 押金 label.
+      ?? value.match(/第[一二三四五六七八九十0-9]+條押金約定及返還[:：]?((?:新台幣)?(?:NT\$|[0-9])[^。；]{0,100})/)
     if (deposit && !/返還|抵充|沒收|退還|喪失/.test(deposit[1]!)) {
-      const money = deposit[1]!.match(/(?:新台幣|NT\$)([\d,]+)元|^([\d,]+)元/)
-      const months = deposit[1]!.match(/([一二兩三四五六七八九十\d]+)個月租金/)
+      const money = deposit[1]!.match(moneyPattern)
+      // The printed legal ceiling is not an agreed number of deposit months.
+      const agreed = deposit[1]!.split(/最高|不得超過|不得逾/)[0]!
+      const months = agreed.match(/([一二兩三四五六七八九十\d]+)個月租金/)
       deposits.push({ value: money ? number(money[1] || money[2]!) : NaN, months: months ? integer(months[1]!) : NaN, clause })
     }
   }
@@ -116,21 +122,25 @@ export function evaluateClauseRisks(pages: string[], reviews: Record<string, Con
   const excessive = deposits.find((d) => d.months > 2 || (rent && rent.value > 0 && d.value > rent.value * 2))
   if (excessive) {
     const sources = [...(rent ? [rent.clause] : []), excessive.clause]
+    const inconsistentMonths = Boolean(rent && Number.isFinite(excessive.months) && Number.isFinite(excessive.value)
+      && excessive.months * rent.value !== excessive.value)
     const conflict = new Set(rents.map((r) => r.value)).size > 1 || new Set(deposits.map((d) => `${d.value}/${d.months}`)).size > 1
       || /(?:包含|含|其中|包括).*(?:租金|清潔費|設備|管理費)/.test(excessive.clause.value)
-      || Boolean(rent && Number.isFinite(excessive.months) && Number.isFinite(excessive.value)
-        && excessive.months * rent.value !== excessive.value)
+      || Boolean(inconsistentMonths && rent && excessive.value <= rent.value * 2)
+    // A stated "2 months" does not cancel an explicitly excessive monetary amount.
     const reviewConflict = ['rent', 'deposit', 'deposit_months'].some((id) => {
       const review = reviews[id]
       if (!review?.value || /尚未辨識|不適用/.test(review.value)) return false
       const expected = id === 'rent' ? rent?.value : id === 'deposit' ? excessive.value : excessive.months
       const reviewed = number(review.value.replace(/[^0-9.,]/g, ''))
-      const source = normalize(review.sourceValue || '')
-      return (Number.isFinite(expected) && reviewed !== expected) || !source || !sources.some((c) => c.value.includes(source))
+      // Amounts were independently located in the original clauses above.
+      // Stale/missing field highlighting must not veto matching numeric evidence;
+      // an actual disagreement with the edited amount still requires review.
+      return Number.isFinite(expected) && reviewed !== expected
     })
     emit('deposit-limit', '押金超過兩個月租金', 'high', sources, /押金|押租保證金|月租金|每月租金/, '壹、五',
       '核對押金性質及金額，簽約前修正超額押金。', conflict || reviewConflict ? 'recognition_pending' : 'confirmed',
-      `${rent ? `月租 ${rent.value.toLocaleString()} 元，上限 ${ (rent.value * 2).toLocaleString()} 元；` : ''}${Number.isFinite(excessive.value) ? `押金 ${excessive.value.toLocaleString()} 元。` : `押金約定 ${excessive.months} 個月租金。`}`)
+      `${rent ? `月租 ${rent.value.toLocaleString()} 元，上限 ${ (rent.value * 2).toLocaleString()} 元；` : ''}${Number.isFinite(excessive.value) ? `押金 ${excessive.value.toLocaleString()} 元。` : `押金約定 ${excessive.months} 個月租金。`}${inconsistentMonths ? `條文另載 ${excessive.months} 個月租金，與金額不一致，應一併更正。` : ''}`)
     if (rent && Number.isFinite(excessive.value)) results[results.length - 1]!.metrics = [
       { label: '月租', value: rent.value }, { label: '押金', value: excessive.value },
       { label: '超出兩個月部分', value: Math.max(0, excessive.value - rent.value * 2) },

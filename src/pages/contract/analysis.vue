@@ -9,7 +9,7 @@ import { useRouter } from 'vue-router'
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 import { loadContractOcrResult, saveContractOcrResult } from '@/src/utils/contract-ocr'
 import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'
-import { buildContractAssessments, gateRemoteAssessments, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
+import { buildContractAssessments, gateRemoteAssessments, reconcileAssessments, isPendingAssessment, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
 import { contractSectionLabel, explainContractRisk } from '@/src/utils/contract-risk-explanation'
 import RiskExplanation from './RiskExplanation.vue'
 import AnalysisWaiting from './AnalysisWaiting.vue'
@@ -254,10 +254,10 @@ try {
   if (Array.isArray(stored)) records.value = stored.filter(record => record && typeof record.rule === 'string' && typeof record.evidence === 'string')
 } catch { /* unavailable storage */ }
 const severityFilter = ref<string | null>(null)
-const activeRisks = computed(() => risks.value.filter(risk => !isDismissed(risk, records.value)))
+const activeRisks = computed(() => reconcileAssessments(risks.value).filter(risk => !isDismissed(risk, records.value)))
 const filteredRisks = computed(() => activeRisks.value.filter(risk => activeRiskTab.value === 'risk'
   ? risk.status === 'confirmed' && (!severityFilter.value || risk.severity === severityFilter.value)
-  : activeRiskTab.value === 'pending' ? !['confirmed', 'not_applicable'].includes(risk.status)
+  : activeRiskTab.value === 'pending' ? isPendingAssessment(risk)
   : risk.status === 'not_applicable'))
 const assessmentSummary = computed(() => summarizeAssessments(activeRisks.value))
 const processDialog = ref<HTMLDialogElement | null>(null)
@@ -374,7 +374,7 @@ const mediumRiskCount = computed(() => assessmentSummary.value.medium)
 const lowRiskCount = computed(() => assessmentSummary.value.low)
 const riskTabs = computed(() => [
   { id: 'risk' as const, label: '風險提醒', count: assessmentSummary.value.total },
-  { id: 'pending' as const, label: '待確認', count: activeRisks.value.filter(r => !['confirmed', 'not_applicable'].includes(r.status)).length },
+  { id: 'pending' as const, label: '待確認', count: assessmentSummary.value.pending },
   { id: 'history' as const, label: '處理紀錄', count: records.value.length + activeRisks.value.filter(r => r.status === 'not_applicable').length },
 ])
 /*
@@ -694,7 +694,7 @@ async function exportAnalysisReport(): Promise<void> {
     )
     const report = await generateContractReportPdf({
       fileName: ocrResult?.fileName || '租屋契約.pdf',
-      risks: risks.value.map(risk => isDismissed(risk, records.value) ? { ...risk, status: 'not_applicable' as const, severity: null, description: '使用者確認不適用；原規則證據保留供追溯。' } : risk),
+      risks: reconcileAssessments(risks.value).map(risk => isDismissed(risk, records.value) ? { ...risk, status: 'not_applicable' as const, severity: null, description: '使用者確認不適用；原規則證據保留供追溯。' } : risk),
       handlingRecords: records.value.map(record => ({ ...record, outcome: reconcileRecord(record, risks.value) })),
       fieldValues,
       privacyMode: exportPrivacyMode.value,

@@ -17,9 +17,10 @@ import {
   documentValuesFromRental,
   type ContractDocument,
 } from '@/src/utils/contract-document'
-import { readStoredContract } from '@/src/services/contractApi'
+import { readStoredContract, encryptContractPdf } from '@/src/services/contractApi'
+import { contractPdfPassword, createContractPdf } from '@/src/utils/contract-pdf'
 import { Button } from '@/components/ui/button/index'
-import { AlertTriangle, ArrowLeft, Loader2, Printer } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, Loader2, LockKeyhole } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,8 +31,36 @@ const loadError = ref('')
 const heading = ref('契約內容（由校對欄位回拼）')
 const sourceNote = ref('')
 
-function printDocument(): void {
-  window.print()
+const tenantId = ref('')
+const exporting = ref(false)
+const exportError = ref('')
+const exportSuccess = ref(false)
+const passwordError = computed(() => {
+  try { contractPdfPassword(tenantId.value); return '' } catch (error) { return (error as Error).message }
+})
+
+async function downloadEncryptedPdf(): Promise<void> {
+  if (!document_.value || exporting.value || passwordError.value) return
+  exporting.value = true
+  exportError.value = ''
+  exportSuccess.value = false
+  try {
+    const password = contractPdfPassword(tenantId.value)
+    const pdf = await createContractPdf(document_.value, heading.value, sourceNote.value)
+    const encrypted = await encryptContractPdf(pdf, password)
+    const url = URL.createObjectURL(encrypted)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'RentMate_住宅租賃契約書_加密.pdf'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    exportSuccess.value = true
+  } catch (error) {
+    exportError.value = error instanceof Error && error.name !== 'TimeoutError'
+      ? error.message : '加密等待逾時，尚未下載檔案，請稍後再試。'
+  } finally { exporting.value = false }
 }
 
 const rentalId = computed(() => {
@@ -48,7 +77,9 @@ onMounted(async () => {
         '這個工作階段沒有校對結果。契約內容不會被存成全文，請回到契約辨識重新上傳，或從已存檔的終版契約開啟。'
       return
     }
-    document_.value = buildContractDocument(documentValuesFromFieldReviews(ocrResult.fieldReviews))
+    const values = documentValuesFromFieldReviews(ocrResult.fieldReviews)
+    tenantId.value = values.tenant_id || ''
+    document_.value = buildContractDocument(values)
     sourceNote.value = `來源：本次校對結果（${ocrResult.fileName || '未命名檔案'}），未存入資料庫`
     return
   }
@@ -56,7 +87,9 @@ onMounted(async () => {
   loading.value = true
   try {
     const stored = await readStoredContract(rentalId.value)
-    document_.value = buildContractDocument(documentValuesFromRental(stored.rental))
+    const values = documentValuesFromRental(stored.rental)
+    tenantId.value = values.tenant_id || ''
+    document_.value = buildContractDocument(values)
     heading.value = stored.contract_tag
       ? `契約內容：${stored.contract_tag}`
       : `契約內容（租約 #${stored.rental_id}）`
@@ -83,12 +116,20 @@ onMounted(async () => {
         v-if="document_"
         variant="outline"
         size="sm"
-        @click="printDocument"
+        :disabled="exporting || Boolean(passwordError)"
+        @click="downloadEncryptedPdf"
       >
-        <Printer :size="15" data-icon="inline-start" />
-        列印／存成 PDF
+        <Loader2 v-if="exporting" :size="15" class="animate-spin" data-icon="inline-start" />
+        <LockKeyhole v-else :size="15" data-icon="inline-start" />
+        {{ exporting ? '正在產生加密 PDF…' : '下載加密 PDF' }}
       </Button>
     </header>
+
+    <div v-if="document_" class="doc-export-note" role="status">
+      <template v-if="passwordError">{{ passwordError }} <button type="button" @click="router.back()">返回核對資料</button></template>
+      <template v-else>{{ exportSuccess ? '已下載加密 PDF。' : '' }}開啟密碼為租客的完整身分證字號，英文字母請輸入大寫。</template>
+    </div>
+    <p v-if="exportError" class="doc-error" role="alert">{{ exportError }}</p>
 
     <p v-if="loading" class="doc-status">
       <Loader2 :size="16" class="animate-spin" />

@@ -6,9 +6,10 @@ const API_BASE = import.meta.env.DEV
   : (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 
 /**
- * ⚠️ 只送攤平後的欄位。合約原始檔、OCR 全文、風險報告一律不上傳：
+ * ⚠️ 契約存檔只送攤平後的欄位，不上傳原始檔、OCR 全文或風險報告：
  * 全文含所有個資，存成明文會抵銷 rentals 加密欄位的保護。
  * 使用者要看契約時由這些欄位回拼（shared/contract-document.js）。
+ * 加密下載另使用暫時處理端點，PDF 與密碼只在後端記憶體處理，不寫入資料庫或檔案。
  */
 export interface FinalizeContractRequest {
   /** 使用者明確勾選「這是最終簽署版」才會是 true；後端只接受 true。 */
@@ -66,6 +67,26 @@ export function listStoredContracts(): Promise<StoredContractSummary[]> {
 
 export function readStoredContract(rentalId: number): Promise<StoredContractDocument> {
   return contractRequest<StoredContractDocument>(`/rentals/${rentalId}/document`)
+}
+
+/** Transient encryption only: the backend must not save this PDF or password. */
+export async function encryptContractPdf(pdf: Uint8Array, tenantId: string): Promise<Blob> {
+  if (pdf.byteLength > 16 * 1024 * 1024) throw new Error('契約檔案過大，無法匯出。')
+  const token = getAuthSession()?.accessToken
+  let binary = ''
+  for (let start = 0; start < pdf.length; start += 8192) binary += String.fromCharCode(...pdf.subarray(start, start + 8192))
+  const response = await fetch(`${API_BASE}/contract/export-encrypted-pdf`, {
+    method: 'POST', credentials: 'include', cache: 'no-store',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ pdf_base64: btoa(binary), tenant_id: tenantId }),
+    signal: AbortSignal.timeout(90_000),
+  })
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('登入已逾期，請重新登入後匯出。')
+    throw new Error('PDF 加密未完成，請稍後重試；尚未下載任何檔案。')
+  }
+  if (!response.headers.get('content-type')?.includes('application/pdf')) throw new Error('PDF 回應格式錯誤，請稍後再試。')
+  return response.blob()
 }
 
 export async function finalizeContract(

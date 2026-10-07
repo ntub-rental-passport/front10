@@ -159,7 +159,7 @@ async def analyze_contract(req: AnalyzeRequest):
     try:
         raw_text = req.ocr_text.strip()
         if not raw_text:
-            return {"rag_risks": [], "ai_risks": []}
+            raise HTTPException(status_code=422, detail="請提供契約文字後再進行 AI 分析。")
 
         # 去識別化在建 prompt 之前，且不分 provider ——
         # 只有一條路徑，就沒有「這次走哪條路」的分支可以被改壞。
@@ -177,7 +177,7 @@ async def analyze_contract(req: AnalyzeRequest):
         rag_context = format_for_prompt(law_chunks)
 
         # ----------------------------------------------------
-        # 🔹 步驟 B：呼叫 LLM (Ollama / Gemini) 生成結構化風險卡片
+        # 🔹 步驟 B：呼叫 LLM (NVIDIA / Ollama) 生成結構化風險卡片
         # ----------------------------------------------------
         prompt = f"""你是一名專業的台灣租賃法律專家。請分析 <合約內容> 標籤內的租賃合約，比對【相關法規】。
 
@@ -207,6 +207,7 @@ async def analyze_contract(req: AnalyzeRequest):
 </合約內容>
 
 請列出上述合約中的法規風險 (rag) 與 AI 綜合建議 (ai)。
+所有顯示給使用者的 title、groupLabel、description、advice 必須使用繁體中文，不能以英文句子作為標題。JSON 欄位名稱、id、severity、source 和法規編號維持下列格式；clause、focusText 保留契約原文，不要翻譯或改寫證據。
 必須「嚴格」回傳標準的 JSON 格式，不要包含任何 markdown 標記或其他文字：
 {{
   "rag_risks": [

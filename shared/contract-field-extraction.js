@@ -362,7 +362,7 @@ function extractLabeledParkingDetails(text) {
 
 function extractEquipmentDetails(text) {
   // Read the actual inventory, not a generic mention that an appendix exists.
-  const inventory = matchCompact(text, /附屬設備清單(?:與交屋預設狀態)?[：:]?[\s\S]{1,2000}?(?=交屋電表讀數|附件[二三四五]|$)/)
+  const inventory = matchCompact(text, /附屬設備清單(?:與交屋預設狀態)?[：:]?(?![、，,])[\s\S]{1,2000}?(?=[（(]若有[，,]詳如附件|第[一二三四五六七八九十百0-9０-９]+條|交屋電表讀數|附件[一二三四五六七八九十0-9０-９]|$)/)
   if (inventory) return { ...matchedCandidate(inventory[0], inventory, 'low'), value: inventory[0].trim() }
   const reference = matchCompact(text, /設備明細(?:及現況)?見附件[一二三四五六七八九十0-9]+/)
   return reference ? matchedCandidate(`${reference[0].replace(/\s/g, '')}（請核對附件內容）`, reference, 'low') : { ...EMPTY_CANDIDATE }
@@ -801,9 +801,15 @@ export function extractContractFieldCandidates(text) {
   const landlord = extractPartyDetails(text, '出租人')
   const tenant = extractPartyDetails(text, '承租人')
   const agent = extractPartyDetails(text, '代理人')
-  const deposit = extractMoney(text, ['(?:押租保證金|押金|保證金)'])
+  let deposit = extractMoney(text, ['(?:押租保證金|押金|保證金)'])
+  if (!deposit.value) {
+    const headingAmount = matchCompact(text, /第[一二三四五六七八九十0-9０-９]+條押金約定及返還[：:]?(?:新臺幣|新台幣)?NT\$([0-9０-９]+(?:[,，][0-9０-９]{3})*)(?![0-9０-９]|[,.，][0-9０-９])/)
+    const amount = headingAmount ? parseChineseInteger(headingAmount[1]) : null
+    if (amount !== null && amount > 0 && amount <= 100000000)
+      deposit = matchedCandidate(formatMoney(amount), headingAmount)
+  }
   const depositMonthsMatch = text.match(
-    /(?:押租保證金|押金)[^\r\n]{0,50}?([0-9０-９一二三四五六七八九十兩两]+)\s*個月租金/,
+    /(?:押租保證金|押金)(?:(?!最高|不得超過|不得逾)[^\r\n]){0,50}?([0-9０-９一二三四五六七八九十兩两]+)\s*個月租金/,
   )
   const depositMonths = depositMonthsMatch?.[1] ? parseChineseInteger(depositMonthsMatch[1]) : null
   const paymentPeriodMatch = matchCompact(text,
