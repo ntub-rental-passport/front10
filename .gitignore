@@ -59,7 +59,7 @@ __pycache__/
 # 憑證與金鑰：用樣式而非單一檔名，避免下一個憑證檔又漏掉
 rentmate-vision-key.json
 
-# Python 虛擬環境（桌機代理 desktop/.venv 會有幾百 MB 的 torch）
+# Python 虛擬環境
 .venv/
 venv/
 

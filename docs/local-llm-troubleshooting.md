@@ -1,5 +1,9 @@
 # 本機契約 AI 分析設定
 
+2026-10-07 起正式環境改用 VM 的 `ollama` / `rag` 容器，設定見 [部署指南第五節](../deploy/README.md#五ollama--rag-容器備援)。
+本機 embedding 備援可用 `docker compose build rag` 建置（映像內含模型）；若本機後端需呼叫它，
+須另設可達的 `LOCAL_EMBEDDING_URL`（正式 compose 不開主機 port），或設 `EMBEDDING_PROVIDER=nvidia` 跳過本機備援。
+
 前端 OCR 使用 `OLLAMA_OCR_MODEL`，Python 契約分析使用 `OLLAMA_MODEL`，兩者是獨立設定。修改專案根目錄 `.env` 後須重新啟動 Python 後端。
 
 1. 執行 `ollama list`，把已安裝的模型名稱填入 `OLLAMA_MODEL`，不可只改 OCR 模型。
