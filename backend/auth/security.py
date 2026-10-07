@@ -85,6 +85,7 @@ class CurrentUser(BaseModel):
     exp: int | None = None
     #: 管理員登入的 AdminSession id（見 get_current_admin 的閒置判斷）；其他身分沒有
     sid: str | None = None
+    issued_at: float | None = None
 
 
 def create_cookie_token(user_id: int, email: str, role: str, sid: str | None = None) -> str:
@@ -98,7 +99,7 @@ def create_cookie_token(user_id: int, email: str, role: str, sid: str | None = N
         "sub": str(user_id),
         "email": email,
         "role": role,
-        "iat": now,
+        "iat": time.time(),
         "exp": now + timedelta(seconds=session_seconds(role)),
     }
     if sid:
@@ -156,6 +157,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
             role=str(payload.get("role", "tenant")),
             exp=int(payload["exp"]) if payload.get("exp") is not None else None,
             sid=str(payload["sid"]) if payload.get("sid") else None,
+            issued_at=float(payload['iat']) if payload.get('iat') is not None else None,
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -172,8 +174,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     if user is None or not user.has_role(current.role):
         raise HTTPException(status_code=401, detail="帳號或身分已變更，請重新登入。")
     _reject_if_suspended(user)
+    reject_stale_password_session(user, current.issued_at)
     # exp 與 sid 要帶著走：/me 靠 exp 讓重新整理不延長登入，靠 sid 讓管理員的閒置判斷接得上
-    return CurrentUser(id=user.id, email=user.email, role=current.role, exp=current.exp, sid=current.sid)
+    return CurrentUser(id=user.id, email=user.email, role=current.role, exp=current.exp, sid=current.sid, issued_at=current.issued_at)
 
 
 # ==========================================================================
@@ -212,6 +215,7 @@ def create_access_token(
     expires_seconds: int | None = None,
     expires_at: int | None = None,
     sid: str | None = None,
+    issued_at: float | None = None,
 ) -> str:
     """簽發放入 Authorization 標頭的 Bearer token。
 
@@ -220,7 +224,8 @@ def create_access_token(
     """
     if expires_at is None:
         expires_at = int(time.time()) + (expires_seconds if expires_seconds is not None else session_seconds(role))
-    payload: dict[str, object] = {"sub": user_id, "role": role, "exp": int(expires_at)}
+    payload: dict[str, object] = {"sub": user_id, "role": role, "exp": int(expires_at),
+                                 "iat": time.time() if issued_at is None else issued_at}
     if sid:
         payload["sid"] = sid
     body = _encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
@@ -245,6 +250,18 @@ def read_access_token(token: str) -> dict[str, object]:
 
 
 SUSPENDED_DETAIL = "此帳號已被停用，請聯絡管理員。"
+
+
+def reject_stale_password_session(user: User, issued_at: object) -> None:
+    changed_at = user.password_changed_at
+    if changed_at is None:
+        return
+    try:
+        valid = float(issued_at) > changed_at.replace(tzinfo=timezone.utc).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        valid = False
+    if not valid:
+        raise HTTPException(status_code=401, detail='密碼已變更，請重新登入。')
 
 
 def _reject_if_suspended(user: User) -> None:
@@ -272,6 +289,7 @@ def get_current_landlord(
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.has_role("landlord"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="房東權限不存在。")
+    reject_stale_password_session(user, payload.get('iat'))
     _reject_if_suspended(user)
     return user
 
@@ -333,6 +351,7 @@ def admin_session_from(authorization: str | None, db: Session) -> tuple[User, Ad
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.has_role("admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="管理員權限不存在。")
+    reject_stale_password_session(user, payload.get('iat'))
     _reject_if_suspended(user)
 
     sid = payload.get("sid")
@@ -365,5 +384,6 @@ def get_current_tenant(
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.has_role("tenant"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租客權限不存在。")
+    reject_stale_password_session(user, payload.get('iat'))
     _reject_if_suspended(user)
     return user

@@ -1011,4 +1011,23 @@ CREATE TABLE `garbage_reminders` (
   INDEX `garbage_reminders_due` (`active`, `due`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Password recovery: codes are HMAC digests, never plaintext.
+CREATE TABLE `password_reset_challenges` (
+  `id` CHAR(36) NOT NULL PRIMARY KEY,
+  `email` VARCHAR(254) NOT NULL UNIQUE,
+  `user_id` INT DEFAULT NULL,
+  `code_hash` CHAR(64) NOT NULL,
+  `credential_hash` CHAR(64) NOT NULL,
+  `expires_at` DATETIME(6) NOT NULL,
+  `resend_available_at` DATETIME(6) NOT NULL,
+  `window_started_at` DATETIME(6) NOT NULL,
+  `attempt_count` INT NOT NULL DEFAULT 0,
+  `send_count` INT NOT NULL DEFAULT 0,
+  `request_ip` VARCHAR(45) NOT NULL,
+  `consumed` BOOLEAN NOT NULL DEFAULT FALSE,
+  INDEX `ix_password_reset_challenges_window_started_at` (`window_started_at`),
+  INDEX `ix_password_reset_challenges_request_ip` (`request_ip`),
+  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;

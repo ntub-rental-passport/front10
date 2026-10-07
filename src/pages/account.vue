@@ -230,7 +230,7 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
             <p>保護您的帳戶安全</p>
           </div>
         </div>
-        <button class="setting-row" type="button" @click="showFeedback('密碼變更流程尚未啟用')">
+        <button class="setting-row" type="button" @click="router.push('/change-password')">
           <LockKeyhole :size="20" />
           <span><strong>修改密碼</strong><small>定期更新密碼以保護帳戶安全</small></span>
           <ChevronRight :size="20" />

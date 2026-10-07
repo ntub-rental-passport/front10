@@ -321,7 +321,7 @@ onMounted(handleGoogleOAuthReturn)
         </div>
 
         <div class="auth-forgot-row">
-          <button type="button" class="auth-inline-link">忘記密碼 / 修改密碼</button>
+          <RouterLink :to="{ path: '/forgot-password', query: { role: selectedIdentity, ...(redirectTarget ? { redirect: redirectTarget } : {}) } }" class="auth-inline-link">忘記密碼 / 修改密碼</RouterLink>
         </div>
 
         <label class="auth-checkbox-row">

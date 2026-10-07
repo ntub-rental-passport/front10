@@ -8,6 +8,7 @@ import express from 'express'
 import multer from 'multer'
 import cookieParser from 'cookie-parser'
 import jwt from 'jsonwebtoken'
+import { createSessionCheck } from './auth-session.js'
 import { PDFDocument } from 'pdf-lib'
 import vision from '@google-cloud/vision'
 import { getOllamaConfig, reviewContractFieldsWithOllama } from './ollama-contract.js'
@@ -36,6 +37,8 @@ if (!jwtSecret) {
   process.exit(1)
 }
 
+const checkSession = createSessionCheck({ baseUrl: process.env.FASTAPI_INTERNAL_URL || 'http://127.0.0.1:8000' })
+
 function requireAuth(req, res, next) {
   const token = req.cookies?.access_token
   if (!token) {
@@ -46,7 +49,7 @@ function requireAuth(req, res, next) {
     // 同一把鑰匙也簽了回報用量用的服務憑證（見 usage-reporter.js）：沒有使用者 id 的不算登入
     if (!payload?.sub) throw new Error('not a login token')
     req.user = payload
-    return next()
+    return checkSession(req, res, next)
   } catch {
     return res.status(401).json({ error: '登入已過期或憑證無效，請重新登入。' })
   }

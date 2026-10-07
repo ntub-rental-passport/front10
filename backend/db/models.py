@@ -99,6 +99,22 @@ class PendingRegistration(Base):
     created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
     updated_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
+class PasswordResetChallenge(Base):
+    __tablename__ = 'password_reset_challenges'
+    id = Column(CHAR(36), primary_key=True)
+    email = Column(String(254), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=True)
+    code_hash = Column(CHAR(64), nullable=False)
+    credential_hash = Column(CHAR(64), nullable=False)
+    expires_at = Column(Timestamp, nullable=False)
+    resend_available_at = Column(Timestamp, nullable=False)
+    window_started_at = Column(Timestamp, nullable=False, index=True)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    send_count = Column(Integer, nullable=False, default=0)
+    request_ip = Column(String(45), nullable=False, index=True)
+    consumed = Column(Boolean, nullable=False, default=False)
+
+
 class PendingAdminLogin(Base):
     __tablename__ = 'pending_admin_logins'
     __table_args__ = (Index('ix_pending_admin_logins_email', 'email'), Index('ix_pending_admin_logins_expires_at', 'expires_at'),)
