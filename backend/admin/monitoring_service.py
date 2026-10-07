@@ -3,7 +3,7 @@
 ## 為什麼要後端自己檢查
 
 原本所有的健康檢查都是**監控頁開著時由前端每 30 秒打一次**。沒人開那一頁，
-就沒有任何東西在看。半夜三點桌機睡著、OCR 服務掛掉，隔天早上什麼痕跡都
+就沒有任何東西在看。半夜三點備援容器連不上、OCR 服務掛掉，隔天早上什麼痕跡都
 沒有 —— 而最需要知道的事件，偏偏都發生在沒人盯著的時候。
 
 跟排程通知同一個道理（見 scheduled_notification_service.py）：要「沒人在場
@@ -56,13 +56,24 @@ DOWNTIME_THRESHOLD_SECONDS = 120.0
 #: 探測逾時。檢查是在背景跑的，但太長會讓一輪檢查拖很久。
 PROBE_TIMEOUT_SECONDS = 3.0
 
+# 2026-10-07 桌機改成 VM 容器：清掉舊狀態，歷史事件仍保留標籤。
+RETIRED_SERVICES = {'llm-desktop'}
+RETIRED_SERVICE_LABELS = {
+    'llm-desktop': 'AI 模型（桌機，已移除）',
+}
+
 SERVICE_LABELS = {
     'backend': '後端',
     'database': '資料庫',
-    'llm-desktop': 'AI 模型（桌機）',
+    'llm-ollama': 'LLM 備援（Ollama）',
+    'rag': '檢索備援（RAG）',
     'ocr': 'OCR 服務',
     'scheduled-notification': '排程通知',
 }
+
+
+def _service_label(service: str) -> str:
+    return SERVICE_LABELS.get(service, RETIRED_SERVICE_LABELS.get(service, service))
 
 
 def _iso(ts: float | None) -> str | None:
@@ -208,7 +219,7 @@ def list_events(limit: int = 200, kinds: list[str] | None = None) -> list[dict]:
             'id': row['id'],
             'at': _iso(row['at']),
             'service': row['service'],
-            'serviceLabel': SERVICE_LABELS.get(row['service'], row['service']),
+            'serviceLabel': _service_label(row['service']),
             'kind': row['kind'],
             'detail': row['detail'],
             'durationSeconds': row['duration'],
@@ -223,7 +234,7 @@ def service_states() -> list[dict]:
     return [
         {
             'service': row['service'],
-            'label': SERVICE_LABELS.get(row['service'], row['service']),
+            'label': _service_label(row['service']),
             'status': row['status'],
             'since': _iso(row['since']),
             'detail': row['detail'],
@@ -283,8 +294,8 @@ def probe_database() -> tuple[bool, str | None] | None:
         return False, '無法連線'
 
 
-def probe_llm_desktop() -> tuple[bool, str | None] | None:
-    """探測桌機的 Ollama（經 Cloudflare Tunnel）。沒有設定或不在嘗試順序裡就回 None。"""
+def probe_llm_ollama() -> tuple[bool, str | None] | None:
+    """探測 Ollama 備援容器。沒有設定或不在嘗試順序裡就回 None。"""
     import httpx
 
     from ai import llm_provider
@@ -298,7 +309,6 @@ def probe_llm_desktop() -> tuple[bool, str | None] | None:
         # /api/tags 只列出模型，是 Ollama 最輕的端點，不會真的載入模型
         response = httpx.get(
             f'{base}/api/tags',
-            headers=llm_provider.tunnel_headers(),
             timeout=PROBE_TIMEOUT_SECONDS,
         )
     except Exception as error:
@@ -306,6 +316,28 @@ def probe_llm_desktop() -> tuple[bool, str | None] | None:
     if response.status_code != 200:
         return False, f'HTTP {response.status_code}'
     return True, None
+
+
+def probe_rag() -> tuple[bool, str | None] | None:
+    """探測 RAG 備援容器。HTTP 成功還要確認模型就緒，否則檢索仍無法使用。"""
+    import httpx
+
+    from ai import embeddings
+
+    if 'local' not in embeddings.provider_order():
+        return None
+    base = os.getenv('LOCAL_EMBEDDING_URL', '').strip().rstrip('/')
+    if not base:
+        return None
+    try:
+        response = httpx.get(f'{base}/health', timeout=PROBE_TIMEOUT_SECONDS)
+        if response.status_code != 200:
+            return False, f'HTTP {response.status_code}'
+        if response.json().get('embeddingReady') is not True:
+            return False, 'embedding 模型未就緒'
+        return True, None
+    except Exception as error:
+        return False, _describe_http_failure(error)
 
 
 def _ocr_health_url() -> str | None:
@@ -372,13 +404,17 @@ def _vision_configured() -> bool:
 
 PROBES = {
     'database': probe_database,
-    'llm-desktop': probe_llm_desktop,
+    'llm-ollama': probe_llm_ollama,
+    'rag': probe_rag,
     'ocr': probe_ocr,
 }
 
 
 def run_checks(now: float | None = None) -> None:
     """跑一輪檢查。單一探測出錯不會影響其他探測。"""
+    with _write() as db:
+        for service in RETIRED_SERVICES:
+            db.execute('DELETE FROM monitor_state WHERE service = ?', (service,))
     for service, probe in PROBES.items():
         try:
             result = probe()
@@ -386,7 +422,10 @@ def run_checks(now: float | None = None) -> None:
             logger.exception('Monitor probe %s crashed', service)
             result = (False, '檢查程式出錯')
         if result is None:
-            continue  # 沒有設定這個服務，不記「壞掉」—— 它本來就不存在
+            # 沒有設定的服務本來就不存在；舊狀態不能一直算成停機，也不算恢復事件。
+            with _write() as db:
+                db.execute('DELETE FROM monitor_state WHERE service = ?', (service,))
+            continue
         ok, detail = result
         kind = record_check(service, ok, detail, now)
         if kind:
@@ -397,7 +436,7 @@ def _alert_transition(service: str, kind: str, detail: str | None) -> None:
     """服務斷線與恢復各通知管理員一次（admin_notifications.py）。還是壞的時候不會再通知。"""
     from admin import admin_notifications
 
-    label = SERVICE_LABELS.get(service, service)
+    label = _service_label(service)
     if kind == 'down':
         reason = f'{detail}。' if detail else '檢查沒有回應。'
         body = f'{reason}後端每 60 秒會再檢查一次，恢復時會再通知。'
@@ -500,7 +539,7 @@ def _garbage_queue(ts: float) -> dict:
 
 def config_status() -> list[dict]:
     from notifications import garbage_service
-    from ai import llm_provider
+    from ai import embeddings, llm_provider
 
     return [
         {
@@ -516,16 +555,22 @@ def config_status() -> list[dict]:
             'hint': '垃圾車提醒的推播需要。沒設定時只能選 Email 提醒。',
         },
         {
-            'key': 'llm-desktop',
-            'label': 'AI 模型（桌機）位址',
+            'key': 'llm-ollama',
+            'label': 'AI 模型（Ollama 備援）位址',
             'ok': 'ollama' in llm_provider.configured_providers(),
-            'hint': 'LLM_TUNNEL_URL 或 OLLAMA_URL。合約分析與法規對話的主要模型。',
+            'hint': 'OLLAMA_URL。只在 NVIDIA 失敗時使用，CPU 上的 Ollama 較慢。',
         },
         {
             'key': 'nvidia',
-            'label': 'AI 模型（NVIDIA 備援）金鑰',
+            'label': 'AI 模型（NVIDIA）金鑰',
             'ok': 'nvidia' in llm_provider.configured_providers(),
-            'hint': '桌機連不上時的備援。沒設定的話，桌機一睡分析就會失敗。',
+            'hint': '合約分析與法規對話的主要模型；沒設定的話每次都要等 CPU 上的 Ollama。',
+        },
+        {
+            'key': 'rag',
+            'label': '檢索備援（RAG）位址',
+            'ok': embeddings.is_configured('local'),
+            'hint': 'LOCAL_EMBEDDING_URL。NVIDIA embedding 失敗時使用 RAG 容器。',
         },
         {
             'key': 'vision',
