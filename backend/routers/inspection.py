@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import json
 import os
@@ -10,12 +11,13 @@ from datetime import datetime, timezone
 import logging
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import Response
 from openai import OpenAI
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, ConfigDict
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, object_session
 from db.database import get_db
-from db.models import InspectionItem, InspectionRecord, Rental, User
+from db.models import InspectionItem, InspectionRecord, InspectionPhotoDetail, Rental, User
 from auth.security import get_current_tenant
 
 # 自動載入專案根目錄的 .env
@@ -113,6 +115,9 @@ def integrity_note(record):
 
 def evidence_json(record, phase):
     result = record.vlm_result or {}
+    db = object_session(record)
+    detail = db.get(InspectionPhotoDetail, record.id) if db else None
+    provenance = detail.provenance if detail else {}
     return {
         'id': str(record.id), 'phase': phase,
         'url': 'data:image/jpeg;base64,' + base64.b64encode(read_photo(record)).decode(),
@@ -123,6 +128,22 @@ def evidence_json(record, phase):
         'captureSource': record.capture_source,
         'captureQuality': record.capture_quality,
         'integrityNote': integrity_note(record),
+        'angle': detail.angle if detail else 'other',
+        'evidenceNumber': f'RM-IN-{record.id:08d}',
+        'receivedAt': timestamp(record.captured_at),
+        'photoTakenAt': provenance.get('photoTakenAt'),
+        'originalAvailable': bool(provenance.get('originalPath')),
+        'originalSha256': provenance.get('sha256'),
+        'originalName': provenance.get('originalName'),
+        'originalSize': provenance.get('size'),
+        'replacesId': provenance.get('replacesId'),
+        'supersededBy': str(detail.superseded_by) if detail and detail.superseded_by else None,
+        'removedAt': timestamp(detail.removed_at) if detail and detail.removed_at else None,
+        'descriptionHistory': provenance.get('descriptionHistory', []),
+        'angleHistory': provenance.get('angleHistory', []),
+        'propertySnapshot': provenance.get('propertySnapshot'),
+        'processingNote': '預覽圖經系統校正方向及壓縮；原檔另行保存。' if provenance.get('originalPath') else '舊紀錄僅保留處理後照片，沒有原始檔。',
+        'modificationNote': '上傳前是否修改無法查證；SHA-256 僅供核對收件後檔案。',
     }
 
 
@@ -130,13 +151,25 @@ def target_key(item_or_record) -> str:
     return f'lease:{item_or_record.lease_id}' if item_or_record.lease_id else str(item_or_record.rental_id)
 
 
+def item_records(item, include_history=False):
+    db = object_session(item)
+    details = db.query(InspectionPhotoDetail).filter_by(item_id=item.id).order_by(InspectionPhotoDetail.record_id).all()
+    known = {d.record_id for d in details}
+    records = [r for r in (item.baseline, item.checkout) if r and r.id not in known]
+    records += [db.get(InspectionRecord, d.record_id) for d in details
+                if include_history or (not d.superseded_by and not d.removed_at)]
+    primary_ids = [item.baseline_record_id, item.checkout_record_id]
+    return sorted((r for r in records if r), key=lambda r: (0 if r.id in primary_ids else 1, r.id))
+
+
 def item_json(item):
     return {
         'id': str(item.id), 'propertyId': target_key(item),
         'room': item.room_name, 'name': item.item_name, 'category': item.category,
         'createdAt': timestamp(item.created_at), 'diff': item.comparison_result,
-        'evidences': [evidence_json(record, phase) for record, phase in
-                      [(item.baseline, 'baseline'), (item.checkout, 'checkout')] if record],
+        'evidences': [evidence_json(r, 'baseline' if r.type == 'check_in' else 'checkout') for r in item_records(item)],
+        'history': [evidence_json(r, 'baseline' if r.type == 'check_in' else 'checkout') for r in item_records(item, True)
+                    if (d := object_session(item).get(InspectionPhotoDetail, r.id)) and (d.superseded_by or d.removed_at)],
     }
 
 
@@ -211,6 +244,11 @@ class PhotoRequest(BaseModel):
     user_note: str = Field(default='', max_length=5000)
     capture_source: Literal['camera', 'file'] = 'file'
     capture_quality: CaptureQuality | None = None
+    angle: Literal['front', 'side', 'detail', 'other'] = 'other'
+    original_name: str = Field(default='', max_length=255)
+    photo_taken_at: datetime | None = None
+    replaces_id: int | None = None
+    append: bool = False
 
 
 class DefectResult(BaseModel):
@@ -346,7 +384,7 @@ def create_item(payload: ItemRequest, db: Session = Depends(get_db), user: User 
 def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_tenant)):
     item = owned_item(db, item_id, user, lock=True)
     claim_version(db, item, item.version)
-    records = [r for r in (item.baseline, item.checkout) if r]
+    records = item_records(item, True)
     db.delete(item)
     db.flush()
     for record in records:
@@ -361,10 +399,21 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
     owned_item(db, item_id, user)
     try:
         compressed = compress_image(payload.image_data)
+        raw = base64.b64decode(payload.image_data.split(',', 1)[-1], validate=True)
+        with Image.open(io.BytesIO(raw)) as original:
+            mime = Image.MIME.get(original.format, 'application/octet-stream')
     except Exception:
         raise HTTPException(400, '無法解析圖片，請選擇有效的圖片檔案。')
     item = owned_item(db, item_id, user, lock=True)
     claim_version(db, item, item.version)
+    old_record = None
+    if payload.replaces_id:
+        old_record = next((r for r in item_records(item) if r.id == payload.replaces_id and
+                           r.type == ('check_in' if phase == 'baseline' else 'check_out')), None)
+        if old_record is None:
+            raise HTTPException(409, '要重拍的照片已變更，請重新載入。')
+    elif not payload.append:
+        old_record = getattr(item, phase)
     # 來源是 file 時一律不存品質：客戶端自己宣稱的分數不能換到可信度。
     # 這是伺服器唯一擋得住的事 —— 來源本身仍然是前端回報的，見 integrity_note。
     quality = None
@@ -378,24 +427,39 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
     directory = photo_directory()
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / name
+    original_path = directory / (uuid.uuid4().hex + '.original')
     try:
         path.write_bytes(base64.b64decode(compressed))
-        old_record = getattr(item, phase)
+        original_path.write_bytes(raw)
         record = InspectionRecord(rental_id=item.rental_id, lease_id=item.lease_id,
             type='check_in' if phase == 'baseline' else 'check_out', photo_url=name,
             item_name=item.item_name, room_name=item.room_name, user_note=payload.user_note,
             capture_source=payload.capture_source, capture_quality=quality)
         db.add(record)
         db.flush()
-        setattr(item, phase, record)
+        snapshot = next((p for p in properties(db, user) if p['id'] == target_key(item)), None)
+        db.add(InspectionPhotoDetail(record_id=record.id, item_id=item.id, angle=payload.angle,
+            provenance={'originalPath': original_path.name, 'mime': mime, 'sha256': hashlib.sha256(raw).hexdigest(),
+                        'size': len(raw), 'originalName': payload.original_name,
+                        'photoTakenAt': payload.photo_taken_at.isoformat() if payload.photo_taken_at else None,
+                        'replacesId': str(old_record.id) if old_record else None,
+                        'propertySnapshot': snapshot,
+                        'descriptionHistory': []}))
+        if not getattr(item, phase) or (old_record and getattr(item, phase + '_record_id') == old_record.id):
+            setattr(item, phase, record)
         item.comparison_result = None
         db.flush()
         if old_record:
-            db.delete(old_record)
+            detail = db.get(InspectionPhotoDetail, old_record.id)
+            if detail is None:
+                detail = InspectionPhotoDetail(record_id=old_record.id, item_id=item.id, angle='other', provenance={})
+                db.add(detail)
+            detail.superseded_by = record.id
         db.commit()
     except Exception:
         db.rollback()
         path.unlink(missing_ok=True)
+        original_path.unlink(missing_ok=True)
         raise
     return item_json(item)
 
@@ -403,15 +467,74 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
 @router.delete('/items/{item_id}/photos/{record_id}')
 def delete_photo(item_id: int, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_tenant)):
     item = owned_item(db, item_id, user, lock=True)
-    phase = next((p for p in ('baseline', 'checkout') if getattr(item, p + '_record_id') == record_id), None)
-    if phase is None:
+    record = next((r for r in item_records(item) if r.id == record_id), None)
+    if record is None:
         raise HTTPException(404, '找不到存證照片。')
+    phase = 'baseline' if record.type == 'check_in' else 'checkout'
     claim_version(db, item, item.version)
-    record = getattr(item, phase)
-    setattr(item, phase, None)
+    detail = db.get(InspectionPhotoDetail, record_id)
+    if detail is None:
+        detail = InspectionPhotoDetail(record_id=record_id, item_id=item.id, angle='other', provenance={})
+        db.add(detail)
+    detail.removed_at = datetime.utcnow()
+    if getattr(item, phase + '_record_id') == record_id:
+        setattr(item, phase, next((r for r in item_records(item) if r.id != record_id and r.type == record.type), None))
     item.comparison_result = None
     db.flush()
-    db.delete(record)
+    db.commit()
+    return item_json(item)
+
+
+@router.get('/items/{item_id}/photos/{record_id}/original')
+def download_original(item_id: int, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_tenant)):
+    item = owned_item(db, item_id, user)
+    if not any(r.id == record_id for r in item_records(item, True)):
+        raise HTTPException(404, '找不到存證照片。')
+    detail = db.get(InspectionPhotoDetail, record_id)
+    info = detail.provenance if detail else {}
+    name = info.get('originalPath', '')
+    if not re.fullmatch(r'[0-9a-f]{32}\.original', name):
+        raise HTTPException(404, '此舊紀錄沒有保存原始檔。')
+    try:
+        raw = (photo_directory() / name).read_bytes()
+    except FileNotFoundError:
+        raise HTTPException(409, '原始檔遺失，無法下載。')
+    if hashlib.sha256(raw).hexdigest() != info.get('sha256'):
+        raise HTTPException(409, '原始檔雜湊與收件紀錄不符，請聯絡管理員。')
+    extension = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}.get(info.get('mime'), 'bin')
+    return Response(raw, media_type=info.get('mime', 'application/octet-stream'), headers={
+        'Content-Disposition': f'attachment; filename="RM-IN-{record_id:08d}.{extension}"',
+        'Cache-Control': 'no-store',
+    })
+
+
+class NoteRequest(BaseModel):
+    note: str = Field(max_length=5000)
+    angle: Literal['front', 'side', 'detail', 'other'] | None = None
+
+
+@router.patch('/items/{item_id}/photos/{record_id}/note')
+def update_photo_note(item_id: int, record_id: int, payload: NoteRequest,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_tenant)):
+    item = owned_item(db, item_id, user, lock=True)
+    record = next((r for r in item_records(item) if r.id == record_id), None)
+    if record is None:
+        raise HTTPException(404, '找不到存證照片。')
+    claim_version(db, item, item.version)
+    detail = db.get(InspectionPhotoDetail, record_id)
+    if detail is None:
+        detail = InspectionPhotoDetail(record_id=record_id, item_id=item.id, angle='other', provenance={})
+        db.add(detail)
+    info = dict(detail.provenance)
+    if payload.note != (record.user_note or ''):
+        info['descriptionHistory'] = [*info.get('descriptionHistory', []),
+            {'previous': record.user_note or '', 'updatedAt': timestamp(datetime.utcnow())}]
+    if payload.angle and payload.angle != detail.angle:
+        info['angleHistory'] = [*info.get('angleHistory', []),
+            {'previous': detail.angle, 'current': payload.angle, 'updatedAt': timestamp(datetime.utcnow())}]
+        detail.angle = payload.angle
+    detail.provenance = info
+    record.user_note = payload.note
     db.commit()
     return item_json(item)
 
@@ -424,7 +547,7 @@ class AnalyzeRequest(BaseModel):
 @router.post('/analyze')
 def analyze_defect(payload: AnalyzeRequest, db: Session = Depends(get_db), user: User = Depends(get_current_tenant)):
     item = owned_item(db, payload.item_id, user)
-    record = next((r for r in (item.baseline, item.checkout) if r and r.id == payload.record_id), None)
+    record = next((r for r in item_records(item) if r.id == payload.record_id), None)
     if record is None:
         raise HTTPException(404, '找不到存證照片。')
     version = item.version

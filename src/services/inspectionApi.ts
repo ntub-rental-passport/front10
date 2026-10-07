@@ -32,3 +32,26 @@ export async function inspectionRequest<T>(
   }
   return response.status === 204 ? (undefined as T) : response.json()
 }
+
+export async function downloadInspectionOriginal(itemId: string, recordId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/inspection/items/${itemId}/photos/${recordId}/original`,
+    {
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${getAuthSession()?.accessToken ?? ''}` },
+    },
+  )
+  if (!response.ok) {
+    const data = await response.json().catch(() => null)
+    throw new Error(data?.detail || '原始檔下載失敗。')
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download =
+    response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] ||
+    `RM-IN-${recordId}.bin`
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
+}

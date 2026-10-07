@@ -4,6 +4,7 @@ import { getAuthSession } from '@/src/composables/useAuth'
 
 export type EvidencePhase = 'baseline' | 'checkout'
 export type CaptureSource = 'camera' | 'file'
+export type CaptureAngle = 'front' | 'side' | 'detail' | 'other'
 
 export interface CaptureQuality {
   brightness: number
@@ -38,6 +39,22 @@ export interface HandoverEvidence {
   captureSource?: CaptureSource
   captureQuality?: CaptureQuality | null
   integrityNote?: string
+  angle?: CaptureAngle
+  evidenceNumber?: string
+  receivedAt?: string
+  photoTakenAt?: string | null
+  originalAvailable?: boolean
+  originalSha256?: string
+  originalName?: string
+  originalSize?: number
+  replacesId?: string | null
+  supersededBy?: string | null
+  removedAt?: string | null
+  processingNote?: string
+  modificationNote?: string
+  propertySnapshot?: HandoverProperty
+  descriptionHistory?: { previous: string; updatedAt: string }[]
+  angleHistory?: { previous: string; current: string; updatedAt: string }[]
 }
 
 export type HandoverDiff = {
@@ -54,6 +71,7 @@ export interface HandoverItem {
   name: string
   category: 'appliance' | 'furniture' | 'fixture'
   evidences: HandoverEvidence[]
+  history?: HandoverEvidence[]
   diff?: HandoverDiff
   createdAt: string
 }
@@ -195,7 +213,17 @@ export function useHandover() {
   async function addEvidence(
     itemId: string,
     phase: EvidencePhase,
-    payload: { url: string; note?: string; source: CaptureSource; quality: CaptureQuality | null },
+    payload: {
+      url: string
+      note?: string
+      source: CaptureSource
+      quality: CaptureQuality | null
+      angle?: CaptureAngle
+      append?: boolean
+      replacesId?: string
+      originalName?: string
+      photoTakenAt?: string
+    },
   ) {
     await perform(async () => {
       const item = await inspectionRequest<HandoverItem>(
@@ -205,6 +233,11 @@ export function useHandover() {
           image_data: payload.url,
           user_note: payload.note ?? '',
           capture_source: payload.source,
+          ...(payload.angle ? { angle: payload.angle } : {}),
+          ...(payload.append ? { append: true } : {}),
+          ...(payload.replacesId ? { replaces_id: Number(payload.replacesId) } : {}),
+          ...(payload.originalName ? { original_name: payload.originalName } : {}),
+          ...(payload.photoTakenAt ? { photo_taken_at: payload.photoTakenAt } : {}),
           capture_quality:
             payload.source === 'camera' && payload.quality
               ? {
@@ -216,7 +249,9 @@ export function useHandover() {
         },
       )
       replaceItem(item)
-      const record = item.evidences.find((e) => e.phase === phase)!
+      const record = item.evidences
+        .filter((e) => e.phase === phase)
+        .reduce((a, b) => (Number(a.id) > Number(b.id) ? a : b))
       await analyze(itemId, record.id)
     })
   }
@@ -231,6 +266,23 @@ export function useHandover() {
         await inspectionRequest<HandoverItem>(`/items/${itemId}/photos/${recordId}`, 'DELETE'),
       ),
     )
+  }
+
+  async function updateEvidenceNote(
+    itemId: string,
+    recordId: string,
+    note: string,
+    angle?: CaptureAngle,
+  ) {
+    return perform(async () => {
+      replaceItem(
+        await inspectionRequest<HandoverItem>(`/items/${itemId}/photos/${recordId}/note`, 'PATCH', {
+          note,
+          angle,
+        }),
+      )
+      return true
+    })
   }
 
   async function runAutoDiff() {
@@ -265,6 +317,7 @@ export function useHandover() {
     removeItem,
     addEvidence,
     removeEvidence,
+    updateEvidenceNote,
     retryAnalysis,
     runAutoDiff,
     busy,

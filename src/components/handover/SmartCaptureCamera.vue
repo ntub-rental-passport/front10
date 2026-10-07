@@ -1,19 +1,31 @@
 <template>
   <Dialog :open="open" @update:open="handleOpenChange">
     <!-- 關鍵：加入 w-full h-[90vh] sm:h-auto，手機上直接占滿大部分螢幕 -->
-    <DialogContent class="w-full h-[92vh] sm:h-auto sm:max-w-2xl p-0 overflow-hidden bg-slate-950 text-white border-slate-800 flex flex-col">
+    <DialogContent
+      class="w-full h-[92vh] sm:h-auto sm:max-w-2xl p-0 overflow-hidden bg-slate-950 text-white border-slate-800 flex flex-col"
+    >
       <DialogHeader class="p-4 pb-2 bg-slate-900/90 border-b border-slate-800 shrink-0">
         <DialogTitle class="flex items-center gap-2 text-base text-slate-100">
           <Camera class="h-4 w-4 text-emerald-400" />
           AR 智慧點交拍攝 — {{ itemName }}
-          <Badge variant="outline" class="text-xs border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
+          <Badge
+            variant="outline"
+            class="text-xs border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+          >
             {{ roomName }}
           </Badge>
         </DialogTitle>
         <DialogDescription class="text-xs text-slate-400">
           依 AR 水平指標與光線提示對準物品，畫面清晰時點擊拍攝存證。
         </DialogDescription>
-        <Button v-if="needsOrientationPermission && isCameraReady && !hasOrientationMeasurement" type="button" size="sm" variant="secondary" class="self-start" @click="requestOrientationPermission">
+        <Button
+          v-if="needsOrientationPermission && isCameraReady && !hasOrientationMeasurement"
+          type="button"
+          size="sm"
+          variant="secondary"
+          class="self-start"
+          @click="requestOrientationPermission"
+        >
           啟用水平偵測
         </Button>
       </DialogHeader>
@@ -30,8 +42,14 @@
         ></video>
 
         <!-- 錯誤提示 -->
-        <div v-if="cameraNotice" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-900/90 z-20">
-          <component :is="unavailable ? Upload : AlertCircle" class="h-10 w-10 text-amber-400 mb-2" />
+        <div
+          v-if="cameraNotice"
+          class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-900/90 z-20"
+        >
+          <component
+            :is="unavailable ? Upload : AlertCircle"
+            class="h-10 w-10 text-amber-400 mb-2"
+          />
           <p class="text-sm font-medium text-slate-200 mb-1">{{ cameraNotice.title }}</p>
           <p class="text-xs text-slate-400 mb-4 max-w-sm">{{ cameraNotice.detail }}</p>
           <Button size="sm" variant="secondary" @click="triggerFileInput">
@@ -55,28 +73,60 @@
           </div>
 
           <!-- 中央目標對齊框：手機上保留大面積對焦範圍 -->
-          <div class="absolute inset-x-8 inset-y-12 sm:inset-[15%] flex items-center justify-center">
+          <div
+            class="absolute inset-x-8 inset-y-12 sm:inset-[15%] flex items-center justify-center"
+          >
             <div
               class="relative w-full h-full rounded-lg transition-all duration-200"
-              :class="isIdealState ? 'border-2 border-emerald-400 bg-emerald-500/10 shadow-[0_0_15px_rgba(52,211,153,0.3)]' : 'border-2 border-dashed border-white/30'"
+              :class="
+                isIdealState
+                  ? 'border-2 border-emerald-400 bg-emerald-500/10 shadow-[0_0_15px_rgba(52,211,153,0.3)]'
+                  : 'border-2 border-dashed border-white/30'
+              "
             >
-              <span class="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 transition-colors" :class="isIdealState ? 'border-emerald-400' : 'border-white/60'"></span>
-              <span class="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 transition-colors" :class="isIdealState ? 'border-emerald-400' : 'border-white/60'"></span>
-              <span class="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 transition-colors" :class="isIdealState ? 'border-emerald-400' : 'border-white/60'"></span>
-              <span class="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 transition-colors" :class="isIdealState ? 'border-emerald-400' : 'border-white/60'"></span>
+              <span
+                class="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 transition-colors"
+                :class="isIdealState ? 'border-emerald-400' : 'border-white/60'"
+              ></span>
+              <span
+                class="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 transition-colors"
+                :class="isIdealState ? 'border-emerald-400' : 'border-white/60'"
+              ></span>
+              <span
+                class="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 transition-colors"
+                :class="isIdealState ? 'border-emerald-400' : 'border-white/60'"
+              ></span>
+              <span
+                class="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 transition-colors"
+                :class="isIdealState ? 'border-emerald-400' : 'border-white/60'"
+              ></span>
 
               <div
                 class="absolute inset-0 flex items-center justify-center pointer-events-none transition-transform duration-100 ease-out"
                 :style="{ transform: `rotate(${tiltAngle}deg)` }"
               >
-                <div class="w-16 h-0.5" :class="Math.abs(tiltAngle) < 5 ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-amber-400/80'"></div>
-                <div class="h-3 w-0.5 absolute" :class="Math.abs(tiltAngle) < 5 ? 'bg-emerald-400' : 'bg-amber-400/80'"></div>
+                <div
+                  class="w-16 h-0.5"
+                  :class="
+                    Math.abs(tiltAngle) < 5
+                      ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
+                      : 'bg-amber-400/80'
+                  "
+                ></div>
+                <div
+                  class="h-3 w-0.5 absolute"
+                  :class="Math.abs(tiltAngle) < 5 ? 'bg-emerald-400' : 'bg-amber-400/80'"
+                ></div>
               </div>
 
               <div class="absolute bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap">
                 <span
                   class="text-xs px-3 py-1 rounded-full font-medium shadow-md backdrop-blur-md transition-colors"
-                  :class="isIdealState ? 'bg-emerald-500 text-slate-950 font-bold' : 'bg-black/70 text-slate-200 border border-white/10'"
+                  :class="
+                    isIdealState
+                      ? 'bg-emerald-500 text-slate-950 font-bold'
+                      : 'bg-black/70 text-slate-200 border border-white/10'
+                  "
                 >
                   {{ hudStatusText }}
                 </span>
@@ -86,18 +136,27 @@
 
           <!-- 頂部環境指標 HUD -->
           <div class="absolute top-3 left-3 right-3 flex items-center justify-between text-xs">
-            <div class="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
+            <div
+              class="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10"
+            >
               <Sun class="h-3.5 w-3.5" :class="lightStatus.color" />
               <span>光線：{{ lightStatus.label }}</span>
             </div>
 
-            <div class="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
+            <div
+              class="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10"
+            >
               <Activity class="h-3.5 w-3.5" :class="sharpnessStatus.color" />
               <span>清晰度：{{ sharpnessStatus.label }}</span>
             </div>
 
-            <div class="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
-              <Compass class="h-3.5 w-3.5" :class="Math.abs(tiltAngle) < 5 ? 'text-emerald-400' : 'text-amber-400'" />
+            <div
+              class="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10"
+            >
+              <Compass
+                class="h-3.5 w-3.5"
+                :class="Math.abs(tiltAngle) < 5 ? 'text-emerald-400' : 'text-amber-400'"
+              />
               <span>水平：{{ tiltAngle.toFixed(0) }}°</span>
             </div>
           </div>
@@ -105,27 +164,47 @@
       </div>
       <!-- 底部控制列 -->
       <div class="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between">
-        <Button variant="ghost" size="sm" class="text-slate-400 hover:text-white" @click="triggerFileInput">
+        <Button
+          variant="ghost"
+          size="sm"
+          class="text-slate-400 hover:text-white"
+          @click="triggerFileInput"
+        >
           <Upload class="h-4 w-4 mr-1.5" /> 上傳
         </Button>
 
         <Button
           size="lg"
           class="rounded-full px-6 font-semibold shadow-lg transition-all"
-          :class="isIdealState ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 scale-105' : 'bg-slate-700 hover:bg-slate-600 text-white'"
+          :class="
+            isIdealState
+              ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 scale-105'
+              : 'bg-slate-700 hover:bg-slate-600 text-white'
+          "
           :disabled="!isCameraReady"
           @click="onClickCapture"
         >
           <Camera class="h-5 w-5 mr-2" /> {{ isIdealState ? '拍攝存證' : '建議調整後拍攝' }}
         </Button>
 
-        <Button variant="ghost" size="sm" class="text-slate-400 hover:text-white" @click="handleOpenChange(false)">
+        <Button
+          variant="ghost"
+          size="sm"
+          class="text-slate-400 hover:text-white"
+          @click="handleOpenChange(false)"
+        >
           取消
         </Button>
       </div>
 
       <!-- 隱藏的檔案上傳 input -->
-      <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onFileSelected" />
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept="image/*"
+        class="hidden"
+        @change="onFileSelected"
+      />
     </DialogContent>
   </Dialog>
 </template>
@@ -148,6 +227,8 @@ import type { CaptureQuality, CaptureSource } from '@/src/composables/useHandove
 
 export type CapturePayload = {
   dataUrl: string
+  photoTakenAt?: string
+  originalName?: string
   source: CaptureSource
   quality: CaptureQuality | null
 }
@@ -165,7 +246,7 @@ const props = withDefaults(
   {
     itemName: '未命名項目',
     roomName: '未指定房間',
-  }
+  },
 )
 
 const emit = defineEmits<{
@@ -191,7 +272,8 @@ const brightnessValue = ref(128)
 const sharpnessScore = ref(100)
 const hasFrameMeasurement = ref(false)
 const hasOrientationMeasurement = ref(false)
-const needsOrientationPermission = typeof DeviceOrientationEvent !== 'undefined' &&
+const needsOrientationPermission =
+  typeof DeviceOrientationEvent !== 'undefined' &&
   typeof (DeviceOrientationEvent as any).requestPermission === 'function'
 
 let stream: MediaStream | null = null
@@ -221,14 +303,21 @@ const sharpnessStatus = computed(() => {
  */
 const isIdealState = computed(() => {
   const isAngleOk = !hasOrientationMeasurement.value || Math.abs(tiltAngle.value) < 8
-  return hasFrameMeasurement.value &&
-    lightStatus.value.isOk && sharpnessStatus.value.isOk && isAngleOk && isCameraReady.value
+  return (
+    hasFrameMeasurement.value &&
+    lightStatus.value.isOk &&
+    sharpnessStatus.value.isOk &&
+    isAngleOk &&
+    isCameraReady.value
+  )
 })
 
 const hudStatusText = computed(() => {
   if (!hasFrameMeasurement.value) return '等待畫面量測（可先拍攝）'
-  if (!lightStatus.value.isOk) return brightnessValue.value < 65 ? '⚠️ 光線不足，建議補光' : '⚠️ 畫面過曝，請避開反光'
-  if (hasOrientationMeasurement.value && Math.abs(tiltAngle.value) >= 8) return '📐 請調整手機角度至水平'
+  if (!lightStatus.value.isOk)
+    return brightnessValue.value < 65 ? '⚠️ 光線不足，建議補光' : '⚠️ 畫面過曝，請避開反光'
+  if (hasOrientationMeasurement.value && Math.abs(tiltAngle.value) >= 8)
+    return '📐 請調整手機角度至水平'
   if (!sharpnessStatus.value.isOk) return '✋ 請握穩手機，減少晃動'
   // 水平偵測拿不到資料不擋拍攝，但要讓使用者知道這張的量測不完整
   if (!hasOrientationMeasurement.value) return '🟢 畫面清晰，可拍攝（水平偵測未啟用）'
@@ -366,7 +455,8 @@ function addOrientationListener() {
 
 function requestOrientationPermission() {
   if (needsOrientationPermission) {
-    (DeviceOrientationEvent as any).requestPermission()
+    ;(DeviceOrientationEvent as any)
+      .requestPermission()
       .then((response: string) => {
         if (response === 'granted' && props.open && isCameraReady.value) addOrientationListener()
       })
@@ -387,13 +477,15 @@ function onClickCapture() {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  // 截取未壓縮的完整相機幀，供後端 VLM 進行清晰判讀
+  // 相機幀編碼為 JPEG；這份瀏覽器產生的檔案會原樣保存。
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
   const dataUrl = canvas.toDataURL('image/jpeg', 0.95)
 
   emit('captured', {
     dataUrl,
     source: 'camera',
+    photoTakenAt: new Date().toISOString(),
+    originalName: 'camera.jpg',
     quality: hasFrameMeasurement.value
       ? {
           brightness: Math.round(brightnessValue.value),
@@ -420,7 +512,7 @@ function onFileSelected(e: Event) {
   const reader = new FileReader()
   reader.onload = (event) => {
     const dataUrl = event.target?.result as string
-    emit('captured', { dataUrl, source: 'file', quality: null })
+    emit('captured', { dataUrl, source: 'file', quality: null, originalName: file.name })
     handleOpenChange(false)
   }
   reader.readAsDataURL(file)
@@ -445,7 +537,7 @@ watch(
       stopCamera()
     }
   },
-  { flush: 'post' } // 確保在 DOM 更新完成後才執行
+  { flush: 'post' }, // 確保在 DOM 更新完成後才執行
 )
 
 onBeforeUnmount(() => {

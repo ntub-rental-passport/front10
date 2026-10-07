@@ -1,29 +1,15 @@
 <script setup lang="ts">
-/**
- * 入住前點交（合併操作 + 彙整 + 雙格式匯出）
- * ---------------------------------------------------------
- * 這頁同時負責：
- *   1. 操作：新增點交項目、拍攝搬入照、重拍、刪除
- *   2. 彙整：依房間自動分組、搜尋、篩選
- *   3. 匯出：兩種格式二選一
- *      - 條列清單：每項一行，含勾選框與空白備註欄，列印帶去現場用
- *      - 完整證據包：每項含縮圖、AI 信心、時間、備註，作為退租依據存檔
- *
- * 匯出機制：把對應的 print-only 區塊用 v-if 渲染後呼叫 window.print()，
- * 瀏覽器列印對話框可以選擇實體列印或「另存 PDF」，兩種需求一次滿足。
- */
+// 點交縮圖總覽與獨立 PDF 匯出。
 import SmartCaptureCamera, {
   type CapturePayload,
 } from '@/src/components/handover/SmartCaptureCamera.vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
+import HandoverEvidenceDetail from '@/src/components/handover/HandoverEvidenceDetail.vue'
 import { useRouter } from 'vue-router'
 import {
   Camera,
   CheckCircle2,
-  AlertCircle,
   Plus,
-  Sparkles,
-  Clock,
   Building2,
   ArrowLeft,
   Trash2,
@@ -33,15 +19,8 @@ import {
   X,
 } from 'lucide-vue-next'
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card/index'
+import { Card, CardContent } from '@/components/ui/card/index'
 import { Button } from '@/components/ui/button/index'
-import { Badge } from '@/components/ui/badge/index'
 import {
   Select,
   SelectContent,
@@ -61,19 +40,29 @@ import {
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 
-import { useHandover, type HandoverItem, type CaptureQuality, type CaptureSource } from '@/src/composables/useHandover'
+import {
+  useHandover,
+  type HandoverItem,
+  type CaptureQuality,
+  type CaptureSource,
+  type CaptureAngle,
+} from '@/src/composables/useHandover'
 import {
   firstEvidenceOfPhase,
-  formatHandoverTimestamp,
   groupItemsByRoom,
-  hasEvidenceInPhase,
+  completedCaptureAngles,
 } from '@/src/utils/handover'
 // ---------- AR 相機彈窗狀態 ---------- //
+import { createHandoverPdf } from '@/src/utils/handover-pdf'
 const showCameraDialog = ref(false)
 const activeTargetItem = ref<HandoverItem | null>(null)
 
-function openCaptureModal(item: HandoverItem) {
+const captureAngle = ref<CaptureAngle>('front')
+const replacingId = ref<string>()
+function openCaptureModal(item: HandoverItem, angle: CaptureAngle = 'front', replacesId?: string) {
   if (busy.value) return
+  captureAngle.value = angle
+  replacingId.value = replacesId
   activeTargetItem.value = item
   showCameraDialog.value = true
 }
@@ -88,6 +77,8 @@ const {
   removeItem,
   addEvidence,
   retryAnalysis,
+  removeEvidence,
+  updateEvidenceNote,
   busy,
   analyzingItemId,
   error,
@@ -139,55 +130,55 @@ async function submitAddItem() {
 
 // ---------- 拍照與上傳存證---------- //
 
-function resizeImage(file: File, maxWidth = 1024): Promise<string> {
+function readOriginal(file: File): Promise<string> {
+  if (file.size > 8_000_000)
+    return Promise.reject(new Error('原始照片需小於 8 MB，請選擇較小的檔案。'))
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('image read failed'))
-    reader.onload = (event) => {
-      const img = new Image()
-      img.onerror = () => reject(new Error('image decode failed'))
-      img.onload = () => {
-        let width = img.naturalWidth
-        let height = img.naturalHeight
-
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width)
-          width = maxWidth
-        }
-
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-
-        const context = canvas.getContext('2d')
-        if (!context) {
-          reject(new Error('canvas context unavailable'))
-          return
-        }
-
-        context.drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', 0.82))
-      }
-
-      img.src = event.target?.result as string
-    }
-
+    reader.onerror = () => reject(new Error('無法讀取原始圖片。'))
+    reader.onload = () => resolve(String(reader.result))
     reader.readAsDataURL(file)
   })
 }
 
-async function processPhotoWithAI(item: HandoverItem, dataUrl: string, source: CaptureSource, quality: CaptureQuality | null) {
-  await addEvidence(item.id, 'baseline', { url: dataUrl, source, quality })
+async function processPhotoWithAI(
+  item: HandoverItem,
+  dataUrl: string,
+  source: CaptureSource,
+  quality: CaptureQuality | null,
+  originalName?: string,
+  photoTakenAt?: string,
+) {
+  await addEvidence(item.id, 'baseline', {
+    url: dataUrl,
+    source,
+    quality,
+    angle: captureAngle.value,
+    append: true,
+    replacesId: replacingId.value,
+    originalName,
+    photoTakenAt,
+  })
 }
 
 // 相機拍照回傳
 async function handlePhotoCaptured(payload: CapturePayload) {
   if (!activeTargetItem.value) return
-  await processPhotoWithAI(activeTargetItem.value, payload.dataUrl, payload.source, payload.quality)
+  await processPhotoWithAI(
+    activeTargetItem.value,
+    payload.dataUrl,
+    payload.source,
+    payload.quality,
+    payload.originalName,
+    payload.photoTakenAt,
+  )
 }
 
 // 本地檔案上傳
-async function capturePhoto(itemId: string) {
+async function capturePhoto(itemId: string, angle: CaptureAngle = 'front', replacesId?: string) {
+  if (busy.value) return
+  captureAngle.value = angle
+  replacingId.value = replacesId
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = 'image/*'
@@ -203,14 +194,15 @@ async function capturePhoto(itemId: string) {
     if (!targetItem) return
 
     try {
-      const dataUrl = await resizeImage(file)
-      await processPhotoWithAI(targetItem, dataUrl, 'file', null)
+      const dataUrl = await readOriginal(file)
+      await processPhotoWithAI(targetItem, dataUrl, 'file', null, file.name)
     } catch (cause) {
-      error.value = '無法讀取圖片，請重新選擇圖片檔案。'
+      error.value = cause instanceof Error ? cause.message : '無法讀取圖片，請重新選擇圖片檔案。'
       console.error('圖片壓縮或處理失敗:', cause)
     }
   }
 
+  input.oncancel = () => input.remove()
   input.click()
 }
 
@@ -223,7 +215,7 @@ const filteredItems = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return itemsOfCurrentProperty.value.filter((it) => {
     const baselineEv = firstEvidenceOfPhase(it, 'baseline')
-    if (onlyDone.value && !baselineEv) return false
+    if (onlyDone.value && completedCaptureAngles(it) < 3) return false
     if (!kw) return true
     return (
       it.name.toLowerCase().includes(kw) ||
@@ -238,44 +230,48 @@ const filteredItems = computed(() => {
 type Grouped = { room: string; items: HandoverItem[] }
 const groupedByRoom = computed<Grouped[]>(() => groupItemsByRoom(filteredItems.value))
 
-/** 條列清單匯出：用「所有項目」而不是 filteredItems，避免使用者忘記重置篩選 */
-const allGroupedByRoom = computed<Grouped[]>(() => groupItemsByRoom(itemsOfCurrentProperty.value))
-
 // ---------- 統計 ---------- //
 
 const stats = computed(() => {
   const all = itemsOfCurrentProperty.value
   return {
     total: all.length,
-    done: all.filter((it) => hasEvidenceInPhase(it, 'baseline')).length,
+    done: all.filter((it) => completedCaptureAngles(it) === 3).length,
     rooms: new Set(all.map((it) => it.room)).size,
   }
 })
 
 // ---------- 匯出（雙格式）---------- //
 
-type PrintMode = 'checklist' | 'full' | null
-const printMode = ref<PrintMode>(null)
-
-/** 觸發瀏覽器列印對話框；user 可選實體印或「另存為 PDF」。 */
-async function triggerPrint(mode: Exclude<PrintMode, null>) {
-  printMode.value = mode
-  // 等 v-if 把對應的 print-only 區塊渲染進 DOM 後再列印
-  await nextTick()
-  window.print()
-  // window.print() 在大多數瀏覽器是同步的，但保險起見也聽 afterprint
+const exporting = ref(false)
+const exportError = ref('')
+async function triggerPrint(mode: 'checklist' | 'full') {
+  if (!currentProperty.value || exporting.value || busy.value) return
+  exporting.value = true
+  exportError.value = ''
+  try {
+    const bytes = await createHandoverPdf(currentProperty.value, itemsOfCurrentProperty.value, mode)
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `入住點交${mode === 'full' ? '完整證據包' : '條列清單'}.pdf`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (cause) {
+    exportError.value = cause instanceof Error ? cause.message : 'PDF 匯出失敗，請再試一次。'
+  } finally {
+    exporting.value = false
+  }
 }
-
-function resetPrintMode() {
-  printMode.value = null
-}
-
-// 列印結束（或使用者取消）時把畫面回復成正常檢視
-onMounted(() => {
-  window.addEventListener('afterprint', resetPrintMode)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('afterprint', resetPrintMode)
+const selectedItemId = ref<string | null>(null)
+const selectedItem = computed(() =>
+  itemsOfCurrentProperty.value.find((it) => it.id === selectedItemId.value),
+)
+const detailOpen = computed({
+  get: () => Boolean(selectedItem.value),
+  set: (open: boolean) => {
+    if (!open) selectedItemId.value = null
+  },
 })
 
 // ---------- 工具 ---------- //
@@ -284,8 +280,9 @@ function firstBaseline(it: HandoverItem) {
   return firstEvidenceOfPhase(it, 'baseline')
 }
 
-function fmtDate(iso: string) {
-  return formatHandoverTimestamp(iso)
+async function archivePhoto(id: string) {
+  if (selectedItem.value && window.confirm('將這張照片移至歷程？原檔與紀錄會保留。'))
+    await removeEvidence(selectedItem.value.id, id)
 }
 </script>
 
@@ -342,21 +339,50 @@ function fmtDate(iso: string) {
             </div>
           </div>
 
-          <p v-if="currentProperty?.source === 'landlord'" class="mt-3 rounded-md bg-sky-50 p-2 text-xs text-sky-800">
+          <p
+            v-if="currentProperty?.source === 'landlord'"
+            class="mt-3 rounded-md bg-sky-50 p-2 text-xs text-sky-800"
+          >
             這是房東平台上的租約：你在這裡的點交照片與辨識結果，房東也看得到（只能看、不能改），退租時雙方可以對照。
           </p>
-          <div v-if="currentProperty" class="mt-4 grid grid-cols-3 gap-2 text-sm">
-            <div class="rounded-md border p-2">
-              <div class="text-xs text-muted-foreground">已存證</div>
-              <div class="font-semibold">{{ stats.done }} / {{ stats.total }} 項</div>
+          <div v-if="currentProperty" class="mt-5 space-y-5">
+            <div class="grid grid-cols-3 divide-x">
+              <div
+                v-for="entry in [
+                  { label: '點交項目', value: stats.total },
+                  { label: '已完成項目', value: stats.done },
+                  { label: '未完成項目', value: stats.total - stats.done },
+                ]"
+                :key="entry.label"
+                class="px-2 text-center"
+              >
+                <div class="text-xs text-muted-foreground sm:text-sm">{{ entry.label }}</div>
+                <div class="mt-2 text-4xl font-bold tracking-tight sm:text-5xl">
+                  {{ entry.value
+                  }}<span class="ml-1 text-sm font-normal text-muted-foreground">項</span>
+                </div>
+              </div>
             </div>
-            <div class="rounded-md border p-2">
-              <div class="text-xs text-muted-foreground">涵蓋房間</div>
-              <div class="font-semibold">{{ stats.rooms }} 個</div>
-            </div>
-            <div class="rounded-md border p-2">
-              <div class="text-xs text-muted-foreground">總點交項目</div>
-              <div class="font-semibold">{{ stats.total }} 項</div>
+            <div class="space-y-2">
+              <div class="flex justify-between text-xs text-muted-foreground">
+                <span>三個角度皆已拍攝即列為完成</span
+                ><strong class="text-primary"
+                  >{{ stats.total ? Math.round((stats.done / stats.total) * 100) : 0 }}%</strong
+                >
+              </div>
+              <div
+                role="progressbar"
+                aria-label="點交項目拍攝完成進度"
+                :aria-valuenow="stats.done"
+                :aria-valuemax="stats.total || 1"
+                aria-valuemin="0"
+                class="h-2.5 overflow-hidden rounded-full bg-muted"
+              >
+                <div
+                  class="h-full rounded-full bg-primary transition-all"
+                  :style="{ width: `${stats.total ? (stats.done / stats.total) * 100 : 0}%` }"
+                />
+              </div>
             </div>
           </div>
         </CardContent>
@@ -371,7 +397,9 @@ function fmtDate(iso: string) {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>新增點交項目</DialogTitle>
-              <DialogDescription>先填房間，再列出這個房間的所有物品，最後一次新增。</DialogDescription>
+              <DialogDescription
+                >先填房間，再列出這個房間的所有物品，最後一次新增。</DialogDescription
+              >
             </DialogHeader>
             <div class="space-y-3 py-2">
               <div class="space-y-1">
@@ -434,18 +462,29 @@ function fmtDate(iso: string) {
         </div>
 
         <Button variant="outline" size="sm" @click="onlyDone = !onlyDone">
-          {{ onlyDone ? '只看已存證' : '顯示全部' }}
+          {{ onlyDone ? '只看已完成' : '顯示全部' }}
         </Button>
 
         <!-- 兩種匯出：給使用者明確選擇 -->
-        <Button variant="outline" size="sm" @click="triggerPrint('checklist')">
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="busy || exporting || !stats.total"
+          @click="triggerPrint('checklist')"
+        >
           <FileText class="mr-1 h-4 w-4" /> 匯出條列清單
         </Button>
-        <Button size="sm" @click="triggerPrint('full')">
+        <Button
+          size="sm"
+          :disabled="busy || exporting || !stats.total"
+          @click="triggerPrint('full')"
+        >
           <FileDown class="mr-1 h-4 w-4" /> 匯出完整證據包
         </Button>
       </div>
 
+      <p v-if="exporting" role="status" class="text-sm text-muted-foreground">正在產生 PDF…</p>
+      <p v-if="exportError" role="alert" class="text-sm text-destructive">{{ exportError }}</p>
       <!-- 主內容：依房間分組，每組內以卡片網格呈現 -->
       <section v-if="currentProperty" class="space-y-6">
         <p v-if="groupedByRoom.length === 0" class="text-sm text-muted-foreground">
@@ -456,162 +495,50 @@ function fmtDate(iso: string) {
         </p>
 
         <div v-for="group in groupedByRoom" :key="group.room" class="space-y-3">
-          <h2 class="text-lg font-semibold border-l-4 border-primary pl-2">
+          <h2 class="text-base font-semibold">
             {{ group.room }}
             <span class="text-sm font-normal text-muted-foreground">
               （{{ group.items.length }} 項）
             </span>
           </h2>
 
-          <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Card v-for="it in group.items" :key="it.id">
-              <CardHeader class="pb-2 flex flex-row items-start justify-between">
-                <div>
-                  <CardTitle class="text-lg">{{ it.name }}</CardTitle>
-                  <CardDescription>{{ it.room }}</CardDescription>
+          <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            <button
+              v-for="it in group.items"
+              :key="it.id"
+              type="button"
+              class="handover-tile min-w-0 overflow-hidden rounded-lg border bg-card text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :aria-label="`查看${it.name}點交詳情`"
+              @click="selectedItemId = it.id"
+            >
+              <div class="relative flex aspect-[4/3] items-center justify-center bg-muted/40">
+                <img
+                  v-if="firstBaseline(it)"
+                  :src="firstBaseline(it)!.url"
+                  :alt="it.name"
+                  class="h-full w-full object-cover"
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                />
+                <div v-else class="flex flex-col items-center gap-2 px-2 text-muted-foreground">
+                  <Camera class="h-6 w-6" />
+                  <span class="text-xs">新增點交存證照片</span>
                 </div>
-                <div class="flex items-center gap-1">
-                  <Badge
-                    v-if="firstBaseline(it)"
-                    variant="secondary"
-                    class="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                  >
-                    <CheckCircle2 class="mr-1 h-3 w-3" /> 已存證
-                  </Badge>
-                  <Badge v-else variant="destructive">
-                    <AlertCircle class="mr-1 h-3 w-3" /> 待拍攝
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="text-destructive"
-                    :disabled="busy"
-                    @click="removeItem(it.id)"
-                  >
-                    <Trash2 class="h-4 w-4" />
-                  </Button>
+              </div>
+              <div class="space-y-1 p-3">
+                <div class="truncate text-sm font-semibold">{{ it.name }}</div>
+                <div class="flex items-center gap-1 text-xs text-muted-foreground">
+                  <CheckCircle2 v-if="completedCaptureAngles(it) === 3" class="h-3 w-3" />
+                  {{
+                    analyzingItemId === it.id
+                      ? '辨識中…'
+                      : completedCaptureAngles(it) === 3
+                        ? '已完成'
+                        : `待補齊 ${completedCaptureAngles(it)} / 3`
+                  }}
                 </div>
-              </CardHeader>
-              <CardContent class="space-y-2">
-                <!-- 狀態一：已拍攝（包含分析中與分析完成） -->
-                <div v-if="firstBaseline(it)" class="space-y-2">
-                  <!-- 照片縮圖 + 正在分析時的磨砂遮罩 -->
-                  <div class="relative aspect-video bg-muted rounded-md overflow-hidden">
-                    <img
-                      :src="firstBaseline(it)!.url"
-                      :alt="it.name"
-                      class="object-cover w-full h-full"
-                      referrerpolicy="no-referrer"
-                    />
-
-                    <div
-                      v-if="analyzingItemId === it.id"
-                      class="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] flex flex-col items-center justify-center text-white gap-2"
-                    >
-                      <div
-                        class="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent"
-                      ></div>
-                      <span class="text-xs tracking-wider animate-pulse font-medium"
-                        >AI 診斷特徵中...</span
-                      >
-                    </div>
-                  </div>
-
-                  <!-- 正在分析時的進度提示 -->
-                  <div
-                    v-if="analyzingItemId === it.id"
-                    class="p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2"
-                  >
-                    <Sparkles class="h-3.5 w-3.5 animate-spin shrink-0" />
-                    <span class="leading-tight">NVIDIA VLM 正在辨識損壞特徵與成因...</span>
-                  </div>
-
-                  <!-- 分析完成後的結果展示 -->
-                  <div v-else class="space-y-2">
-                    <div class="flex items-center gap-2 text-xs flex-wrap">
-                      <Badge
-                        :variant="
-                          firstBaseline(it)!.aiLabel?.includes('嚴重') ? 'destructive' : 'outline'
-                        "
-                        class="gap-1 font-semibold"
-                      >
-                        <Sparkles class="h-3 w-3" />
-                        {{ firstBaseline(it)!.aiLabel }}
-                      </Badge>
-                      <span class="text-muted-foreground flex items-center gap-1">
-                        <Clock class="h-3 w-3" />
-                        {{ fmtDate(firstBaseline(it)!.capturedAt) }}
-                      </span>
-                    </div>
-                    <p v-if="firstBaseline(it)!.integrityNote" class="text-xs" :class="firstBaseline(it)!.captureSource === 'camera' ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400'">
-                      {{ firstBaseline(it)!.integrityNote }}
-                    </p>
-
-                    <Button
-                      v-if="!firstBaseline(it)!.vlmResult"
-                      variant="outline"
-                      size="sm"
-                      :disabled="busy"
-                      @click="retryAnalysis(it.id, firstBaseline(it)!.id)"
-                      >重新辨識</Button
-                    >
-                    <div
-                      v-if="firstBaseline(it)!.note"
-                      class="p-2.5 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed break-words"
-                    >
-                      {{ firstBaseline(it)!.note }}
-                    </div>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      class="w-full"
-                      :disabled="busy"
-                      @click="openCaptureModal(it)"
-                    >
-                      重拍
-                    </Button>
-                  </div>
-                </div>
-
-                <!-- 狀態二：尚未拍攝照片 -->
-                <div
-                  v-else
-                  class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center p-3 gap-2"
-                >
-                  <div class="text-center">
-                    <span class="text-sm font-medium text-foreground">新增點交存證照片</span>
-                    <p class="text-xs text-muted-foreground mt-0.5">
-                      系統將自動進行清晰度與瑕疵辨識
-                    </p>
-                  </div>
-
-                  <!-- 雙功能選擇按鈕 -->
-                  <div class="flex gap-2 w-full max-w-[240px] mt-1">
-                    <!-- 1. 開啟相機鏡頭 (調用 SmartCaptureCamera) -->
-                    <Button
-                      size="sm"
-                      class="flex-1 text-xs"
-                      :disabled="busy"
-                      @click="openCaptureModal(it)"
-                    >
-                      <Camera class="mr-1 h-3.5 w-3.5" /> 開啟相機
-                    </Button>
-
-                    <!-- 2. 本機相簿 / 檔案上傳 (調用原生 file input) -->
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      class="flex-1 text-xs"
-                      :disabled="busy"
-                      @click="capturePhoto(it.id)"
-                    >
-                      📁 檔案上傳
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            </button>
           </div>
         </div>
       </section>
@@ -624,94 +551,33 @@ function fmtDate(iso: string) {
       </Card>
     </div>
 
-    <!-- =================== 匯出版面：條列清單 =================== -->
-    <!-- 平時 display:none，由 @media print 啟用顯示。內容刻意極簡，
-         一頁可塞多項，附勾選框與空白備註欄供現場手寫。 -->
-    <div v-if="printMode === 'checklist'" class="print-only print-checklist">
-      <div class="print-header">
-        <h1 class="text-2xl font-bold">入住點交條列清單</h1>
-        <div v-if="currentProperty" class="text-sm mt-1">
-          租屋處：{{ currentProperty.alias }}（{{ currentProperty.address }}）
-        </div>
-        <div class="text-xs">匯出時間：{{ fmtDate(new Date().toISOString()) }}</div>
-        <div class="text-xs mt-2 text-gray-600">
-          說明：請於點交當天逐項勾選並於備註欄記錄物品現況，回家後再對照拍攝存證。
-        </div>
-      </div>
-
-      <div v-for="group in allGroupedByRoom" :key="group.room" class="checklist-room">
-        <h2 class="checklist-room-title">{{ group.room }}</h2>
-        <table class="checklist-table">
-          <thead>
-            <tr>
-              <th style="width: 24px">☐</th>
-              <th style="width: 30%">物品</th>
-              <th>現況備註</th>
-              <th style="width: 18%">已拍攝</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="it in group.items" :key="it.id">
-              <td>☐</td>
-              <td>{{ it.name }}</td>
-              <td>&nbsp;</td>
-              <td>{{ firstBaseline(it) ? '✓' : '' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="print-signature">
-        <div>租客簽名：__________________________</div>
-        <div>房東簽名：__________________________</div>
-        <div>日期：______年______月______日</div>
-      </div>
-    </div>
-
-    <!-- =================== 匯出版面：完整證據包 =================== -->
-    <!-- 每項一個區塊，含縮圖、AI 信心、時間、備註，作為退租依據存檔。 -->
-    <div v-if="printMode === 'full'" class="print-only print-full">
-      <div class="print-header">
-        <h1 class="text-2xl font-bold">入住點交完整證據包</h1>
-        <div v-if="currentProperty" class="text-sm mt-1">
-          租屋處：{{ currentProperty.alias }}（{{ currentProperty.address }}）
-        </div>
-        <div class="text-xs">匯出時間：{{ fmtDate(new Date().toISOString()) }}</div>
-        <div class="text-xs mt-1">
-          共 {{ stats.total }} 項，其中 {{ stats.done }} 項已存證，涵蓋 {{ stats.rooms }} 個房間。
-        </div>
-      </div>
-
-      <div v-for="group in allGroupedByRoom" :key="group.room" class="full-room">
-        <h2 class="full-room-title">{{ group.room }}</h2>
-        <div class="full-items">
-          <div v-for="it in group.items" :key="it.id" class="full-item">
-            <div class="full-item-photo">
-              <img
-                v-if="firstBaseline(it)"
-                :src="firstBaseline(it)!.url"
-                :alt="it.name"
-                referrerpolicy="no-referrer"
-              />
-              <div v-else class="full-item-no-photo">（未拍攝）</div>
-            </div>
-            <div class="full-item-meta">
-              <div class="full-item-name">{{ it.name }}</div>
-              <div v-if="firstBaseline(it)" class="full-item-line">
-                拍攝時間：{{ fmtDate(firstBaseline(it)!.capturedAt) }}
-              </div>
-              <p v-if="firstBaseline(it)?.integrityNote" class="print-integrity">{{ firstBaseline(it)!.integrityNote }}</p>
-              <div v-if="firstBaseline(it)?.aiConfidence" class="full-item-line">
-                AI 清晰度：{{ ((firstBaseline(it)!.aiConfidence ?? 0) * 100).toFixed(0) }}%
-              </div>
-              <div v-if="firstBaseline(it)?.note" class="full-item-note">
-                備註：{{ firstBaseline(it)!.note }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <Dialog v-model:open="detailOpen">
+      <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-5xl">
+        <template v-if="selectedItem">
+          <DialogHeader>
+            <DialogTitle>{{ selectedItem.name }}</DialogTitle>
+            <DialogDescription>{{ selectedItem.room }} · 入住前點交</DialogDescription>
+          </DialogHeader>
+          <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
+          <HandoverEvidenceDetail
+            :item="selectedItem"
+            :property="currentProperty"
+            :busy="busy"
+            @capture="(angle, id) => openCaptureModal(selectedItem!, angle, id)"
+            @upload="(angle, id) => capturePhoto(selectedItem!.id, angle, id)"
+            @save-note="(id, note, angle) => updateEvidenceNote(selectedItem!.id, id, note, angle)"
+            @remove-photo="archivePhoto"
+            @retry="(id) => retryAnalysis(selectedItem!.id, id)"
+          />
+          <DialogFooter>
+            <Button variant="ghost" :disabled="busy" @click="removeItem(selectedItem.id)">
+              <Trash2 class="mr-1 h-4 w-4" /> 刪除項目
+            </Button>
+            <Button variant="outline" @click="detailOpen = false">關閉</Button>
+          </DialogFooter>
+        </template>
+      </DialogContent>
+    </Dialog>
 
     <!-- AR 智慧相機彈窗 -->
     <SmartCaptureCamera
@@ -724,129 +590,3 @@ function fmtDate(iso: string) {
     />
   </div>
 </template>
-
-<style scoped>
-/* ---------- 預設：螢幕顯示時，print-only 區塊隱藏 ---------- */
-.print-only {
-  display: none;
-}
-
-/* ---------- 列印 ---------- */
-@media print {
-  /* 列印時：原本的螢幕內容隱藏，只留 print-only */
-  :deep(.screen-only) {
-    display: none !important;
-  }
-  .screen-only {
-    display: none !important;
-  }
-  .print-only {
-    display: block !important;
-  }
-
-  /* 統一字級與邊距，避免瀏覽器預設過大 */
-  .print-header {
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #999;
-  }
-  .print-integrity {
-    font-size: 10pt;
-    color: #444;
-    margin-top: 2pt;
-  }
-}
-
-/* ---------- 條列清單版面 ---------- */
-.print-checklist .checklist-room {
-  margin-top: 1rem;
-  page-break-inside: avoid;
-}
-.print-checklist .checklist-room-title {
-  font-size: 1rem;
-  font-weight: 700;
-  margin-bottom: 0.25rem;
-  background: #f0f0f0;
-  padding: 0.25rem 0.5rem;
-}
-.print-checklist .checklist-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-.print-checklist .checklist-table th,
-.print-checklist .checklist-table td {
-  border: 1px solid #999;
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-}
-.print-checklist .checklist-table th {
-  background: #fafafa;
-  font-weight: 600;
-}
-.print-signature {
-  margin-top: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  font-size: 0.9rem;
-  page-break-inside: avoid;
-}
-
-/* ---------- 完整證據包版面 ---------- */
-.print-full .full-room {
-  margin-top: 1rem;
-  page-break-inside: avoid;
-}
-.print-full .full-room-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  border-left: 4px solid #444;
-  padding-left: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-.print-full .full-item {
-  display: flex;
-  gap: 0.75rem;
-  border: 1px solid #ccc;
-  padding: 0.5rem;
-  margin-bottom: 0.5rem;
-  page-break-inside: avoid;
-}
-.print-full .full-item-photo {
-  width: 140px;
-  height: 100px;
-  flex-shrink: 0;
-  border: 1px solid #ddd;
-  background: #f4f4f4;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.print-full .full-item-photo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.print-full .full-item-no-photo {
-  font-size: 0.8rem;
-  color: #999;
-}
-.print-full .full-item-meta {
-  flex: 1;
-  font-size: 0.85rem;
-}
-.print-full .full-item-name {
-  font-weight: 700;
-  font-size: 1rem;
-  margin-bottom: 0.25rem;
-}
-.print-full .full-item-line {
-  color: #555;
-  font-size: 0.8rem;
-}
-.print-full .full-item-note {
-  margin-top: 0.25rem;
-}
-</style>

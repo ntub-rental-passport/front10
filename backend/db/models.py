@@ -279,6 +279,16 @@ class InspectionRecord(Base):
 
     rental = relationship("Rental", back_populates="inspection_records")
 
+class InspectionPhotoDetail(Base):
+    __tablename__ = 'inspection_photo_details'
+    record_id = Column(Integer, ForeignKey('inspection_records.id', ondelete='CASCADE'), primary_key=True)
+    item_id = Column(Integer, ForeignKey('inspection_items.id', ondelete='CASCADE'), nullable=False, index=True)
+    angle = Column(String(20), nullable=False, default='other')
+    provenance = Column(JSON, nullable=False, default=dict)
+    superseded_by = Column(Integer, nullable=True)
+    removed_at = Column(Timestamp, nullable=True)
+
+
 class MessageBoard(Base):
     __tablename__ = 'message_boards'
     id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)

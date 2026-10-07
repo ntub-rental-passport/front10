@@ -1,12 +1,20 @@
-import type {
-  EvidencePhase,
-  HandoverEvidence,
-  HandoverItem,
-} from '@/src/composables/useHandover'
+import type { EvidencePhase, HandoverEvidence, HandoverItem } from '@/src/composables/useHandover'
 
 export interface GroupedHandoverItems {
   room: string
   items: HandoverItem[]
+}
+
+export const captureAngles = [
+  { value: 'front', label: '正面' },
+  { value: 'side', label: '側面' },
+  { value: 'detail', label: '局部／瑕疵特寫' },
+] as const
+
+export function completedCaptureAngles(item: HandoverItem): number {
+  return captureAngles.filter((angle) =>
+    item.evidences.some((e) => e.phase === 'baseline' && e.angle === angle.value),
+  ).length
 }
 
 export function createMockEvidenceUrl(seed: string): string {
@@ -19,7 +27,7 @@ export function hasEvidenceInPhase(item: HandoverItem, phase: EvidencePhase): bo
 
 export function firstEvidenceOfPhase(
   item: HandoverItem,
-  phase: EvidencePhase
+  phase: EvidencePhase,
 ): HandoverEvidence | null {
   return item.evidences.find((evidence) => evidence.phase === phase) ?? null
 }
@@ -39,7 +47,7 @@ export function groupItemsByRoom(items: HandoverItem[]): GroupedHandoverItems[] 
 
   return Array.from(groups.entries())
     .sort(([, leftItems], [, rightItems]) =>
-      leftItems[0].createdAt.localeCompare(rightItems[0].createdAt)
+      leftItems[0].createdAt.localeCompare(rightItems[0].createdAt),
     )
     .map(([room, roomItems]) => ({ room, items: roomItems }))
 }
@@ -48,8 +56,8 @@ export function formatHandoverTimestamp(iso: string): string {
   const date = new Date(iso)
 
   return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(
-    date.getDate()
+    date.getDate(),
   ).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes()
+    date.getMinutes(),
   ).padStart(2, '0')}`
 }
