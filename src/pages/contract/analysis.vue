@@ -12,6 +12,7 @@ import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-rep
 import { buildContractAssessments, gateRemoteAssessments, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
 import { contractSectionLabel, explainContractRisk } from '@/src/utils/contract-risk-explanation'
 import RiskExplanation from './RiskExplanation.vue'
+import AnalysisWaiting from './AnalysisWaiting.vue'
 import { Button } from '@/components/ui/button/index'
 import {
   AlertTriangle,
@@ -385,19 +386,38 @@ const riskTabs = computed(() => [
  */
 type AiAnalysisState = 'loading' | 'ok' | 'failed'
 const aiAnalysisState = ref<AiAnalysisState>('loading')
+const analysisError = ref('')
+let analysisController: AbortController | null = null
+
+function stopAnalysis() {
+  analysisController?.abort()
+  analysisController = null
+}
+
+function returnToEditor() {
+  stopAnalysis()
+  void router.push('/app/contract/editor')
+}
 
 async function loadBackendRagAndAiAnalysis() {
+  if (analysisController) return
   if (!ocrResult?.text) {
+    analysisError.value = '找不到契約文字，請返回校對或重新上傳。'
     aiAnalysisState.value = 'failed'
     return
   }
 
   aiAnalysisState.value = 'loading'
+  analysisError.value = ''
+  const controller = new AbortController()
+  analysisController = controller
+  const timeout = setTimeout(() => controller.abort(), 240_000)
   try {
     const response = await fetch(`${API_BASE_URL}/contract/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
+      signal: controller.signal,
       body: JSON.stringify({
         ocr_text: ocrResult.text,
         page_texts: ocrResult.pageTexts ?? [ocrResult.text],
@@ -411,10 +431,10 @@ async function loadBackendRagAndAiAnalysis() {
       return
     }
     if (!response.ok) {
-      aiAnalysisState.value = 'failed'
-      return
+      throw new Error('AI 分析服務暫時無法完成請求，請稍後重試。')
     }
     const data = await response.json()
+    if (analysisController !== controller) return
     if (!data || !Array.isArray(data.rag_risks) || !Array.isArray(data.ai_risks)) {
       throw new Error('分析回應格式不完整')
     }
@@ -424,8 +444,15 @@ async function loadBackendRagAndAiAnalysis() {
     risks.value = [...localFieldRisks, ...gateRemoteAssessments(data.rag_risks, 'rag', pages.value), ...gateRemoteAssessments(data.ai_risks, 'ai', pages.value)]
     aiAnalysisState.value = 'ok'
   } catch (error) {
+    if (analysisController !== controller) return
+    analysisError.value = controller.signal.aborted
+      ? '分析等待時間較長，已停止本次等待。您可以重新分析，或先檢視本機規則檢查結果。'
+      : 'AI 分析暫時未完成。您的校對內容仍然保留，可以稍後重新分析。'
     console.error('後端 API 呼叫失敗，維持本機檢核結果:', error)
     aiAnalysisState.value = 'failed'
+  } finally {
+    clearTimeout(timeout)
+    if (analysisController === controller) analysisController = null
   }
 }
 
@@ -580,15 +607,13 @@ function beginChatDrag(event: PointerEvent): void {
 
 onBeforeUnmount(() => {
   endChatDrag()
+  stopAnalysis()
 })
 
 onMounted(() => {
   void loadBackendRagAndAiAnalysis()
 })
 
-onBeforeUnmount(() => {
-  endChatDrag()
-})
 async function fetchAiChatResponse(
   userMessage: string,
   activeRisk: RiskItem | undefined
@@ -686,7 +711,9 @@ async function exportAnalysisReport(): Promise<void> {
 </script>
 
 <template>
-  <main class="contract-analysis-page">
+  <Transition name="analysis-reveal" mode="out-in">
+  <AnalysisWaiting v-if="aiAnalysisState === 'loading'" :page-count="pageCount" @back="returnToEditor" />
+  <main v-else class="contract-analysis-page">
     <header class="analysis-page-header">
       <div>
         <button type="button" class="analysis-back-link" @click="router.push('/app/contract/editor')">
@@ -713,6 +740,12 @@ async function exportAnalysisReport(): Promise<void> {
         </Button>
       </div>
     </header>
+
+    <div v-if="aiAnalysisState === 'failed'" class="analysis-wait-error" role="alert">
+      <AlertTriangle :size="20" aria-hidden="true" />
+      <p>{{ analysisError }}<br><small>以下為本機規則檢查，並非完整 AI 分析結果。</small></p>
+      <Button v-if="ocrResult?.text" variant="outline" @click="loadBackendRagAndAiAnalysis">重新分析</Button>
+    </div>
 
     <div
       v-if="exportDialogOpen"
@@ -782,7 +815,7 @@ async function exportAnalysisReport(): Promise<void> {
           <p v-else>目前規則未確認高風險；待確認與未完成分析不代表沒有問題。</p>
           <p>{{ assessmentSummary.pending }} 項待確認，不計入風險數量。</p>
         </div>
-        <span class="analysis-status-pill" :class="{ 'is-incomplete': aiAnalysisState !== 'ok' }"><CheckCircle2 :size="15" /> 欄位檢查完成／{{ aiAnalysisState === 'ok' ? 'AI 候選分析完成' : aiAnalysisState === 'loading' ? 'AI 分析中' : 'AI 分析未完成' }}</span>
+        <span class="analysis-status-pill" :class="{ 'is-incomplete': aiAnalysisState !== 'ok' }"><CheckCircle2 :size="15" /> 欄位檢查完成／{{ aiAnalysisState === 'ok' ? 'AI 候選分析完成' : 'AI 分析未完成' }}</span>
       </div>
       <div class="analysis-stats">
         <button type="button" class="is-high" :aria-pressed="activeRiskTab === 'risk' && severityFilter === 'high'" @click="filterSeverity('high')"><span>HIGH · 高風險</span><strong>{{ highRiskCount }}</strong><small>{{ aiAnalysisState === 'ok' ? '規則確認項目' : '完整統計尚未完成' }}</small></button>
@@ -1164,6 +1197,16 @@ async function exportAnalysisReport(): Promise<void> {
 
 
   </main>
+  </Transition>
 </template>
 
 <style scoped src="./analysis.css"></style>
+<style scoped>
+@reference "../../index.css";
+.analysis-reveal-enter-active, .analysis-reveal-leave-active { transition: opacity .25s ease, transform .25s ease; }
+.analysis-reveal-enter-from, .analysis-reveal-leave-to { opacity: 0; transform: translateY(6px); }
+.analysis-wait-error { @apply mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900; }
+.analysis-wait-error p { @apply min-w-0 flex-1; }
+.analysis-wait-error small { @apply text-xs; }
+@media (prefers-reduced-motion: reduce) { .analysis-reveal-enter-active, .analysis-reveal-leave-active { transition: none; } }
+</style>
