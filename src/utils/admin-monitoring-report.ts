@@ -425,9 +425,11 @@ export function lastOutageNote(rows: EventRow[], service: string): string | null
   return `上次斷線：${formatShortDateTime(row.startedAt)}${duration}`
 }
 
-/** AI 模型卡上的備援說明。桌機一睡，有沒有備援決定了分析是變慢還是直接失敗。 */
-export function nvidiaBackupNote(config: ConfigItem[] | null): string | null {
+/** Ollama 備援卡說明主要模型的設定，讓管理員知道是否每次都會退回較慢的 CPU。 */
+export function primaryModelNote(config: ConfigItem[] | null): string | null {
   const item = config?.find((entry) => entry.key === 'nvidia')
   if (!item) return null
-  return item.ok ? 'NVIDIA 備援已設定：桌機連不上時會改用它' : 'NVIDIA 備援未設定：桌機連不上時，分析會直接失敗'
+  return item.ok
+    ? 'NVIDIA 是主要模型；Ollama 只在 NVIDIA 失敗時才會用到'
+    : 'NVIDIA 金鑰未設定：每次分析都會落到 CPU 上的 Ollama，會很慢'
 }
