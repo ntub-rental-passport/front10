@@ -7,12 +7,14 @@ import {
   Chart as ChartJS,
   Legend,
   LinearScale,
+  LineElement,
+  PointElement,
   Tooltip,
   type ChartData,
   type ChartOptions,
   type Plugin,
 } from 'chart.js'
-import { Bar } from 'vue-chartjs'
+import { Bar, Line } from 'vue-chartjs'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/index'
 import type { PlanDistributionSegment, UserDirectoryRow } from '@/src/utils/admin-user-directory'
@@ -24,7 +26,7 @@ import { useNow } from '@/src/composables/useNow'
 import type { Subscription } from '@/src/mocks/admin/subscription'
 import { monthlyCheckPackPurchases } from '@/src/utils/admin-addon-purchases'
 
-ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend)
+ChartJS.register(BarElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend)
 
 const props = defineProps<{
   rows: UserDirectoryRow[]
@@ -37,7 +39,7 @@ const segments = computed(() => planDistribution(props.rows, role.value, now.val
 const purchaseMonths = computed(() => monthlyCheckPackPurchases(props.subscriptions, now.value))
 const hasPurchases = computed(() => purchaseMonths.value.some((month) => month.packs > 0))
 
-function barLabelPlugin(drawZeros: boolean): Plugin<'bar'> {
+function valueLabelPlugin(drawZeros: boolean): Plugin<'bar' | 'line'> {
   return {
     id: 'barValueLabels',
     afterDatasetsDraw(chart) {
@@ -51,8 +53,7 @@ function barLabelPlugin(drawZeros: boolean): Plugin<'bar'> {
         chart.getDatasetMeta(datasetIndex).data.forEach((element, index) => {
           const value = dataset.data[index]
           if (typeof value !== 'number' || (!drawZeros && value === 0)) return
-          const bar = element as BarElement
-          ctx.fillText(String(value), bar.x, bar.y - 6)
+          ctx.fillText(String(value), element.x, element.y - 6)
         })
       })
       ctx.restore()
@@ -60,8 +61,8 @@ function barLabelPlugin(drawZeros: boolean): Plugin<'bar'> {
   }
 }
 
-const planLabelPlugin = barLabelPlugin(true)
-const purchaseLabelPlugin = barLabelPlugin(false)
+const planLabelPlugin = valueLabelPlugin(true)
+const purchaseLabelPlugin = valueLabelPlugin(false)
 const planColors = computed(() => [
   chartColor('series-3'),
   chartColor('series-2'),
@@ -115,18 +116,22 @@ const chartOptions = computed<ChartOptions<'bar'>>(() => ({
   },
 }))
 
-const purchaseChartData = computed<ChartData<'bar'>>(() => ({
+const purchaseChartData = computed<ChartData<'line'>>(() => ({
   labels: purchaseMonths.value.map((month) => month.label),
   datasets: [
     {
       data: purchaseMonths.value.map((month) => month.packs),
-      backgroundColor: chartColor('attention'),
-      borderRadius: 4,
-      maxBarThickness: 48,
+      borderColor: chartColor('attention'),
+      borderWidth: 2,
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      pointBackgroundColor: chartColor('attention'),
+      fill: false,
     },
   ],
 }))
-const purchaseChartOptions = computed<ChartOptions<'bar'>>(() => ({
+const purchaseChartOptions = computed<ChartOptions<'line'>>(() => ({
   responsive: true,
   maintainAspectRatio: false,
   layout: { padding: { top: 24 } },
@@ -231,7 +236,7 @@ function selectPlan(planKey: PlanKey): void {
           近 12 個月每月購買的契約檢查包數量（不含管理員贈送）
         </p>
         <div v-if="hasPurchases" class="relative h-60 min-w-0">
-          <Bar
+          <Line
             :data="purchaseChartData"
             :options="purchaseChartOptions"
             :plugins="[purchaseLabelPlugin]"
