@@ -210,8 +210,8 @@ async function createEvidencePack(
   const groups = groupItemsByRoom(items)
   const summaries = [
     `點交項目  ${items.length} 項`,
-    `已完成  ${items.filter(it => completedCaptureAngles(it) === 3).length} 項`,
-    `未完成  ${items.filter(it => completedCaptureAngles(it) < 3).length} 項`,
+    `已完成  ${items.filter(it => completedCaptureAngles(it) === 2).length} 項`,
+    `未完成  ${items.filter(it => completedCaptureAngles(it) < 2).length} 項`,
   ]
   summaries.forEach((value, i) => {
     const w = (width - 24) / 3

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { Camera, Plus, ChevronLeft, ChevronRight, Download, CheckCircle2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import type { HandoverItem, HandoverProperty, CaptureAngle } from '@/src/composables/useHandover'
@@ -21,7 +22,9 @@ const emit = defineEmits<{
   saveNote: [id: string, note: string, angle: CaptureAngle]
   removePhoto: [id: string]
   retry: [id: string]
+  close: []
 }>()
+const desktop = useMediaQuery('(min-width: 640px)')
 const activeId = ref('')
 const angle = ref<CaptureAngle>('front')
 const showHistory = ref(false)
@@ -78,22 +81,28 @@ const fmt = formatHandoverTimestamp
 
 <template>
   <div class="space-y-5 min-w-0">
-    <section class="rounded-xl border p-4 space-y-3">
+    <details
+      class="capture-panel rounded-xl border p-4 space-y-3"
+      :open="desktop || !photos.length"
+    >
+      <summary class="cursor-pointer text-sm font-semibold sm:hidden">
+        拍攝角度 · {{ progress }} / 2 已完成
+      </summary>
       <div class="flex items-center justify-between text-sm">
-        <strong>拍攝進度 {{ progress }} / 3</strong
+        <strong>拍攝進度 {{ progress }} / 2</strong
         ><span class="text-muted-foreground">{{ photos.length }} 張照片</span>
       </div>
       <div
         role="progressbar"
         aria-label="建議角度拍攝進度"
         :aria-valuenow="progress"
-        :aria-valuemax="3"
+        :aria-valuemax="2"
         aria-valuemin="0"
         class="h-2 overflow-hidden rounded-full bg-muted"
       >
         <div
           class="h-full rounded-full bg-primary transition-all"
-          :style="{ width: `${(progress / 3) * 100}%` }"
+          :style="{ width: `${(progress / 2) * 100}%` }"
         />
       </div>
       <div class="grid grid-cols-3 gap-2">
@@ -124,7 +133,7 @@ const fmt = formatHandoverTimestamp
           ><Plus class="mr-1 h-4 w-4" />新增照片</Button
         >
       </div>
-    </section>
+    </details>
 
     <div v-if="photo" class="grid min-w-0 gap-5 md:grid-cols-2">
       <div class="min-w-0 space-y-3">
@@ -207,8 +216,8 @@ const fmt = formatHandoverTimestamp
             >重新辨識</Button
           >
         </section>
-        <section class="rounded-xl border p-4">
-          <h3 class="mb-3 text-sm font-semibold">存證資訊</h3>
+        <details class="rounded-xl border p-4" :open="desktop">
+          <summary class="mb-3 cursor-pointer text-sm font-semibold">存證資訊</summary>
           <dl
             class="evidence-info grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-3 text-xs leading-relaxed"
           >
@@ -262,8 +271,9 @@ const fmt = formatHandoverTimestamp
           <p v-if="downloadError" role="alert" class="mt-2 text-xs text-destructive">
             {{ downloadError }}
           </p>
-        </section>
-        <section class="space-y-2">
+        </details>
+        <details class="space-y-2 rounded-xl border p-4" :open="desktop">
+          <summary class="cursor-pointer text-sm font-semibold">角度分類與備註</summary>
           <label for="evidence-angle" class="text-sm font-semibold">這張照片的角度</label>
           <select
             id="evidence-angle"
@@ -315,12 +325,27 @@ const fmt = formatHandoverTimestamp
               {{ fmt(entry.updatedAt) }} · {{ entry.previous }} → {{ entry.current }}
             </p>
           </details>
-        </section>
+        </details>
       </div>
     </div>
     <p v-else class="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
       新增點交存證照片
     </p>
+    <div
+      class="mobile-evidence-actions sticky bottom-0 z-10 grid grid-cols-3 gap-2 border-t bg-background py-3 sm:hidden"
+    >
+      <Button
+        variant="outline"
+        size="sm"
+        :disabled="busy || !photo || historical"
+        @click="emit('capture', photo?.angle ?? 'front', photo?.id)"
+        >重新拍攝</Button
+      >
+      <Button variant="outline" size="sm" :disabled="busy" @click="emit('upload', angle)"
+        >新增照片</Button
+      >
+      <Button size="sm" @click="emit('close')">完成</Button>
+    </div>
   </div>
 </template>
 
@@ -331,5 +356,10 @@ const fmt = formatHandoverTimestamp
 .evidence-info dd {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+@media (max-width: 639px) {
+  .mobile-evidence-actions {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
 }
 </style>

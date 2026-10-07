@@ -11,7 +11,11 @@
  * （那會讓比對失去意義）。要修搬入照請回 baseline 頁。
  */
 
-import { computed } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
+import { computed, ref } from 'vue'
+import HandoverOverviewHeader from '@/src/components/handover/HandoverOverviewHeader.vue'
+import HandoverAddItemsDialog from '@/src/components/handover/HandoverAddItemsDialog.vue'
+import { Input } from '@/components/ui/input'
 import { useRouter } from 'vue-router'
 import {
   Camera,
@@ -21,7 +25,7 @@ import {
   Sparkles,
   Clock,
   Building2,
-  ArrowLeft,
+  Search,
   ArrowLeftRight,
   Lock,
 } from 'lucide-vue-next'
@@ -35,15 +39,6 @@ import {
 } from '@/components/ui/card/index'
 import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select/index'
-import { Label } from '@/components/ui/label/index'
-
 import { useHandover, type HandoverDiff } from '@/src/composables/useHandover'
 import {
   firstEvidenceOfPhase,
@@ -58,6 +53,7 @@ const {
   selectProperty,
   itemsOfCurrentProperty,
   addEvidence,
+  addItems,
   runAutoDiff,
   retryAnalysis,
   busy,
@@ -138,6 +134,20 @@ const itemsWithoutBaseline = computed(() =>
   itemsOfCurrentProperty.value.filter((it) => !hasEvidenceInPhase(it, 'baseline')),
 )
 
+const keyword = ref('')
+const filteredItems = computed(() => {
+  const query = keyword.value.trim().toLowerCase()
+  return itemsWithBaseline.value.filter(
+    (item) =>
+      !query ||
+      [
+        item.name,
+        item.room,
+        ...item.evidences.flatMap((e) => [e.note ?? '', e.userNote ?? '']),
+      ].some((value) => value.toLowerCase().includes(query)),
+  )
+})
+
 // ---------- 統計 ---------- //
 
 const stats = computed(() => {
@@ -199,6 +209,7 @@ function exportPdf() {
       `已比對項目：${stats.value.diffDone} / ${stats.value.total}`,
   )
 }
+const desktop = useMediaQuery('(min-width: 640px)')
 </script>
 
 <template>
@@ -214,63 +225,31 @@ function exportPdf() {
       {{ error }}
       <Button variant="outline" size="sm" :disabled="busy" @click="reload">重新載入</Button>
     </div>
-    <!-- 麵包屑 + 標題 -->
-    <div class="space-y-2">
-      <Button variant="ghost" size="sm" class="-ml-2" @click="router.push('/app/handover')">
-        <ArrowLeft class="mr-1 h-4 w-4" /> 返回點交總覽
-      </Button>
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight">退租前點交與比對</h1>
-        <p class="text-muted-foreground">
-          對照搬入時的存證照重新拍攝，系統自動比對差異並產出 PDF 證據包。
-        </p>
-      </div>
-    </div>
-
-    <!-- 租屋處選擇器 -->
-    <Card>
-      <CardContent class="pt-6">
-        <div class="flex flex-wrap items-end gap-3">
-          <div class="flex-1 min-w-[240px] space-y-1">
-            <Label class="flex items-center gap-1 text-xs">
-              <Building2 class="h-3 w-3" /> 目前租屋處
-            </Label>
-            <Select
-              :disabled="busy"
-              :model-value="currentProperty?.id ?? ''"
-              @update:model-value="(v) => selectProperty(String(v))"
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="請選擇租屋處" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="p in properties" :key="p.id" :value="p.id">
-                  {{ p.alias }}（{{ p.address }}）
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <!-- 統計 -->
-        <div v-if="currentProperty" class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-          <div class="rounded-md border p-2">
-            <div class="text-xs text-muted-foreground">可比對項目（搬入已存證）</div>
-            <div class="font-semibold">{{ stats.total }} 項</div>
-          </div>
-          <div class="rounded-md border p-2">
-            <div class="text-xs text-muted-foreground">退租已存證</div>
-            <div class="font-semibold">{{ stats.checkoutDone }} / {{ stats.total }}</div>
-          </div>
-          <div class="rounded-md border p-2">
-            <div class="text-xs text-muted-foreground">已完成比對</div>
-            <div class="font-semibold">{{ stats.diffDone }} / {{ stats.total }}</div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <HandoverOverviewHeader
+      phase="checkout"
+      title="退租前點交與比對"
+      :properties="properties"
+      :property="currentProperty"
+      :total="stats.total"
+      :done="stats.checkoutDone"
+      :busy="busy"
+      @select="selectProperty"
+      @back="router.push('/app/handover')"
+    >
+      <template #actions><HandoverAddItemsDialog :busy="busy" :add-items="addItems" /></template>
+    </HandoverOverviewHeader>
 
     <!-- 工具列 -->
     <div v-if="currentProperty" class="flex flex-wrap items-center gap-2 border-b pb-3">
+      <div class="relative min-w-[200px] flex-1">
+        <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          v-model="keyword"
+          aria-label="搜尋物品、房間或備註"
+          placeholder="搜尋物品、房間或備註"
+          class="pl-8"
+        />
+      </div>
       <Button size="sm" @click="handleRunDiff" :disabled="busy || stats.checkoutDone === 0">
         <ArrowLeftRight class="mr-1 h-4 w-4" /> 執行自動差異比對
       </Button>
@@ -292,113 +271,136 @@ function exportPdf() {
         建立搬入照。
       </p>
 
-      <Card v-for="it in itemsWithBaseline" :key="it.id">
-        <CardHeader class="pb-2">
-          <div class="flex items-start justify-between">
-            <div>
-              <CardTitle class="text-lg">{{ it.name }}</CardTitle>
-              <CardDescription>{{ it.room }}</CardDescription>
+      <p
+        v-if="itemsWithBaseline.length && !filteredItems.length"
+        class="text-sm text-muted-foreground"
+      >
+        沒有符合條件的項目，請調整搜尋。
+      </p>
+      <Card v-for="it in filteredItems" :key="it.id">
+        <details class="checkout-item" :open="desktop">
+          <summary class="flex cursor-pointer items-center gap-3 p-3 sm:hidden">
+            <img
+              :src="firstEvidence(it, 'checkout')?.url || firstEvidence(it, 'baseline')?.url"
+              alt=""
+              class="h-20 w-20 rounded-lg object-cover"
+            />
+            <span class="min-w-0 flex-1"
+              ><strong>{{ it.name }}</strong
+              ><span class="block text-xs text-muted-foreground"
+                >{{ it.room }} ·
+                {{ firstEvidence(it, 'checkout') ? '已拍攝退租照' : '待拍攝' }}</span
+              ></span
+            >
+            <span class="text-xs text-primary">查看比對</span>
+          </summary>
+          <CardHeader class="hidden pb-2 sm:block">
+            <div class="flex items-start justify-between">
+              <div>
+                <CardTitle class="text-lg">{{ it.name }}</CardTitle>
+                <CardDescription>{{ it.room }}</CardDescription>
+              </div>
+              <Badge v-if="it.diff" :class="diffLabels[it.diff.type].cls">
+                {{ diffLabels[it.diff.type].text }}
+                <span class="ml-1 opacity-70">({{ (it.diff.confidence * 100).toFixed(0) }}%)</span>
+              </Badge>
             </div>
-            <Badge v-if="it.diff" :class="diffLabels[it.diff.type].cls">
-              {{ diffLabels[it.diff.type].text }}
-              <span class="ml-1 opacity-70">({{ (it.diff.confidence * 100).toFixed(0) }}%)</span>
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p v-if="it.diff" class="mb-3 text-sm">{{ it.diff.summary }}</p>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <!-- 左：搬入（唯讀） -->
-            <div class="space-y-1">
-              <div class="flex items-center justify-between text-xs">
-                <span class="font-medium">搬入存證</span>
-                <Badge variant="outline" class="gap-1"> <Lock class="h-3 w-3" /> 唯讀 </Badge>
-              </div>
-              <div class="aspect-video bg-muted rounded-md overflow-hidden">
-                <img
-                  :src="firstEvidence(it, 'baseline')!.url"
-                  class="object-cover w-full h-full"
-                  referrerpolicy="no-referrer"
-                />
-              </div>
-              <div class="text-xs text-muted-foreground flex items-center gap-1">
-                <Clock class="h-3 w-3" /> {{ fmtDate(firstEvidence(it, 'baseline')!.capturedAt) }}
-              </div>
-            </div>
-
-            <!-- 右：退租（可拍） -->
-            <div class="space-y-1">
-              <div class="flex items-center justify-between text-xs">
-                <span class="font-medium">退租存證</span>
-                <Badge
-                  v-if="firstEvidence(it, 'checkout')"
-                  variant="secondary"
-                  class="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                >
-                  <CheckCircle2 class="mr-1 h-3 w-3" /> 已存證
-                </Badge>
-                <Badge v-else variant="destructive">
-                  <AlertCircle class="mr-1 h-3 w-3" /> 待拍攝
-                </Badge>
-              </div>
-
-              <div v-if="firstEvidence(it, 'checkout')" class="space-y-1">
+          </CardHeader>
+          <CardContent>
+            <p v-if="it.diff" class="mb-3 text-sm">{{ it.diff.summary }}</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <!-- 左：搬入（唯讀） -->
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-medium">搬入存證</span>
+                  <Badge variant="outline" class="gap-1"> <Lock class="h-3 w-3" /> 唯讀 </Badge>
+                </div>
                 <div class="aspect-video bg-muted rounded-md overflow-hidden">
                   <img
-                    :src="firstEvidence(it, 'checkout')!.url"
+                    :src="firstEvidence(it, 'baseline')!.url"
                     class="object-cover w-full h-full"
                     referrerpolicy="no-referrer"
                   />
                 </div>
-                <div class="flex items-center justify-between text-xs">
-                  <span class="text-muted-foreground flex items-center gap-1">
-                    <Clock class="h-3 w-3" />
-                    {{ fmtDate(firstEvidence(it, 'checkout')!.capturedAt) }}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="h-6 px-2 text-destructive"
-                    :disabled="busy"
-                    @click="capturePhoto(it.id)"
-                  >
-                    重拍
-                  </Button>
+                <div class="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock class="h-3 w-3" /> {{ fmtDate(firstEvidence(it, 'baseline')!.capturedAt) }}
                 </div>
-                <p class="text-xs text-muted-foreground">
-                  {{ firstEvidence(it, 'checkout')!.note }}
-                </p>
-                <Button
-                  v-if="!firstEvidence(it, 'checkout')!.vlmResult"
-                  variant="outline"
-                  size="sm"
-                  :disabled="busy"
-                  @click="retryAnalysis(it.id, firstEvidence(it, 'checkout')!.id)"
-                  >重新辨識</Button
-                >
-                <Badge
-                  v-if="firstEvidence(it, 'checkout')!.aiConfidence"
-                  variant="outline"
-                  class="gap-1"
-                >
-                  <Sparkles class="h-3 w-3" />
-                  AI 清晰度
-                  {{ (firstEvidence(it, 'checkout')!.aiConfidence! * 100).toFixed(0) }}%
-                </Badge>
               </div>
 
-              <button
-                v-else
-                class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
-                :disabled="busy"
-                @click="capturePhoto(it.id)"
-              >
-                <Camera class="h-6 w-6 mb-1" />
-                <span class="text-xs">拍攝退租照</span>
-              </button>
+              <!-- 右：退租（可拍） -->
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-medium">退租存證</span>
+                  <Badge
+                    v-if="firstEvidence(it, 'checkout')"
+                    variant="secondary"
+                    class="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                  >
+                    <CheckCircle2 class="mr-1 h-3 w-3" /> 已存證
+                  </Badge>
+                  <Badge v-else variant="destructive">
+                    <AlertCircle class="mr-1 h-3 w-3" /> 待拍攝
+                  </Badge>
+                </div>
+
+                <div v-if="firstEvidence(it, 'checkout')" class="space-y-1">
+                  <div class="aspect-video bg-muted rounded-md overflow-hidden">
+                    <img
+                      :src="firstEvidence(it, 'checkout')!.url"
+                      class="object-cover w-full h-full"
+                      referrerpolicy="no-referrer"
+                    />
+                  </div>
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="text-muted-foreground flex items-center gap-1">
+                      <Clock class="h-3 w-3" />
+                      {{ fmtDate(firstEvidence(it, 'checkout')!.capturedAt) }}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      class="h-6 px-2 text-destructive"
+                      :disabled="busy"
+                      @click="capturePhoto(it.id)"
+                    >
+                      重拍
+                    </Button>
+                  </div>
+                  <p class="text-xs text-muted-foreground">
+                    {{ firstEvidence(it, 'checkout')!.note }}
+                  </p>
+                  <Button
+                    v-if="!firstEvidence(it, 'checkout')!.vlmResult"
+                    variant="outline"
+                    size="sm"
+                    :disabled="busy"
+                    @click="retryAnalysis(it.id, firstEvidence(it, 'checkout')!.id)"
+                    >重新辨識</Button
+                  >
+                  <Badge
+                    v-if="firstEvidence(it, 'checkout')!.aiConfidence"
+                    variant="outline"
+                    class="gap-1"
+                  >
+                    <Sparkles class="h-3 w-3" />
+                    AI 清晰度
+                    {{ (firstEvidence(it, 'checkout')!.aiConfidence! * 100).toFixed(0) }}%
+                  </Badge>
+                </div>
+
+                <button
+                  v-else
+                  class="aspect-video w-full bg-muted/50 border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                  :disabled="busy"
+                  @click="capturePhoto(it.id)"
+                >
+                  <Camera class="h-6 w-6 mb-1" />
+                  <span class="text-xs">拍攝退租照</span>
+                </button>
+              </div>
             </div>
-          </div>
-        </CardContent>
+          </CardContent>
+        </details>
       </Card>
 
       <!-- 提示：沒搬入照的項目 -->

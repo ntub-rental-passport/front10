@@ -4,30 +4,22 @@ import SmartCaptureCamera, {
   type CapturePayload,
 } from '@/src/components/handover/SmartCaptureCamera.vue'
 import { computed, ref } from 'vue'
+import HandoverOverviewHeader from '@/src/components/handover/HandoverOverviewHeader.vue'
+import HandoverAddItemsDialog from '@/src/components/handover/HandoverAddItemsDialog.vue'
 import HandoverEvidenceDetail from '@/src/components/handover/HandoverEvidenceDetail.vue'
 import { useRouter } from 'vue-router'
 import {
   Camera,
   CheckCircle2,
-  Plus,
   Building2,
-  ArrowLeft,
   Trash2,
   Search,
   FileDown,
   FileText,
-  X,
 } from 'lucide-vue-next'
 
 import { Card, CardContent } from '@/components/ui/card/index'
 import { Button } from '@/components/ui/button/index'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select/index'
 import {
   Dialog,
   DialogContent,
@@ -35,10 +27,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog/index'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input/index'
-import { Label } from '@/components/ui/label/index'
 
 import {
   useHandover,
@@ -84,49 +80,6 @@ const {
   error,
   reload,
 } = useHandover()
-
-// ---------- 新增點交項目 ---------- //
-
-const showAddItemDialog = ref(false)
-// 同一個房間可以一次輸入多個物品，按「新增」才一起送出
-const newRoom = ref('')
-const newNames = ref<string[]>([])
-const nameDraft = ref('')
-
-// 輸入框裡還沒按加號的文字也算在內，免得使用者以為打了就會送出
-const pendingNames = computed(() => {
-  const draft = nameDraft.value.trim()
-  return draft ? [...newNames.value, draft] : newNames.value
-})
-
-function addDraftName() {
-  const name = nameDraft.value.trim()
-  if (!name) return
-  newNames.value.push(name)
-  nameDraft.value = ''
-}
-
-function removeName(index: number) {
-  newNames.value.splice(index, 1)
-}
-
-async function submitAddItem() {
-  if (!currentProperty.value) return
-  const room = newRoom.value.trim()
-  if (!room || pendingNames.value.length === 0) return
-  const failed = await addItems(room, pendingNames.value)
-  if (!failed) return
-  if (failed.length) {
-    // 只留下沒建成的，讓使用者可以直接再按一次
-    newNames.value = failed
-    nameDraft.value = ''
-    return
-  }
-  newRoom.value = ''
-  newNames.value = []
-  nameDraft.value = ''
-  showAddItemDialog.value = false
-}
 
 // ---------- 拍照與上傳存證---------- //
 
@@ -215,7 +168,7 @@ const filteredItems = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return itemsOfCurrentProperty.value.filter((it) => {
     const baselineEv = firstEvidenceOfPhase(it, 'baseline')
-    if (onlyDone.value && completedCaptureAngles(it) < 3) return false
+    if (onlyDone.value && completedCaptureAngles(it) < 2) return false
     if (!kw) return true
     return (
       it.name.toLowerCase().includes(kw) ||
@@ -236,7 +189,7 @@ const stats = computed(() => {
   const all = itemsOfCurrentProperty.value
   return {
     total: all.length,
-    done: all.filter((it) => completedCaptureAngles(it) === 3).length,
+    done: all.filter((it) => completedCaptureAngles(it) === 2).length,
     rooms: new Set(all.map((it) => it.room)).size,
   }
 })
@@ -301,163 +254,36 @@ async function archivePhoto(id: string) {
     </div>
     <!-- =================== 螢幕檢視（列印時隱藏） =================== -->
     <div class="screen-only space-y-6">
-      <!-- 麵包屑 + 標題 -->
-      <div class="space-y-2">
-        <Button variant="ghost" size="sm" class="-ml-2" @click="router.push('/app/handover')">
-          <ArrowLeft class="mr-1 h-4 w-4" /> 返回點交總覽
-        </Button>
-        <div>
-          <h1 class="text-3xl font-bold tracking-tight">入住前點交</h1>
-          <p class="text-muted-foreground">
-            搬入時建立家具與設備清單、逐項拍攝，並可匯出條列清單或完整證據包。
-          </p>
-        </div>
-      </div>
-
-      <!-- 租屋處選擇 + 統計 -->
-      <Card>
-        <CardContent class="pt-6">
-          <div class="flex flex-wrap items-end gap-3">
-            <div class="flex-1 min-w-[240px] space-y-1">
-              <Label class="flex items-center gap-1 text-xs">
-                <Building2 class="h-3 w-3" /> 目前租屋處
-              </Label>
-              <Select
-                :disabled="busy"
-                :model-value="currentProperty?.id ?? ''"
-                @update:model-value="(v) => selectProperty(String(v))"
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="請選擇租屋處" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="p in properties" :key="p.id" :value="p.id">
-                    {{ p.alias }}（{{ p.address }}）
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <p
-            v-if="currentProperty?.source === 'landlord'"
-            class="mt-3 rounded-md bg-sky-50 p-2 text-xs text-sky-800"
-          >
-            這是房東平台上的租約：你在這裡的點交照片與辨識結果，房東也看得到（只能看、不能改），退租時雙方可以對照。
-          </p>
-          <div v-if="currentProperty" class="mt-5 space-y-5">
-            <div class="grid grid-cols-3 divide-x">
-              <div
-                v-for="entry in [
-                  { label: '點交項目', value: stats.total },
-                  { label: '已完成項目', value: stats.done },
-                  { label: '未完成項目', value: stats.total - stats.done },
-                ]"
-                :key="entry.label"
-                class="px-2 text-center"
-              >
-                <div class="text-xs text-muted-foreground sm:text-sm">{{ entry.label }}</div>
-                <div class="mt-2 text-4xl font-bold tracking-tight sm:text-5xl">
-                  {{ entry.value
-                  }}<span class="ml-1 text-sm font-normal text-muted-foreground">項</span>
-                </div>
-              </div>
-            </div>
-            <div class="space-y-2">
-              <div class="flex justify-between text-xs text-muted-foreground">
-                <span>三個角度皆已拍攝即列為完成</span
-                ><strong class="text-primary"
-                  >{{ stats.total ? Math.round((stats.done / stats.total) * 100) : 0 }}%</strong
-                >
-              </div>
-              <div
-                role="progressbar"
-                aria-label="點交項目拍攝完成進度"
-                :aria-valuenow="stats.done"
-                :aria-valuemax="stats.total || 1"
-                aria-valuemin="0"
-                class="h-2.5 overflow-hidden rounded-full bg-muted"
-              >
-                <div
-                  class="h-full rounded-full bg-primary transition-all"
-                  :style="{ width: `${stats.total ? (stats.done / stats.total) * 100 : 0}%` }"
-                />
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <HandoverOverviewHeader
+        title="入住前點交"
+        :properties="properties"
+        :property="currentProperty"
+        :total="stats.total"
+        :done="stats.done"
+        :busy="busy"
+        @select="selectProperty"
+        @back="router.push('/app/handover')"
+      >
+        <template #actions><HandoverAddItemsDialog :busy="busy" :add-items="addItems" /></template>
+      </HandoverOverviewHeader>
+      <p
+        v-if="currentProperty?.source === 'landlord'"
+        class="rounded-md bg-primary/5 p-3 text-xs text-muted-foreground"
+      >
+        這是房東平台上的租約：你在這裡的點交照片與辨識結果，房東也看得到（只能看、不能改），退租時雙方可以對照。
+      </p>
 
       <!-- 工具列：新增 / 搜尋 / 篩選 / 兩種匯出 -->
-      <div v-if="currentProperty" class="flex flex-wrap items-end gap-3 border-b pb-3">
-        <Dialog v-model:open="showAddItemDialog">
-          <DialogTrigger as-child>
-            <Button size="sm"> <Plus class="mr-1 h-4 w-4" /> 新增點交項目 </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>新增點交項目</DialogTitle>
-              <DialogDescription
-                >先填房間，再列出這個房間的所有物品，最後一次新增。</DialogDescription
-              >
-            </DialogHeader>
-            <div class="space-y-3 py-2">
-              <div class="space-y-1">
-                <Label>房間</Label>
-                <Input v-model="newRoom" placeholder="例如：客廳" />
-              </div>
-              <div class="space-y-2">
-                <Label for="handover-new-name">物品名稱</Label>
-                <div class="flex items-center gap-2">
-                  <Input
-                    id="handover-new-name"
-                    v-model="nameDraft"
-                    placeholder="例如：沙發，按 + 或 Enter 加入"
-                    @keydown.enter.prevent="addDraftName"
-                  />
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    aria-label="加入這項物品"
-                    :disabled="!nameDraft.trim()"
-                    @click="addDraftName"
-                  >
-                    <Plus class="h-4 w-4" />
-                  </Button>
-                </div>
-                <div
-                  v-for="(name, index) in newNames"
-                  :key="`${index}-${name}`"
-                  class="flex items-center gap-2"
-                >
-                  <Input :model-value="name" readonly tabindex="-1" class="bg-muted/40" />
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    :aria-label="`移除 ${name}`"
-                    @click="removeName(index)"
-                  >
-                    <X class="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" @click="showAddItemDialog = false">取消</Button>
-              <Button
-                :disabled="busy || !newRoom.trim() || pendingNames.length === 0"
-                @click="submitAddItem"
-                >新增 {{ pendingNames.length || '' }} 項</Button
-              >
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <div class="flex-1 min-w-[200px] space-y-1">
-          <Label class="text-xs">搜尋</Label>
+      <div v-if="currentProperty" class="flex flex-wrap items-center gap-2 border-b pb-3">
+        <div class="flex-1 min-w-0 space-y-1">
           <div class="relative">
             <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input v-model="keyword" placeholder="搜尋物品、房間或備註" class="pl-8" />
+            <Input
+              v-model="keyword"
+              aria-label="搜尋物品、房間或備註"
+              placeholder="搜尋物品、房間或備註"
+              class="pl-8"
+            />
           </div>
         </div>
 
@@ -465,10 +291,25 @@ async function archivePhoto(id: string) {
           {{ onlyDone ? '只看已完成' : '顯示全部' }}
         </Button>
 
-        <!-- 兩種匯出：給使用者明確選擇 -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child
+            ><Button
+              variant="outline"
+              size="sm"
+              class="sm:hidden"
+              aria-label="下載點交資料"
+              :disabled="busy || exporting || !stats.total"
+              ><FileDown class="h-4 w-4" /></Button
+          ></DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem @select="triggerPrint('checklist')">匯出條列清單</DropdownMenuItem>
+            <DropdownMenuItem @select="triggerPrint('full')">匯出完整證據包</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           variant="outline"
           size="sm"
+          class="handover-desktop-export"
           :disabled="busy || exporting || !stats.total"
           @click="triggerPrint('checklist')"
         >
@@ -476,6 +317,7 @@ async function archivePhoto(id: string) {
         </Button>
         <Button
           size="sm"
+          class="handover-desktop-export"
           :disabled="busy || exporting || !stats.total"
           @click="triggerPrint('full')"
         >
@@ -489,7 +331,7 @@ async function archivePhoto(id: string) {
       <section v-if="currentProperty" class="space-y-6">
         <p v-if="groupedByRoom.length === 0" class="text-sm text-muted-foreground">
           <span v-if="itemsOfCurrentProperty.length === 0">
-            這個租屋處還沒有任何點交項目，請按上方「新增點交項目」開始建立清單。
+            這個租屋處還沒有任何點交項目，請按上方「新增項目」開始建立清單。
           </span>
           <span v-else>沒有符合條件的項目，請調整搜尋或篩選。</span>
         </p>
@@ -502,21 +344,21 @@ async function archivePhoto(id: string) {
             </span>
           </h2>
 
-          <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
             <button
               v-for="it in group.items"
               :key="it.id"
               type="button"
-              class="handover-tile min-w-0 overflow-hidden rounded-lg border bg-card text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              class="handover-tile flex items-center sm:block min-w-0 overflow-hidden rounded-lg border bg-card text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               :aria-label="`查看${it.name}點交詳情`"
               @click="selectedItemId = it.id"
             >
-              <div class="relative flex aspect-[4/3] items-center justify-center bg-muted/40">
+              <div class="handover-thumbnail relative flex items-center justify-center bg-muted/40">
                 <img
                   v-if="firstBaseline(it)"
                   :src="firstBaseline(it)!.url"
                   :alt="it.name"
-                  class="h-full w-full object-cover"
+                  class="absolute inset-0 h-full w-full object-cover"
                   loading="lazy"
                   referrerpolicy="no-referrer"
                 />
@@ -525,18 +367,21 @@ async function archivePhoto(id: string) {
                   <span class="text-xs">新增點交存證照片</span>
                 </div>
               </div>
-              <div class="space-y-1 p-3">
+              <div class="min-w-0 flex-1 space-y-2 p-3">
                 <div class="truncate text-sm font-semibold">{{ it.name }}</div>
                 <div class="flex items-center gap-1 text-xs text-muted-foreground">
-                  <CheckCircle2 v-if="completedCaptureAngles(it) === 3" class="h-3 w-3" />
+                  <CheckCircle2 v-if="completedCaptureAngles(it) === 2" class="h-3 w-3" />
                   {{
                     analyzingItemId === it.id
                       ? '辨識中…'
-                      : completedCaptureAngles(it) === 3
+                      : completedCaptureAngles(it) === 2
                         ? '已完成'
-                        : `待補齊 ${completedCaptureAngles(it)} / 3`
+                        : `待補齊 ${completedCaptureAngles(it)} / 2`
                   }}
                 </div>
+                <p class="text-xs text-muted-foreground sm:hidden">
+                  {{ it.evidences.filter((e) => e.phase === 'baseline').length }} 張照片
+                </p>
               </div>
             </button>
           </div>
@@ -552,7 +397,7 @@ async function archivePhoto(id: string) {
     </div>
 
     <Dialog v-model:open="detailOpen">
-      <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-5xl">
+      <DialogContent class="handover-detail-dialog max-h-[90dvh] overflow-y-auto sm:max-w-5xl">
         <template v-if="selectedItem">
           <DialogHeader>
             <DialogTitle>{{ selectedItem.name }}</DialogTitle>
@@ -566,6 +411,7 @@ async function archivePhoto(id: string) {
             @capture="(angle, id) => openCaptureModal(selectedItem!, angle, id)"
             @upload="(angle, id) => capturePhoto(selectedItem!.id, angle, id)"
             @save-note="(id, note, angle) => updateEvidenceNote(selectedItem!.id, id, note, angle)"
+            @close="detailOpen = false"
             @remove-photo="archivePhoto"
             @retry="(id) => retryAnalysis(selectedItem!.id, id)"
           />
@@ -590,3 +436,35 @@ async function archivePhoto(id: string) {
     />
   </div>
 </template>
+
+<style>
+.handover-thumbnail {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+}
+.handover-desktop-export {
+  display: inline-flex;
+}
+
+@media (max-width: 639px) {
+  .handover-thumbnail {
+    width: 96px;
+    height: 96px;
+    aspect-ratio: 1;
+    flex-shrink: 0;
+  }
+  .handover-desktop-export {
+    display: none;
+  }
+  .handover-detail-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    padding: 1rem;
+    display: block;
+  }
+}
+</style>
