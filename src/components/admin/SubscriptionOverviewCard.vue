@@ -7,6 +7,7 @@ import {
   Chart as ChartJS,
   Legend,
   LinearScale,
+  LineController,
   LineElement,
   PointElement,
   Tooltip,
@@ -14,19 +15,28 @@ import {
   type ChartOptions,
   type Plugin,
 } from 'chart.js'
-import { Bar, Line } from 'vue-chartjs'
+import { Bar } from 'vue-chartjs'
 import { Button } from '@/components/ui/button/index'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/index'
-import type { PlanDistributionSegment, UserDirectoryRow } from '@/src/utils/admin-user-directory'
-import { planDistribution } from '@/src/utils/admin-user-directory'
+import type { UserDirectoryRow } from '@/src/utils/admin-user-directory'
 import { planFilterQuery } from '@/src/utils/admin-plan-filter'
-import type { PlanKey, PlanRole } from '@/src/utils/subscription-plans'
+import { subscriptionPlans, type PlanKey, type PlanRole } from '@/src/utils/subscription-plans'
 import { chartColor } from '@/src/constants/admin-chart'
 import { useNow } from '@/src/composables/useNow'
 import type { Subscription } from '@/src/mocks/admin/subscription'
 import { monthlyCheckPackPurchases } from '@/src/utils/admin-addon-purchases'
+import { monthlyPlanCounts } from '@/src/utils/admin-plan-history'
 
-ChartJS.register(BarElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend)
+ChartJS.register(
+  BarElement,
+  LineController,
+  LineElement,
+  PointElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip,
+  Legend,
+)
 
 const props = defineProps<{
   rows: UserDirectoryRow[]
@@ -35,153 +45,166 @@ const props = defineProps<{
 const router = useRouter()
 const now = useNow()
 const role = defineModel<PlanRole>('role', { default: 'landlord' })
-const segments = computed(() => planDistribution(props.rows, role.value, now.value))
+const planMonths = computed(() => monthlyPlanCounts(props.rows, role.value, now.value))
 const purchaseMonths = computed(() => monthlyCheckPackPurchases(props.subscriptions, now.value))
-const hasPurchases = computed(() => purchaseMonths.value.some((month) => month.packs > 0))
+const planKeys: PlanKey[] = ['free', 'plus', 'pro']
 
-function valueLabelPlugin(drawZeros: boolean): Plugin<'bar' | 'line'> {
-  return {
-    id: 'barValueLabels',
-    afterDatasetsDraw(chart) {
-      const { ctx } = chart
-      ctx.save()
-      ctx.font = '500 12px "Geist Variable", sans-serif'
-      ctx.fillStyle = chartColor('label')
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'bottom'
+const valueLabelPlugin: Plugin<'bar' | 'line'> = {
+  id: 'barValueLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart
+    ctx.save()
+    ctx.font = '500 12px "Geist Variable", sans-serif'
+    ctx.fillStyle = chartColor('label')
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    chart.data.labels?.forEach((_, index) => {
+      let total = 0
+      let x = 0
+      let y = Infinity
       chart.data.datasets.forEach((dataset, datasetIndex) => {
-        chart.getDatasetMeta(datasetIndex).data.forEach((element, index) => {
-          const value = dataset.data[index]
-          if (typeof value !== 'number' || (!drawZeros && value === 0)) return
-          ctx.fillText(String(value), element.x, element.y - 6)
-        })
+        if (dataset.type !== 'bar') return
+        const value = dataset.data[index]
+        const element = chart.getDatasetMeta(datasetIndex).data[index]
+        if (typeof value !== 'number' || !element) return
+        total += value
+        x = element.x
+        y = Math.min(y, element.y)
       })
-      ctx.restore()
-    },
-  }
+      if (total > 0) ctx.fillText(String(total), x, y - 6)
+    })
+    chart.data.datasets.forEach((dataset, datasetIndex) => {
+      if (dataset.type !== 'line') return
+      chart.getDatasetMeta(datasetIndex).data.forEach((element, index) => {
+        const value = dataset.data[index]
+        if (typeof value === 'number' && value !== 0) {
+          ctx.fillText(String(value), element.x, element.y - 6)
+        }
+      })
+    })
+    ctx.restore()
+  },
 }
 
-const planLabelPlugin = valueLabelPlugin(true)
-const purchaseLabelPlugin = valueLabelPlugin(false)
-const planColors = computed(() => [
-  chartColor('series-3'),
-  chartColor('series-2'),
-  chartColor('series-1'),
-])
-const chartData = computed<ChartData<'bar'>>(() => ({
-  labels: segments.value.map((segment) => segment.label),
-  datasets: [
-    {
-      data: segments.value.map((segment) => segment.value),
-      backgroundColor: segments.value.map((_, index) => planColors.value[index]),
+const chartData = computed<ChartData<'bar' | 'line'>>(() => {
+  const colors = [chartColor('series-3'), chartColor('series-2'), chartColor('series-1')]
+  const datasets: ChartData<'bar' | 'line'>['datasets'] = subscriptionPlans[role.value].map(
+    (plan, index) => ({
+      type: 'bar',
+      label: plan.name,
+      data: planMonths.value.map((month) => month.counts[plan.key]),
+      backgroundColor: colors[index],
+      stack: 'plans',
+      yAxisID: 'y',
       borderRadius: 4,
-      maxBarThickness: 48,
-    },
-  ],
-}))
-const chartOptions = computed<ChartOptions<'bar'>>(() => ({
+      maxBarThickness: 36,
+      order: 1,
+    }),
+  )
+  if (role.value === 'tenant') {
+    datasets.push({
+      type: 'line',
+      label: '單次加購',
+      data: purchaseMonths.value.map((month) => month.packs),
+      yAxisID: 'y1',
+      borderColor: chartColor('attention'),
+      pointBackgroundColor: chartColor('attention'),
+      borderWidth: 2,
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      order: 0,
+      fill: false,
+    })
+  }
+  return { labels: planMonths.value.map((month) => month.label), datasets }
+})
+const chartOptions = computed<ChartOptions<'bar' | 'line'>>(() => ({
   responsive: true,
   maintainAspectRatio: false,
   layout: { padding: { top: 24 } },
-  interaction: { mode: 'nearest', intersect: true },
+  interaction: { mode: 'index', intersect: false },
   plugins: {
-    legend: { display: false },
+    legend: {
+      display: true,
+      position: 'bottom',
+      labels: { color: chartColor('label'), boxWidth: 12 },
+    },
     tooltip: {
       callbacks: {
-        label: (item) => {
-          const trial = segments.value[item.dataIndex]?.trialCount ?? 0
-          return `${item.label}：${item.parsed.y ?? 0} 位${trial > 0 ? `（試用 ${trial} 位）` : ''}`
+        label: (item) =>
+          item.dataset.type === 'line'
+            ? `${item.parsed.y ?? 0} 包`
+            : `${item.dataset.label}：${item.parsed.y ?? 0} 位`,
+        footer: (items) => {
+          const total = items.reduce(
+            (sum, item) => sum + (item.dataset.type === 'bar' ? (item.parsed.y ?? 0) : 0),
+            0,
+          )
+          return `合計：${total} 位`
         },
       },
     },
   },
   scales: {
     x: {
+      stacked: true,
       grid: { display: false },
       ticks: { color: chartColor('label'), font: { size: 11 } },
     },
     y: {
+      stacked: true,
       beginAtZero: true,
       suggestedMax: Math.max(
         1,
-        Math.ceil(Math.max(...segments.value.map((segment) => segment.value)) * 1.15),
+        Math.ceil(
+          Math.max(
+            ...planMonths.value.map((month) =>
+              planKeys.reduce((sum, key) => sum + month.counts[key], 0),
+            ),
+          ) * 1.15,
+        ),
       ),
+      title: { display: true, text: '人數', color: chartColor('label') },
       grid: { color: chartColor('grid') },
-      ticks: {
-        color: chartColor('label'),
-        font: { size: 11 },
-        precision: 0,
-      },
+      ticks: { color: chartColor('label'), font: { size: 11 }, precision: 0 },
     },
+    ...(role.value === 'tenant'
+      ? {
+          y1: {
+            position: 'right' as const,
+            beginAtZero: true,
+            suggestedMax: Math.max(
+              1,
+              Math.ceil(Math.max(...purchaseMonths.value.map((month) => month.packs)) * 1.15),
+            ),
+            title: { display: true, text: '加購包數', color: chartColor('label') },
+            grid: { drawOnChartArea: false },
+            ticks: { color: chartColor('label'), font: { size: 11 }, precision: 0 },
+          },
+        }
+      : {}),
   },
 }))
 
-const purchaseChartData = computed<ChartData<'line'>>(() => ({
-  labels: purchaseMonths.value.map((month) => month.label),
-  datasets: [
-    {
-      data: purchaseMonths.value.map((month) => month.packs),
-      borderColor: chartColor('attention'),
-      borderWidth: 2,
-      tension: 0.3,
-      pointRadius: 3,
-      pointHoverRadius: 5,
-      pointBackgroundColor: chartColor('attention'),
-      fill: false,
-    },
-  ],
-}))
-const purchaseChartOptions = computed<ChartOptions<'line'>>(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  layout: { padding: { top: 24 } },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      callbacks: {
-        label: (item) => `${item.label}：${item.parsed.y ?? 0} 包`,
-      },
-    },
-  },
-  scales: {
-    x: {
-      grid: { display: false },
-      ticks: { color: chartColor('label'), font: { size: 11 } },
-    },
-    y: {
-      beginAtZero: true,
-      suggestedMax: Math.max(
-        1,
-        Math.ceil(Math.max(...purchaseMonths.value.map((month) => month.packs)) * 1.15),
-      ),
-      grid: { color: chartColor('grid') },
-      ticks: {
-        color: chartColor('label'),
-        font: { size: 11 },
-        precision: 0,
-      },
-    },
-  },
-}))
+// 從 wrapper 事件取得 chart 實例做命中判定。
+const chartRef = ref<{ chart?: ChartJS<'bar' | 'line'> } | null>(null)
 
-// 與甜甜圈一樣，從 wrapper 事件取得 chart 實例做命中判定。
-const chartRef = ref<{ chart?: ChartJS<'bar'> } | null>(null)
-
-function segmentAt(event: MouseEvent): PlanDistributionSegment | null {
+function planAt(event: MouseEvent): PlanKey | null {
   const chart = chartRef.value?.chart
   if (!chart) return null
   const hits = chart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false)
-  return segments.value[hits[0]?.index ?? -1] ?? null
+  return planKeys[hits[0]?.datasetIndex ?? -1] ?? null
 }
 
 function handleChartClick(event: MouseEvent): void {
-  const segment = segmentAt(event)
-  if (segment) selectPlan(segment.planKey)
+  const planKey = planAt(event)
+  if (planKey) selectPlan(planKey)
 }
 
 function handleChartMove(event: MouseEvent): void {
   const target = event.currentTarget as HTMLElement
-  target.style.cursor = segmentAt(event) ? 'pointer' : 'default'
+  target.style.cursor = planAt(event) ? 'pointer' : 'default'
 }
 
 function selectPlan(planKey: PlanKey): void {
@@ -215,35 +238,21 @@ function selectPlan(planKey: PlanKey): void {
         <CardTitle class="text-sm font-medium">訂閱</CardTitle>
       </div>
     </CardHeader>
-    <CardContent
-      class="grid min-w-0 gap-6 px-5 pb-5"
-      :class="{ 'md:grid-cols-2': role === 'tenant' }"
-    >
+    <CardContent class="min-w-0 px-5 pb-5">
       <div class="min-w-0">
-        <p class="text-sm font-medium">各方案訂閱人數</p>
-        <div class="relative h-60 min-w-0" @click="handleChartClick" @mousemove="handleChartMove">
+        <p class="text-sm font-medium">
+          {{ role === 'tenant' ? '各方案訂閱人數與單次加購' : '各方案訂閱人數' }}
+        </p>
+        <p class="text-xs text-muted-foreground">
+          近 12 個月各月月底人數，本月為今日；點長條可篩選方案
+        </p>
+        <div class="relative h-72 min-w-0" @click="handleChartClick" @mousemove="handleChartMove">
           <Bar
             ref="chartRef"
-            :data="chartData"
-            :options="chartOptions"
-            :plugins="[planLabelPlugin]"
+            :data="chartData as ChartData<'bar'>"
+            :options="chartOptions as ChartOptions<'bar'>"
+            :plugins="[valueLabelPlugin as Plugin<'bar'>]"
           />
-        </div>
-      </div>
-      <div v-if="role === 'tenant'" class="min-w-0">
-        <p class="text-sm font-medium">單次加購</p>
-        <p class="text-xs text-muted-foreground">
-          近 12 個月每月購買的契約檢查包數量（不含管理員贈送）
-        </p>
-        <div v-if="hasPurchases" class="relative h-60 min-w-0">
-          <Line
-            :data="purchaseChartData"
-            :options="purchaseChartOptions"
-            :plugins="[purchaseLabelPlugin]"
-          />
-        </div>
-        <div v-else class="flex h-60 items-center justify-center text-sm text-muted-foreground">
-          目前沒有加購紀錄
         </div>
       </div>
     </CardContent>
