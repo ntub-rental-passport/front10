@@ -24,19 +24,25 @@ interface BarProps {
   options: ChartOptions<'bar'>
   plugins: Plugin<'bar'>[]
 }
+interface LineProps {
+  data: ChartData<'line'>
+  options: ChartOptions<'line'>
+  plugins: Plugin<'line'>[]
+}
 
 const chartState = vi.hoisted(() => ({
   doughnut: null as ChartData<'doughnut'> | null,
   bar: null as ChartData<'bar'> | null,
   options: null as ChartOptions<'bar'> | null,
   bars: [] as BarProps[],
+  line: null as LineProps | null,
   hitTest: vi.fn<() => { index: number }[]>(),
   push: vi.fn(),
   handlers: null as ChartHandlers | null,
 }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: chartState.push }) }))
 vi.mock('vue-chartjs', () => {
-  const stub = (type: 'doughnut' | 'bar') =>
+  const stub = (type: 'doughnut' | 'bar' | 'line') =>
     defineComponent({
       props: ['data', 'options', 'plugins'],
       setup(props, { expose }) {
@@ -55,13 +61,15 @@ vi.mock('vue-chartjs', () => {
             owner = owner.parent
           }
           chartState.handlers = (owner as unknown as { setupState: ChartHandlers }).setupState
+        } else if (type === 'line') {
+          chartState.line = { data: props.data, options: props.options, plugins: props.plugins }
         } else {
           chartState.doughnut = props.data
         }
         return () => h('div', { 'data-chart': type }, JSON.stringify(props.data))
       },
     })
-  return { Doughnut: stub('doughnut'), Bar: stub('bar') }
+  return { Doughnut: stub('doughnut'), Bar: stub('bar'), Line: stub('line') }
 })
 
 const now = new Date(2026, 9, 20, 12)
@@ -72,6 +80,7 @@ beforeEach(() => {
   chartState.bar = null
   chartState.options = null
   chartState.bars = []
+  chartState.line = null
   chartState.handlers = null
   chartState.hitTest.mockReset().mockReturnValue([])
   chartState.push.mockReset()
@@ -105,6 +114,7 @@ async function render(
   subscriptions: Subscription[] = [],
 ) {
   chartState.bars = []
+  chartState.line = null
   const app = createSSRApp(SubscriptionOverviewCard, {
     role,
     rows: directoryRows(freeOnly, trial),
@@ -221,8 +231,9 @@ describe('SubscriptionOverviewCard', () => {
     expect(html).toContain('單次加購')
     expect(html).toContain('近 12 個月每月購買的契約檢查包數量（不含管理員贈送）')
     expect(html).not.toContain('目前沒有加購紀錄')
-    expect(chartState.bars).toHaveLength(2)
-    const purchases = chartState.bars[1]
+    expect(chartState.bars).toHaveLength(1)
+    expect(html).toContain('data-chart="line"')
+    const purchases = chartState.line!
     expect(purchases.data.labels).toEqual([
       '2025年11月',
       '12月',
@@ -238,8 +249,15 @@ describe('SubscriptionOverviewCard', () => {
       '10月',
     ])
     expect(purchases.data.datasets[0].data).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5])
-    expect(purchases.data.datasets[0].backgroundColor).toBe(chartColor('attention'))
-    expect(purchases.options.indexAxis ?? 'x').toBe('x')
+    expect(purchases.data.datasets[0]).toMatchObject({
+      borderColor: chartColor('attention'),
+      borderWidth: 2,
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      pointBackgroundColor: chartColor('attention'),
+      fill: false,
+    })
     expect(purchases.options.scales?.y).toMatchObject({
       beginAtZero: true,
       ticks: { precision: 0 },
@@ -254,7 +272,7 @@ describe('SubscriptionOverviewCard', () => {
         {
           label: '10月',
           parsed: { y: 5 },
-        } as TooltipItem<'bar'>,
+      } as TooltipItem<'line'>,
       ),
     ).toBe('10月：5 包')
     expect(await render('landlord', false, false, subscriptions)).not.toContain('單次加購')
@@ -276,9 +294,12 @@ describe('SubscriptionOverviewCard', () => {
     }
   })
 
-  it('Bar 收到共用數值標籤 plugin，方案包含零值，加購只畫非零值', async () => {
+  it('Bar 與 Line 收到共用數值標籤 plugin，方案包含零值，加購只畫非零值', async () => {
     await render('tenant', false, false, purchaseSubscriptions())
-    for (const [index, { data, plugins }] of chartState.bars.entries()) {
+    for (const [index, { data, plugins }] of [
+      ...chartState.bars.map((chart) => ({ ...chart, type: 'bar' as const })),
+      { ...chartState.line!, type: 'line' as const },
+    ].entries()) {
       expect(plugins).toHaveLength(1)
       expect(plugins[0].id).toBe('barValueLabels')
       const ctx = {
@@ -297,7 +318,7 @@ describe('SubscriptionOverviewCard', () => {
           data: data.datasets[0].data.map((_, i) => ({ x: i * 20, y: 100 })),
         }),
       } as unknown as Chart<'bar'>
-      plugins[0].afterDatasetsDraw!(chart, {}, {}, false)
+      ;(plugins[0] as Plugin<'bar'>).afterDatasetsDraw!(chart, {}, {}, false)
       expect(ctx.save).toHaveBeenCalledOnce()
       expect(ctx.restore).toHaveBeenCalledOnce()
       expect(ctx.font).toBe('500 12px "Geist Variable", sans-serif')
