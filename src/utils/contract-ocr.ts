@@ -1,3 +1,5 @@
+import { clearContractAnalysis } from './contract-analysis-cache'
+
 export type ContractOcrResult = {
   reviewSessionId?: string
   engine: string
@@ -502,6 +504,7 @@ export function loadContractOcrResult(): ContractOcrResult | null {
 }
 
 export function clearContractOcrResult(): void {
+  clearContractAnalysis()
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(CONTRACT_OCR_STORAGE_KEY)
 }

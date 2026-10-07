@@ -8,6 +8,7 @@ import { useRouter } from 'vue-router'
 // 與 authApi.ts 相同的 API 位址來源：開發模式讀 VITE_API_BASE_URL，正式環境走同源 /api
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 import { loadContractOcrResult, saveContractOcrResult } from '@/src/utils/contract-ocr'
+import { contractAnalysisKey, readContractAnalysis, writeContractAnalysis } from '@/src/utils/contract-analysis-cache'
 import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'
 import { buildContractAssessments, gateRemoteAssessments, reconcileAssessments, isPendingAssessment, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
 import { contractSectionLabel, explainContractRisk } from '@/src/utils/contract-risk-explanation'
@@ -399,7 +400,12 @@ function returnToEditor() {
   void router.push('/app/contract/editor')
 }
 
-async function loadBackendRagAndAiAnalysis() {
+function applyRemoteAnalysis(ragRisks: unknown[], aiRisks: unknown[]) {
+  risks.value = [...buildRisks(), ...gateRemoteAssessments(ragRisks, 'rag', pages.value), ...gateRemoteAssessments(aiRisks, 'ai', pages.value)]
+  aiAnalysisState.value = 'ok'
+}
+
+async function loadBackendRagAndAiAnalysis(force = false) {
   if (analysisController) return
   if (!ocrResult?.text) {
     analysisError.value = '找不到契約文字，請返回校對或重新上傳。'
@@ -412,17 +418,30 @@ async function loadBackendRagAndAiAnalysis() {
   const controller = new AbortController()
   analysisController = controller
   const timeout = setTimeout(() => controller.abort(), 240_000)
+  let cacheKey = ''
   try {
+    const requestBody = JSON.stringify({
+      ocr_text: ocrResult.text,
+      page_texts: ocrResult.pageTexts ?? [ocrResult.text],
+      field_reviews: ocrResult.fieldReviews ?? {},
+    })
+    cacheKey = await contractAnalysisKey(ocrResult.reviewSessionId || '', requestBody)
+    if (analysisController !== controller) return
+    const cached = force ? null : readContractAnalysis(cacheKey)
+    if (cached) {
+      if (cached.state === 'ok') applyRemoteAnalysis(cached.ragRisks, cached.aiRisks)
+      else {
+        analysisError.value = cached.message
+        aiAnalysisState.value = 'failed'
+      }
+      return
+    }
     const response = await fetch(`${API_BASE_URL}/contract/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       signal: controller.signal,
-      body: JSON.stringify({
-        ocr_text: ocrResult.text,
-        page_texts: ocrResult.pageTexts ?? [ocrResult.text],
-        field_reviews: ocrResult.fieldReviews ?? {}
-      })
+      body: requestBody,
     })
 
     if (response.status === 401) {
@@ -440,9 +459,8 @@ async function loadBackendRagAndAiAnalysis() {
     }
 
     // 取得後端真正的 RAG 與 AI 風險，並與本機 field 風險疊加
-    const localFieldRisks = buildRisks()
-    risks.value = [...localFieldRisks, ...gateRemoteAssessments(data.rag_risks, 'rag', pages.value), ...gateRemoteAssessments(data.ai_risks, 'ai', pages.value)]
-    aiAnalysisState.value = 'ok'
+    writeContractAnalysis(cacheKey, { state: 'ok', ragRisks: data.rag_risks, aiRisks: data.ai_risks })
+    applyRemoteAnalysis(data.rag_risks, data.ai_risks)
   } catch (error) {
     if (analysisController !== controller) return
     analysisError.value = controller.signal.aborted
@@ -450,6 +468,7 @@ async function loadBackendRagAndAiAnalysis() {
       : 'AI 分析暫時未完成。您的校對內容仍然保留，可以稍後重新分析。'
     console.error('後端 API 呼叫失敗，維持本機檢核結果:', error)
     aiAnalysisState.value = 'failed'
+    if (cacheKey) writeContractAnalysis(cacheKey, { state: 'failed', message: analysisError.value })
   } finally {
     clearTimeout(timeout)
     if (analysisController === controller) analysisController = null
@@ -744,7 +763,7 @@ async function exportAnalysisReport(): Promise<void> {
     <div v-if="aiAnalysisState === 'failed'" class="analysis-wait-error" role="alert">
       <AlertTriangle :size="20" aria-hidden="true" />
       <p>{{ analysisError }}<br><small>以下為本機規則檢查，並非完整 AI 分析結果。</small></p>
-      <Button v-if="ocrResult?.text" variant="outline" @click="loadBackendRagAndAiAnalysis">重新分析</Button>
+      <Button v-if="ocrResult?.text" variant="outline" @click="loadBackendRagAndAiAnalysis(true)">重新分析</Button>
     </div>
 
     <div

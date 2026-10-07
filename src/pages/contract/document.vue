@@ -20,6 +20,9 @@ import {
 import { readStoredContract, encryptContractPdf } from '@/src/services/contractApi'
 import { contractPdfPassword, createContractPdf } from '@/src/utils/contract-pdf'
 import { Button } from '@/components/ui/button/index'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog/index'
 import { AlertTriangle, ArrowLeft, Loader2, LockKeyhole } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -35,12 +38,14 @@ const tenantId = ref('')
 const exporting = ref(false)
 const exportError = ref('')
 const exportSuccess = ref(false)
+const downloadReminderOpen = ref(false)
 const passwordError = computed(() => {
   try { contractPdfPassword(tenantId.value); return '' } catch (error) { return (error as Error).message }
 })
 
 async function downloadEncryptedPdf(): Promise<void> {
   if (!document_.value || exporting.value || passwordError.value) return
+  downloadReminderOpen.value = false
   exporting.value = true
   exportError.value = ''
   exportSuccess.value = false
@@ -117,17 +122,34 @@ onMounted(async () => {
         variant="outline"
         size="sm"
         :disabled="exporting || Boolean(passwordError)"
-        @click="downloadEncryptedPdf"
+        @click="downloadReminderOpen = true"
       >
         <Loader2 v-if="exporting" :size="15" class="animate-spin" data-icon="inline-start" />
         <LockKeyhole v-else :size="15" data-icon="inline-start" />
-        {{ exporting ? '正在產生加密 PDF…' : '下載加密 PDF' }}
+        {{ exporting ? '正在產生加密 PDF…' : '下載租賃契約 PDF' }}
       </Button>
     </header>
 
-    <div v-if="document_" class="doc-export-note" role="status">
+    <Dialog v-model:open="downloadReminderOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>租賃契約 PDF 密碼提醒</DialogTitle>
+          <DialogDescription>
+            開啟密碼為租客的完整身分證字號，英文字母請輸入大寫。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" @click="downloadReminderOpen = false">取消</Button>
+          <Button :disabled="exporting || Boolean(passwordError)" @click="downloadEncryptedPdf">
+            我知道了，下載 PDF
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <div v-if="document_ && (passwordError || exportSuccess)" class="doc-export-note" role="status">
       <template v-if="passwordError">{{ passwordError }} <button type="button" @click="router.back()">返回核對資料</button></template>
-      <template v-else>{{ exportSuccess ? '已下載加密 PDF。' : '' }}開啟密碼為租客的完整身分證字號，英文字母請輸入大寫。</template>
+      <template v-else>已下載加密 PDF。</template>
     </div>
     <p v-if="exportError" class="doc-error" role="alert">{{ exportError }}</p>
 
