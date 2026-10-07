@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSSRApp, defineComponent, getCurrentInstance, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import type { Chart, ChartData, ChartOptions, Plugin, TooltipItem } from 'chart.js'
+import {
+  Chart as ChartJS,
+  type Chart,
+  type ChartData,
+  type ChartOptions,
+  type Plugin,
+  type TooltipItem,
+} from 'chart.js'
 import SubscriptionOverviewCard from './SubscriptionOverviewCard.vue'
 import { seedAdminUsers } from '@/src/mocks/admin/users'
 import {
@@ -9,20 +16,22 @@ import {
   type Subscription,
   type TenantSubscription,
 } from '@/src/mocks/admin/subscription'
-import { joinUserDirectory } from '@/src/utils/admin-user-directory'
+import { joinUserDirectory, planDistribution } from '@/src/utils/admin-user-directory'
 import { chartColor } from '@/src/constants/admin-chart'
 import type { PlanRole } from '@/src/utils/subscription-plans'
 
 interface ChartHandlers {
-  chartRef: { chart?: { getElementsAtEventForMode: () => { index: number }[] } } | null
+  chartRef: {
+    chart?: { getElementsAtEventForMode: () => { index: number; datasetIndex: number }[] }
+  } | null
   handleChartClick: (event: MouseEvent) => void
   handleChartMove: (event: MouseEvent) => void
 }
 
 interface BarProps {
-  data: ChartData<'bar'>
-  options: ChartOptions<'bar'>
-  plugins: Plugin<'bar'>[]
+  data: ChartData<'bar' | 'line'>
+  options: ChartOptions<'bar' | 'line'>
+  plugins: Plugin<'bar' | 'line'>[]
 }
 interface LineProps {
   data: ChartData<'line'>
@@ -32,11 +41,11 @@ interface LineProps {
 
 const chartState = vi.hoisted(() => ({
   doughnut: null as ChartData<'doughnut'> | null,
-  bar: null as ChartData<'bar'> | null,
-  options: null as ChartOptions<'bar'> | null,
+  bar: null as ChartData<'bar' | 'line'> | null,
+  options: null as ChartOptions<'bar' | 'line'> | null,
   bars: [] as BarProps[],
   line: null as LineProps | null,
-  hitTest: vi.fn<() => { index: number }[]>(),
+  hitTest: vi.fn<() => { index: number; datasetIndex: number }[]>(),
   push: vi.fn(),
   handlers: null as ChartHandlers | null,
 }))
@@ -149,92 +158,22 @@ function purchaseSubscriptions(): Subscription[] {
 }
 
 describe('SubscriptionOverviewCard', () => {
-  it('各角色顯示全部方案的直條人數，預設為房東，不畫甜甜圈', async () => {
-    const landlord = await render()
-    expect(landlord).toContain('各方案訂閱人數')
-    expect(landlord).not.toContain('全部')
-    expect(landlord).not.toContain('點方案可篩選')
-    expect(landlord).not.toContain('單次加購')
-    expect(landlord).not.toContain('md:grid-cols-2')
-    expect(chartState.bars).toHaveLength(1)
-    expect(landlord).toMatch(/aria-pressed="true"[^>]*>房東/)
-    expect(chartState.bar!.labels).toEqual(['Free 基礎管理', 'Plus 進階管理', 'Pro 團隊管理'])
-    expect(chartState.bar!.datasets).toHaveLength(1)
-    expect(chartState.bar!.datasets[0].data).toEqual([0, 1, 0])
-    expect(landlord).toContain('data-chart="bar"')
-    expect(landlord).not.toContain('data-chart="doughnut"')
-    expect(chartState.doughnut).toBeNull()
-    expect(landlord).not.toContain('訂閱收款')
-
-    const tenant = await render('tenant')
-    expect(tenant).not.toContain('全部')
-    expect(tenant).not.toContain('點方案可篩選')
-    expect(tenant).toContain('單次加購')
-    expect(tenant).toContain('md:grid-cols-2')
-    expect(tenant).toMatch(/aria-pressed="true"[^>]*>租客/)
-    expect(chartState.bar!.labels).toEqual(['Free 租屋入門', 'Plus 安心租住', 'Pro 合租進階'])
-    expect(chartState.bar!.datasets).toHaveLength(1)
-    expect(chartState.bar!.datasets[0].data).toEqual([0, 2, 0])
-    expect(tenant).not.toContain('data-chart="doughnut"')
-    expect(chartState.doughnut).toBeNull()
-
-    expect(await render('landlord')).not.toContain('單次加購')
-    expect(chartState.bar!.datasets[0].data).toEqual([0, 1, 0])
-  })
-
-  it('兩角色都移除試用與總人數輔助文字，即使有試用也不顯示', async () => {
-    expect(await render('landlord', false, true)).not.toContain('位試用中')
-    expect(await render('tenant', false, true)).not.toContain('位試用中')
-    expect(await render('landlord')).not.toContain('位試用中')
-  })
-
-  it.each(['landlord', 'tenant'] as const)('%s 全 Free 仍顯示方案人數', async (role) => {
-    const html = await render(role, true)
-    expect(html).toContain('data-chart="bar"')
-    expect(html).not.toContain('位試用中')
-    expect(chartState.bar!.datasets[0].data).toEqual([role === 'landlord' ? 1 : 2, 0, 0])
-  })
-
-  it.each(['landlord', 'tenant'] as const)('%s 無使用者時仍畫零人數直條圖', async (role) => {
-    const html = await renderToString(
-      createSSRApp(SubscriptionOverviewCard, { role, rows: [], subscriptions: [] }),
-    )
-    expect(html).not.toContain('全部')
-    expect(html).toContain('data-chart="bar"')
-    expect(chartState.bar!.labels).toHaveLength(3)
-    expect(chartState.bar!.datasets[0].data).toEqual([0, 0, 0])
-  })
-
-  it('直條沿用方案顏色、整數人數軸並隱藏圖例', async () => {
-    await render()
-    const dataset = chartState.bar!.datasets[0]
-    expect(dataset.backgroundColor).toEqual([
-      chartColor('series-3'),
-      chartColor('series-2'),
-      chartColor('series-1'),
-    ])
-    expect(dataset.borderRadius).toBe(4)
-    expect(dataset.maxBarThickness).toBe(48)
-    expect(chartState.options!.indexAxis ?? 'x').toBe('x')
-    expect(chartState.options!.scales?.y).toMatchObject({
-      beginAtZero: true,
-      ticks: { precision: 0 },
-    })
-    expect(chartState.options!.plugins?.legend?.display).toBe(false)
-    expect(chartState.options!.layout?.padding).toMatchObject({ top: 24 })
-    expect(chartState.options!.scales?.y?.suggestedMax).toBeGreaterThan(1)
-  })
-
-  it('租客加購圖顯示近 12 個月購買包數與包數 tooltip，房東不顯示', async () => {
-    const subscriptions = purchaseSubscriptions()
-    const html = await render('tenant', false, false, subscriptions)
-    expect(html).toContain('單次加購')
-    expect(html).toContain('近 12 個月每月購買的契約檢查包數量（不含管理員贈送）')
+  it.each(['landlord', 'tenant'] as const)('%s 顯示單一組合圖與十二個月標籤', async (role) => {
+    const html = await render(role)
+    expect(html).toContain(role === 'tenant' ? '各方案訂閱人數與單次加購' : '各方案訂閱人數')
+    expect(html).toContain('近 12 個月各月月底人數，本月為今日；點長條可篩選方案')
+    expect(html).toContain('relative h-72 min-w-0')
+    expect(html).not.toContain('md:grid-cols-2')
     expect(html).not.toContain('目前沒有加購紀錄')
+    expect(html).not.toContain('位試用中')
+    expect(html.match(/data-chart="bar"/g)).toHaveLength(1)
+    expect(html).not.toContain('data-chart="line"')
+    expect(html).not.toContain('data-chart="doughnut"')
+    expect(chartState.line).toBeNull()
+    expect(chartState.doughnut).toBeNull()
     expect(chartState.bars).toHaveLength(1)
-    expect(html).toContain('data-chart="line"')
-    const purchases = chartState.line!
-    expect(purchases.data.labels).toEqual([
+    expect(chartState.bar!.datasets).toHaveLength(role === 'landlord' ? 3 : 4)
+    expect(chartState.bar!.labels).toEqual([
       '2025年11月',
       '12月',
       '2026年1月',
@@ -248,38 +187,113 @@ describe('SubscriptionOverviewCard', () => {
       '9月',
       '10月',
     ])
-    expect(purchases.data.datasets[0].data).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5])
-    expect(purchases.data.datasets[0]).toMatchObject({
+    const distribution = planDistribution(directoryRows(), role, now)
+    expect(chartState.bar!.datasets.slice(0, 3).map((dataset) => dataset.label)).toEqual(
+      distribution.map((segment) => segment.label),
+    )
+    expect(chartState.bar!.datasets.slice(0, 3).map((dataset) => dataset.data.at(-1))).toEqual(
+      distribution.map((segment) => segment.value),
+    )
+    expect(html).toMatch(
+      role === 'landlord' ? /aria-pressed="true"[^>]*>房東/ : /aria-pressed="true"[^>]*>租客/,
+    )
+  })
+
+  it('預設房東且保留角色切換標頭', async () => {
+    const html = await render()
+    expect(html).toMatch(/aria-pressed="true"[^>]*>房東/)
+    expect(html).toContain('方案角色')
+    expect(html).not.toContain('單次加購')
+    expect(chartState.bar!.datasets).toHaveLength(3)
+  })
+
+  it.each(['landlord', 'tenant'] as const)(
+    '%s 全 Free 和試用的本月堆疊等於方案分布',
+    async (role) => {
+      for (const [freeOnly, trial] of [
+        [true, false],
+        [false, true],
+      ]) {
+        await render(role, freeOnly, trial)
+        expect(chartState.bar!.datasets.slice(0, 3).map((dataset) => dataset.data.at(-1))).toEqual(
+          planDistribution(directoryRows(freeOnly, trial), role, now).map(
+            (segment) => segment.value,
+          ),
+        )
+      }
+    },
+  )
+
+  it.each(['landlord', 'tenant'] as const)('%s 無使用者仍畫十二個月零人數圖', async (role) => {
+    const html = await renderToString(
+      createSSRApp(SubscriptionOverviewCard, { role, rows: [], subscriptions: [] }),
+    )
+    expect(html).toContain('data-chart="bar"')
+    expect(chartState.bar!.labels).toHaveLength(12)
+    expect(
+      chartState.bar!.datasets.every((dataset) => dataset.data.every((value) => value === 0)),
+    ).toBe(true)
+  })
+
+  it('直條沿用方案顏色、堆疊人數軸及底部圖例', async () => {
+    await render()
+    for (const [index, color] of ['series-3', 'series-2', 'series-1'].entries()) {
+      expect(chartState.bar!.datasets[index]).toMatchObject({
+        type: 'bar',
+        backgroundColor: chartColor(color as 'series-1' | 'series-2' | 'series-3'),
+        stack: 'plans',
+        yAxisID: 'y',
+        borderRadius: 4,
+        maxBarThickness: 36,
+        order: 1,
+      })
+    }
+    expect(chartState.options!.scales?.x).toMatchObject({ stacked: true, grid: { display: false } })
+    expect(chartState.options!.scales?.y).toMatchObject({
+      stacked: true,
+      beginAtZero: true,
+      ticks: { precision: 0 },
+      title: { display: true, text: '人數' },
+    })
+    expect(chartState.options!.scales?.y1).toBeUndefined()
+    expect(chartState.options!.plugins?.legend).toMatchObject({
+      display: true,
+      position: 'bottom',
+      labels: { color: chartColor('label'), boxWidth: 12 },
+    })
+    expect(chartState.options!.layout?.padding).toMatchObject({ top: 24 })
+    expect(chartState.options!.scales?.y?.suggestedMax).toBeGreaterThan(1)
+    expect(chartState.options!.interaction).toEqual({ mode: 'index', intersect: false })
+  })
+
+  it('租客加購折線使用右軸並繪製在長條上方', async () => {
+    expect(ChartJS.registry.getController('line')).toBeDefined()
+    await render('tenant', false, false, purchaseSubscriptions())
+    expect(chartState.bar!.datasets[3]).toMatchObject({
+      type: 'line',
+      label: '單次加購',
+      data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5],
+      yAxisID: 'y1',
       borderColor: chartColor('attention'),
+      pointBackgroundColor: chartColor('attention'),
       borderWidth: 2,
       tension: 0.3,
       pointRadius: 3,
       pointHoverRadius: 5,
-      pointBackgroundColor: chartColor('attention'),
+      order: 0,
       fill: false,
     })
-    expect(purchases.options.scales?.y).toMatchObject({
+    expect(chartState.options!.scales?.y1).toMatchObject({
+      position: 'right',
       beginAtZero: true,
       ticks: { precision: 0 },
+      grid: { drawOnChartArea: false },
+      title: { display: true, text: '加購包數' },
     })
-    expect(purchases.options.plugins?.legend?.display).toBe(false)
-    expect(purchases.options.layout?.padding).toMatchObject({ top: 24 })
-    expect(purchases.options.scales?.y?.suggestedMax).toBeGreaterThan(5)
-    expect(purchases.options.onClick).toBeUndefined()
-    expect(
-      purchases.options.plugins!.tooltip!.callbacks!.label!.call(
-        {} as never,
-        {
-          label: '10月',
-          parsed: { y: 5 },
-      } as TooltipItem<'line'>,
-      ),
-    ).toBe('10月：5 包')
-    expect(await render('landlord', false, false, subscriptions)).not.toContain('單次加購')
-    expect(chartState.bars).toHaveLength(1)
+    expect(chartState.options!.scales?.y1?.suggestedMax).toBeGreaterThan(5)
   })
 
-  it('沒有購買或只有管理員贈送時，加購區顯示 h-60 空狀態', async () => {
+  it('沒有購買或只有管理員贈送時仍顯示零值加購折線', async () => {
     const subscriptions = purchaseSubscriptions().map((sub) =>
       sub.role === 'tenant'
         ? { ...sub, checkPacks: sub.checkPacks.filter((pack) => pack.source === 'admin') }
@@ -287,76 +301,83 @@ describe('SubscriptionOverviewCard', () => {
     )
     for (const collection of [[], subscriptions]) {
       const html = await render('tenant', false, false, collection)
-      expect(html).toMatch(
-        /class="[^"]*h-60[^"]*items-center[^"]*justify-center[^"]*"[^>]*>\s*目前沒有加購紀錄/,
-      )
-      expect(chartState.bars).toHaveLength(1)
+      expect(html).not.toContain('目前沒有加購紀錄')
+      expect(chartState.bar!.datasets[3].data).toEqual(Array(12).fill(0))
+      expect(chartState.line).toBeNull()
     }
   })
 
-  it('Bar 與 Line 收到共用數值標籤 plugin，方案包含零值，加購只畫非零值', async () => {
+  it('tooltip 顯示方案位數、加購包數，合計排除折線', async () => {
     await render('tenant', false, false, purchaseSubscriptions())
-    for (const [index, { data, plugins }] of [
-      ...chartState.bars.map((chart) => ({ ...chart, type: 'bar' as const })),
-      { ...chartState.line!, type: 'line' as const },
-    ].entries()) {
-      expect(plugins).toHaveLength(1)
-      expect(plugins[0].id).toBe('barValueLabels')
-      const ctx = {
-        save: vi.fn(),
-        restore: vi.fn(),
-        fillText: vi.fn(),
-        font: '',
-        fillStyle: '',
-        textAlign: '',
-        textBaseline: '',
-      }
-      const chart = {
-        ctx,
-        data,
-        getDatasetMeta: () => ({
-          data: data.datasets[0].data.map((_, i) => ({ x: i * 20, y: 100 })),
-        }),
-      } as unknown as Chart<'bar'>
-      ;(plugins[0] as Plugin<'bar'>).afterDatasetsDraw!(chart, {}, {}, false)
-      expect(ctx.save).toHaveBeenCalledOnce()
-      expect(ctx.restore).toHaveBeenCalledOnce()
-      expect(ctx.font).toBe('500 12px "Geist Variable", sans-serif')
-      expect(ctx.fillStyle).toBe(chartColor('label'))
-      expect(ctx.textAlign).toBe('center')
-      expect(ctx.textBaseline).toBe('bottom')
-      expect(ctx.fillText.mock.calls).toEqual(
-        index === 0
-          ? [
-              ['0', 0, 94],
-              ['2', 20, 94],
-              ['0', 40, 94],
-            ]
-          : [
-              ['4', 200, 94],
-              ['5', 220, 94],
-            ],
-      )
-    }
+    const callbacks = chartState.options!.plugins!.tooltip!.callbacks!
+    const items = chartState.bar!.datasets.map(
+      (dataset, datasetIndex) =>
+        ({
+          dataset,
+          datasetIndex,
+          dataIndex: 11,
+          label: '10月',
+          parsed: { x: 11, y: dataset.data[11] },
+        }) as TooltipItem<'bar' | 'line'>,
+    )
+    expect(callbacks.label!.call({} as never, items[0])).toBe('Free 租屋入門：0 位')
+    expect(callbacks.label!.call({} as never, items[1])).toBe('Plus 安心租住：2 位')
+    expect(callbacks.label!.call({} as never, items[2])).toBe('Pro 合租進階：0 位')
+    expect(callbacks.label!.call({} as never, items[3])).toBe('5 包')
+    expect(callbacks.footer!.call({} as never, items)).toBe('合計：2 位')
+    expect(callbacks.footer!.call({} as never, [])).toBe('合計：0 位')
   })
 
-  it('tooltip 顯示方案、人數，有試用才附註試用人數', async () => {
-    await render()
-    const item = { label: 'Plus 進階管理', dataIndex: 1, parsed: { y: 1 } } as TooltipItem<'bar'>
-    const label = () => chartState.options!.plugins!.tooltip!.callbacks!.label!
-    expect(label().call({} as never, item)).toBe('Plus 進階管理：1 位')
-
-    await render('landlord', false, true)
-    expect(label().call({} as never, item)).toBe('Plus 進階管理：1 位（試用 1 位）')
-
-    await render('tenant', false, true)
-    expect(
-      label().call({} as never, { ...item, label: 'Plus 安心租住', parsed: { x: 1, y: 2 } }),
-    ).toBe('Plus 安心租住：2 位')
+  it('標籤插件每月只畫一個非零堆疊合計及非零折線值', async () => {
+    await render('tenant', false, false, purchaseSubscriptions())
+    const { plugins } = chartState.bars[0]
+    expect(plugins).toHaveLength(1)
+    expect(plugins[0].id).toBe('barValueLabels')
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      fillText: vi.fn(),
+      font: '',
+      fillStyle: '',
+      textAlign: '',
+      textBaseline: '',
+    }
+    const data: ChartData<'bar' | 'line'> = {
+      labels: ['1月', '2月', '3月'],
+      datasets: [
+        { type: 'bar', data: [0, 2, 1] },
+        { type: 'bar', data: [0, 3, 0] },
+        { type: 'bar', data: [0, 4, 0] },
+        { type: 'line', data: [0, 6, 7] },
+      ],
+    }
+    const chart = {
+      ctx,
+      data,
+      getDatasetMeta: (datasetIndex: number) => ({
+        data: data.datasets[datasetIndex].data.map((_, index) => ({
+          x: index * 20,
+          y: datasetIndex === 3 ? 40 : 100 - datasetIndex * 10,
+        })),
+      }),
+    } as unknown as Chart<'bar' | 'line'>
+    plugins[0].afterDatasetsDraw!(chart, {}, {}, false)
+    expect(ctx.save).toHaveBeenCalledOnce()
+    expect(ctx.restore).toHaveBeenCalledOnce()
+    expect(ctx.font).toBe('500 12px "Geist Variable", sans-serif')
+    expect(ctx.fillStyle).toBe(chartColor('label'))
+    expect(ctx.textAlign).toBe('center')
+    expect(ctx.textBaseline).toBe('bottom')
+    expect(ctx.fillText.mock.calls).toEqual([
+      ['9', 20, 74],
+      ['1', 40, 74],
+      ['6', 20, 34],
+      ['7', 40, 34],
+    ])
   })
 
   it.each(['landlord', 'tenant'] as const)(
-    '%s 點直條導向方案篩選，命中時顯示手形游標',
+    '%s 點長條依 dataset 篩選方案，折線及空白無操作也不顯示手形',
     async (role) => {
       await render(role, false, false, purchaseSubscriptions())
       const handlers = chartState.handlers!
@@ -366,22 +387,24 @@ describe('SubscriptionOverviewCard', () => {
       const event = { currentTarget: wrapper } as unknown as MouseEvent
       handlers.handleChartClick(event)
       expect(chartState.push).not.toHaveBeenCalled()
-      for (const [index, planKey] of ['free', 'plus', 'pro'].entries()) {
-        chartState.hitTest.mockReturnValue([{ index }])
+      for (const [datasetIndex, planKey] of ['free', 'plus', 'pro'].entries()) {
+        chartState.hitTest.mockReturnValue([{ index: 11, datasetIndex }])
         handlers.handleChartClick(event)
         expect(chartState.push).toHaveBeenLastCalledWith({
           path: '/admin/users',
           query: { role: role === 'landlord' ? 'landlord' : 'user', plan: `${role}-${planKey}` },
         })
+        handlers.handleChartMove(event)
+        expect(wrapper.style.cursor).toBe('pointer')
       }
       expect(chartState.hitTest).toHaveBeenCalledWith(event, 'nearest', { intersect: true }, false)
-      handlers.handleChartMove(event)
-      expect(wrapper.style.cursor).toBe('pointer')
-      chartState.hitTest.mockReturnValue([])
-      handlers.handleChartMove(event)
-      expect(wrapper.style.cursor).toBe('default')
-      handlers.handleChartClick(event)
-      expect(chartState.push).toHaveBeenCalledTimes(3)
+      for (const hits of [[{ index: 11, datasetIndex: 3 }], []]) {
+        chartState.hitTest.mockReturnValue(hits)
+        handlers.handleChartMove(event)
+        expect(wrapper.style.cursor).toBe('default')
+        handlers.handleChartClick(event)
+        expect(chartState.push).toHaveBeenCalledTimes(3)
+      }
       handlers.chartRef = null
       handlers.handleChartClick(event)
       expect(chartState.push).toHaveBeenCalledTimes(3)
