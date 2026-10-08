@@ -8,25 +8,95 @@
 #   - .env 正式環境金鑰
 #   - key/ Google 憑證
 #   - certbot 憑證 volume（可重簽，但備份省得重跑 ACME）
+#   - 所有上傳檔（由 restic 直接備份，不放進本機 tar.gz）
 #
 # 程式碼、Dockerfile、compose、nginx/fail2ban 設定都在 git，故不含在此。
 #
 # 用法（在 VM 上）：bash ~/rentmate/deploy/backup.sh
+# 只做本機備份：bash ~/rentmate/deploy/backup.sh --local-only
 # 產出：~/backups/rentmate-backup-<時間戳>.tar.gz
 #
 # 還原見同目錄 RESTORE.md。
 
 set -euo pipefail
 
+LOCAL_ONLY=false
+if [ "$#" -eq 1 ] && [ "$1" = "--local-only" ]; then
+    LOCAL_ONLY=true
+elif [ "$#" -ne 0 ]; then
+    echo "❌ 用法：bash deploy/backup.sh [--local-only]" >&2
+    exit 1
+fi
+
 cd "$(dirname "$0")/.."          # 專案根目錄
 PROJECT_DIR="$(pwd)"
-STAMP=$(date +%Y%m%d-%H%M%S)
 BACKUP_ROOT="$HOME/backups"
+STAGING="$BACKUP_ROOT/staging"
+
+# 異地備份先驗設定，避免忙完一輪才發現工具或密碼沒備妥。
+if [ "$LOCAL_ONLY" = false ]; then
+    if [ -f "$HOME/.config/rentmate/backup.env" ]; then
+        # shellcheck source=/dev/null
+        . "$HOME/.config/rentmate/backup.env"
+    fi
+    export RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-rclone:gdrive:rentmate-backup}"
+    export RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-$HOME/.config/rentmate/restic-password}"
+
+    for tool in restic rclone; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            echo "❌ 找不到 ${tool}；請依 deploy/README.md「每日異地備份（restic → Google Drive）」安裝並設定。" >&2
+            exit 1
+        fi
+    done
+    # 沿用既有的 Python 依賴，避免 GNU 與 BSD stat 的參數差異。
+    if ! python3 - "$RESTIC_PASSWORD_FILE" <<'PYPASSWORD'
+import pathlib
+import stat
+import sys
+
+try:
+    password_file = pathlib.Path(sys.argv[1])
+    valid = password_file.is_file() and stat.S_IMODE(password_file.stat().st_mode) in (0o600, 0o400)
+except OSError:
+    valid = False
+sys.exit(0 if valid else 1)
+PYPASSWORD
+    then
+        echo "❌ restic 密碼檔不存在或權限不符（只接受 600 或 400）；請依 deploy/README.md「每日異地備份（restic → Google Drive）」建立密碼檔並 chmod 600。" >&2
+        exit 1
+    fi
+fi
+
+# 手動執行與每日排程共用鎖，拿到鎖後才能清理暫存。
+mkdir -p "$BACKUP_ROOT"
+exec 9> "$BACKUP_ROOT/.backup.lock"
+if ! flock -n 9; then
+    echo "❌ 已有備份正在執行，這次不重複執行。" >&2
+    exit 1
+fi
+
+STAMP=$(date +%Y%m%d-%H%M%S)
 WORK="$BACKUP_ROOT/rentmate-backup-$STAMP"
+STATUS_TEMP=""
+cleanup() {
+    local result=$?
+    rm -rf "$STAGING" "$WORK" || result=1
+    if [ -n "$STATUS_TEMP" ]; then
+        rm -f "$STATUS_TEMP" || result=1
+    fi
+    exit "$result"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+rm -rf "$STAGING"
 mkdir -p "$WORK/key" "$WORK/host"
 
 # 讀 .env 供其他備份步驟使用；資料庫連線以 compose 的 fastapi 設定為準。
-set -a; . "$(dirname "$0")/../.env"; set +a
+set -a
+# shellcheck source=/dev/null
+. "$PROJECT_DIR/.env"
+set +a
 
 echo "=========================================="
 echo " RentMate 備份 → $WORK"
@@ -74,8 +144,10 @@ echo "      $(wc -l < "$WORK/db.sql") 行、$(du -h "$WORK/db.sql" | cut -f1)"
 # 放在 data/garbage/（容器裡的 /app/var），不在 MySQL 裡，mysqldump 備不到。
 # 在容器裡用 SQLite 的線上備份 API 複製：服務正在寫入也能拿到一致的快照；
 # 直接 cp 寫到一半的檔案，可能備到一個打不開的資料庫。
-# 這步失敗（例如 fastapi 沒在跑）只警告不中止 —— MySQL 與 .env 還是要備份。
+# 這步失敗（例如 fastapi 沒在跑）先警告不中止 —— MySQL 與 .env 還是要備份，
+# 但異地備份不算完整成功，最後不更新監控時間。
 echo "      匯出後端 SQLite..."
+SQLITE_OK=true
 if docker compose exec -T fastapi python - > "$WORK/sqlite.tar" <<'PY'
 import sqlite3
 import sys
@@ -95,6 +167,7 @@ PY
 then
   echo "      $(tar tf "$WORK/sqlite.tar" | wc -l | tr -d ' ') 個 SQLite 檔、$(du -h "$WORK/sqlite.tar" | cut -f1)"
 else
+  SQLITE_OK=false
   rm -f "$WORK/sqlite.tar"
   echo "      ⚠️ 後端 SQLite 這次沒備份到（fastapi 容器沒在跑？），MySQL 與 .env 照常備份"
 fi
@@ -135,11 +208,17 @@ RentMate 應用層備份
   key/                Google Vision / OAuth 金鑰
   certbot_conf.tar.gz Let's Encrypt 憑證
   host/               主機設定提示與 crontab 紀錄
+上傳檔：僅收錄於 restic 異地備份（data/uploads 與仍存在的舊上傳目錄），不在此 tar.gz。
 還原方式：見 deploy/RESTORE.md
 EOF
 
 tar czf "$BACKUP_ROOT/rentmate-backup-$STAMP.tar.gz" -C "$BACKUP_ROOT" "rentmate-backup-$STAMP"
-rm -rf "$WORK"
+if [ "$LOCAL_ONLY" = false ]; then
+    # 固定快照路徑，讓 restic 每次都能對照同一棵目錄樹。
+    mv "$WORK" "$STAGING"
+else
+    rm -rf "$WORK"
+fi
 
 ARCHIVE="$BACKUP_ROOT/rentmate-backup-$STAMP.tar.gz"
 
@@ -150,94 +229,49 @@ echo "=========================================="
 
 # ---------- 6. 保留最近 7 份，舊的自動刪除 ----------
 echo "[6/7] 清理舊備份（保留最近 7 份）..."
+# 檔名由上方固定格式產生，不含空白或換行，可沿用 ls 的時間排序。
+# shellcheck disable=SC2012
 ls -1t "$BACKUP_ROOT"/rentmate-backup-*.tar.gz 2>/dev/null | tail -n +8 | while read -r old; do
     rm -f "$old" && echo "    刪除 $(basename "$old")"
 done
+# shellcheck disable=SC2012
 echo "    目前保留 $(ls -1 "$BACKUP_ROOT"/rentmate-backup-*.tar.gz 2>/dev/null | wc -l) 份"
 
-# ---------- 7. 加密後寄送異地備份 ----------
-# 備份與正式站在同一台機器，VM 全毀就兩份一起沒，故寄信箱當異地副本。
-#
-# ⚠️ 但備份含 JWT 金鑰、MySQL 密碼、Google 憑證 —— 直接寄等於把系統鑰匙
-#    放進信箱。信箱被盜、或信箱管理者（如學校 IT）都可能取得。
-#    因此先以 GPG 對稱加密（AES256），讓備份的安全性「不依賴信箱的安全性」。
-#
-# 加上 --mail 參數才會寄送，手動執行時預設不寄。
-if [ "${1:-}" = "--mail" ]; then
-    echo "[7/7] 加密並寄送異地備份..."
-
-    # 密碼從 .env 讀取（BACKUP_ENCRYPT_PASSPHRASE）
-    # 結尾的 || true 不可省略：set -e 之下 grep 找不到會直接中止腳本，
-    # 導致下方「缺少密碼」的提示永遠不會印出來（失敗了卻不知道為什麼）。
-    PASSPHRASE=$(grep -E "^BACKUP_ENCRYPT_PASSPHRASE=" "$PROJECT_DIR/.env" 2>/dev/null \
-                 | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
-
-    if [ -z "$PASSPHRASE" ]; then
-        echo "    ❌ .env 缺少 BACKUP_ENCRYPT_PASSPHRASE，為避免明文外寄機密，中止寄送。"
-        echo "       請在 .env 加入一行：BACKUP_ENCRYPT_PASSPHRASE=\"<你的密碼>\""
+# ---------- 7. restic 加密異地備份 ----------
+if [ "$LOCAL_ONLY" = false ]; then
+    echo "[7/7] 備份至 Google Drive..."
+    SOURCES=("$STAGING")
+    if [ -d "$PROJECT_DIR/data/uploads" ]; then
+        SOURCES+=("$PROJECT_DIR/data/uploads")
+    fi
+    # 搬移前後都要收齊，避免舊目錄還有檔案卻漏備。
+    for legacy in inspection-photos repair-photos banner-images; do
+        if [ -d "$PROJECT_DIR/data/$legacy" ]; then
+            echo "    發現舊上傳目錄 data/${legacy}，一併備份。"
+            SOURCES+=("$PROJECT_DIR/data/$legacy")
+        fi
+    done
+    restic backup --host rentmate-vm --tag rentmate "${SOURCES[@]}"
+    restic forget --host rentmate-vm --tag rentmate --keep-daily 7 --keep-weekly 4 --keep-monthly 3 --prune
+    if [ "$(TZ=Asia/Taipei date +%u)" = 7 ]; then
+        echo "    週日檢查 restic 儲存庫結構..."
+        restic check
+    fi
+    if [ "$SQLITE_OK" = false ]; then
+        echo "❌ 後端 SQLite 未備份成功，保留其他備份，但不更新成功時間。" >&2
         exit 1
     fi
 
-    gpg --batch --yes --quiet \
-        --passphrase "$PASSPHRASE" \
-        --symmetric --cipher-algo AES256 \
-        -o "$ARCHIVE.gpg" "$ARCHIVE"
-    echo "    已加密：$(basename "$ARCHIVE.gpg") ($(du -h "$ARCHIVE.gpg" | cut -f1))"
-
-    python3 - "$ARCHIVE.gpg" <<'PYEOF'
-import os, smtplib, ssl, sys
-from email.message import EmailMessage
-from pathlib import Path
-
-# 沿用專案 .env 的 SMTP 設定
-env = {}
-for line in Path(os.path.expanduser("~/rentmate/.env")).read_text(encoding="utf-8").splitlines():
-    if "=" in line and not line.strip().startswith("#"):
-        k, _, v = line.partition("=")
-        env[k.strip()] = v.strip().strip('"').strip("'")
-
-host = env.get("SMTP_HOST", "smtp.gmail.com")
-port = int(env.get("SMTP_PORT", "587"))
-user = env.get("SMTP_USERNAME", "")
-pw   = env.get("SMTP_APP_PASSWORD", "").replace(" ", "")
-sender = env.get("SMTP_FROM_EMAIL", user)
-
-# 收件者：可在 .env 以 BACKUP_MAIL_TO 設定（多個以逗號分隔），
-# 未設定時預設寄給寄件者本人與學校信箱。
-# 分散到兩個信箱：單一信箱被鎖或誤刪時仍有另一份。
-default_to = f"{sender},11246017@ntub.edu.tw"
-recipients = [a.strip() for a in env.get("BACKUP_MAIL_TO", default_to).split(",") if a.strip()]
-
-archive = Path(sys.argv[1])
-msg = EmailMessage()
-msg["Subject"] = f"[RentMate] 系統備份 {archive.stem.replace('rentmate-backup-', '')}"
-msg["From"] = sender
-msg["To"] = ", ".join(recipients)
-msg.set_content(
-    f"RentMate 自動備份（已加密）\n\n"
-    f"檔名：{archive.name}\n"
-    f"大小：{archive.stat().st_size / 1024:.1f} KB\n"
-    f"加密：GPG 對稱加密 AES256\n\n"
-    f"內容：MySQL 資料庫、.env 正式金鑰、Google 憑證、TLS 憑證\n\n"
-    f"── 解密方式 ──\n"
-    f"gpg -o backup.tar.gz -d {archive.name}\n"
-    f"（會提示輸入密碼，即 BACKUP_ENCRYPT_PASSPHRASE）\n\n"
-    f"解開後的還原步驟見 deploy/RESTORE.md\n\n"
-    f"⚠️ 沒有密碼就無法還原，請確認密碼另有保存（勿只存在 VM 上）。"
-)
-msg.add_attachment(archive.read_bytes(), maintype="application",
-                   subtype="pgp-encrypted", filename=archive.name)
-
-with smtplib.SMTP(host, port, timeout=30) as s:
-    s.starttls(context=ssl.create_default_context())
-    s.login(user, pw)
-    s.send_message(msg)
-print(f"    ✅ 已寄至 {', '.join(recipients)}")
-PYEOF
-    # 加密檔只是寄送用的暫存，本機保留未加密版即可（本機有 VM 的存取控制保護）
-    rm -f "$ARCHIVE.gpg"
+    # 先清暫存，最後才更新成功時間；容器不會讀到寫了一半的數字。
+    rm -rf "$STAGING"
+    mkdir -p "$PROJECT_DIR/data/backup-status"
+    STATUS_TEMP=$(mktemp "$PROJECT_DIR/data/backup-status/.last-success.XXXXXX")
+    date +%s > "$STATUS_TEMP"
+    chmod 644 "$STATUS_TEMP"
+    mv "$STATUS_TEMP" "$PROJECT_DIR/data/backup-status/last-success"
+    STATUS_TEMP=""
 else
-    echo "[7/7] 未加 --mail 參數，略過寄送"
+    echo "[7/7] 僅做本機備份，略過異地備份與成功時間更新。"
 fi
 
 echo "=========================================="
