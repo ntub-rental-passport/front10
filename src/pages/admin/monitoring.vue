@@ -100,7 +100,9 @@ const serviceReadings = computed(() =>
   [...liveMonitors(), ...pendingMonitors()].map((reading) => {
     // 正在斷線時，卡片講的是這一次；「上次斷線」等恢復之後才有意義
     const lastOutage = reading.state === 'ok' ? lastOutageNote(eventRows.value, reading.id) : null
-    if (reading.id === 'rag' || reading.id === 'ocr') return withNotes(reading, [lastOutage])
+    if (reading.id === 'llm-ollama' || reading.id === 'rag' || reading.id === 'ocr') {
+      return withNotes(reading, [lastOutage])
+    }
     return reading
   }),
 )

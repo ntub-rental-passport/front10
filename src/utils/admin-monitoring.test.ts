@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  LLM_OLLAMA_SERVICE,
   RAG_SERVICE,
   SERVICE_STALE_MS,
   backendMonitor,
@@ -267,6 +268,14 @@ describe('formatTimeAgo', () => {
 })
 
 describe('serviceMonitor', () => {
+  it('Ollama 備援在線可監控', () => {
+    expect(serviceMonitor([probe({ service: 'llm-ollama' })], LLM_OLLAMA_SERVICE, NOW).state).toBe('ok')
+  })
+
+  it('Ollama 未設定時指出 OLLAMA_URL', () => {
+    expect(serviceMonitor([], LLM_OLLAMA_SERVICE, NOW).detail).toContain('OLLAMA_URL')
+  })
+
   it('在線：寫「自某時起正常」，不宣稱「連續在線」', () => {
     const reading = serviceMonitor([probe()], RAG_SERVICE, NOW)
     expect(reading.state).toBe('ok')
