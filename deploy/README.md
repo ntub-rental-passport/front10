@@ -240,21 +240,25 @@ EOF
 
 ### 一次性設定
 
-1. 建立專題專用的 Google 帳號，專門存放備份。先在 VM 安裝工具：
+1. 準備存放備份的 Google 帳號（2026-10-08 起用組員的學校帳號，放在「我的雲端硬碟」的 `rentmate-backup`；
+   學校帳號沒有共用雲端硬碟，帳號畢業後會被停用，換人時要重做第 2 步並把舊資料搬過去）。先在 VM 安裝工具：
 
    ```bash
    sudo apt update
-   sudo apt install restic
-   curl https://rclone.org/install.sh | sudo bash
+   sudo apt install -y restic rclone
    ```
 
-   Ubuntu apt 的 rclone 可能太舊，無法配合目前的 Google Drive 授權，故使用官方安裝腳本取得新版。
+   Ubuntu 24.04 的套件版本是 restic 0.16.4、rclone 1.60.1，實測可以搭配筆電上新版 rclone 產生的 token，
+   不需要用 `curl | sudo bash` 跑官方安裝腳本。
 
-2. 在有瀏覽器、已安裝新版 rclone 的筆電執行（建議與 VM 使用相同版本）：
+2. 在有瀏覽器的筆電安裝 rclone（macOS：`brew install rclone`），然後執行：
 
    ```bash
-   rclone authorize "drive"
+   rclone authorize "drive" --auth-no-open-browser
    ```
+
+   打開它印出的 `http://127.0.0.1:53682/auth?...` 連結。學校帳號若顯示「存取遭封鎖」，代表學校不允許第三方 App，
+   要改用個人帳號。
 
    瀏覽器登入剛建立的專用帳號並同意授權，保留回傳的完整 token JSON。
    回到 VM 執行：
