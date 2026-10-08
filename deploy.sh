@@ -35,10 +35,12 @@ echo "[1/3] 上傳程式碼..."
 #    不該上伺服器。正式環境的 SQLite 在 VM 的 data/garbage/，本機萬一出現
 #    同名路徑，沒有這條就會直接蓋掉正式資料。
 #    --exclude .gstack：瀏覽測試工具的 console／network log。
+#    --exclude /data：VM 的 data/ 放上傳檔、備份狀態與舊 SQLite，只存在 VM 上。
+#    開頭的 / 只排除根目錄那一個，public/data（垃圾車資料）照常同步。
 rsync -avz \
   --include .env.production --include .env.example --exclude '.env*' \
   --exclude node_modules --exclude dist --exclude .venv --exclude .git \
-  --exclude logs --exclude '__pycache__' --exclude desktop \
+  --exclude logs --exclude /data --exclude '__pycache__' --exclude desktop \
   --exclude '*.db' --exclude '*.db-*' --exclude .gstack \
   "$SRC/" "$VM:~/rentmate/" | tail -3
 

@@ -25,7 +25,7 @@ sudo ufw enable
 # 資安變更不進 GitHub，程式碼用 rsync 從本機直接上傳（在本機專案根目錄執行）：
 rsync -avz --delete \
   --exclude node_modules --exclude dist --exclude .venv --exclude .git \
-  --exclude logs --exclude data --exclude '__pycache__' \
+  --exclude logs --exclude /data --exclude '__pycache__' \
   ./ <user>@<VM_IP>:~/rentmate/
 
 # .env 與金鑰被 rsync 一併傳上去了（它們只被 .gitignore/.dockerignore 排除），
@@ -117,7 +117,7 @@ dashboard 手動撤銷**，刪除程式碼不會替你關掉雲端設定。
 在本機執行：
 
 ```bash
-rsync -avz --delete --exclude node_modules --exclude dist --exclude .venv --exclude .git --exclude logs --exclude data --exclude '__pycache__' --exclude .env ./ rentmate@140.131.114.157:~/rentmate/
+rsync -avz --delete --exclude node_modules --exclude dist --exclude .venv --exclude .git --exclude logs --exclude /data --exclude '__pycache__' --exclude .env ./ rentmate@140.131.114.157:~/rentmate/
 ```
 
 在 VM 執行：
@@ -324,7 +324,7 @@ EOF
 統一目錄為 `~/rentmate/data/uploads/{banners,inspection,repairs,contracts,reviews,subsidy}`。
 以前上傳檔未納入備份；現在 restic 會備份 `data/uploads`，也會把仍存在的
 `data/inspection-photos`、`data/repair-photos`、`data/banner-images` 一起備份並印出提示，搬移前後都適用。
-部署使用 `rsync --delete` 時務必保留上面範例的 `--exclude data`，避免刪除 VM 上的上傳檔與備份成功紀錄。
+部署使用 `rsync --delete` 時務必保留上面範例的 `--exclude /data`（開頭的 `/` 只排除根目錄的 data/，`public/data` 仍會同步），避免刪除 VM 上的上傳檔與備份成功紀錄。
 
 先完成異地備份設定，再在 VM 做**一次性搬移**（目的目錄尚不存在；不存在的舊目錄可略過對應 `mv`）：
 
