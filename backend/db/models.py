@@ -727,6 +727,25 @@ class TrashFavorite(Base):
 
     user = relationship("User", back_populates="trash_favorites")
 
+class SubsidyFile(Base):
+    __tablename__ = 'subsidy_files'
+    __table_args__ = (
+        Index('idx_subsidy_files_user_created', 'user_id', 'created_at'),
+        Index('idx_subsidy_files_expires', 'expires_at'),
+    )
+    id = Column(Integer, primary_key=True, nullable=False, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='SET NULL'), nullable=True)
+    doc_type = Column(Enum('application_form','identity','household','lease_copy','bankbook','other', validate_strings=True, create_constraint=True), nullable=False)
+    stored_name = Column(String(64), nullable=False)
+    original_name = Column(EncryptedText(512), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    expires_at = Column(Timestamp, nullable=False)
+    expiry_notified_at = Column(Timestamp, nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+
 class SubsidyApplication(Base):
     __tablename__ = 'subsidy_applications'
     id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
