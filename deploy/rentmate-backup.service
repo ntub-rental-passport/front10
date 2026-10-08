@@ -1,0 +1,17 @@
+# 每日備份由 rentmate-backup.timer 觸發，記錄寫入 journald。
+# 手動觸發：sudo systemctl start rentmate-backup.service
+# 查看記錄：journalctl -u rentmate-backup -n 50
+
+[Unit]
+Description=RentMate - 本機與 Google Drive 異地備份
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=rentmate
+WorkingDirectory=/home/rentmate/rentmate
+ExecStart=/bin/bash /home/rentmate/rentmate/deploy/backup.sh
+StandardOutput=journal
+StandardError=journal
