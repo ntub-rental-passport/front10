@@ -1215,6 +1215,7 @@ async function saveFinalVersion(): Promise<void> {
       is_final: true,
       rental: payload,
       contract_tag: contractTag.value.trim() || null,
+      review_id: storedOcrResult.value?.reviewSessionId,
     })
   } catch (error) {
     finalizeError.value =
