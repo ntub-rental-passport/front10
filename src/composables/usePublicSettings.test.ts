@@ -100,4 +100,62 @@ describe('refreshPublicSettings', () => {
     expect(publicSettings.value.maintenance.mode).toBe(false)
     expect(publicSettings.value.featureOutages).toEqual([])
   })
+
+  it.each([true, false])('首次讀完前尚未載入，完成後即使失敗也算已載入（成功：%s）', async (success) => {
+    let resolve!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((done) => { resolve = done })))
+    const { hasLoadedPublicSettings, refreshPublicSettings } = await import('./usePublicSettings')
+    expect(hasLoadedPublicSettings()).toBe(false)
+    const load = refreshPublicSettings()
+    expect(hasLoadedPublicSettings()).toBe(false)
+    expect(refreshPublicSettings()).toBe(load)
+    resolve(success ? new Response(JSON.stringify(settings()), { status: 200 }) : new Response(null, { status: 502 }))
+    await load
+    expect(hasLoadedPublicSettings()).toBe(true)
+  })
+
+  it('背景重讀只在首次讀完且快取過期時發出，失敗後仍等一分鐘', async () => {
+    const fetchMock = serve(null)
+    const { refreshPublicSettings, refreshPublicSettingsInBackground } = await import('./usePublicSettings')
+    expect(refreshPublicSettingsInBackground()).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await refreshPublicSettings()
+    expect(refreshPublicSettingsInBackground()).toBeNull()
+    vi.advanceTimersByTime(59_999)
+    expect(refreshPublicSettingsInBackground()).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(1)
+    const refresh = refreshPublicSettingsInBackground()
+    expect(refresh).not.toBeNull()
+    await refresh
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(refreshPublicSettingsInBackground()).toBeNull()
+  })
+
+  it('背景重讀與其他讀取共用進行中的請求，只有發起者收到背景 promise', async () => {
+    serve(settings())
+    const { refreshPublicSettings, refreshPublicSettingsInBackground } = await import('./usePublicSettings')
+    await refreshPublicSettings()
+    vi.advanceTimersByTime(60_000)
+
+    let resolve!: (response: Response) => void
+    const fetchMock = vi.fn(() => new Promise<Response>((done) => { resolve = done }))
+    vi.stubGlobal('fetch', fetchMock)
+    const refresh = refreshPublicSettingsInBackground()
+    expect(refresh).not.toBeNull()
+    expect(refreshPublicSettingsInBackground()).toBeNull()
+    expect(refreshPublicSettings()).toBe(refresh)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    resolve(new Response(JSON.stringify(settings()), { status: 200 }))
+    await refresh
+
+    const forced = refreshPublicSettings({ force: true })
+    expect(refreshPublicSettingsInBackground()).toBeNull()
+    expect(refreshPublicSettings()).toBe(forced)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    resolve(new Response(JSON.stringify(settings()), { status: 200 }))
+    await forced
+  })
 })
