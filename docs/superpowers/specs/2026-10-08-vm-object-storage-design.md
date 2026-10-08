@@ -166,7 +166,8 @@ VM 主機上要安裝 `restic` 和 `rclone`（apt）。
    - 備份完執行 `restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 --prune`。
 3. 拿掉 `--mail` 和 GPG 寄信的整段。
 4. 成功時把 epoch 秒數寫進 `~/rentmate/data/backup-status/last-success`（先寫暫存檔再改名），失敗時以非 0 結束，不更新這個檔案。
-5. 排程：crontab 設 `CRON_TZ=Asia/Taipei`，`0 3 * * *` 執行，log 寫到 `~/backups/backup.log`。
+5. 排程：用 systemd timer（`deploy/rentmate-backup.{service,timer}`），設定 `OnCalendar=*-*-* 03:00:00 Asia/Taipei`、`Persistent=true`，log 寫到 journald。不用 crontab 的原因是 Ubuntu 的 cron 不一定支援 `CRON_TZ`，而 `Persistent` 能讓 VM 關機錯過的那次在開機後補跑。
+6. 用 `flock` 防止兩次備份同時執行。手動執行時可以加 `--local-only`，只做本機備份，不送異地。
 
 **需要使用者親手做的步驟**（Claude 沒有辦法代勞）：
 
