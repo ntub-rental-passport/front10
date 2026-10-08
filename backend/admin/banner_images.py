@@ -23,6 +23,8 @@ BANNER_IMAGE_DIR 指到的資料夾。VM 上掛載成 ./data/banner-images，跟
 
 `GET /api/content/banner-images/<檔名>`，不需登入 —— 首頁輪播本來就是公開的。
 走 /api/ 是為了沿用 nginx 既有的轉發，不必另外開一條靜態檔路徑。
+
+圖庫會列出每張圖被哪些輪播使用；沒有輪播使用的圖可由管理員刪除，並留下稽核紀錄。
 """
 
 import hashlib
@@ -40,10 +42,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 MAX_BYTES = 5 * 1024 * 1024
 #: 邊長上限。超過這個尺寸不是輪播圖，是誤傳的原始照片
 MAX_EDGE = 6000
+#: 示範 VM 的硬碟有限，也讓後台選圖清單維持好用的大小
+LIMIT = 30
 #: 只收瀏覽器都認得、且能無損判讀的格式
 FORMATS = {'WEBP': 'webp', 'PNG': 'png', 'JPEG': 'jpg'}
 CONTENT_TYPES = {'webp': 'image/webp', 'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg'}
 URL_PREFIX = '/api/content/banner-images'
+
+
+class LibraryFullError(Exception):
+    """圖庫已滿；跟圖片格式錯誤分開，API 才能回 409。"""
 
 
 def image_dir() -> Path:
@@ -101,6 +109,17 @@ def save(data: bytes, filename: str) -> dict:
         raise ValueError(f'圖片不能超過 {MAX_BYTES // (1024 * 1024)} MB。')
     extension, width, height = _inspect(data)
 
+    items = listing()
+    # 前綴來自上傳檔名：改名重傳也應沿用原檔，才不會多占一格圖庫
+    for item in items:
+        if item['size'] != len(data):
+            continue
+        existing = path_of(item['name'])
+        if existing is not None and existing.read_bytes() == data:
+            return {**_view(existing), 'width': width, 'height': height}
+    if len(items) >= LIMIT:
+        raise LibraryFullError(f'圖庫已滿（{LIMIT} 張），請先刪除未使用的圖片。')
+
     name = f'{_prefix(filename)}-{hashlib.sha256(data).hexdigest()[:12]}.{extension}'
     directory = image_dir()
     directory.mkdir(parents=True, exist_ok=True)
@@ -138,3 +157,14 @@ def path_of(name: str) -> Path | None:
 
 def content_type_of(name: str) -> str:
     return CONTENT_TYPES[name.rsplit('.', 1)[1].lower()]
+
+
+def delete(name: str) -> None:
+    """只刪圖庫內的圖片；是否被輪播使用由 API 先確認。"""
+    path = path_of(name)
+    if path is None:
+        raise LookupError(name)
+    try:
+        path.unlink()
+    except FileNotFoundError as error:
+        raise LookupError(name) from error

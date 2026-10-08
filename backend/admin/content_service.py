@@ -43,6 +43,9 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+from admin import banner_images
 
 ANNOUNCEMENT_LEVELS = ('info', 'warning', 'urgent')
 ANNOUNCEMENT_AUDIENCES = ('all', 'tenant', 'landlord')
@@ -311,6 +314,33 @@ def list_banners() -> list[dict]:
     with _open() as db:
         rows = db.execute('SELECT * FROM banners ORDER BY sort_order, id').fetchall()
     return [_banner_view(row) for row in rows]
+
+
+def _banner_image_name(image_url: str) -> str | None:
+    """只取圖庫網址的檔名；完整網址、查詢參數與編碼不影響使用關係。"""
+    try:
+        parsed = urlsplit(image_url)
+    except ValueError:
+        return None
+    prefix = banner_images.URL_PREFIX + '/'
+    if parsed.scheme not in ('', 'http', 'https') or not parsed.path.startswith(prefix):
+        return None
+    name = unquote(parsed.path[len(prefix):])
+    if not name or name in ('.', '..') or any(char in name for char in ('/', '\\', '\x00')):
+        return None
+    return name
+
+
+def banner_image_usage() -> dict[str, list[dict]]:
+    """所有輪播都算使用中，包含草稿、排程中與已結束的輪播。"""
+    with _open() as db:
+        rows = db.execute('SELECT id, title, image_url FROM banners ORDER BY sort_order, id').fetchall()
+    usage = {}
+    for row in rows:
+        name = _banner_image_name(row['image_url'])
+        if name is not None:
+            usage.setdefault(name, []).append({'id': row['id'], 'title': row['title']})
+    return usage
 
 
 def create_banner(values: dict, *, actor: str) -> dict:
