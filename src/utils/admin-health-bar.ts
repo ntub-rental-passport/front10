@@ -9,7 +9,7 @@
  * 綠燈——一個永遠正常的健康指示器比沒有指示器更危險。tone 仍區分 danger／idle：
  * danger 是「量過但失敗」，idle 是「這項還沒接後端」，顏色不同但文字故意一樣誠實。
  *
- * 第三項在 2026-10 改為 RAG 檢索備援；判定與系統監控頁共用 serviceMonitor。
+ * 第三項在 2026-10 改為 RAG 檢索服務；判定與系統監控頁共用 serviceMonitor。
  */
 
 import {

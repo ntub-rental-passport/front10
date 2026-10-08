@@ -213,7 +213,7 @@ const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_00
 function probe(overrides: Partial<ServiceState> = {}): ServiceState {
   return {
     service: 'rag',
-    label: '檢索備援（RAG）',
+    label: 'RAG 檢索服務',
     status: 'up',
     since: minutesAgo(3 * 24 * 60),
     detail: null,

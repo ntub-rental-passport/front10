@@ -1,7 +1,7 @@
 # RentMate 學校 VM 部署指南
 
-> 架構：`web (Nginx:80/443)` → `fastapi:8000` / `ocr:8787`；FastAPI 連學校 MySQL，檢索備援走 `rag:8000`，生成模型使用 NVIDIA NIM。
-> 網段隔離：AI 備援在 `internal: true` 的 internal；mysql 在 backend_net，只供 rollback，**不對外、不可連外**；
+> 架構：`web (Nginx:80/443)` → `fastapi:8000` / `ocr:8787`；FastAPI 連學校 MySQL，法規檢索使用 `rag:8000`，生成模型使用 NVIDIA NIM。
+> 網段隔離：RAG 檢索服務在 `internal: true` 的 internal；mysql 在 backend_net，只供 rollback，**不對外、不可連外**；
 > 對外只有 web 容器的 80（P2 加 TLS 後為 443）。
 
 ## 一、VM 初始設定（Ubuntu，一次性）
@@ -64,14 +64,15 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST http://<VM公網IP>/api/contrac
   -H "Content-Type: application/json" -d '{}'
 curl -s -o /dev/null -w "%{http_code}\n" -X POST http://<VM公網IP>/api/ocr
 
-# 3. 確認 AI 備援只在 internal 網段，該網段 Internal 應為 true
+# 3. 確認 RAG 檢索服務只在 internal 網段，該網段 Internal 應為 true
 docker network inspect "$(docker inspect "$(docker compose ps -q rag)" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')" --format '{{.Internal}}'
 ```
 
-## 五、RAG 容器（檢索備援）
+## 五、RAG 檢索服務
 
-`rag` 使用 `shibing624/text2vec-base-chinese` 提供本地 embedding，NVIDIA embedding
-失敗時供法規檢索使用（順序 `nvidia,local`）。模型在映像建置時下載並包進映像，執行時使用離線快取。
+正式環境 VM 的 `.env` 設定 `EMBEDDING_PROVIDER="local"`，只使用 `rag` 提供的
+`shibing624/text2vec-base-chinese` embedding；NVIDIA embedding 不用於正式環境。模型在映像建置時下載並包進映像，執行時使用離線快取。
+若 RAG 連不上，檢索會退回把全部 29 塊法規放進 prompt。
 容器只接 internal 私有網段、不開主機 port，資源限制為 1 GB RAM / 1 CPU、單一 worker。
 在 FastAPI 容器內確認健康狀態：
 

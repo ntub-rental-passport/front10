@@ -46,7 +46,7 @@ class ProviderOrderTest(unittest.TestCase):
         embeddings.os.environ["EMBEDDING_PROVIDER"] = value
 
     def test_default_is_nvidia_only(self):
-        """預設不需要 RAG 容器就能跑 —— 備援不是必要條件。"""
+        """本機預設不需要 RAG 容器就能跑。"""
         embeddings.os.environ.pop("EMBEDDING_PROVIDER", None)
         self.assertEqual(embeddings.provider_order(), ["nvidia"])
 

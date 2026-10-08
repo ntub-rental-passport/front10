@@ -4,7 +4,7 @@ import { buildHealthBarItems } from './admin-health-bar'
 import type { DbPoolSnapshot, RequestSnapshot, ServiceState } from './admin-monitoring'
 
 describe('buildHealthBarItems', () => {
-  it('固定回傳三項：資料庫、API 錯誤率、檢索備援（RAG）', () => {
+  it('固定回傳三項：資料庫、API 錯誤率、RAG 檢索服務', () => {
     const items = buildHealthBarItems(null, null)
     expect(items.map((item) => item.id)).toEqual(['db-pool', 'error-rate', 'rag'])
   })
@@ -89,12 +89,12 @@ describe('buildHealthBarItems', () => {
     })
   })
 
-  describe('檢索備援（RAG）', () => {
+  describe('RAG 檢索服務', () => {
     const now = new Date(2026, 8, 27, 12, 0)
     const recent = new Date(now.getTime() - 60_000).toISOString()
     const probe = (overrides: Partial<ServiceState>): ServiceState => ({
       service: 'rag',
-      label: '檢索備援（RAG）',
+      label: 'RAG 檢索服務',
       status: 'up',
       since: recent,
       detail: null,

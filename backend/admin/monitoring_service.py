@@ -67,7 +67,7 @@ RETIRED_SERVICE_LABELS = {
 SERVICE_LABELS = {
     'backend': '後端',
     'database': '資料庫',
-    'rag': '檢索備援（RAG）',
+    'rag': 'RAG 檢索服務',
     'ocr': 'OCR 服務',
     'scheduled-notification': '排程通知',
 }
@@ -296,7 +296,7 @@ def probe_database() -> tuple[bool, str | None] | None:
 
 
 def probe_rag() -> tuple[bool, str | None] | None:
-    """探測 RAG 備援容器。HTTP 成功還要確認模型就緒，否則檢索仍無法使用。"""
+    """探測 RAG 檢索容器。HTTP 成功還要確認模型就緒，否則檢索仍無法使用。"""
     import httpx
 
     from ai import embeddings
@@ -538,9 +538,9 @@ def config_status() -> list[dict]:
         },
         {
             'key': 'rag',
-            'label': '檢索備援（RAG）位址',
+            'label': 'RAG 檢索服務位址',
             'ok': embeddings.is_configured('local'),
-            'hint': 'LOCAL_EMBEDDING_URL。NVIDIA embedding 失敗時使用 RAG 容器。',
+            'hint': 'LOCAL_EMBEDDING_URL。正式環境唯一的 embedding 來源；連不上時檢索退回全部法規。',
         },
         {
             'key': 'vision',
