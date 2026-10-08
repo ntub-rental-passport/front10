@@ -242,7 +242,7 @@ CREATE TABLE `contract_reviews` (
   `records` JSON NOT NULL,                -- 處理紀錄，格式同現在 localStorage 的陣列
   `expiry_notified_at` DATETIME(6) DEFAULT NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  `activity_at` DATETIME(6) NOT NULL,        -- 到期計時用，由程式明確寫入；不用 ON UPDATE
   FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE SET NULL
 );
@@ -305,11 +305,17 @@ CREATE TABLE `contract_review_files` (
 
 ### 6.4 保留期限
 
-`reminders_loop` 每小時執行一次：
+`reminders_loop` 每小時執行一次，只處理 `rental_id IS NULL` 的審閱：
 
-- `rental_id IS NULL` 並且 `updated_at` 已經滿 166 天、`expiry_notified_at IS NULL` 的審閱：用 `notify_user()` 發通知「合約審閱紀錄將於 14 天後刪除」，然後寫入 `expiry_notified_at`。
-- `rental_id IS NULL` 並且 `updated_at` 已經滿 180 天的審閱：刪除審閱和底下的檔案。
-- 使用者更新紀錄時，`updated_at` 會變新。這時要把 `expiry_notified_at` 清空，計時重新開始。
+- **通知**：`activity_at` 已經滿 166 天、`expiry_notified_at IS NULL`，而且至少有一筆處理紀錄或一個檔案 → 用 `notify_user()`（分類「租約」）發通知「合約審閱紀錄將於 14 天後刪除」，然後寫入 `expiry_notified_at`。
+- **刪除**：`activity_at` 已經滿 180 天，而且通知已經發出滿 14 天（沒有任何紀錄和檔案的空審閱則不用通知）→ 刪除審閱和底下的檔案。
+- 使用者更新紀錄、上傳或刪除檔案時，程式會寫入新的 `activity_at`，並清空 `expiry_notified_at`，計時重新開始。
+
+2026-10-08 實作前調整了兩處：
+- 計時改用專門的 `activity_at` 欄位，不用 `updated_at`。`updated_at` 帶有 `ON UPDATE`，寫入「已通知」這個動作本身就會重設計時，紀錄會永遠刪不掉。
+- 刪除前一定要先通知滿 14 天。長期掛在租約下的審閱，租約被刪掉後會立刻符合 180 天的條件；沒有這條規定的話，可能通知才發出一小時就被刪除。
+
+**部署順序**：`main.py` 啟動時會檢查資料表，所以要先在學校 DB 執行 `backend/migrations/20261008_contract_reviews.sql`，再部署 fastapi。VM 的 `.env` 也要先設定 `FILE_ENCRYPTION_KEY`。
 
 ### 6.5 測試
 
