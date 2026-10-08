@@ -1,14 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
-import { Camera, Plus, ChevronLeft, ChevronRight, Download, CheckCircle2 } from 'lucide-vue-next'
+import { Camera, Plus, ChevronLeft, ChevronRight, Download } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import type { HandoverItem, HandoverProperty, CaptureAngle } from '@/src/composables/useHandover'
-import {
-  captureAngles,
-  completedCaptureAngles,
-  formatHandoverTimestamp,
-} from '@/src/utils/handover'
+import type { HandoverItem, HandoverProperty } from '@/src/composables/useHandover'
+import { formatHandoverTimestamp } from '@/src/utils/handover'
 import { downloadInspectionOriginal } from '@/src/services/inspectionApi'
 
 const props = defineProps<{
@@ -16,20 +12,19 @@ const props = defineProps<{
   property: HandoverProperty | null
   busy: boolean
 }>()
+// 不再分「正面／側面」：一個項目可以拍任意張。退租時每一張都要對應補拍一張，各自比對。
 const emit = defineEmits<{
-  capture: [angle: CaptureAngle, replacesId?: string]
-  upload: [angle: CaptureAngle, replacesId?: string]
-  saveNote: [id: string, note: string, angle: CaptureAngle]
+  capture: [replacesId?: string]
+  upload: [replacesId?: string]
+  saveNote: [id: string, note: string]
   removePhoto: [id: string]
   retry: [id: string]
   close: []
 }>()
 const desktop = useMediaQuery('(min-width: 640px)')
 const activeId = ref('')
-const angle = ref<CaptureAngle>('front')
 const showHistory = ref(false)
 const note = ref('')
-const noteAngle = ref<CaptureAngle>('other')
 const downloadError = ref('')
 const downloading = ref(false)
 const photos = computed(() => props.item.evidences.filter((e) => e.phase === 'baseline'))
@@ -40,29 +35,21 @@ const gallery = computed(() =>
 const photo = computed(() => gallery.value.find((e) => e.id === activeId.value) ?? gallery.value[0])
 const historical = computed(() => Boolean(photo.value?.supersededBy || photo.value?.removedAt))
 const index = computed(() => gallery.value.findIndex((e) => e.id === photo.value?.id))
-const progress = computed(() => completedCaptureAngles(props.item))
 watch(
-  () => [props.item.id, photo.value?.id, photo.value?.userNote, photo.value?.angle],
+  () => [props.item.id, photo.value?.id, photo.value?.userNote],
   () => {
     note.value = photo.value?.userNote ?? ''
-    noteAngle.value = photo.value?.angle ?? 'other'
     downloadError.value = ''
   },
   { immediate: true },
 )
 function choose(id: string) {
   if (
-    (note.value !== (photo.value?.userNote ?? '') ||
-      noteAngle.value !== (photo.value?.angle ?? 'other')) &&
-    !window.confirm('角度或備註尚未儲存，要放棄這次編輯並切換照片嗎？')
+    note.value !== (photo.value?.userNote ?? '') &&
+    !window.confirm('備註尚未儲存，要放棄這次編輯並切換照片嗎？')
   )
     return
   activeId.value = id
-}
-function selectAngle(value: CaptureAngle) {
-  angle.value = value
-  const match = photos.value.find((e) => e.angle === value)
-  if (match) choose(match.id)
 }
 async function download() {
   if (!photo.value) return
@@ -81,59 +68,22 @@ const fmt = formatHandoverTimestamp
 
 <template>
   <div class="space-y-5 min-w-0">
-    <details
-      class="capture-panel rounded-xl border p-4 space-y-3"
-      :open="desktop || !photos.length"
-    >
-      <summary class="cursor-pointer text-sm font-semibold sm:hidden">
-        拍攝角度 · {{ progress }} / 2 已完成
-      </summary>
+    <section class="capture-panel space-y-3 rounded-xl border p-4">
       <div class="flex items-center justify-between text-sm">
-        <strong>拍攝進度 {{ progress }} / 2</strong
-        ><span class="text-muted-foreground">{{ photos.length }} 張照片</span>
+        <strong>入住存證 · {{ photos.length }} 張照片</strong>
       </div>
-      <div
-        role="progressbar"
-        aria-label="建議角度拍攝進度"
-        :aria-valuenow="progress"
-        :aria-valuemax="2"
-        aria-valuemin="0"
-        class="h-2 overflow-hidden rounded-full bg-muted"
-      >
-        <div
-          class="h-full rounded-full bg-primary transition-all"
-          :style="{ width: `${(progress / 2) * 100}%` }"
-        />
-      </div>
-      <div class="grid grid-cols-3 gap-2">
-        <button
-          v-for="entry in captureAngles"
-          :key="entry.value"
-          type="button"
-          class="rounded-lg border px-2 py-3 text-xs sm:text-sm focus-visible:ring-2 focus-visible:ring-ring"
-          :class="
-            angle === entry.value
-              ? 'border-primary bg-primary/5 text-primary'
-              : 'text-muted-foreground'
-          "
-          :aria-pressed="angle === entry.value"
-          @click="selectAngle(entry.value)"
-        >
-          <CheckCircle2
-            v-if="photos.some((e) => e.angle === entry.value)"
-            class="mx-auto mb-1 h-4 w-4"
-          /><Camera v-else class="mx-auto mb-1 h-4 w-4" />{{ entry.label }}
-        </button>
-      </div>
+      <p class="text-xs leading-relaxed text-muted-foreground">
+        同一個物品可以拍多張（整體、各個面、瑕疵特寫）。退租時要對每一張從相同位置補拍一張，AI 會一組一組比對，所以每張都要拍清楚。
+      </p>
       <div class="flex flex-wrap gap-2">
-        <Button size="sm" :disabled="busy" @click="emit('capture', angle)"
-          ><Camera class="mr-1 h-4 w-4" />繼續拍攝</Button
+        <Button size="sm" :disabled="busy" @click="emit('capture')"
+          ><Camera class="mr-1 h-4 w-4" />{{ photos.length ? '繼續拍攝' : '開始拍攝' }}</Button
         >
-        <Button size="sm" variant="outline" :disabled="busy" @click="emit('upload', angle)"
-          ><Plus class="mr-1 h-4 w-4" />新增照片</Button
+        <Button size="sm" variant="outline" :disabled="busy" @click="emit('upload')"
+          ><Plus class="mr-1 h-4 w-4" />上傳照片（可多選）</Button
         >
       </div>
-    </details>
+    </section>
 
     <div v-if="photo" class="grid min-w-0 gap-5 md:grid-cols-2">
       <div class="min-w-0 space-y-3">
@@ -171,7 +121,7 @@ const fmt = formatHandoverTimestamp
           <button
             v-for="(entry, i) in gallery"
             :key="entry.id"
-            class="h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 focus-visible:ring-2 focus-visible:ring-ring"
+            class="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 focus-visible:ring-2 focus-visible:ring-ring"
             :class="entry.id === photo.id ? 'border-primary' : 'border-transparent'"
             :aria-label="`檢視第 ${i + 1} 張照片`"
             :aria-pressed="entry.id === photo.id"
@@ -191,7 +141,7 @@ const fmt = formatHandoverTimestamp
             variant="outline"
             size="sm"
             :disabled="busy"
-            @click="emit('capture', photo.angle ?? 'other', photo.id)"
+            @click="emit('capture', photo.id)"
             >重新拍攝這張</Button
           >
           <Button variant="ghost" size="sm" :disabled="busy" @click="emit('removePhoto', photo.id)"
@@ -273,19 +223,7 @@ const fmt = formatHandoverTimestamp
           </p>
         </details>
         <details class="space-y-2 rounded-xl border p-4" :open="desktop">
-          <summary class="cursor-pointer text-sm font-semibold">角度分類與備註</summary>
-          <label for="evidence-angle" class="text-sm font-semibold">這張照片的角度</label>
-          <select
-            id="evidence-angle"
-            v-model="noteAngle"
-            :disabled="busy || historical"
-            class="w-full rounded-lg border bg-background p-2 text-sm"
-          >
-            <option value="other">其他／尚未分類</option>
-            <option v-for="entry in captureAngles" :key="entry.value" :value="entry.value">
-              {{ entry.label }}
-            </option>
-          </select>
+          <summary class="cursor-pointer text-sm font-semibold">描述與備註</summary>
           <label for="evidence-description" class="text-sm font-semibold">描述／備註</label>
           <textarea
             id="evidence-description"
@@ -302,11 +240,9 @@ const fmt = formatHandoverTimestamp
               v-if="!historical"
               size="sm"
               variant="outline"
-              :disabled="
-                busy || (note === (photo.userNote ?? '') && noteAngle === (photo.angle ?? 'other'))
-              "
-              @click="emit('saveNote', photo.id, note, noteAngle)"
-              >儲存角度與備註</Button
+              :disabled="busy || note === (photo.userNote ?? '')"
+              @click="emit('saveNote', photo.id, note)"
+              >儲存備註</Button
             >
           </div>
           <details v-if="photo.descriptionHistory?.length" class="text-xs text-muted-foreground">
@@ -315,14 +251,6 @@ const fmt = formatHandoverTimestamp
             </summary>
             <p v-for="(entry, i) in photo.descriptionHistory" :key="i" class="mt-2 break-words">
               {{ fmt(entry.updatedAt) }} · 修改前：{{ entry.previous || '空白' }}
-            </p>
-          </details>
-          <details v-if="photo.angleHistory?.length" class="text-xs text-muted-foreground">
-            <summary class="cursor-pointer">
-              角度分類修改紀錄（{{ photo.angleHistory.length }}）
-            </summary>
-            <p v-for="(entry, i) in photo.angleHistory" :key="i" class="mt-2">
-              {{ fmt(entry.updatedAt) }} · {{ entry.previous }} → {{ entry.current }}
             </p>
           </details>
         </details>
@@ -338,10 +266,10 @@ const fmt = formatHandoverTimestamp
         variant="outline"
         size="sm"
         :disabled="busy || !photo || historical"
-        @click="emit('capture', photo?.angle ?? 'front', photo?.id)"
+        @click="emit('capture', photo?.id)"
         >重新拍攝</Button
       >
-      <Button variant="outline" size="sm" :disabled="busy" @click="emit('upload', angle)"
+      <Button variant="outline" size="sm" :disabled="busy" @click="emit('upload')"
         >新增照片</Button
       >
       <Button size="sm" @click="emit('close')">完成</Button>

@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/api/outage", tags=["Outage"])
 logger = logging.getLogger(__name__)
@@ -290,8 +290,12 @@ def build_power_event(address: str, now=None):
 # ---------- Route ----------------------------------------------------
 
 @router.get("/notices")
-async def get_outage_notices(address: Optional[str] = "台北市大安區和平東路二段"):
-    target_address = address.strip() if address else "台北市大安區和平東路二段"
+async def get_outage_notices(address: Optional[str] = None):
+    # 不給預設地址：以前預設「台北市大安區和平東路二段」，前端沒帶地址時會回傳
+    # 一個跟使用者無關的地點的停電資訊，看起來像是查到了。
+    target_address = (address or "").strip()
+    if not target_address:
+        raise HTTPException(status_code=422, detail="請提供要查詢的地址。")
     now_str = datetime.now().strftime("%m/%d %H:%M")
 
     water_event = await fetch_real_water_outage(target_address)

@@ -25,6 +25,8 @@ const {
   isLoading,
   pageTabs,
   rentalAddress,
+  addressSource,
+  addressError,
   updateAddress,
 } = useOutageData()
 
@@ -84,12 +86,18 @@ function confirmChangeAddress() {
                   <div class="min-w-0 space-y-2">
                     <div class="flex min-w-0 flex-wrap items-center gap-3">
                       <h2 class="truncate text-xl font-bold tracking-tight text-slate-900 sm:text-[1.9rem]">
-                        {{ rentalAddress }}
+                        {{ rentalAddress || (isLoading ? '正在讀取租約地址…' : '尚未設定查詢地址') }}
                       </h2>
                     </div>
                     <p class="text-sm leading-6 text-slate-500">
-                      依租約地址自動帶入，也能隨時切換查詢地點，讓停水停電資訊更貼近實際居住位置。
+                      {{
+                        addressSource === 'contract' ? '已依你存檔的租約地址自動帶入，也能隨時切換查詢地點。'
+                        : addressSource === 'landlord' ? '已依房東平台上的租約地址自動帶入，也能隨時切換查詢地點。'
+                        : addressSource === 'manual' ? '目前查詢的是你輸入的地址。'
+                        : '找不到租約地址。請按「更換地址」輸入租屋處地址，就能查詢附近的停水停電公告。'
+                      }}
                     </p>
+                    <p v-if="addressError" class="text-sm font-medium text-red-600">{{ addressError }}</p>
                   </div>
                 </div>
 
@@ -111,7 +119,7 @@ function confirmChangeAddress() {
                     <Button 
                       variant="outline" 
                       class="h-11 rounded-2xl border-slate-200 bg-white px-5 text-slate-700 hover:bg-slate-50"
-                      :disabled="isLoading"
+                      :disabled="isLoading || !rentalAddress"
                       @click="() => fetchOutages()"
                     >
                       <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': isLoading }" />

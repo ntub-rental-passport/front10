@@ -141,6 +141,8 @@ def evidence_json(record, phase):
         'removedAt': timestamp(detail.removed_at) if detail and detail.removed_at else None,
         'descriptionHistory': provenance.get('descriptionHistory', []),
         'angleHistory': provenance.get('angleHistory', []),
+        'pairsWith': provenance.get('pairsWith'),
+        'comparison': provenance.get('comparison'),
         'propertySnapshot': provenance.get('propertySnapshot'),
         'processingNote': '預覽圖經系統校正方向及壓縮；原檔另行保存。' if provenance.get('originalPath') else '舊紀錄僅保留處理後照片，沒有原始檔。',
         'modificationNote': '上傳前是否修改無法查證；SHA-256 僅供核對收件後檔案。',
@@ -162,11 +164,40 @@ def item_records(item, include_history=False):
     return sorted((r for r in records if r), key=lambda r: (0 if r.id in primary_ids else 1, r.id))
 
 
+SEVERITY = {'new_damage': 4, 'missing': 3, 'degraded': 2, 'uncertain': 1, 'unchanged': 0}
+
+
+def photo_pairs(item):
+    """每一張（有效的）入住照片，配上對應的退租照片（還沒拍就是 None）。
+
+    退租照片在 provenance.pairsWith 記著它對應的入住照片。舊資料（這個功能之前）
+    只有一張退租照、沒有 pairsWith：當作跟項目上記的那張入住照片配對，舊的比對才不會消失。
+    """
+    db = object_session(item)
+    records = item_records(item)
+    baselines = [r for r in records if r.type == 'check_in']
+    checkouts = [r for r in records if r.type == 'check_out']
+    paired = {}
+    for record in checkouts:
+        detail = db.get(InspectionPhotoDetail, record.id)
+        target = (detail.provenance or {}).get('pairsWith') if detail else None
+        if target:
+            paired[int(target)] = record
+    if not paired and checkouts and item.baseline_record_id:
+        legacy = item.checkout if item.checkout in checkouts else checkouts[0]
+        paired[item.baseline_record_id] = legacy
+    return [(baseline, paired.get(baseline.id)) for baseline in baselines]
+
+
 def item_json(item):
+    pairs = photo_pairs(item)
     return {
         'id': str(item.id), 'propertyId': target_key(item),
         'room': item.room_name, 'name': item.item_name, 'category': item.category,
         'createdAt': timestamp(item.created_at), 'diff': item.comparison_result,
+        'pairs': [{'baselineId': str(b.id), 'checkoutId': str(c.id) if c else None} for b, c in pairs],
+        # 方案 A：每張入住照片都有對應的退租照片，才算完成退租點交
+        'checkoutComplete': bool(pairs) and all(c for _, c in pairs),
         'evidences': [evidence_json(r, 'baseline' if r.type == 'check_in' else 'checkout') for r in item_records(item)],
         'history': [evidence_json(r, 'baseline' if r.type == 'check_in' else 'checkout') for r in item_records(item, True)
                     if (d := object_session(item).get(InspectionPhotoDetail, r.id)) and (d.superseded_by or d.removed_at)],
@@ -249,6 +280,8 @@ class PhotoRequest(BaseModel):
     photo_taken_at: datetime | None = None
     replaces_id: int | None = None
     append: bool = False
+    # 退租照片：對應哪一張入住照片（每張入住照片都要有一張退租照片，各自比對）
+    pairs_with: int | None = None
 
 
 class DefectResult(BaseModel):
@@ -453,7 +486,16 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
     item = owned_item(db, item_id, user, lock=True)
     claim_version(db, item, item.version)
     old_record = None
-    if payload.replaces_id:
+    pair_target = None
+    if payload.pairs_with is not None:
+        if phase != 'checkout':
+            raise HTTPException(422, '只有退租照片需要指定對應的入住照片。')
+        pair_target = next((r for r in item_records(item) if r.id == payload.pairs_with and r.type == 'check_in'), None)
+        if pair_target is None:
+            raise HTTPException(409, '對應的入住照片已變更，請重新載入。')
+        # 同一張入住照片再拍一次退租照：取代原本那張（舊的留在歷程）
+        old_record = next((c for b, c in photo_pairs(item) if b.id == pair_target.id and c), None)
+    elif payload.replaces_id:
         old_record = next((r for r in item_records(item) if r.id == payload.replaces_id and
                            r.type == ('check_in' if phase == 'baseline' else 'check_out')), None)
         if old_record is None:
@@ -489,6 +531,7 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
                         'size': len(raw), 'originalName': payload.original_name,
                         'photoTakenAt': payload.photo_taken_at.isoformat() if payload.photo_taken_at else None,
                         'replacesId': str(old_record.id) if old_record else None,
+                        'pairsWith': str(pair_target.id) if pair_target else None,
                         'propertySnapshot': snapshot,
                         'descriptionHistory': []}))
         if not getattr(item, phase) or (old_record and getattr(item, phase + '_record_id') == old_record.id):
@@ -611,32 +654,79 @@ def analyze_defect(payload: AnalyzeRequest, db: Session = Depends(get_db), user:
     return {'status': 'success', 'vlm_result': result, 'item': item_json(item)}
 
 
-@router.post('/items/{item_id}/compare')
-def compare_photos(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_tenant)):
-    item = owned_item(db, item_id, user)
-    if not item.baseline or not item.checkout:
-        raise HTTPException(422, '需同時具備入住與退租照片才能比對。')
-    version = item.version
-    baseline_id, checkout_id = item.baseline_record_id, item.checkout_record_id
-    # The existing vision model accepts one image: pair both photos without cropping.
+COMPARE_PROMPT = ('項目：{room} / {item}。左半張為入住，右半張為退租，是同一個位置的前後照片。'
+                  '比較同一物品的可見差異：unchanged 狀態相同、new_damage 新增瑕疵、'
+                  'degraded 使用痕跡、missing 確定物品消失。視角、光線、遮擋或解析度不足以判斷時用 uncertain，'
+                  '不要將未拍到視為消失。summary 說明前後具體差異及限制，confidence 為 0 到 1 的主觀判斷信心。')
+
+
+def _side_by_side(baseline, checkout) -> str:
+    # 影像模型一次只收一張圖：入住、退租左右並排，不裁切
     canvas = Image.new('RGB', (1280, 640), 'white')
-    for index, record in enumerate((item.baseline, item.checkout)):
+    for index, record in enumerate((baseline, checkout)):
         with Image.open(io.BytesIO(read_photo(record))) as photo:
             photo.thumbnail((620, 620))
             canvas.paste(photo, (index * 640 + (640 - photo.width) // 2, (640 - photo.height) // 2))
     output = io.BytesIO()
     canvas.save(output, format='JPEG', quality=90)
-    prompt = (f'項目：{item.room_name} / {item.item_name}。左半張為入住，右半張為退租。'
-              '比較同一物品的可見差異：unchanged 狀態相同、new_damage 新增瑕疵、'
-              'degraded 使用痕跡、missing 確定物品消失。視角、光線、遮擋或解析度不足以判斷時用 uncertain，'
-              '不要將未拍到視為消失。summary 說明前後具體差異及限制，confidence 為 0 到 1 的主觀判斷信心。')
-    db.rollback()
-    result = vision_result(base64.b64encode(output.getvalue()).decode(), prompt, ComparisonResult)
+    return base64.b64encode(output.getvalue()).decode()
+
+
+@router.post('/items/{item_id}/compare')
+def compare_photos(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_tenant)):
+    """每一組（入住照片＋對應的退租照片）各自比對；項目的結果取最嚴重的那組。
+
+    還沒拍退租照的入住照片不比對，列在 pending，項目也不算完成。
+    """
+    item = owned_item(db, item_id, user)
+    all_pairs = photo_pairs(item)
+    pairs = [(b, c) for b, c in all_pairs if c]
+    if not pairs:
+        raise HTTPException(422, '需要至少一組入住與對應的退租照片才能比對。')
+    version = item.version
+    pending = [str(b.id) for b, c in all_pairs if not c]
+    images = [(b.id, c.id, _side_by_side(b, c)) for b, c in pairs]
+    prompt = COMPARE_PROMPT.format(room=item.room_name, item=item.item_name)
+    db.rollback()  # 不要在呼叫遠端模型的期間持有交易
+
+    results = []
+    for index, (baseline_id, checkout_id, image) in enumerate(images, start=1):
+        entry = {'index': index, 'baselineRecordId': str(baseline_id), 'checkoutRecordId': str(checkout_id)}
+        try:
+            entry.update(vision_result(image, prompt, ComparisonResult))
+        except HTTPException:
+            entry['error'] = '這組比對暫時失敗，照片已保留，請稍後重新比對。'
+        results.append(entry)
+    succeeded = [entry for entry in results if 'type' in entry]
+    if not succeeded:
+        raise HTTPException(502, '影像比對暫時失敗，照片已保留，請稍後重試。')
+
     item = owned_item(db, item_id, user, lock=True)
     if item.version != version:
         raise HTTPException(409, '照片已變更，這次比對未儲存，請重新比對。')
     claim_version(db, item, version)
-    item.comparison_result = {**result, 'computedAt': timestamp(datetime.utcnow()),
-                              'baselineRecordId': str(baseline_id), 'checkoutRecordId': str(checkout_id)}
+    computed_at = timestamp(datetime.utcnow())
+    for entry in results:
+        detail = db.get(InspectionPhotoDetail, int(entry['checkoutRecordId']))
+        if detail is not None:
+            # JSON 欄位要整個換掉，SQLAlchemy 才會知道有變更
+            detail.provenance = {**(detail.provenance or {}), 'comparison': {**entry, 'computedAt': computed_at}}
+    worst = max(succeeded, key=lambda entry: (SEVERITY[entry['type']], -entry['confidence']))
+    flagged = [entry for entry in succeeded if entry['type'] != 'unchanged']
+    if len(results) == 1:
+        summary = worst['summary']
+    else:
+        summary = '；'.join(f"第 {entry['index']} 組：{entry['summary']}" for entry in (flagged or [worst]))
+    failed = len(results) - len(succeeded)
+    if failed:
+        summary += f'（{failed} 組比對失敗，請重新比對）'
+    if pending:
+        summary += f'（另有 {len(pending)} 張入住照片尚未拍退租照，未比對）'
+    item.comparison_result = {
+        'type': worst['type'], 'confidence': worst['confidence'], 'summary': summary,
+        'computedAt': computed_at, 'pairs': results, 'pending': pending,
+        # 舊欄位：指向最嚴重的那一組，既有畫面與匯出照舊讀得到
+        'baselineRecordId': worst['baselineRecordId'], 'checkoutRecordId': worst['checkoutRecordId'],
+    }
     db.commit()
     return item_json(item)

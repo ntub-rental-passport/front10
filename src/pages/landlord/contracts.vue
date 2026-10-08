@@ -298,6 +298,9 @@ async function openInspection() {
     inspectionLoading.value = false
   }
 }
+function evidenceById(item: LeaseInspectionItem, id: string | null | undefined) {
+  return id ? item.evidences.find((evidence) => evidence.id === id) ?? null : null
+}
 const diffLabel: Record<string, string> = { unchanged: '無差異', new_damage: '新增損傷', missing: '物品不見', degraded: '使用痕跡', uncertain: '無法判斷' }
 function clearFilters() { activeTab.value = 'all'; keyword.value = ''; propertyFilter.value = 'all'; stateFilter.value = 'all'; attachmentFilter.value = 'all' }
 function csvCell(value: unknown): string { return `"${String(value ?? '').replaceAll('"', '""')}"` }
@@ -325,8 +328,8 @@ watch(filtered, (rows) => { if (rows.length && !rows.some((item) => item.id === 
         <p v-else-if="!inspectionItems.length" class="empty">租客還沒有在這份租約上建立點交紀錄。</p>
         <section v-for="[room, items] in inspectionRooms" :key="room"><h3>{{ room }}</h3>
           <article v-for="item in items" :key="item.id" class="inspection-item"><b>{{ item.name }}</b>
-            <div class="inspection-photos"><figure v-for="evidence in item.evidences" :key="evidence.id"><img :src="evidence.url" :alt="`${item.name} ${evidence.phase === 'baseline' ? '入住' : '退租'}照片`" /><figcaption><b>{{ evidence.phase === 'baseline' ? '入住' : '退租' }}</b>・{{ evidence.aiLabel }}<small>{{ new Date(evidence.capturedAt).toLocaleString('zh-TW') }}<template v-if="evidence.integrityNote">・{{ evidence.integrityNote }}</template></small><small v-if="evidence.userNote">備註：{{ evidence.userNote }}</small></figcaption></figure><p v-if="!item.evidences.length" class="empty">尚未拍照</p></div>
-            <p v-if="item.diff" class="inspection-diff"><b>比對：{{ diffLabel[item.diff.type] ?? item.diff.type }}</b>（信心 {{ Math.round(item.diff.confidence * 100) }}%）{{ item.diff.summary }}</p>
+            <div v-for="(pair, pairIndex) in item.pairs ?? []" :key="pair.baselineId" class="inspection-pair"><p class="pair-title">第 {{ pairIndex + 1 }} 組</p><div class="inspection-photos"><figure v-for="evidence in [evidenceById(item, pair.baselineId), evidenceById(item, pair.checkoutId)]" :key="evidence?.id ?? 'missing'"><template v-if="evidence"><img :src="evidence.url" :alt="`${item.name} ${evidence.phase === 'baseline' ? '入住' : '退租'}照片`" /><figcaption><b>{{ evidence.phase === 'baseline' ? '入住' : '退租' }}</b>・{{ evidence.aiLabel }}<small>{{ new Date(evidence.capturedAt).toLocaleString('zh-TW') }}<template v-if="evidence.integrityNote">・{{ evidence.integrityNote }}</template></small><small v-if="evidence.userNote">備註：{{ evidence.userNote }}</small></figcaption></template><p v-else class="empty">尚未拍退租照</p></figure></div><p v-if="evidenceById(item, pair.checkoutId)?.comparison" class="inspection-diff"><template v-if="evidenceById(item, pair.checkoutId)!.comparison!.type"><b>{{ diffLabel[evidenceById(item, pair.checkoutId)!.comparison!.type!] ?? evidenceById(item, pair.checkoutId)!.comparison!.type }}</b>（信心 {{ Math.round((evidenceById(item, pair.checkoutId)!.comparison!.confidence ?? 0) * 100) }}%）{{ evidenceById(item, pair.checkoutId)!.comparison!.summary }}</template><template v-else>{{ evidenceById(item, pair.checkoutId)!.comparison!.error }}</template></p></div><p v-if="!(item.pairs ?? []).length" class="empty">尚未拍照</p>
+            <p v-if="item.diff" class="inspection-diff"><b>整體：{{ diffLabel[item.diff.type] ?? item.diff.type }}</b>（信心 {{ Math.round(item.diff.confidence * 100) }}%）{{ item.diff.summary }}</p>
           </article>
         </section>
       </div></section></div>
@@ -367,4 +370,6 @@ watch(filtered, (rows) => { if (rows.length && !rows.some((item) => item.id === 
 .inspection-photos figcaption { @apply mt-1 text-xs; }
 .inspection-photos small { @apply block text-[#788179]; }
 .inspection-diff { @apply mt-2 rounded-xl bg-[#fbf9f3] p-2 text-xs; }
+.inspection-pair { @apply mt-3 border-t border-[#ece6dc] pt-3 first:mt-2 first:border-0 first:pt-0; }
+.pair-title { @apply text-xs font-bold text-[#788179]; }
 </style>

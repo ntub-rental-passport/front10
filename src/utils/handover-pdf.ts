@@ -4,8 +4,7 @@ import {
   firstEvidenceOfPhase,
   formatHandoverTimestamp,
   groupItemsByRoom,
-  captureAngles,
-  completedCaptureAngles,
+  baselinePhotoCount,
 } from './handover'
 
 /** Standalone A4 pages using local Chinese fonts, as in the contract PDF exporter. */
@@ -210,8 +209,8 @@ async function createEvidencePack(
   const groups = groupItemsByRoom(items)
   const summaries = [
     `點交項目  ${items.length} 項`,
-    `已完成  ${items.filter(it => completedCaptureAngles(it) === 2).length} 項`,
-    `未完成  ${items.filter(it => completedCaptureAngles(it) < 2).length} 項`,
+    `已存證  ${items.filter(it => baselinePhotoCount(it) > 0).length} 項`,
+    `未拍照  ${items.filter(it => baselinePhotoCount(it) === 0).length} 項`,
   ]
   summaries.forEach((value, i) => {
     const w = (width - 24) / 3
@@ -253,10 +252,6 @@ async function createEvidencePack(
       const fields = evidence
         ? [
             ['存證編號', evidence.evidenceNumber || `RM-IN-${evidence.id.padStart(8, '0')}`],
-            [
-              '照片角度',
-              captureAngles.find((a) => a.value === evidence.angle)?.label || '其他／舊照片',
-            ],
             [
               '拍攝時間',
               evidence.photoTakenAt
@@ -302,10 +297,6 @@ async function createEvidencePack(
             ...(evidence.descriptionHistory ?? []).map((entry) => [
               '描述歷程',
               `${formatHandoverTimestamp(entry.updatedAt)} 修改前：${entry.previous || '空白'}`,
-            ]),
-            ...(evidence.angleHistory ?? []).map((entry) => [
-              '角度歷程',
-              `${formatHandoverTimestamp(entry.updatedAt)} ${entry.previous} → ${entry.current}`,
             ]),
           ]
         : [['存證狀態', '尚未拍攝']]

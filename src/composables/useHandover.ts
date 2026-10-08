@@ -55,6 +55,20 @@ export interface HandoverEvidence {
   propertySnapshot?: HandoverProperty
   descriptionHistory?: { previous: string; updatedAt: string }[]
   angleHistory?: { previous: string; current: string; updatedAt: string }[]
+  /** 退租照片：對應的入住照片 id（每張入住照片各自配一張退租照片比對） */
+  pairsWith?: string | null
+  /** 這一組（入住＋這張退租照）的 AI 比對結果 */
+  comparison?: (HandoverPairResult & { computedAt: string }) | null
+}
+
+export interface HandoverPairResult {
+  index: number
+  baselineRecordId: string
+  checkoutRecordId: string
+  type?: HandoverDiff['type']
+  confidence?: number
+  summary?: string
+  error?: string
 }
 
 export type HandoverDiff = {
@@ -62,6 +76,10 @@ export type HandoverDiff = {
   confidence: number
   summary: string
   computedAt: string
+  /** 每一組的結果；項目的 type 取最嚴重的那組 */
+  pairs?: HandoverPairResult[]
+  /** 還沒拍退租照、沒有比對的入住照片 id */
+  pending?: string[]
 }
 
 export interface HandoverItem {
@@ -73,6 +91,10 @@ export interface HandoverItem {
   evidences: HandoverEvidence[]
   history?: HandoverEvidence[]
   diff?: HandoverDiff
+  /** 每張入住照片與對應的退租照片（checkoutId 為 null 代表還沒拍） */
+  pairs?: { baselineId: string; checkoutId: string | null }[]
+  /** 每張入住照片都有退租照片才算完成 */
+  checkoutComplete?: boolean
   createdAt: string
 }
 
@@ -221,6 +243,7 @@ export function useHandover() {
       angle?: CaptureAngle
       append?: boolean
       replacesId?: string
+      pairsWith?: string
       originalName?: string
       photoTakenAt?: string
     },
@@ -236,6 +259,7 @@ export function useHandover() {
           ...(payload.angle ? { angle: payload.angle } : {}),
           ...(payload.append ? { append: true } : {}),
           ...(payload.replacesId ? { replaces_id: Number(payload.replacesId) } : {}),
+          ...(payload.pairsWith ? { pairs_with: Number(payload.pairsWith) } : {}),
           ...(payload.originalName ? { original_name: payload.originalName } : {}),
           ...(payload.photoTakenAt ? { photo_taken_at: payload.photoTakenAt } : {}),
           capture_quality:

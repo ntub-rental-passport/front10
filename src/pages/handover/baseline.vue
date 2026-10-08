@@ -41,23 +41,21 @@ import {
   type HandoverItem,
   type CaptureQuality,
   type CaptureSource,
-  type CaptureAngle,
 } from '@/src/composables/useHandover'
 import {
   firstEvidenceOfPhase,
   groupItemsByRoom,
-  completedCaptureAngles,
+  baselinePhotoCount,
 } from '@/src/utils/handover'
 // ---------- AR 相機彈窗狀態 ---------- //
 import { createHandoverPdf } from '@/src/utils/handover-pdf'
 const showCameraDialog = ref(false)
 const activeTargetItem = ref<HandoverItem | null>(null)
 
-const captureAngle = ref<CaptureAngle>('front')
 const replacingId = ref<string>()
-function openCaptureModal(item: HandoverItem, angle: CaptureAngle = 'front', replacesId?: string) {
+const uploadProgress = ref('')
+function openCaptureModal(item: HandoverItem, replacesId?: string) {
   if (busy.value) return
-  captureAngle.value = angle
   replacingId.value = replacesId
   activeTargetItem.value = item
   showCameraDialog.value = true
@@ -106,7 +104,6 @@ async function processPhotoWithAI(
     url: dataUrl,
     source,
     quality,
-    angle: captureAngle.value,
     append: true,
     replacesId: replacingId.value,
     originalName,
@@ -127,32 +124,40 @@ async function handlePhotoCaptured(payload: CapturePayload) {
   )
 }
 
-// 本地檔案上傳
-async function capturePhoto(itemId: string, angle: CaptureAngle = 'front', replacesId?: string) {
+// 本地檔案上傳：一次可以選多張，逐張上傳（每張都要經過伺服器壓縮與 AI 辨識）。
+// 重拍某一張時只能選一張。
+async function capturePhoto(itemId: string, replacesId?: string) {
   if (busy.value) return
-  captureAngle.value = angle
   replacingId.value = replacesId
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = 'image/*'
+  input.multiple = !replacesId
   input.style.display = 'none'
   document.body.appendChild(input)
 
   input.onchange = async () => {
-    const file = input.files?.[0]
+    const files = Array.from(input.files ?? [])
     document.body.removeChild(input)
-    if (!file) return
+    if (!files.length) return
 
     const targetItem = itemsOfCurrentProperty.value.find((it) => it.id === itemId)
     if (!targetItem) return
 
-    try {
-      const dataUrl = await readOriginal(file)
-      await processPhotoWithAI(targetItem, dataUrl, 'file', null, file.name)
-    } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : '無法讀取圖片，請重新選擇圖片檔案。'
-      console.error('圖片壓縮或處理失敗:', cause)
+    const failed: string[] = []
+    for (const [index, file] of files.entries()) {
+      uploadProgress.value = files.length > 1 ? `正在上傳第 ${index + 1} / ${files.length} 張…` : ''
+      try {
+        const dataUrl = await readOriginal(file)
+        await processPhotoWithAI(targetItem, dataUrl, 'file', null, file.name)
+        if (error.value) failed.push(`${file.name}：${error.value}`)
+      } catch (cause) {
+        failed.push(`${file.name}：${cause instanceof Error ? cause.message : '無法讀取圖片'}`)
+        console.error('圖片壓縮或處理失敗:', cause)
+      }
     }
+    uploadProgress.value = ''
+    if (failed.length) error.value = `有 ${failed.length} 張沒有上傳成功：${failed.join('；')}`
   }
 
   input.oncancel = () => input.remove()
@@ -168,7 +173,7 @@ const filteredItems = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return itemsOfCurrentProperty.value.filter((it) => {
     const baselineEv = firstEvidenceOfPhase(it, 'baseline')
-    if (onlyDone.value && completedCaptureAngles(it) < 2) return false
+    if (onlyDone.value && baselinePhotoCount(it) < 1) return false
     if (!kw) return true
     return (
       it.name.toLowerCase().includes(kw) ||
@@ -189,7 +194,7 @@ const stats = computed(() => {
   const all = itemsOfCurrentProperty.value
   return {
     total: all.length,
-    done: all.filter((it) => completedCaptureAngles(it) === 2).length,
+    done: all.filter((it) => baselinePhotoCount(it) > 0).length,
     rooms: new Set(all.map((it) => it.room)).size,
   }
 })
@@ -370,13 +375,13 @@ async function archivePhoto(id: string) {
               <div class="min-w-0 flex-1 space-y-2 p-3">
                 <div class="truncate text-sm font-semibold">{{ it.name }}</div>
                 <div class="flex items-center gap-1 text-xs text-muted-foreground">
-                  <CheckCircle2 v-if="completedCaptureAngles(it) === 2" class="h-3 w-3" />
+                  <CheckCircle2 v-if="baselinePhotoCount(it) > 0" class="h-3 w-3" />
                   {{
                     analyzingItemId === it.id
                       ? '辨識中…'
-                      : completedCaptureAngles(it) === 2
-                        ? '已完成'
-                        : `待補齊 ${completedCaptureAngles(it)} / 2`
+                      : baselinePhotoCount(it) > 0
+                        ? `已存證 ${baselinePhotoCount(it)} 張`
+                        : '尚未拍照'
                   }}
                 </div>
                 <p class="text-xs text-muted-foreground sm:hidden">
@@ -404,13 +409,14 @@ async function archivePhoto(id: string) {
             <DialogDescription>{{ selectedItem.room }} · 入住前點交</DialogDescription>
           </DialogHeader>
           <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
+          <p v-if="uploadProgress" role="status" class="text-sm text-muted-foreground">{{ uploadProgress }}</p>
           <HandoverEvidenceDetail
             :item="selectedItem"
             :property="currentProperty"
             :busy="busy"
-            @capture="(angle, id) => openCaptureModal(selectedItem!, angle, id)"
-            @upload="(angle, id) => capturePhoto(selectedItem!.id, angle, id)"
-            @save-note="(id, note, angle) => updateEvidenceNote(selectedItem!.id, id, note, angle)"
+            @capture="(id) => openCaptureModal(selectedItem!, id)"
+            @upload="(id) => capturePhoto(selectedItem!.id, id)"
+            @save-note="(id, note) => updateEvidenceNote(selectedItem!.id, id, note)"
             @close="detailOpen = false"
             @remove-photo="archivePhoto"
             @retry="(id) => retryAnalysis(selectedItem!.id, id)"
