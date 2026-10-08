@@ -1,13 +1,13 @@
-export type EvidenceAttachment = { id: string; name: string; size: number; type: string }
+export type EvidenceAttachment = { id: string; name: string; size: number; type: string; fileId?: number; url?: string }
 
-export const EVIDENCE_ACCEPT = '.jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv'
+export const EVIDENCE_ACCEPT = '.jpg,.jpeg,.png,.webp'
 export const MAX_EVIDENCE_FILES = 5
 export const MAX_EVIDENCE_SIZE = 10 * 1024 * 1024
 
 export function validateEvidenceFiles(existing: Pick<File, 'size'>[], incoming: Pick<File, 'name' | 'size'>[]) {
   if (existing.length + incoming.length > MAX_EVIDENCE_FILES) return '每筆紀錄最多可加入 5 個附件。'
-  if (incoming.some(file => !/\.(jpe?g|png|webp|gif|pdf|docx?|xlsx?|txt|csv)$/i.test(file.name))) {
-    return '請選擇 JPG、PNG、WebP、GIF、PDF、Word、Excel、TXT 或 CSV 檔案。'
+  if (incoming.some(file => !/\.(jpe?g|png|webp)$/i.test(file.name))) {
+    return '請選擇 JPG、PNG 或 WebP 圖片。'
   }
   if (incoming.some(file => !file.size)) return '無法加入空白檔案，請重新選擇。'
   if ([...existing, ...incoming].some(file => file.size > MAX_EVIDENCE_SIZE)) return '每個附件不得超過 10 MB。'
