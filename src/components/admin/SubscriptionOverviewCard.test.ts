@@ -237,10 +237,10 @@ describe('SubscriptionOverviewCard', () => {
 
   it('直條沿用方案顏色、堆疊人數軸及底部圖例', async () => {
     await render()
-    for (const [index, color] of ['series-3', 'series-2', 'series-1'].entries()) {
+    for (const [index, color] of ['plan-free', 'plan-plus', 'plan-pro'].entries()) {
       expect(chartState.bar!.datasets[index]).toMatchObject({
         type: 'bar',
-        backgroundColor: chartColor(color as 'series-1' | 'series-2' | 'series-3'),
+        backgroundColor: chartColor(color as 'plan-free' | 'plan-plus' | 'plan-pro'),
         stack: 'plans',
         yAxisID: 'y',
         borderRadius: 4,

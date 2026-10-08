@@ -19,6 +19,9 @@ export type ChartToken =
   | 'label'
   | 'danger'
   | 'attention'
+  | 'plan-free'
+  | 'plan-plus'
+  | 'plan-pro'
 
 /** SSR 或測試環境沒有 document 時的退路，值取自 index.css 的淺色定義 */
 const FALLBACK: Record<ChartToken, string> = {
@@ -32,6 +35,9 @@ const FALLBACK: Record<ChartToken, string> = {
   label: 'oklch(0.55 0.03 280)',
   danger: 'oklch(0.7 0.18 40)',
   attention: 'oklch(0.8 0.15 80)',
+  'plan-free': 'oklch(0.78 0.01 280)',
+  'plan-plus': 'oklch(0.62 0.12 200)',
+  'plan-pro': 'oklch(0.42 0.16 280)',
 }
 
 export function chartColor(token: ChartToken): string {

@@ -87,7 +87,7 @@ const valueLabelPlugin: Plugin<'bar' | 'line'> = {
 }
 
 const chartData = computed<ChartData<'bar' | 'line'>>(() => {
-  const colors = [chartColor('series-3'), chartColor('series-2'), chartColor('series-1')]
+  const colors = [chartColor('plan-free'), chartColor('plan-plus'), chartColor('plan-pro')]
   const datasets: ChartData<'bar' | 'line'>['datasets'] = subscriptionPlans[role.value].map(
     (plan, index) => ({
       type: 'bar',
