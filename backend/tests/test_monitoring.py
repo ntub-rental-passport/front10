@@ -131,6 +131,53 @@ class MonitoringTests(AdminStoreTestCase):
 
     # -------------------- 探測 --------------------
 
+    def test_backup_probe_skips_when_status_file_is_unset(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(monitor.probe_backup(now=T0))
+
+    def test_backup_probe_reports_missing_file(self):
+        with patch.dict(os.environ, {'BACKUP_STATUS_FILE': '/missing/backup-status'}):
+            self.assertEqual(monitor.probe_backup(now=T0), (False, '尚無成功備份紀錄'))
+
+    def test_backup_probe_reports_invalid_contents_and_future_timestamps(self):
+        with tempfile.NamedTemporaryFile(mode='w+') as status:
+            with patch.dict(os.environ, {'BACKUP_STATUS_FILE': status.name}):
+                status.write('garbage')
+                status.flush()
+                self.assertEqual(monitor.probe_backup(now=T0), (False, '備份狀態檔格式錯誤'))
+                status.seek(0)
+                status.truncate()
+                status.write(str(T0 + 301))
+                status.flush()
+                self.assertEqual(monitor.probe_backup(now=T0), (False, '備份狀態檔格式錯誤'))
+
+    def test_backup_probe_reports_stale_and_fresh_timestamps_in_taipei_time(self):
+        with tempfile.NamedTemporaryFile(mode='w+') as status, \
+             patch.dict(os.environ, {'BACKUP_STATUS_FILE': status.name}):
+            status.write(str(T0 - 27 * 3600))
+            status.flush()
+            ok, detail = monitor.probe_backup(now=T0)
+            self.assertFalse(ok)
+            self.assertEqual(detail, '上次成功備份：2026-09-20 19:13（27 小時前）')
+            status.seek(0)
+            status.truncate()
+            status.write(str(T0 - 3600))
+            status.flush()
+            ok, detail = monitor.probe_backup(now=T0)
+            self.assertTrue(ok)
+            self.assertNotIn('小時前', detail)
+
+    def test_run_checks_records_backup_state_when_status_file_is_configured(self):
+        with tempfile.NamedTemporaryFile(mode='w+') as status, \
+             patch.dict(os.environ, {'BACKUP_STATUS_FILE': status.name}):
+            status.write(str(monitor.time.time()))
+            status.flush()
+            with patch.dict(monitor.PROBES, {'backup': monitor.probe_backup}, clear=True):
+                monitor.run_checks(now=T0)
+        backup = next(s for s in monitor.service_states() if s['service'] == 'backup')
+        self.assertEqual(backup['label'], '每日備份')
+        self.assertEqual(backup['status'], 'up')
+
     def test_probe_failure_detail_never_leaks_addresses_or_raw_errors(self):
         import httpx
 

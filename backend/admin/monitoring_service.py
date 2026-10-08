@@ -33,10 +33,12 @@ uvicorn 開多個 worker 時，每個 worker 都會跑自己的檢查。狀態�
 要看的是後端的 log，不是監控頁。
 """
 import logging
+import math
 import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from db.sqlstore import open_store
 
@@ -56,6 +58,9 @@ DOWNTIME_THRESHOLD_SECONDS = 120.0
 #: 探測逾時。檢查是在背景跑的，但太長會讓一輪檢查拖很久。
 PROBE_TIMEOUT_SECONDS = 3.0
 
+# 每日凌晨 3 點執行，額外留兩小時寬限。
+BACKUP_MAX_AGE_SECONDS = 26 * 3600
+
 # 桌機服務已移除；Ollama 是正式環境的慢速 LLM 備援，仍需監控。
 RETIRED_SERVICES = {'llm-desktop'}
 RETIRED_SERVICE_LABELS = {
@@ -69,6 +74,7 @@ SERVICE_LABELS = {
     'rag': 'RAG 檢索服務',
     'ocr': 'OCR 服務',
     'scheduled-notification': '排程通知',
+    'backup': '每日備份',
 }
 
 
@@ -361,6 +367,31 @@ def probe_ocr() -> tuple[bool, str | None] | None:
     return True, None
 
 
+def probe_backup(now: float | None = None) -> tuple[bool, str | None] | None:
+    """讀取備份腳本寫入的最近一次成功備份時間。"""
+    status_file = os.getenv('BACKUP_STATUS_FILE', '').strip()
+    if not status_file:
+        return None
+    try:
+        timestamp = float(Path(status_file).read_text().strip())
+        if not math.isfinite(timestamp):
+            raise ValueError('invalid timestamp')
+    except FileNotFoundError:
+        return False, '尚無成功備份紀錄'
+    except (OSError, ValueError):
+        return False, '備份狀態檔格式錯誤'
+
+    current = time.time() if now is None else now
+    age = current - timestamp
+    if age < -300:
+        return False, '備份狀態檔格式錯誤'
+    taipei_time = datetime.fromtimestamp(timestamp, ZoneInfo('Asia/Taipei'))
+    formatted = taipei_time.strftime('%Y-%m-%d %H:%M')
+    if age > BACKUP_MAX_AGE_SECONDS:
+        return False, f'上次成功備份：{formatted}（{int(age // 3600)} 小時前）'
+    return True, f'上次成功備份：{formatted}'
+
+
 #: OCR 服務最近一次回報的 Vision 憑證狀態（1／0），存在 monitor_meta
 _OCR_CREDENTIALS_KEY = 'ocr-vision-credentials'
 
@@ -403,6 +434,7 @@ PROBES = {
     'llm-ollama': probe_llm_ollama,
     'rag': probe_rag,
     'ocr': probe_ocr,
+    'backup': probe_backup,
 }
 
 

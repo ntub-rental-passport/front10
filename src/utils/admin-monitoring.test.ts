@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  BACKUP_SERVICE,
   LLM_OLLAMA_SERVICE,
   RAG_SERVICE,
   SERVICE_STALE_MS,
+  backupMonitor,
   backendMonitor,
   classifyResponseTime,
   databaseMonitor,
@@ -323,6 +325,37 @@ describe('serviceMonitor', () => {
       NOW,
     )
     expect(reading.state).toBe('unavailable')
+  })
+})
+
+describe('backupMonitor', () => {
+  it('正常時顯示後端回報的最近成功備份時間', () => {
+    const reading = backupMonitor(
+      [probe({ service: 'backup', detail: '上次成功備份：2026-10-08 03:01' })],
+      NOW,
+    )
+    expect(reading.state).toBe('ok')
+    expect(reading.detail).toBe('上次成功備份：2026-10-08 03:01')
+  })
+
+  it('正常但沒有 detail 時沿用一般正常說明', () => {
+    const reading = backupMonitor([probe({ service: 'backup', detail: null })], NOW)
+    expect(reading.detail).toBe(`自 ${formatShortDateTime(minutesAgo(3 * 24 * 60))} 起正常`)
+  })
+
+  it('斷線時以後端狀態 detail 作為主要顯示值', () => {
+    const reading = backupMonitor(
+      [probe({ service: 'backup', status: 'down', detail: '尚無成功備份紀錄' })],
+      NOW,
+    )
+    expect(reading.state).toBe('down')
+    expect(reading.value).toBe('尚無成功備份紀錄')
+  })
+
+  it('沒有狀態時顯示未設定說明', () => {
+    const reading = backupMonitor([], NOW)
+    expect(reading.stateLabel).toBe('未設定')
+    expect(reading.detail).toBe(BACKUP_SERVICE.unconfigured)
   })
 })
 
