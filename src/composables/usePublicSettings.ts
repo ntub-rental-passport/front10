@@ -1,9 +1,9 @@
 /**
  * 公開設定（/api/settings/public）的共用快取：維護模式、停用中的功能、網站名稱。
  *
- * router 每次換頁前都會呼叫 refreshPublicSettings()，但一分鐘內只真的打一次後端 ——
- * 管理員開了維護模式，其他人最慢一分鐘後換頁就會被導到維護頁。已經開著的頁面
- * 不會自己跳：只擋畫面、不擋 API 是 2026-09-30 的決定（見 backend/admin/site_settings.py）。
+ * router 首次載入會等設定，之後換頁先用快取，過期才在背景重讀，避免每分鐘卡一次換頁。
+ * 背景讀完會重新檢查當下所在的路徑，讓維護模式仍能擋住訪客；沒有換頁就不會主動重讀。
+ * 只擋畫面、不擋 API 是 2026-09-30 的決定（見 backend/admin/site_settings.py）。
  *
  * 讀不到後端時沿用上一次的值（一開始是「沒有維護、沒有停用」），而且一分鐘內
  * 不再重試：後端掛了的時候，不能讓每次換頁都卡在等設定。
@@ -23,6 +23,16 @@ let loadedAt = 0
 let inflight: Promise<void> | null = null
 
 export const publicSettings = computed(() => state.value)
+
+export function hasLoadedPublicSettings(): boolean {
+  return loadedAt !== 0
+}
+
+/** 只讓發起背景讀取的守衛處理完成後的跳轉，避免同一個請求掛上多次跳轉。 */
+export function refreshPublicSettingsInBackground(): Promise<void> | null {
+  if (!hasLoadedPublicSettings() || inflight || Date.now() - loadedAt < MAX_AGE_MS) return null
+  return refreshPublicSettings()
+}
 
 /**
  * force：管理員剛改完維護或功能停用，自己的畫面要馬上反映，不等快取過期。
