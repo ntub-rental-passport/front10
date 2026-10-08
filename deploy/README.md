@@ -1,7 +1,7 @@
 # RentMate 學校 VM 部署指南
 
-> 架構：`web (Nginx:80/443)` → `fastapi:8000` / `ocr:8787`；FastAPI 連學校 MySQL，法規檢索使用 `rag:8000`，生成模型使用 NVIDIA NIM。
-> 網段隔離：RAG 檢索服務在 `internal: true` 的 internal；mysql 在 backend_net，只供 rollback，**不對外、不可連外**；
+> 架構：`web (Nginx:80/443)` → `fastapi:8000` / `ocr:8787`；FastAPI 連學校 MySQL，法規檢索使用 `rag:8000`，生成模型使用 NVIDIA NIM，失敗時退回 `ollama:11434`。
+> 網段隔離：RAG 檢索服務與 Ollama 在 `internal: true` 的 internal；mysql 在 backend_net，只供 rollback，**不對外、不可連外**；
 > 對外只有 web 容器的 80（P2 加 TLS 後為 443）。
 
 ## 一、VM 初始設定（Ubuntu，一次性）
@@ -80,12 +80,27 @@ docker network inspect "$(docker inspect "$(docker compose ps -q rag)" --format 
 docker compose exec fastapi python -c "import httpx; print(httpx.get('http://rag:8000/health').json())"
 ```
 
-### 為什麼正式環境沒有 Ollama
+### Ollama 備援
 
-2026-10-07 的 VM 沒有 GPU，只有 4 vCPU。`gemma3:4b` 合約分析耗時 515 秒，且輸出碰到
-8192 context 上限而截斷 JSON；`qwen2.5:3b` 仍耗時 265 秒，其中約 6,200 tokens 的 prompt
-評估就花了 165 秒。Law Chat 用 `qwen2.5:3b` 約需 7–29 秒，雖然可用，仍決定完全移除正式環境
-Ollama。NVIDIA NIM 失敗時，合約分析與法規問答 API 回傳 503。
+正式環境只在 NVIDIA NIM 失敗時使用 Ollama，VM 設定 `OLLAMA_MODEL="qwen2.5:3b"`。
+4 vCPU、無 GPU 的 2026-10-07 實測：Law Chat 約 7–29 秒，可用；合約分析約 265 秒，超過
+Cloudflare 100 秒 origin timeout，使用者會收到 524，實際上無法完成。這是展示用備援，效能很差；
+若兩個 provider 都失敗，API 回傳 503，絕不回傳預設的分析內容。
+
+首次下載模型：
+
+```bash
+docker compose run --rm -e OLLAMA_PULL_MODEL=qwen2.5:3b ollama-pull
+```
+
+切換模型時先 pull 新模型，再修改 VM `.env` 的 `OLLAMA_MODEL`，最後執行
+`docker compose up -d fastapi`。
+
+不影響使用者地測試備援：
+
+```bash
+docker compose exec -e LLM_PROVIDER_ORDER=ollama fastapi python scripts/check_llm.py --chat
+```
 
 `mysql` 自 2026-10-07 起只供回退：
 先執行 `docker compose --profile rollback up -d mysql`，再把 compose 的 `DATABASE_URL`

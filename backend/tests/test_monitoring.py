@@ -151,6 +151,21 @@ class MonitoringTests(AdminStoreTestCase):
         with patch.dict(os.environ, {'OCR_API_PORT': '', 'OCR_HEALTH_URL': ''}):
             self.assertIsNone(monitor.probe_ocr())
 
+    def test_ollama_probe_skips_when_not_in_order(self):
+        with patch.dict(os.environ, {'LLM_PROVIDER_ORDER': 'nvidia', 'OLLAMA_URL': 'http://ollama:11434'}), patch('httpx.get') as get:
+            self.assertIsNone(monitor.probe_llm_ollama())
+        get.assert_not_called()
+
+    def test_ollama_probe_skips_when_base_is_empty(self):
+        with patch.dict(os.environ, {'LLM_PROVIDER_ORDER': 'ollama'}), patch('ai.llm_provider.ollama_base', return_value=''), patch('httpx.get') as get:
+            self.assertIsNone(monitor.probe_llm_ollama())
+        get.assert_not_called()
+
+    def test_ollama_probe_uses_container_url_without_headers(self):
+        with patch.dict(os.environ, {'LLM_PROVIDER_ORDER': 'nvidia,ollama', 'OLLAMA_URL': 'http://ollama:11434/'}), patch('httpx.get', return_value=httpx.Response(200)) as get:
+            self.assertEqual(monitor.probe_llm_ollama(), (True, None))
+        get.assert_called_once_with('http://ollama:11434/api/tags', timeout=monitor.PROBE_TIMEOUT_SECONDS)
+
     def test_rag_probe_skips_when_not_in_order(self):
         with patch.dict(os.environ, {'EMBEDDING_PROVIDER': 'nvidia', 'LOCAL_EMBEDDING_URL': 'http://rag:8000'}), \
              patch('httpx.get') as get:
@@ -176,7 +191,7 @@ class MonitoringTests(AdminStoreTestCase):
             get.assert_called_once_with('http://rag:8000/health', timeout=monitor.PROBE_TIMEOUT_SECONDS)
 
     def test_container_probes_report_http_errors(self):
-        for probe in (monitor.probe_rag,):
+        for probe in (monitor.probe_llm_ollama, monitor.probe_rag):
             with self.subTest(probe=probe.__name__), patch.dict(os.environ, {
                 'LLM_PROVIDER_ORDER': 'ollama', 'OLLAMA_URL': 'http://ollama:11434',
                 'EMBEDDING_PROVIDER': 'local', 'LOCAL_EMBEDDING_URL': 'http://rag:8000',
@@ -184,7 +199,7 @@ class MonitoringTests(AdminStoreTestCase):
                 self.assertEqual(probe(), (False, 'HTTP 503'))
 
     def test_container_probes_describe_connection_errors_and_timeouts(self):
-        for probe in (monitor.probe_rag,):
+        for probe in (monitor.probe_llm_ollama, monitor.probe_rag):
             for error, detail in [
                 (httpx.ConnectError('private-address'), '連不上'),
                 (httpx.ReadTimeout('private-address'), '連線逾時'),
@@ -314,29 +329,22 @@ class MonitoringTests(AdminStoreTestCase):
         self.assertTrue(next(i for i in items if i['key'] == 'smtp')['ok'])
 
     def test_container_services_have_the_expected_labels_and_probes(self):
+        self.assertEqual(monitor.SERVICE_LABELS['llm-ollama'], 'LLM 備援（Ollama）')
         self.assertEqual(monitor.SERVICE_LABELS['rag'], 'RAG 檢索服務')
+        self.assertIs(monitor.PROBES['llm-ollama'], monitor.probe_llm_ollama)
         self.assertIs(monitor.PROBES['rag'], monitor.probe_rag)
 
-    def test_config_checklist_has_nvidia_and_rag_but_no_ollama(self):
+    def test_config_checklist_contains_ollama_nvidia_and_rag(self):
         with patch.dict(os.environ, {
             'LLM_PROVIDER_ORDER': 'nvidia,ollama', 'OLLAMA_URL': 'http://ollama:11434',
             'NVIDIA_API_KEY': 'test-key', 'LOCAL_EMBEDDING_URL': 'http://rag:8000',
         }, clear=True):
             items = {item['key']: item for item in monitor.config_status()}
-        self.assertNotIn('llm-ollama', items)
-        self.assertTrue(items['nvidia']['ok'])
-        self.assertTrue(items['rag']['ok'])
-        self.assertIn('503', items['nvidia']['hint'])
+        for service in ('llm-ollama', 'nvidia', 'rag'):
+            self.assertTrue(items[service]['ok'])
+        self.assertIn('OLLAMA_URL', items['llm-ollama']['hint'])
+        self.assertIn('Ollama', items['nvidia']['hint'])
         self.assertIn('LOCAL_EMBEDDING_URL', items['rag']['hint'])
-
-    def test_retired_ollama_state_is_removed_and_event_keeps_label(self):
-        monitor.record_check('llm-ollama', False, '連不上', now=T0)
-        event = monitor.list_events()[0]
-        self.assertEqual(event['serviceLabel'], 'LLM 備援（Ollama，已移除）')
-        with patch.dict(monitor.PROBES, {}, clear=True):
-            monitor.run_checks(now=T0 + 60)
-        self.assertFalse(any(row['service'] == 'llm-ollama' for row in monitor.service_states()))
-        self.assertEqual(monitor.list_events()[0]['serviceLabel'], 'LLM 備援（Ollama，已移除）')
 
     def test_retired_service_alert_uses_its_retired_label(self):
         with patch('admin.admin_notifications.record_alert') as alert:

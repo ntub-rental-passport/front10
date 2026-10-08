@@ -56,17 +56,16 @@ DOWNTIME_THRESHOLD_SECONDS = 120.0
 #: 探測逾時。檢查是在背景跑的，但太長會讓一輪檢查拖很久。
 PROBE_TIMEOUT_SECONDS = 3.0
 
-# 2026-10-07 桌機改成 VM 容器：清掉舊狀態，歷史事件仍保留標籤。
-# 2026-10-07 VM CPU 跑不動，正式環境不再跑 Ollama。
-RETIRED_SERVICES = {'llm-desktop', 'llm-ollama'}
+# 桌機服務已移除；Ollama 是正式環境的慢速 LLM 備援，仍需監控。
+RETIRED_SERVICES = {'llm-desktop'}
 RETIRED_SERVICE_LABELS = {
     'llm-desktop': 'AI 模型（桌機，已移除）',
-    'llm-ollama': 'LLM 備援（Ollama，已移除）',
 }
 
 SERVICE_LABELS = {
     'backend': '後端',
     'database': '資料庫',
+    'llm-ollama': 'LLM 備援（Ollama）',
     'rag': 'RAG 檢索服務',
     'ocr': 'OCR 服務',
     'scheduled-notification': '排程通知',
@@ -295,6 +294,26 @@ def probe_database() -> tuple[bool, str | None] | None:
         return False, '無法連線'
 
 
+def probe_llm_ollama() -> tuple[bool, str | None] | None:
+    """探測 Ollama 備援容器；不在嘗試順序或沒有位址時略過。"""
+    import httpx
+
+    from ai import llm_provider
+
+    if 'ollama' not in llm_provider.provider_order():
+        return None
+    base = llm_provider.ollama_base().rstrip('/')
+    if not base:
+        return None
+    try:
+        response = httpx.get(f'{base}/api/tags', timeout=PROBE_TIMEOUT_SECONDS)
+    except Exception as error:
+        return False, _describe_http_failure(error)
+    if response.status_code != 200:
+        return False, f'HTTP {response.status_code}'
+    return True, None
+
+
 def probe_rag() -> tuple[bool, str | None] | None:
     """探測 RAG 檢索容器。HTTP 成功還要確認模型就緒，否則檢索仍無法使用。"""
     import httpx
@@ -381,6 +400,7 @@ def _vision_configured() -> bool:
 
 PROBES = {
     'database': probe_database,
+    'llm-ollama': probe_llm_ollama,
     'rag': probe_rag,
     'ocr': probe_ocr,
 }
@@ -531,10 +551,16 @@ def config_status() -> list[dict]:
             'hint': '垃圾車提醒的推播需要。沒設定時只能選 Email 提醒。',
         },
         {
+            'key': 'llm-ollama',
+            'label': 'AI 模型（Ollama 備援）位址',
+            'ok': 'ollama' in llm_provider.configured_providers(),
+            'hint': 'OLLAMA_URL。只在 NVIDIA 失敗時使用；VM 只有 CPU，Law Chat 接得住、合約分析可能超時。',
+        },
+        {
             'key': 'nvidia',
             'label': 'AI 模型（NVIDIA）金鑰',
             'ok': 'nvidia' in llm_provider.configured_providers(),
-            'hint': '正式環境唯一的生成模型；未設定或 NVIDIA 失敗時，合約分析與法規對話會回傳 503，沒有生成模型備援。',
+            'hint': '主要生成模型；失敗時若有設定會退回較慢的 Ollama，否則回傳 503。',
         },
         {
             'key': 'rag',

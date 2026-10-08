@@ -51,7 +51,7 @@ FastAPI 與 OCR API 使用根目錄的 `.env`。只建立 `.env.local` 不足以
 | Google 登入 | `GOOGLE_CLIENT_ID`、用戶端密鑰或密鑰檔、`GOOGLE_REDIRECT_URI` |
 | Google OCR | `GOOGLE_APPLICATION_CREDENTIALS`：Cloud Vision service account JSON 的本機路徑 |
 | 前端與代理 | `FRONTEND_URL`、`VITE_API_BASE_URL`、`VITE_OCR_API_URL` |
-| 合約分析／法規問答 | `LLM_PROVIDER_ORDER`、`NVIDIA_API_KEY`、`NVIDIA_MODEL`；正式環境僅用 NVIDIA，失敗時回傳 503；Ollama 可供本機開發選用 |
+| 合約分析／法規問答 | `LLM_PROVIDER_ORDER`、`NVIDIA_API_KEY`、`NVIDIA_MODEL`；正式環境 NVIDIA → Ollama 慢速備援；本機預設僅 NVIDIA，可選 nvidia,ollama |
 | OCR 背景複核 | `OLLAMA_OCR_ENABLED`、`OLLAMA_URL`、`OLLAMA_OCR_MODEL` |
 
 完整變數與產生金鑰的方式見 [`.env.example`](.env.example)。範本中的帳密、路徑與金鑰占位值需要替換；密鑰與 service account JSON 不應提交至 Git。

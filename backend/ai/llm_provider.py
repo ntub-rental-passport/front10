@@ -2,11 +2,13 @@
 
 ## 架構
 
-    使用者 → VM（去識別化）→ ① NVIDIA 免費 API（主要模型）
-                            → 正式環境 NVIDIA 失敗時回傳 503
-                            → 本機開發可選 Ollama（LLM_PROVIDER_ORDER=nvidia,ollama）
+    使用者 → VM（去識別化）→ ① NVIDIA NIM（主要模型）
+                            → 正式環境 NVIDIA 失敗時可退回 CPU Ollama 備援
+                            → 本機預設只用 NVIDIA，可選 Ollama（LLM_PROVIDER_ORDER=nvidia,ollama）
 
-正式環境只使用 NVIDIA，失敗時回傳 503；本機開發可選 Ollama。NVIDIA 是免費額度
+正式環境設定 NVIDIA → Ollama；VM 的 Ollama 只有 CPU，Law Chat 約 7–29 秒，合約分析
+約 265 秒並超過 Cloudflare 100 秒 origin timeout。兩者都失敗時回傳 503，絕不回傳預設的分析內容。
+本機預設只用 NVIDIA；本機開發可選 Ollama。NVIDIA 是免費額度
 （約 1,000 credits、40 req/分），用完可能回 401/402/429。
 
 ## 絕對不做的事
@@ -17,9 +19,9 @@ LlmUnavailable，讓呼叫端回 503。曾經的作法是失敗時回一段寫�
 
 ## 設定
 
-    LLM_PROVIDER_ORDER   嘗試順序，預設 "nvidia"（正式環境 NVIDIA；本機可選 nvidia,ollama）
+    LLM_PROVIDER_ORDER   嘗試順序，預設 "nvidia"（正式環境 nvidia,ollama；本機可選）
     OLLAMA_URL           Ollama 位址，本機開發預設 http://127.0.0.1:11434
-                         僅供本機開發選用。
+                         正式環境的 Ollama 備援位址由 compose 設定。
     OLLAMA_MODEL         合約分析用的模型，預設 gemma3:4b
     OLLAMA_CHAT_MODEL    Law Chat 用的模型（未設定就沿用 OLLAMA_MODEL）
     NVIDIA_API_KEY       沒設定就自動跳過這個 provider
@@ -220,8 +222,8 @@ _PROVIDERS = {
 
 
 def provider_order() -> list[str]:
-    # 正式環境只用 NVIDIA；本機開發可明確選用 Ollama（nvidia,ollama）。
-    # 2026-10-07 VM CPU 基準測試顯示 Ollama 無法及時完成合約分析。
+    # 預設只用 NVIDIA，避免沒有 Ollama 的本機開發環境等待失敗；正式 VM 明確設 nvidia,ollama。
+    # CPU Ollama 合約分析約 265 秒，可能超過 Cloudflare 100 秒，但作為展示用備援保留。
     raw = _env("LLM_PROVIDER_ORDER", "nvidia")
     names = [n.strip().lower() for n in raw.split(",") if n.strip()]
     return [n for n in names if n in _PROVIDERS] or ["nvidia"]

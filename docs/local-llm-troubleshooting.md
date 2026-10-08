@@ -1,6 +1,6 @@
 # 本機契約 AI 分析設定
 
-正式環境只使用 NVIDIA 生成模型；NIM 失敗時 API 回傳 503。Ollama 可選供本機開發使用，設定 `LLM_PROVIDER_ORDER=nvidia,ollama` 與 `OLLAMA_URL`。正式環境 VM 的 `.env` 設定 `EMBEDDING_PROVIDER="local"`，只使用 RAG 容器作為 embedding 來源，詳見[部署指南第五節](../deploy/README.md#五rag-檢索服務)。連不上時檢索會退回全部 29 塊法規。
+正式環境使用 NVIDIA → Ollama 慢速 CPU 備援（qwen2.5:3b）；本機預設只用 NVIDIA，選用 Ollama 時，設定 `LLM_PROVIDER_ORDER=nvidia,ollama` 與 `OLLAMA_URL`。正式環境 VM 的 `.env` 設定 `EMBEDDING_PROVIDER="local"`，只使用 RAG 容器作為 embedding 來源，詳見[部署指南第五節](../deploy/README.md#五rag-檢索服務)。連不上時檢索會退回全部 29 塊法規。
 本機可用 `docker compose build rag` 建置 RAG embedding 服務（映像內含模型）；若本機後端需呼叫它，
 須另設可達的 `LOCAL_EMBEDDING_URL`（正式 compose 不開主機 port），或保留預設 `EMBEDDING_PROVIDER=nvidia` 使用 NVIDIA embedding。
 
