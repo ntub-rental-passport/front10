@@ -1,6 +1,5 @@
 import { onScopeDispose, ref } from 'vue'
 import {
-  LLM_OLLAMA_SERVICE,
   OCR_SERVICE,
   RAG_SERVICE,
   backendMonitor,
@@ -156,7 +155,6 @@ export function useSystemHealth(options: { withEvents?: boolean } = {}) {
       ),
       databaseMonitor(dbPool.value, services.value, now),
       errorRateMonitor(requests.value),
-      serviceMonitor(services.value, LLM_OLLAMA_SERVICE, now),
       serviceMonitor(services.value, RAG_SERVICE, now),
       serviceMonitor(services.value, OCR_SERVICE, now),
     ]

@@ -13,6 +13,19 @@ class OllamaConfigurationTests(unittest.IsolatedAsyncioTestCase):
         upstream_state.reset()
         self.addCleanup(upstream_state.reset)
 
+    def test_provider_order_defaults_to_nvidia(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(llm_provider.provider_order(), ["nvidia"])
+
+    def test_provider_order_falls_back_to_nvidia_for_invalid_values(self):
+        for value in ("", "unknown", " , unknown "):
+            with self.subTest(value=value), patch.dict(os.environ, {"LLM_PROVIDER_ORDER": value}, clear=True):
+                self.assertEqual(llm_provider.provider_order(), ["nvidia"])
+
+    def test_provider_order_allows_explicit_local_ollama_opt_in(self):
+        with patch.dict(os.environ, {"LLM_PROVIDER_ORDER": "nvidia,ollama"}, clear=True):
+            self.assertEqual(llm_provider.provider_order(), ["nvidia", "ollama"])
+
     def test_base_uses_ollama_url_ignoring_retired_setting(self):
         with patch.dict(os.environ, {
             "OLLAMA_URL": "http://ollama:11434",

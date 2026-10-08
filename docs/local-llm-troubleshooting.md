@@ -1,6 +1,6 @@
 # 本機契約 AI 分析設定
 
-2026-10-07 起正式環境改用 VM 的 `ollama` / `rag` 容器，設定見 [部署指南第五節](../deploy/README.md#五ollama--rag-容器備援)。
+正式環境只使用 NVIDIA 生成模型；NIM 失敗時 API 回傳 503。Ollama 可選供本機開發使用，設定 `LLM_PROVIDER_ORDER=nvidia,ollama` 與 `OLLAMA_URL`。RAG 是正式環境的 embedding 備援，設定見 [部署指南第五節](../deploy/README.md#五rag-容器檢索備援)。
 本機 embedding 備援可用 `docker compose build rag` 建置（映像內含模型）；若本機後端需呼叫它，
 須另設可達的 `LOCAL_EMBEDDING_URL`（正式 compose 不開主機 port），或設 `EMBEDDING_PROVIDER=nvidia` 跳過本機備援。
 

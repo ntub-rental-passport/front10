@@ -364,13 +364,6 @@ export interface ServiceMeta {
   unconfigured: string
 }
 
-export const LLM_OLLAMA_SERVICE: ServiceMeta = {
-  id: 'llm-ollama',
-  label: 'LLM 備援（Ollama）',
-  description: 'NVIDIA 失敗時才會用到的備援模型，跑在 VM 上的 Ollama 容器（只有 CPU，會比較慢）',
-  unconfigured: '後端沒有設定 Ollama 位址（OLLAMA_URL），或嘗試順序裡沒有 ollama，所以沒有探測',
-}
-
 export const RAG_SERVICE: ServiceMeta = {
   id: 'rag',
   label: '檢索備援（RAG）',

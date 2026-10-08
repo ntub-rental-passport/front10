@@ -424,12 +424,3 @@ export function lastOutageNote(rows: EventRow[], service: string): string | null
   const duration = row.durationSeconds === null ? '' : `，持續 ${formatDuration(row.durationSeconds)}`
   return `上次斷線：${formatShortDateTime(row.startedAt)}${duration}`
 }
-
-/** Ollama 備援卡說明主要模型的設定，讓管理員知道是否每次都會退回較慢的 CPU。 */
-export function primaryModelNote(config: ConfigItem[] | null): string | null {
-  const item = config?.find((entry) => entry.key === 'nvidia')
-  if (!item) return null
-  return item.ok
-    ? 'NVIDIA 是主要模型；Ollama 只在 NVIDIA 失敗時才會用到'
-    : 'NVIDIA 金鑰未設定：每次分析都會落到 CPU 上的 Ollama，會很慢'
-}

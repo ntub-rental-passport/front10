@@ -3,28 +3,23 @@
 ## 架構
 
     使用者 → VM（去識別化）→ ① NVIDIA 免費 API（主要模型）
-                            → ② VM 上的 Ollama 容器（備援，只有 CPU，較慢）
-                            → 兩者皆失敗 → LlmUnavailable → 呼叫端回 503
+                            → 正式環境 NVIDIA 失敗時回傳 503
+                            → 本機開發可選 Ollama（LLM_PROVIDER_ORDER=nvidia,ollama）
 
-為什麼要備援：兩條路都會不見。NVIDIA 是免費額度（約 1,000 credits、
-40 req/分），用完就回 401/402/429；VM 上的 Ollama 容器也可能無法連線。
-沒有備援的話，功能就會在最需要它的時候不見。
-
-NVIDIA 優先是因為 CPU 上的 Ollama 較慢，只在主線失敗時才需要等待它。
-VM 上的 Ollama 容器透過私有 Docker 網路以 HTTP 連線，不需要存取憑證。
+正式環境只使用 NVIDIA，失敗時回傳 503；本機開發可選 Ollama。NVIDIA 是免費額度
+（約 1,000 credits、40 req/分），用完可能回 401/402/429。
 
 ## 絕對不做的事
 
-**任何情況下都不得回傳「預設的分析內容」。** 兩條路都失敗時就丟
+**任何情況下都不得回傳「預設的分析內容」。** 可用 provider 都失敗時就丟
 LlmUnavailable，讓呼叫端回 503。曾經的作法是失敗時回一段寫死的
 法律分析，使用者無從分辨那不是針對自己合約的結果 —— 那比沒有功能更糟。
 
 ## 設定
 
-    LLM_PROVIDER_ORDER   嘗試順序，預設 "nvidia,ollama"（NVIDIA 為主、Ollama 備援）
+    LLM_PROVIDER_ORDER   嘗試順序，預設 "nvidia"（正式環境 NVIDIA；本機可選 nvidia,ollama）
     OLLAMA_URL           Ollama 位址，本機開發預設 http://127.0.0.1:11434
-                         正式環境由 compose 給 fastapi 設為 http://ollama:11434。
-                         VM 的 OCR Ollama 複核會停用，fastapi 使用自己的明確設定。
+                         僅供本機開發選用。
     OLLAMA_MODEL         合約分析用的模型，預設 gemma3:4b
     OLLAMA_CHAT_MODEL    Law Chat 用的模型（未設定就沿用 OLLAMA_MODEL）
     NVIDIA_API_KEY       沒設定就自動跳過這個 provider
@@ -225,11 +220,11 @@ _PROVIDERS = {
 
 
 def provider_order() -> list[str]:
-    # NVIDIA 優先：CPU 上的 Ollama 較慢，只在主線失敗時才需要等待它。
-    # Ollama 保留為備援 —— NVIDIA 免費額度用盡時仍有東西接得住。
-    raw = _env("LLM_PROVIDER_ORDER", "nvidia,ollama")
+    # 正式環境只用 NVIDIA；本機開發可明確選用 Ollama（nvidia,ollama）。
+    # 2026-10-07 VM CPU 基準測試顯示 Ollama 無法及時完成合約分析。
+    raw = _env("LLM_PROVIDER_ORDER", "nvidia")
     names = [n.strip().lower() for n in raw.split(",") if n.strip()]
-    return [n for n in names if n in _PROVIDERS] or ["ollama"]
+    return [n for n in names if n in _PROVIDERS] or ["nvidia"]
 
 
 def configured_providers() -> list[str]:
