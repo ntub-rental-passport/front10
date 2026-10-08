@@ -21,9 +21,13 @@ echo " RentMate 部署 → $VM"
 echo "=========================================="
 
 # ---------- 1. 上傳程式碼 ----------
-# ⚠️ --exclude .env 絕對不能拿掉：VM 上的 .env 是正式環境金鑰
+# ⚠️ --exclude '.env*' 絕對不能拿掉：VM 上的 .env 是正式環境金鑰
 #    （JWT_SECRET、MySQL 密碼與開發機不同），覆蓋掉會導致服務起不來、
 #    且所有已登入使用者的 token 失效。
+#    排除的是所有 .env*（2026-10-07 起）：本機的 .env.backup-* 是開發機金鑰的備份，
+#    不該跟著程式碼上伺服器。只放行兩個沒有機密、VM 需要的：
+#    .env.production（web 映像 build 時 vite 讀它的 VITE_API_BASE_URL）、.env.example。
+#    --include 必須寫在 --exclude '.env*' 前面，rsync 採用第一條符合的規則。
 echo "[1/3] 上傳程式碼..."
 #    --exclude desktop：那是桌機端代理，VM 不需要，而且它的 README
 #    描述的是「怎麼連進家裡的網路」—— 沒有理由多放一份在別的機器上。
@@ -32,8 +36,9 @@ echo "[1/3] 上傳程式碼..."
 #    同名路徑，沒有這條就會直接蓋掉正式資料。
 #    --exclude .gstack：瀏覽測試工具的 console／network log。
 rsync -avz \
+  --include .env.production --include .env.example --exclude '.env*' \
   --exclude node_modules --exclude dist --exclude .venv --exclude .git \
-  --exclude logs --exclude '__pycache__' --exclude .env --exclude desktop \
+  --exclude logs --exclude '__pycache__' --exclude desktop \
   --exclude '*.db' --exclude '*.db-*' --exclude .gstack \
   "$SRC/" "$VM:~/rentmate/" | tail -3
 
@@ -52,7 +57,7 @@ rsync -az --delete --itemize-changes "$SRC/src/" "$VM:~/rentmate/src/" \
 # backend/ 在 VM 上沒有獨有的檔案：正式環境的 SQLite 在 data/garbage/，點交照片在
 # 容器裡。下面排除的檔案 rsync 不會刪（沒有 --delete-excluded）。
 rsync -az --delete --itemize-changes \
-  --exclude '__pycache__' --exclude '*.db' --exclude '*.db-*' --exclude .env \
+  --exclude '__pycache__' --exclude '*.db' --exclude '*.db-*' --exclude '.env*' \
   "$SRC/backend/" "$VM:~/rentmate/backend/" \
   | awk '/^\*deleting/ {print "  刪除 VM 上的殘留檔 backend/" $2}'
 
