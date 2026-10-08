@@ -5,18 +5,9 @@ export interface GroupedHandoverItems {
   items: HandoverItem[]
 }
 
-export const captureAngles = [
-  { value: 'front', label: '正面' },
-  { value: 'side', label: '側面' },
-  { value: 'detail', label: '瑕疵特寫（選拍）' },
-] as const
-
-export function completedCaptureAngles(item: HandoverItem): number {
-  return captureAngles
-    .filter((angle) => angle.value !== 'detail')
-    .filter((angle) =>
-      item.evidences.some((e) => e.phase === 'baseline' && e.angle === angle.value),
-    ).length
+/** 入住存證的照片張數（不含已移至歷程的）。至少一張就算這個項目已存證。 */
+export function baselinePhotoCount(item: HandoverItem): number {
+  return item.evidences.filter((e) => e.phase === 'baseline').length
 }
 
 export function createMockEvidenceUrl(seed: string): string {

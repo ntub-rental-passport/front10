@@ -156,6 +156,9 @@ export interface InspectionEvidence {
   note: string
   userNote: string | null
   integrityNote?: string
+  /** 退租照片對應的入住照片 id */
+  pairsWith?: string | null
+  comparison?: { type?: string; confidence?: number; summary?: string; error?: string } | null
 }
 
 export interface LeaseInspectionItem {
@@ -163,6 +166,7 @@ export interface LeaseInspectionItem {
   room: string
   name: string
   evidences: InspectionEvidence[]
+  pairs?: { baselineId: string; checkoutId: string | null }[]
   diff: { type: string; summary: string; confidence: number } | null
 }
 

@@ -202,6 +202,53 @@ class InspectionTests(unittest.TestCase):
             (inspection.photo_directory() / detail.provenance['originalPath']).write_bytes(b'tampered')
         self.assertEqual(self.request('GET', path + '/original').status_code, 409)
 
+    def test_each_baseline_photo_is_compared_with_its_own_checkout_photo(self):
+        item = self.item()
+        for _ in range(3):
+            item = self.upload(item['id'], append=True)
+        baselines = [e['id'] for e in item['evidences'] if e['phase'] == 'baseline']
+        self.assertFalse(item['checkoutComplete'])
+        # 只補拍前兩張的退租照
+        for baseline_id in baselines[:2]:
+            item = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(baseline_id))
+        self.assertEqual([p['checkoutId'] is not None for p in item['pairs']], [True, True, False])
+        self.assertFalse(item['checkoutComplete'])
+        results = iter([
+            {'type': 'unchanged', 'confidence': 0.9, 'summary': '沒有差異'},
+            {'type': 'new_damage', 'confidence': 0.8, 'summary': '右下角新刮痕'},
+        ])
+        with patch.object(inspection, 'vision_result', side_effect=lambda *args, **kwargs: next(results)):
+            compared = self.request('POST', f"/items/{item['id']}/compare").json()
+        self.assertEqual(compared['diff']['type'], 'new_damage')
+        self.assertEqual([p['type'] for p in compared['diff']['pairs']], ['unchanged', 'new_damage'])
+        self.assertEqual(compared['diff']['pending'], [baselines[2]])
+        self.assertIn('第 2 組：右下角新刮痕', compared['diff']['summary'])
+        checkout = next(e for e in compared['evidences'] if e['phase'] == 'checkout' and e['pairsWith'] == baselines[1])
+        self.assertEqual(checkout['comparison']['type'], 'new_damage')
+        # 補拍第三張，才算完成
+        done = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(baselines[2]))
+        self.assertTrue(done['checkoutComplete'])
+        self.assertIsNone(done['diff'])  # 照片變了，舊的比對作廢
+
+    def test_retaking_a_checkout_photo_replaces_only_its_pair(self):
+        item = self.item()
+        item = self.upload(item['id'], append=True)
+        item = self.upload(item['id'], append=True)
+        first, second = [e['id'] for e in item['evidences'] if e['phase'] == 'baseline']
+        item = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(first))
+        item = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(second))
+        old = next(p['checkoutId'] for p in item['pairs'] if p['baselineId'] == first)
+        item = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(first))
+        pairs = {p['baselineId']: p['checkoutId'] for p in item['pairs']}
+        self.assertNotEqual(pairs[first], old)
+        self.assertIsNotNone(pairs[second])
+        self.assertIn(old, [h['id'] for h in item['history']])
+        # 不能把退租照配到別的項目的入住照片
+        other = self.item()
+        response = self.request('PUT', f"/items/{other['id']}/photos/checkout",
+                                json={'image_data': self.photo, 'pairs_with': int(first)})
+        self.assertEqual(response.status_code, 409)
+
     def test_retake_rejects_other_item_and_preserves_photos(self):
         first = self.upload(self.item()['id'], append=True)
         second = self.item()
