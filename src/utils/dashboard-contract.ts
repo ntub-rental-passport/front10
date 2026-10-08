@@ -13,6 +13,7 @@ export type PaymentMethod = 'bank-transfer' | 'cash' | 'line-pay' | 'other'
 
 /** 對應 bills 一列。 */
 export interface BillingCycle {
+  utilityDetails?: import('./utility-billing').UtilityDetails | null
   id: string
   periodIndex: number
   periodStart: string

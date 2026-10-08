@@ -18,6 +18,8 @@ from sqlalchemy.orm import Session, selectinload
 from auth.security import CurrentUser, get_current_user
 from db import models
 from db.database import get_db
+from db.utility_billing import UtilitiesPayload
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,7 @@ def _bill_json(bill: models.Bill) -> dict:
         # NULL 代表「帳單還沒來」，前端顯示「待匯入」而不是 0 元
         "electricityAmount": bill.electricity_amount,
         "waterAmount": bill.water_amount,
+        "utilityDetails": bill.utility_details,
         "paidAt": bill.paid_at.date().isoformat() if bill.paid_at else None,
         "paymentMethod": bill.payment_method,
         "paymentNote": bill.payment_note or "",
@@ -170,6 +173,54 @@ def _landlord_contracts(db: Session, user: CurrentUser, offset: int) -> list[dic
         db.rollback()
         logger.exception("Dashboard: landlord leases for user %s failed", user.id)
         return []
+
+
+def _utility_context(db, bill):
+    previous = db.query(models.Bill).filter(
+        models.Bill.rental_id == bill.rental_id,
+        models.Bill.period_index < bill.period_index,
+    ).order_by(models.Bill.period_index.desc()).all()
+    entry = next(((row.utility_details or {}).get('electricity', {}) for row in previous
+                  if (row.utility_details or {}).get('electricity', {}).get('current') is not None), {})
+    own = (bill.utility_details or {}).get('electricity', {})
+    baseline = entry.get('current', own.get('previous', ''))
+    return {'previous': baseline, 'rate': entry.get('rate', own.get('rate')), 'initial': baseline == ''}
+
+
+@router.get("/bills/{bill_id}/utilities/context")
+def utility_context(bill_id: int, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
+    return _utility_context(db, _owned_bill(db, bill_id, user))
+
+
+@router.put("/bills/{bill_id}/utilities")
+def save_utilities(
+    bill_id: int,
+    payload: UtilitiesPayload,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    bill = _owned_bill(db, bill_id, user)
+    if bill.paid_at:
+        raise HTTPException(status_code=409, detail="已繳帳單不可修改水電費，請先撤銷已繳紀錄。")
+    electricity = payload.electricity
+    if electricity.method not in ('pending', 'amount', 'meter'):
+        raise HTTPException(status_code=422, detail="租客電費僅支援依度數計費或台電帳單。")
+    later = db.query(models.Bill).filter(models.Bill.rental_id == bill.rental_id,
+        models.Bill.period_index > bill.period_index).all()
+    old = (bill.utility_details or {}).get('electricity', {})
+    if any((row.utility_details or {}).get('electricity', {}).get('current') is not None for row in later):
+        if electricity.model_dump(mode='json', exclude_none=True) != old:
+            raise HTTPException(status_code=409, detail="後續期數已有抄表紀錄，請先從最新一期更正，避免影響讀數。")
+    if electricity.method == 'meter':
+        context = _utility_context(db, bill)
+        if not context['initial'] and electricity.previous != Decimal(str(context['previous'])):
+            raise HTTPException(status_code=409, detail="上期讀數已變更，請重新開啟視窗。")
+    bill.electricity_amount = electricity.receivable()
+    bill.water_amount = payload.water.calculate()
+    bill.utility_details = payload.model_dump(mode='json', exclude_none=True)
+    db.commit()
+    db.refresh(bill)
+    return _bill_json(bill)
 
 
 @router.put("/bills/{bill_id}/payment")

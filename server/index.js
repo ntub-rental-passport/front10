@@ -13,6 +13,7 @@ import { PDFDocument } from 'pdf-lib'
 import vision from '@google-cloud/vision'
 import { getOllamaConfig, reviewContractFieldsWithOllama } from './ollama-contract.js'
 import { createUsageReporter } from './usage-reporter.js'
+import { registerUtilityOcr } from './utility-ocr.js'
 import { analyzeContractFields, collectRelevantSnippets } from './contract-field-gate.js'
 import {
   createVisionPagePlaceholder,
@@ -92,6 +93,7 @@ const upload = multer({
 
 const imageClient = new vision.ImageAnnotatorClient()
 const fileClient = new vision.v1.ImageAnnotatorClient()
+registerUtilityOcr(app, { requireAuth, imageClient, usageReporter })
 
 const IMAGE_MIME_TYPES = new Set([
   'image/png',

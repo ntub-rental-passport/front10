@@ -35,6 +35,9 @@ from db.models import (
 )
 from notifications.user_notify import notify_user
 from routers import landlord_lease_rules as rules
+from db.utility_billing import UtilityEntry
+from decimal import Decimal
+from pydantic import ConfigDict
 
 router = APIRouter(prefix="/api/landlord/finance", tags=["Landlord finance"])
 
@@ -74,6 +77,91 @@ class ChargePayload(BaseModel):
 
 class VoidPayload(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
+
+
+class ElectricityRow(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    lease_id: int
+    entry: UtilityEntry
+
+
+class ElectricityBatch(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    property_id: int
+    month: str
+    due_date: date
+    rows: list[ElectricityRow] = Field(min_length=1, max_length=200)
+
+
+def _electricity_history(db, lease_id, before):
+    rows = db.query(LandlordCharge).filter(LandlordCharge.lease_id == lease_id,
+        LandlordCharge.kind == 'electricity', LandlordCharge.period_start < before,
+        LandlordCharge.voided_at.is_(None)).order_by(LandlordCharge.period_start.desc()).all()
+    return next((r.utility_details for r in rows if r.utility_details and r.utility_details.get('current') is not None), {})
+
+
+@router.get('/electricity')
+def electricity_records(month: str, db: Session = Depends(get_db), landlord: User = Depends(get_landlord_workspace)):
+    start, end = _month_bounds(month)
+    items = []
+    for lease in _landlord_leases(db, landlord.id):
+        if lease.status not in ('active', 'ended', 'terminated') or lease.start_date > end or lease.end_date < start:
+            continue
+        previous = _electricity_history(db, lease.id, start)
+        saved = db.query(LandlordCharge).filter(LandlordCharge.lease_id == lease.id,
+            LandlordCharge.kind == 'electricity', LandlordCharge.period_start >= start,
+            LandlordCharge.period_start <= end).first()
+        items.append({'lease_id': lease.id, 'property_id': lease.property_id, 'property': lease.property.name,
+            'room': lease.room.number, 'tenant': lease.tenant.name,
+            'previous': previous.get('current', (saved.utility_details or {}).get('previous', '') if saved else ''),
+            'rate': previous.get('rate'), 'initial': not bool(previous) and not (saved and (saved.utility_details or {}).get('previous') is not None),
+            'saved': saved.utility_details if saved else None, 'exists': saved is not None,
+            'amount': saved.amount if saved else None})
+    return items
+
+
+@router.post('/electricity', status_code=201)
+def save_electricity(payload: ElectricityBatch, request: Request, db: Session = Depends(get_db),
+                     landlord: User = Depends(get_landlord_workspace)):
+    start, end = _month_bounds(payload.month)
+    leases = {l.id: l for l in _landlord_leases(db, landlord.id) if l.property_id == payload.property_id
+              and l.start_date <= end and l.end_date >= start and l.status in ('active', 'ended', 'terminated')}
+    if len({r.lease_id for r in payload.rows}) != len(payload.rows):
+        raise HTTPException(422, '戶別不可重複。')
+    actor = landlord_actor(request, landlord)
+    for row in payload.rows:
+        if row.lease_id not in leases:
+            raise HTTPException(404, '找不到這個房屋的有效租約。')
+        entry = row.entry
+        if entry.method not in ('meter', 'amount', 'shared', 'master') or not entry.recorded_on:
+            raise HTTPException(422, '請選擇計費方式並填寫抄表日期。')
+        if db.query(LandlordCharge.id).filter(LandlordCharge.lease_id == row.lease_id,
+            LandlordCharge.kind == 'electricity', LandlordCharge.period_start >= start,
+            LandlordCharge.period_start <= end).first():
+            raise HTTPException(409, '本月已有電費記錄，請重新載入，避免重複收費。')
+        later = db.query(LandlordCharge).filter(LandlordCharge.lease_id == row.lease_id,
+            LandlordCharge.kind == 'electricity', LandlordCharge.period_start > end,
+            LandlordCharge.voided_at.is_(None)).all()
+        if any((c.utility_details or {}).get('current') is not None for c in later):
+            raise HTTPException(409, '後續月份已有抄表紀錄，請依時間順序記錄。')
+        if entry.method in ('meter', 'master'):
+            previous = _electricity_history(db, row.lease_id, start).get('current')
+            if previous is not None and entry.previous != Decimal(str(previous)):
+                raise HTTPException(409, '上期讀數已更新，請重新載入。')
+        payer = {'landlord_collect': '房東代收', 'tenant_direct': '房客自繳', 'landlord_absorb': '房東負擔'}[entry.payer]
+        charge = LandlordCharge(landlord_id=landlord.id, lease_id=row.lease_id, kind='electricity',
+            title=f'{payload.month} 電費（{payer}）', amount=entry.receivable(),
+            period_start=start, period_end=end, due_date=payload.due_date,
+            utility_details=entry.model_dump(mode='json', exclude_none=True))
+        db.add(charge)
+        db.add(LandlordChargeEvent(charge=charge, kind='created', detail=f'新增電費記錄：{payer}', actor_user_id=actor.id))
+    record_audit(db, landlord, actor, '帳務', '新增電費記錄', f'{payload.month}，{len(payload.rows)} 筆')
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, '本月電費已建立，請重新載入。')
+    return {'saved': len(payload.rows)}
 
 
 class ExpensePayload(BaseModel):

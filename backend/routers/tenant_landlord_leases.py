@@ -78,6 +78,7 @@ def _reported(charges: list[LandlordCharge]) -> dict | None:
 
 
 def _cycle_json(index: int, rent: LandlordCharge, extras: list[LandlordCharge]) -> dict:
+    electricity = [charge for charge in extras if charge.kind == 'electricity']
     group = [rent, *extras]
     total = sum(charge.amount for charge in group)
     paid = sum(min(charge.amount, _paid(charge)) for charge in group)
@@ -94,6 +95,8 @@ def _cycle_json(index: int, rent: LandlordCharge, extras: list[LandlordCharge]) 
         # 房東沒有開水電帳款就是 0：以房東的紀錄為準，不顯示「待匯入」
         "electricityAmount": sum(charge.amount for charge in extras if charge.kind == "electricity"),
         "waterAmount": sum(charge.amount for charge in extras if charge.kind in ("water", "other")),
+        "utilityDetails": {'electricity': electricity[0].utility_details, 'water': {'method': 'pending'}}
+                          if len(electricity) == 1 and electricity[0].utility_details else None,
         "paidAt": last_payment.paid_on.isoformat() if settled and last_payment else None,
         "paymentMethod": last_payment.method if settled and last_payment else None,
         "paymentNote": "房東已確認入帳" if settled else "",

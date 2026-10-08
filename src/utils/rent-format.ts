@@ -43,6 +43,6 @@ export function describeDaysLeft(days: number): string {
   return `${days} 天後到期`
 }
 
-export function formatOptionalAmount(value: number | null, placeholder = '待匯入'): string {
+export function formatOptionalAmount(value: number | null, placeholder = '待填寫'): string {
   return value == null ? placeholder : formatCurrency(value)
 }
