@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from openai import OpenAI
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, ConfigDict
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 from db.database import get_db
 from db.models import InspectionItem, InspectionRecord, Rental, User
@@ -62,6 +63,24 @@ def clean_and_parse_json(raw_text: str) -> dict:
 
 def photo_directory():
     return Path(os.getenv('INSPECTION_UPLOAD_DIR', str(BASE_DIR / 'uploads' / 'inspection')))
+
+
+def delete_photo_files(db, photo_urls):
+    # 提交成功後才刪檔，避免回滾時紀錄仍在但照片已遺失。
+    for name in set(photo_urls):
+        if not isinstance(name, str) or not re.fullmatch(r'[0-9a-f]{32}\.jpg', name):
+            continue
+        try:
+            directory = photo_directory().resolve()
+            path = directory / name
+            if not path.resolve().is_relative_to(directory):
+                continue
+            if db.query(InspectionRecord.id).filter(InspectionRecord.photo_url == name).first():
+                continue
+            path.unlink(missing_ok=True)
+        # 紀錄已經 commit，刪檔或查引用失敗都只留 log，不能讓已成功的刪除回 500
+        except (OSError, SQLAlchemyError):
+            logging.getLogger(__name__).warning('點交照片刪檔失敗：%s', name, exc_info=True)
 
 
 def read_photo(record):
@@ -347,12 +366,13 @@ def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depend
     item = owned_item(db, item_id, user, lock=True)
     claim_version(db, item, item.version)
     records = [r for r in (item.baseline, item.checkout) if r]
+    photo_urls = [record.photo_url for record in records]
     db.delete(item)
     db.flush()
     for record in records:
         db.delete(record)
     db.commit()
-    # Retain image files for backup/recovery; they are never publicly served.
+    delete_photo_files(db, photo_urls)
 
 
 @router.put('/items/{item_id}/photos/{phase}')
@@ -381,6 +401,7 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
     try:
         path.write_bytes(base64.b64decode(compressed))
         old_record = getattr(item, phase)
+        photo_urls = [old_record.photo_url] if old_record else []
         record = InspectionRecord(rental_id=item.rental_id, lease_id=item.lease_id,
             type='check_in' if phase == 'baseline' else 'check_out', photo_url=name,
             item_name=item.item_name, room_name=item.room_name, user_note=payload.user_note,
@@ -397,6 +418,7 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
         db.rollback()
         path.unlink(missing_ok=True)
         raise
+    delete_photo_files(db, photo_urls)
     return item_json(item)
 
 
@@ -408,11 +430,13 @@ def delete_photo(item_id: int, record_id: int, db: Session = Depends(get_db), us
         raise HTTPException(404, '找不到存證照片。')
     claim_version(db, item, item.version)
     record = getattr(item, phase)
+    photo_urls = [record.photo_url]
     setattr(item, phase, None)
     item.comparison_result = None
     db.flush()
     db.delete(record)
     db.commit()
+    delete_photo_files(db, photo_urls)
     return item_json(item)
 
 

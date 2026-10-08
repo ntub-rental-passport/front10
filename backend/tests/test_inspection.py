@@ -75,6 +75,130 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
+    def photo_paths(self, item):
+        with self.Session() as db:
+            return [inspection.photo_directory() / db.get(InspectionRecord, int(evidence['id'])).photo_url
+                    for evidence in item['evidences']]
+
+    def test_delete_item_removes_baseline_and_checkout_files(self):
+        item = self.upload(self.item()['id'])
+        item = self.upload(item['id'], 'checkout')
+        paths = self.photo_paths(item)
+        self.assertTrue(all(path.is_file() for path in paths))
+        response = self.request('DELETE', f"/items/{item['id']}")
+        self.assertEqual(response.status_code, 204, response.text)
+        self.assertTrue(all(not path.exists() for path in paths))
+        with self.Session() as db:
+            self.assertEqual(db.query(InspectionItem).count(), 0)
+            self.assertEqual(db.query(InspectionRecord).count(), 0)
+
+    def test_reupload_removes_previous_file_and_keeps_new_file(self):
+        for phase in ('baseline', 'checkout'):
+            with self.subTest(phase=phase):
+                item = self.upload(self.item()['id'], phase)
+                old_path = self.photo_paths(item)[0]
+                replaced = self.upload(item['id'], phase)
+                new_path = self.photo_paths(replaced)[0]
+                self.assertNotEqual(old_path, new_path)
+                self.assertFalse(old_path.exists())
+                self.assertTrue(new_path.is_file())
+
+    def test_delete_photo_removes_only_its_file(self):
+        item = self.upload(self.item()['id'])
+        item = self.upload(item['id'], 'checkout')
+        baseline_path, checkout_path = self.photo_paths(item)
+        response = self.request('DELETE', f"/items/{item['id']}/photos/{item['evidences'][1]['id']}")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(baseline_path.is_file())
+        self.assertFalse(checkout_path.exists())
+
+    def test_failed_commit_preserves_existing_files_and_records(self):
+        for action in ('delete_item', 'upload_photo', 'delete_photo'):
+            with self.subTest(action=action):
+                item = self.upload(self.item()['id'])
+                item = self.upload(item['id'], 'checkout')
+                paths = self.photo_paths(item)
+                files = set(inspection.photo_directory().iterdir())
+                method, route = ('PUT', 'baseline') if action == 'upload_photo' else ('DELETE', item['evidences'][0]['id'])
+                path = f"/items/{item['id']}" if action == 'delete_item' else f"/items/{item['id']}/photos/{route}"
+                with patch.object(self.Session.class_, 'commit', side_effect=RuntimeError('commit failed')):
+                    with self.assertRaisesRegex(RuntimeError, 'commit failed'):
+                        self.request(method, path, json={'image_data': self.photo} if method == 'PUT' else None)
+                self.assertTrue(all(path.is_file() for path in paths))
+                self.assertEqual(set(inspection.photo_directory().iterdir()), files)
+                saved = self.request('GET', '/items?rental_id=1').json()[-1]
+                self.assertEqual(saved['evidences'], item['evidences'])
+
+    def test_unlink_failure_is_logged_and_does_not_change_success_response(self):
+        for action in ('delete_item', 'upload_photo', 'delete_photo'):
+            with self.subTest(action=action):
+                item = self.upload(self.item()['id'])
+                old_path = self.photo_paths(item)[0]
+                method, route = ('PUT', 'baseline') if action == 'upload_photo' else ('DELETE', item['evidences'][0]['id'])
+                path = f"/items/{item['id']}" if action == 'delete_item' else f"/items/{item['id']}/photos/{route}"
+                with self.assertLogs(inspection.__name__, level='WARNING'):
+                    with patch.object(Path, 'unlink', side_effect=OSError('unlink failed')):
+                        response = self.request(method, path, json={'image_data': self.photo} if method == 'PUT' else None)
+                self.assertEqual(response.status_code, 204 if action == 'delete_item' else 200, response.text)
+                self.assertTrue(old_path.is_file())
+                if action == 'upload_photo':
+                    new_path = self.photo_paths(response.json())[0]
+                    self.assertNotEqual(old_path, new_path)
+                    self.assertTrue(new_path.is_file())
+                with self.Session() as db:
+                    self.assertIsNone(db.get(InspectionRecord, int(item['evidences'][0]['id'])))
+
+    def test_shared_photo_file_is_kept(self):
+        for action in ('delete_item', 'upload_photo', 'delete_photo'):
+            with self.subTest(action=action):
+                item = self.upload(self.item()['id'])
+                old_path = self.photo_paths(item)[0]
+                with self.Session() as db:
+                    db.add(InspectionRecord(rental_id=2, type='check_in', photo_url=old_path.name))
+                    db.commit()
+                if action == 'upload_photo':
+                    self.upload(item['id'])
+                else:
+                    path = f"/items/{item['id']}"
+                    if action == 'delete_photo':
+                        path += f"/photos/{item['evidences'][0]['id']}"
+                    response = self.request('DELETE', path)
+                    self.assertEqual(response.status_code, 204 if action == 'delete_item' else 200, response.text)
+                self.assertTrue(old_path.is_file())
+
+    def test_delete_item_skips_legacy_photo_names(self):
+        for name in ('legacy.jpg', 'A' * 32 + '.jpg', 'a' * 32 + '.jpg\n', '../' + 'a' * 32 + '.jpg'):
+            with self.subTest(name=name):
+                item = self.upload(self.item()['id'])
+                with self.Session() as db:
+                    db.get(InspectionRecord, int(item['evidences'][0]['id'])).photo_url = name
+                    db.commit()
+                with patch.object(Path, 'unlink') as unlink:
+                    response = self.request('DELETE', f"/items/{item['id']}")
+                self.assertEqual(response.status_code, 204, response.text)
+                unlink.assert_not_called()
+
+    def test_delete_item_skips_photo_symlink_outside_upload_directory(self):
+        item = self.upload(self.item()['id'])
+        path = self.photo_paths(item)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            outside = Path(directory) / path.name
+            outside.write_bytes(path.read_bytes())
+            path.unlink()
+            path.symlink_to(outside)
+            with patch.object(Path, 'unlink') as unlink:
+                response = self.request('DELETE', f"/items/{item['id']}")
+            self.assertEqual(response.status_code, 204, response.text)
+            unlink.assert_not_called()
+            self.assertTrue(outside.is_file())
+            self.assertTrue(path.is_symlink())
+
+    def test_delete_item_succeeds_if_photo_file_is_already_missing(self):
+        item = self.upload(self.item()['id'])
+        self.photo_paths(item)[0].unlink()
+        response = self.request('DELETE', f"/items/{item['id']}")
+        self.assertEqual(response.status_code, 204, response.text)
+
     def test_camera_capture_stores_source_and_quality(self):
         item = self.upload(self.item()['id'], capture_source='camera',
             capture_quality={'brightness': 140, 'sharpness': 88, 'is_level': True})
