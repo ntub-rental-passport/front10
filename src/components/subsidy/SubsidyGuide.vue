@@ -6,6 +6,7 @@ import heroImage from '@/src/assets/subsidy/01-rent-subsidy-hero.png'
 import eligibilityImage from '@/src/assets/subsidy/02-eligibility-check.png'
 import housingImage from '@/src/assets/subsidy/03-housing-check.png'
 import SubsidyReminders from './SubsidyReminders.vue'
+import SubsidyDocuments from './SubsidyDocuments.vue'
 import { createChecklistPdf } from '@/src/utils/subsidy-checklist-pdf'
 import {
   ArrowUpRight,
@@ -685,7 +686,7 @@ function exportRecovery() {
       <section class="panel preparation-panel">
         <span class="eyebrow">03 / 文件與填表</span>
         <h2>帶著準備好的資料，再去申請</h2>
-        <p>此處只勾選準備狀態，不收取或上傳證件。選擇適用情況，產生你的清單。</p>
+        <p>這份清單只勾選準備狀態；需要保存的文件可以放進下方「我的補助文件」，只有你看得到。</p>
         <div class="choices">
           <label><input v-model="needs.pregnancy" type="checkbox" />孕有胎兒</label
           ><label><input v-model="needs.disaster" type="checkbox" />災民</label
@@ -718,6 +719,7 @@ function exportRecovery() {
           <li>帳戶資料及切結內容；在官方頁面逐項核對。</li>
         </ul>
       </section>
+      <SubsidyDocuments />
       <aside class="application-data">
         <section class="panel copy-panel">
           <h2>官網要填、租約上已經有的資料</h2>
@@ -758,7 +760,7 @@ function exportRecovery() {
             官網要上傳的是<strong>雙方實際簽署的租約影本</strong>。RentMate「檢視契約」印出的是由欄位回拼的核對稿，不等於正本，不能拿去送件。
           </p>
           <p class="copy-note">
-            租約未提供的出生日期、聯絡方式、戶籍／通訊地址、家庭成員及撥款帳戶，請自行在官網填寫。本助手不收取身分證照片、健保卡照片、健保卡號或撥款帳戶資料。
+            租約未提供的出生日期、聯絡方式、戶籍／通訊地址、家庭成員及撥款帳戶，請自行在官網填寫。本助手不會要求你提供身分證照片、健保卡號或撥款帳戶資料；想保存申請文件的副本，可以自行放進「我的補助文件」，只有你看得到，上傳 180 天後自動刪除。
           </p>
         </section>
         <section class="panel">
