@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
+import { Badge } from '@/components/ui/badge/index'
 import {
   Dialog,
   DialogContent,
@@ -30,7 +31,8 @@ import AdminLoadNotice from '@/src/components/admin/AdminLoadNotice.vue'
 import BannerCarousel from '@/src/components/content/BannerCarousel.vue'
 import { loadAdminContent, useAdminContent } from '@/src/composables/admin/useAdminContent'
 import { BUILTIN_BANNER_IMAGES, isValidImageUrl } from '@/src/utils/banner-url'
-import { fetchBannerImages, uploadBannerImage, type BannerImage } from '@/src/services/bannerImageApi'
+import { deleteBannerImage, fetchBannerImages, uploadBannerImage, type BannerImage } from '@/src/services/bannerImageApi'
+import { buildBannerLibrary, isLibraryFull, type BannerLibraryEntry } from '@/src/utils/banner-library'
 import { resolvePhase } from '@/src/utils/phase'
 import { isDeadRoute, routeOptionsFor } from '@/src/utils/tenant-route-link'
 import { formatDate } from '@/src/utils/admin-format'
@@ -78,6 +80,7 @@ async function run(action: () => Promise<void>): Promise<void> {
   listError.value = ''
   try {
     await action()
+    await loadUploadedImages()
   } catch (error) {
     listError.value = messageOf(error)
   }
@@ -166,10 +169,44 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const uploadError = ref('')
 const uploadedImages = ref<BannerImage[]>([])
+const imageCount = ref(0)
+const imageLimit = ref(30)
+const libraryLoadState = ref<'loading' | 'ready' | 'error'>('loading')
+const libraryEntries = computed(() => buildBannerLibrary(uploadedImages.value, banners.value))
+const libraryFull = computed(() => isLibraryFull(imageCount.value, imageLimit.value))
+const uploadBlockedReason = computed(() => uploading.value
+  ? '圖片上傳中，請稍候。'
+  : libraryFull.value ? `圖庫已滿（${imageLimit.value} 張），請先刪除未使用的圖片。` : '')
+const imageDeleteTarget = ref<BannerLibraryEntry | null>(null)
+const imageDeleteError = ref('')
+const deletingImage = ref(false)
+let selectUploadedImage = false
+let libraryRequest = 0
 
 async function loadUploadedImages(): Promise<void> {
-  const items = await fetchBannerImages()
-  if (items) uploadedImages.value = items
+  const request = ++libraryRequest
+  // 已經有資料時背景重讀，不把整個圖庫換成「讀取中」造成閃爍
+  if (libraryLoadState.value !== 'ready') libraryLoadState.value = 'loading'
+  const result = await fetchBannerImages()
+  // 只套用最後一次讀取，避免較早的請求把操作後的新狀態蓋回去。
+  if (request !== libraryRequest) return
+  if (!result) {
+    libraryLoadState.value = 'error'
+    return
+  }
+  uploadedImages.value = result.items
+  imageCount.value = result.count
+  imageLimit.value = result.limit
+  libraryLoadState.value = 'ready'
+}
+
+onMounted(loadUploadedImages)
+
+function pickUpload(select: boolean): void {
+  if (uploading.value || libraryFull.value) return
+  selectUploadedImage = select
+  uploadError.value = ''
+  fileInput.value?.click()
 }
 
 async function onPickFile(event: Event): Promise<void> {
@@ -177,17 +214,45 @@ async function onPickFile(event: Event): Promise<void> {
   const file = input.files?.[0]
   // 選完就清掉 input：同一個檔案再選一次才會再觸發 change
   input.value = ''
-  if (!file) return
+  if (!file || uploading.value || libraryFull.value) return
+  const select = selectUploadedImage
   uploadError.value = ''
   uploading.value = true
   try {
     const image = await uploadBannerImage(file)
-    draft.value.imageUrl = image.url
-    uploadedImages.value = [image, ...uploadedImages.value.filter((item) => item.name !== image.name)]
+    if (select) draft.value.imageUrl = image.url
+    await loadUploadedImages()
   } catch (error) {
     uploadError.value = error instanceof Error ? error.message : '上傳失敗，請稍後再試。'
   } finally {
     uploading.value = false
+  }
+}
+
+function pickLibraryImage(image: BannerLibraryEntry): void {
+  openCreate()
+  draft.value.imageUrl = image.url
+}
+
+function openImageDelete(image: BannerLibraryEntry): void {
+  if (!image.deletable) return
+  imageDeleteError.value = ''
+  imageDeleteTarget.value = image
+}
+
+async function confirmImageDelete(): Promise<void> {
+  const target = imageDeleteTarget.value
+  if (!target || deletingImage.value) return
+  deletingImage.value = true
+  imageDeleteError.value = ''
+  try {
+    await deleteBannerImage(target.key)
+    imageDeleteTarget.value = null
+    await loadUploadedImages()
+  } catch (error) {
+    imageDeleteError.value = messageOf(error)
+  } finally {
+    deletingImage.value = false
   }
 }
 
@@ -321,6 +386,7 @@ async function submit(force = false): Promise<void> {
   try {
     await saveBanner(buildBannerInput())
     dialogOpen.value = false
+    await loadUploadedImages()
   } catch (error) {
     dialogError.value = messageOf(error)
   } finally {
@@ -387,6 +453,13 @@ const hasActivePreview = computed(() =>
 
 <template>
   <div class="space-y-6">
+    <input
+      ref="fileInput"
+      type="file"
+      accept="image/webp,image/png,image/jpeg"
+      class="hidden"
+      @change="onPickFile"
+    />
     <section class="space-y-3">
       <div>
         <h2 class="text-sm font-semibold">輪播預覽</h2>
@@ -478,6 +551,61 @@ const hasActivePreview = computed(() =>
       </div>
     </section>
 
+    <section class="space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold">圖片庫</h2>
+          <span class="text-sm text-muted-foreground">{{ imageCount }} / {{ imageLimit }}</span>
+          <span class="text-xs text-muted-foreground">另有 {{ BUILTIN_BANNER_IMAGES.length }} 張內建圖片</span>
+        </div>
+        <Button
+          variant="outline"
+          :disabled="uploading || libraryFull"
+          :title="uploadBlockedReason || undefined"
+          @click="pickUpload(false)"
+        >
+          <Upload class="mr-1 h-4 w-4" />
+          {{ uploading ? '上傳中…' : '上傳圖片' }}
+        </Button>
+      </div>
+      <p v-if="uploadBlockedReason" class="text-xs text-muted-foreground">{{ uploadBlockedReason }}</p>
+      <ActionError v-if="uploadError && !dialogOpen" :message="uploadError" @dismiss="uploadError = ''" />
+      <div v-if="libraryLoadState === 'error'" class="flex items-center gap-2 text-sm text-muted-foreground">
+        圖片庫讀取失敗
+        <Button variant="outline" size="sm" @click="loadUploadedImages">重試</Button>
+      </div>
+      <p v-else-if="libraryLoadState === 'loading'" class="text-sm text-muted-foreground">圖片庫讀取中…</p>
+      <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div v-for="image in libraryEntries" :key="image.key" class="overflow-hidden rounded-xl border">
+          <button
+            type="button"
+            class="block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+            :aria-label="`選用${image.label}新增輪播`"
+            :title="image.label"
+            @click="pickLibraryImage(image)"
+          >
+            <img :src="image.url" :alt="image.label" class="aspect-[3/1] w-full object-cover" />
+          </button>
+          <div class="flex flex-wrap items-center justify-between gap-2 p-2">
+            <Badge variant="secondary">
+              {{ image.builtin ? '內建' : image.usedBy.length === 0 ? '未使用' : `使用中 ${image.usedBy.length}` }}
+            </Badge>
+            <Button
+              v-if="!image.builtin"
+              variant="outline"
+              size="sm"
+              :disabled="!image.deletable"
+              :title="image.blockedReason || '刪除圖片'"
+              :aria-label="image.blockedReason || `刪除${image.label}`"
+              @click="openImageDelete(image)"
+            >
+              刪除
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <Dialog v-model:open="dialogOpen">
       <DialogContent class="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -514,26 +642,21 @@ const hasActivePreview = computed(() =>
             -->
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-xs text-muted-foreground">自己的圖片</span>
-              <input
-                ref="fileInput"
-                type="file"
-                accept="image/webp,image/png,image/jpeg"
-                class="hidden"
-                @change="onPickFile"
-              />
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 class="h-7 px-2.5 text-xs"
-                :disabled="uploading"
-                @click="fileInput?.click()"
+                :disabled="uploading || libraryFull"
+                :title="uploadBlockedReason || undefined"
+                @click="pickUpload(true)"
               >
                 <Upload class="mr-1 h-3 w-3" />
                 {{ uploading ? '上傳中…' : '上傳圖片' }}
               </Button>
+              <span class="text-xs text-muted-foreground">{{ imageCount }} / {{ imageLimit }}</span>
               <button
-                v-for="image in uploadedImages"
+                v-for="image in libraryLoadState === 'ready' ? uploadedImages : []"
                 :key="image.name"
                 type="button"
                 :aria-pressed="draft.imageUrl === image.url"
@@ -546,9 +669,14 @@ const hasActivePreview = computed(() =>
               >
                 <img :src="image.url" alt="" class="h-full w-full object-cover" />
               </button>
-              <span v-if="uploadedImages.length === 0 && !uploading" class="text-xs text-muted-foreground">
+              <span v-if="libraryLoadState === 'ready' && uploadedImages.length === 0 && !uploading" class="text-xs text-muted-foreground">
                 還沒有上傳過圖片
               </span>
+            </div>
+            <p v-if="uploadBlockedReason" class="text-xs text-muted-foreground">{{ uploadBlockedReason }}</p>
+            <div v-if="libraryLoadState === 'error'" class="flex items-center gap-2 text-xs text-muted-foreground">
+              圖片庫讀取失敗
+              <Button variant="outline" size="sm" @click="loadUploadedImages">重試</Button>
             </div>
             <p class="text-xs text-muted-foreground">
               建議 2400×800、WebP 格式；上限 5 MB。圖片存在伺服器上，重新部署不會消失。
@@ -642,6 +770,22 @@ const hasActivePreview = computed(() =>
           </Button>
           <Button :disabled="!canSubmit()" @click="submit()">
             {{ imageCheckState === 'checking' ? '確認圖片中…' : saving ? '儲存中…' : '儲存' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog :open="imageDeleteTarget !== null" @update:open="(o: boolean) => { if (!o && !deletingImage) imageDeleteTarget = null }">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>刪除這張圖片？</DialogTitle>
+          <DialogDescription>「{{ imageDeleteTarget?.label }}」刪除後無法復原。</DialogDescription>
+        </DialogHeader>
+        <ActionError v-if="imageDeleteError" :message="imageDeleteError" @dismiss="imageDeleteError = ''" />
+        <DialogFooter>
+          <Button variant="outline" :disabled="deletingImage" @click="imageDeleteTarget = null">取消</Button>
+          <Button variant="destructive" :disabled="deletingImage" @click="confirmImageDelete">
+            {{ deletingImage ? '刪除中…' : '確認刪除' }}
           </Button>
         </DialogFooter>
       </DialogContent>

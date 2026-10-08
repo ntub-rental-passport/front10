@@ -1,6 +1,6 @@
 /**
- * 輪播圖片的上傳與清單（backend/routers/content_api.py，見 admin/banner_images.py）。
- * 圖片存在 VM 的硬碟上；這裡只負責上傳與列出，刪除沒做（可能有輪播正在用）。
+ * 輪播圖片的上傳、清單與刪除（backend/routers/content_api.py，見 admin/banner_images.py）。
+ * 圖片存在 VM 的硬碟上；只有未被輪播使用的上傳圖片可以刪除。
  */
 import { getAuthSession } from '@/src/composables/useAuth'
 
@@ -14,8 +14,16 @@ export interface BannerImage {
   size: number
   /** epoch 秒 */
   uploadedAt: number
+  usedBy: { id: string; title: string }[]
+  deletable: boolean
   width?: number
   height?: number
+}
+
+export interface BannerImageLibrary {
+  items: BannerImage[]
+  count: number
+  limit: number
 }
 
 function authHeader(): Record<string, string> {
@@ -35,7 +43,7 @@ async function failureOf(response: Response): Promise<Error> {
   if (response.status === 401 || response.status === 403) {
     return new Error('沒有權限或登入已失效，請重新登入。')
   }
-  return new Error(detail || `上傳失敗（HTTP ${response.status}）。`)
+  return new Error(detail || `操作失敗（HTTP ${response.status}）。`)
 }
 
 export async function uploadBannerImage(file: File): Promise<BannerImage> {
@@ -51,15 +59,23 @@ export async function uploadBannerImage(file: File): Promise<BannerImage> {
 }
 
 /** 讀不到回 null：畫面要分得出「讀不到」和「還沒傳過圖」 */
-export async function fetchBannerImages(): Promise<BannerImage[] | null> {
+export async function fetchBannerImages(): Promise<BannerImageLibrary | null> {
   try {
     const response = await fetch(`${API_BASE_URL}/admin/banner-images`, {
       headers: authHeader(),
       cache: 'no-store',
     })
     if (!response.ok) return null
-    return ((await response.json()) as { items: BannerImage[] }).items
+    return (await response.json()) as BannerImageLibrary
   } catch {
     return null
   }
+}
+
+export async function deleteBannerImage(name: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/banner-images/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  })
+  if (!response.ok) throw await failureOf(response)
 }
