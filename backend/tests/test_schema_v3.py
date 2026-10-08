@@ -31,7 +31,7 @@ class SchemaContractTests(unittest.TestCase):
     def test_every_table_column_type_nullability_and_foreign_key_matches_sql(self):
         sql = (Path(__file__).parents[1] / 'db' / 'database.sql').read_text(encoding='utf-8')
         tables = dict(re.findall(r'CREATE TABLE `([^`]+)`\s*\((.*?)\) ENGINE', sql, re.S))
-        self.assertEqual(len(tables), 60)
+        self.assertEqual(len(tables), 62)
         self.assertEqual(set(tables), set(Base.metadata.tables))
         for name, body in tables.items():
             columns = dict(re.findall(r'^\s*`([^`]+)`\s+([^\n]+)', body, re.M))
@@ -60,6 +60,21 @@ class SchemaContractTests(unittest.TestCase):
             connection.execute(text('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)'))
         self.assertIn('Missing table: user_roles', schema_problems(engine))
         self.assertEqual(inspect(engine).get_table_names(), ['users'])
+
+    def test_contract_review_migration_matches_schema_and_activity_has_no_automatic_update(self):
+        backend = Path(__file__).parents[1]
+        sql = (backend / 'db' / 'database.sql').read_text(encoding='utf-8')
+        migration = (backend / 'migrations' / '20261008_contract_reviews.sql').read_text(encoding='utf-8')
+        migrated = dict(re.findall(r'CREATE TABLE IF NOT EXISTS `([^`]+)`\s*\((.*?)\) ENGINE', migration, re.S))
+        tables = dict(re.findall(r'CREATE TABLE `([^`]+)`\s*\((.*?)\) ENGINE', sql, re.S))
+        self.assertEqual(set(migrated), {'contract_reviews', 'contract_review_files'})
+        for name, body in migrated.items():
+            self.assertEqual(body, tables[name])
+        self.assertNotIn('ON UPDATE', migrated['contract_reviews'])
+        self.assertIsNone(Base.metadata.tables['contract_reviews'].c.activity_at.onupdate)
+        self.assertIsNone(Base.metadata.tables['contract_reviews'].c.activity_at.default)
+        self.assertIsInstance(Base.metadata.tables['contract_review_files'].c.original_name.type, EncryptedText)
+        self.assertEqual(Base.metadata.tables['contract_review_files'].c.original_name.type.length, 512)
 
 
 class NewSchemaApiTests(unittest.TestCase):
