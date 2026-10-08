@@ -13,7 +13,7 @@ class UtilityBillingTests(unittest.TestCase):
             ({'method': 'shared', 'total': 900, 'share': 15, 'shares': 45}, 300),
             ({'method': 'master', 'previous': 100, 'current': 220, 'total': 1500,
               'main_usage': 300, 'sub_usage': 240, 'share': 1, 'shares': 2}, 750),
-            ({'method': 'pending'}, None), ({'method': 'included'}, 0),
+            ({'method': 'pending'}, None), ({'method': 'included'}, 0), ({'method': 'no_bill'}, 0),
         ]
         for entry, expected in examples:
             with self.subTest(entry=entry):

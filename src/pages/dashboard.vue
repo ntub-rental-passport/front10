@@ -24,7 +24,7 @@ import {
 import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
 import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
 import UtilityDialog from '@/src/components/dashboard/UtilityDialog.vue'
-import { electricityPayerLabel } from '@/src/utils/utility-billing'
+import { utilityPayerLabel } from '@/src/utils/utility-billing'
 import { useDashboard } from '@/src/composables/useDashboard'
 import { paymentMethodLabel } from '@/src/utils/dashboard-contract'
 import {
@@ -540,8 +540,15 @@ const {
                     </td>
                     <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatDate(cycleItem.cycle.dueDate) }}</td>
                     <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatCurrency(cycleItem.cycle.rentAmount) }}</td>
-                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ electricityPayerLabel(cycleItem.cycle.utilityDetails?.electricity.payer) || formatOptionalAmount(cycleItem.cycle.electricityAmount) }}</td>
-                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatOptionalAmount(cycleItem.cycle.waterAmount) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">
+                      {{ formatOptionalAmount(cycleItem.cycle.electricityAmount) }}
+                      <p v-if="utilityPayerLabel(cycleItem.cycle.utilityDetails?.electricity.payer)" class="text-[11px] font-normal text-slate-500">{{ utilityPayerLabel(cycleItem.cycle.utilityDetails?.electricity.payer) }}</p>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">
+                      {{ formatOptionalAmount(cycleItem.cycle.waterAmount) }}
+                      <p v-if="utilityPayerLabel(cycleItem.cycle.utilityDetails?.water.payer)" class="text-[11px] font-normal text-slate-500">{{ utilityPayerLabel(cycleItem.cycle.utilityDetails?.water.payer) }}</p>
+                      <p v-if="cycleItem.cycle.utilityDetails?.water.method === 'no_bill'" class="text-[11px] font-normal text-slate-500">本期不出帳</p>
+                    </td>
                     <td class="whitespace-nowrap px-3 py-3 text-right align-middle">
                       <p :class="['text-sm font-bold tracking-tight', cycleItem.status === 'paid' ? 'text-emerald-700' : 'text-slate-900']">
                         {{ totalAmountLabel(cycleItem) }}

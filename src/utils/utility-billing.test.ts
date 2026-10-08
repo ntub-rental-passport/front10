@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanUtilityEntry, utilityPreview } from './utility-billing'
+import { cleanUtilityEntry, utilityPreview, utilityReceivable } from './utility-billing'
 
 describe('utility billing preview', () => {
   it('calculates meter, shared and master bills', () => {
@@ -19,5 +19,14 @@ describe('utility billing preview', () => {
   })
   it('drops previous mode fields when switching methods', () => {
     expect(cleanUtilityEntry({ method: 'included', amount: 520 })).toEqual({ method: 'included' })
+  })
+  it('settles a nonbilling month without treating an unknown bill as zero', () => {
+    const electricity = utilityReceivable({ method: 'amount', payer: 'tenant_direct' })
+    expect(electricity).toBe(0)
+    expect(utilityPreview({ method: 'no_bill' }).amount).toBe(0)
+    expect(18000 + electricity! + utilityPreview({ method: 'no_bill' }).amount!).toBe(18000)
+    expect(utilityPreview({ method: 'pending' }).amount).toBeNull()
+    expect(cleanUtilityEntry({ method: 'no_bill', amount: 604 })).toEqual({ method: 'no_bill' })
+    expect(utilityPreview({ method: 'amount', amount: 0 }).amount).toBe(0)
   })
 })

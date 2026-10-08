@@ -216,7 +216,7 @@ def save_utilities(
         if not context['initial'] and electricity.previous != Decimal(str(context['previous'])):
             raise HTTPException(status_code=409, detail="上期讀數已變更，請重新開啟視窗。")
     bill.electricity_amount = electricity.receivable()
-    bill.water_amount = payload.water.calculate()
+    bill.water_amount = payload.water.receivable()
     bill.utility_details = payload.model_dump(mode='json', exclude_none=True)
     db.commit()
     db.refresh(bill)

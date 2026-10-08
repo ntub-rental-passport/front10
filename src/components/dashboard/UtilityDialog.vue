@@ -27,6 +27,7 @@ watch(() => [props.open, props.targetCycle?.cycle.id], async () => {
   }
   form.value.electricity.recorded_on ||= formatIso(startOfToday())
   form.value.electricity.payer ||= 'landlord_collect'
+  form.value.water.payer ||= 'landlord_collect'
   contextError.value = ''; contextLoading.value = true
   try {
     const result = await fetchUtilityContext(cycle.id)
@@ -40,8 +41,10 @@ watch(() => [props.open, props.targetCycle?.cycle.id], async () => {
 const previews = computed(() => ({ electricity: utilityPreview(form.value.electricity), water: utilityPreview(form.value.water) }))
 const invalid = computed(() => Boolean(previews.value.electricity.error || previews.value.water.error || contextLoading.value || contextError.value || ocrBusy.value))
 const readonly = computed(() => Boolean(props.targetCycle?.cycle.paidAt))
-const total = computed(() => (props.targetCycle?.cycle.rentAmount ?? 0) + (utilityReceivable(form.value.electricity) ?? 0) + (previews.value.water.amount ?? 0))
-const incomplete = computed(() => previews.value.electricity.amount == null || previews.value.water.amount == null)
+const total = computed(() => (props.targetCycle?.cycle.rentAmount ?? 0) + (utilityReceivable(form.value.electricity) ?? 0) + (utilityReceivable(form.value.water) ?? 0))
+const incomplete = computed(() => utilityReceivable(form.value.electricity) == null || utilityReceivable(form.value.water) == null)
+const waterFields = computed(() => utilityFields[form.value.water.method].filter(field =>
+  !(field === 'amount' && form.value.water.payer !== 'landlord_collect')))
 function save() {
   if (!invalid.value && !props.saving && !readonly.value) emit('save', {
     electricity: cleanUtilityEntry(form.value.electricity), water: cleanUtilityEntry(form.value.water),
@@ -73,22 +76,40 @@ function save() {
               <option v-for="method in utilityMethods" :key="method.value" :value="method.value">{{ method.label }}</option>
             </select>
           </label>
-          <p v-if="form[kind.key].method === 'amount'" class="text-xs text-slate-500">依帳單或約定金額填寫，包含自行向水電公司繳納的費用。</p>
-          <p v-if="form[kind.key].method === 'meter'" class="text-xs text-slate-500">（本期讀數 − 上期讀數）× 每度單價；請依實際帳單或約定填寫。</p>
+          <label class="block space-y-1 text-sm">
+            <span>繳費方式</span>
+            <select v-model="form[kind.key].payer" class="w-full rounded-md border bg-white p-2">
+              <option value="landlord_collect">房東代收</option>
+              <option value="tenant_direct">房客自繳</option>
+              <option value="landlord_absorb">房東負擔</option>
+            </select>
+          </label>
+          <p v-if="form[kind.key].payer === 'tenant_direct'" class="text-sm text-sky-700">房客自繳：自行向自來水公司繳費，不計入應付房東金額。</p>
+          <p v-if="form[kind.key].payer === 'landlord_absorb'" class="text-sm text-sky-700">房東負擔：由房東支付，不向房客收取。</p>
+          <p v-if="form[kind.key].method === 'pending' && form[kind.key].payer === 'landlord_collect'" class="text-xs text-amber-700">金額尚未確認，合計會保留「待填寫」。若確定本月不出帳，請改選「本期不出帳」。</p>
+          <p v-if="form[kind.key].method === 'no_bill'" class="text-xs text-slate-500">已確認本期不出水費帳單，以 0 元完成本期計算。隔月收到帳單時再記錄一次完整金額，不代表由房東負擔。</p>
+          <p v-if="form[kind.key].method === 'amount' && form[kind.key].payer === 'landlord_collect'" class="text-xs text-slate-500">請填帳單最終「應繳總金額／代繳（代收）總金額」，不要只填用水費或水費項目小計。基本費、用水費、代徵費及減免／退費以帳單為準；最終應繳為 0 元時可直接填 0。固定費用則依租約約定填寫。</p>
+          <details class="text-xs text-slate-500">
+            <summary class="cursor-pointer text-sky-700">水費帳單怎麼填？</summary>
+            <p class="mt-2">帳單可能包含基本費、用水費、營業稅、清除處理費、水源保育與回饋費、污水下水道使用費及退費調整。依最終應繳金額記錄，無須重算級距或另外加稅。</p>
+            <p class="mt-1">若採隔月出帳，收到帳單時將完整金額歸入一期；另一個月選「本期不出帳」，避免兩個月重複計入同一張帳單。</p>
+            <a class="mt-1 inline-block underline" href="https://www.water.gov.tw/ch/Subject/Detail/1288?nodeId=813" target="_blank" rel="noopener noreferrer">台灣自來水公司計費說明</a>
+          </details>
+          <p v-if="form[kind.key].method === 'meter'" class="text-xs text-slate-500">此處為約定單價的簡易計算，不含自來水公司累進級距、基本費與代徵費。若收到官方帳單，請選「帳單金額／固定費用」填最終應繳金額。</p>
           <p v-if="form[kind.key].method === 'shared'" class="text-xs text-slate-500">總額 × 我的份數 ÷ 全部份數。均分可填 1／總人數；依天數分攤可填入住天數。</p>
           <p v-if="form[kind.key].method === 'master'" class="text-xs text-slate-500">以帳單總額 ÷ 主表用量算平均單價。我的分表用量，加上公共用量按份數分攤後計費；公共用量＝主表用量 − 所有分表用量。</p>
           <div class="grid gap-3 sm:grid-cols-2">
-            <label v-for="field in utilityFields[form[kind.key].method]" :key="field" class="block space-y-1 text-sm">
+            <label v-for="field in waterFields" :key="field" class="block space-y-1 text-sm">
               <span>{{ utilityFieldLabels[field] }}</span>
               <input v-model="form[kind.key][field]" type="number" inputmode="decimal" min="0" step="any" required class="w-full rounded-md border p-2" />
             </label>
           </div>
           <p v-if="previews[kind.key].error" role="status" class="text-sm text-amber-700">{{ previews[kind.key].error }}</p>
-          <p class="text-right text-sm font-semibold">本期{{ kind.label }}：{{ previews[kind.key].amount == null ? '待填寫' : formatCurrency(previews[kind.key].amount!) }}</p>
+          <p class="text-right text-sm font-semibold">應付房東{{ kind.label }}：{{ utilityReceivable(form[kind.key]) == null ? '待填寫' : formatCurrency(utilityReceivable(form[kind.key])!) }}</p>
         </fieldset>
         <div class="rounded-xl bg-slate-50 p-3 text-sm">
           <p class="font-semibold">{{ incomplete ? '目前已知合計' : '本期合計' }}（含租金）：{{ formatCurrency(total) }}</p>
-          <p class="mt-1 text-xs text-slate-500">各項費用四捨五入至元。尚未收到帳單可保留待填寫；已含租金的費用記為 0 元。</p>
+          <p class="mt-1 text-xs text-slate-500">各項費用四捨五入至元。房客自繳、房東負擔、本期不出帳或已含租金，應付房東金額皆為 0 元；房東代收且帳單待確認時保留待填寫。</p>
         </div>
         <p v-if="error" role="alert" class="text-sm text-red-600">{{ error }}</p>
         <div class="flex justify-end gap-2">

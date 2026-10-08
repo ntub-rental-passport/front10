@@ -1,11 +1,12 @@
-export type UtilityMethod = 'pending' | 'amount' | 'meter' | 'shared' | 'master' | 'included'
+export type UtilityMethod = 'pending' | 'no_bill' | 'amount' | 'meter' | 'shared' | 'master' | 'included'
 export type UtilityField = 'amount' | 'previous' | 'current' | 'rate' | 'total' | 'share' | 'shares' | 'main_usage' | 'sub_usage'
 export type UtilityPayer = 'landlord_collect' | 'tenant_direct' | 'landlord_absorb'
 export type UtilityEntry = { method: UtilityMethod; payer?: UtilityPayer; recorded_on?: string } & Partial<Record<UtilityField, number | string>>
 export interface UtilityDetails { electricity: UtilityEntry; water: UtilityEntry }
 
 export const utilityMethods: { value: UtilityMethod; label: string }[] = [
-  { value: 'pending', label: '尚未收到帳單' },
+  { value: 'pending', label: '帳單待確認（金額未知）' },
+  { value: 'no_bill', label: '本期不出帳（隔月收費，記 0 元）' },
   { value: 'amount', label: '帳單金額／固定費用' },
   { value: 'meter', label: '依抄表度數計費' },
   { value: 'shared', label: '平均／比例分攤' },
@@ -13,7 +14,7 @@ export const utilityMethods: { value: UtilityMethod; label: string }[] = [
   { value: 'included', label: '已含租金／由房東負擔' },
 ]
 export const utilityFields: Record<UtilityMethod, UtilityField[]> = {
-  pending: [], included: [], amount: ['amount'],
+  pending: [], no_bill: [], included: [], amount: ['amount'],
   meter: ['previous', 'current', 'rate'], shared: ['total', 'share', 'shares'],
   master: ['previous', 'current', 'total', 'main_usage', 'sub_usage', 'share', 'shares'],
 }
@@ -26,7 +27,7 @@ export const utilityFieldLabels: Record<UtilityField, string> = {
 export function utilityPreview(entry: UtilityEntry): { amount: number | null; error: string } {
   if (entry.method === 'amount' && entry.payer && entry.payer !== 'landlord_collect') return { amount: 0, error: '' }
   if (entry.method === 'pending') return { amount: null, error: '' }
-  if (entry.method === 'included') return { amount: 0, error: '' }
+  if (entry.method === 'included' || entry.method === 'no_bill') return { amount: 0, error: '' }
   const values: Partial<Record<UtilityField, number>> = {}
   for (const key of utilityFields[entry.method]) {
     const raw = entry[key]
@@ -70,6 +71,6 @@ export function utilityReceivable(entry: UtilityEntry): number | null {
 
 export interface UtilityContext { previous: string | number; rate: string | number | null; initial: boolean }
 
-export function electricityPayerLabel(payer?: UtilityPayer): string | null {
+export function utilityPayerLabel(payer?: UtilityPayer): string | null {
   return payer === 'tenant_direct' ? '房客自繳' : payer === 'landlord_absorb' ? '房東負擔' : null
 }

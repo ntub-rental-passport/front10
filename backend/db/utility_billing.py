@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class UtilityEntry(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
 
-    method: Literal['pending', 'amount', 'meter', 'shared', 'master', 'included']
+    method: Literal['pending', 'no_bill', 'amount', 'meter', 'shared', 'master', 'included']
     payer: Literal['landlord_collect', 'tenant_direct', 'landlord_absorb'] = 'landlord_collect'
     recorded_on: date | None = None
     amount: Decimal | None = Field(default=None, ge=0, le=100_000_000)
@@ -25,7 +25,7 @@ class UtilityEntry(BaseModel):
     @model_validator(mode='after')
     def validate_calculation(self):
         required = {
-            'pending': (), 'included': (), 'amount': ('amount',),
+            'pending': (), 'no_bill': (), 'included': (), 'amount': ('amount',),
             'meter': ('previous', 'current', 'rate'),
             'shared': ('total', 'share', 'shares'),
             'master': ('previous', 'current', 'total', 'share', 'shares', 'main_usage', 'sub_usage'),
@@ -50,7 +50,7 @@ class UtilityEntry(BaseModel):
     def calculate(self) -> int | None:
         if self.method == 'pending':
             return None
-        if self.method == 'included':
+        if self.method in ('included', 'no_bill'):
             return 0
         if self.method == 'amount':
             value = self.amount or Decimal(0)
