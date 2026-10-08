@@ -1,6 +1,6 @@
 # RentMate 學校 VM 部署指南
 
-> 架構：`web (Nginx:80/443)` → `fastapi:8000` / `ocr:8787`；FastAPI 連學校 MySQL，AI 備援走 `ollama:11434` / `rag:8000`。
+> 架構：`web (Nginx:80/443)` → `fastapi:8000` / `ocr:8787`；FastAPI 連學校 MySQL，檢索備援走 `rag:8000`，生成模型使用 NVIDIA NIM。
 > 網段隔離：AI 備援在 `internal: true` 的 internal；mysql 在 backend_net，只供 rollback，**不對外、不可連外**；
 > 對外只有 web 容器的 80（P2 加 TLS 後為 443）。
 
@@ -47,7 +47,7 @@ rsync -avz --delete \
 
 ```bash
 docker compose up -d --build
-docker compose ps          # web、fastapi、ocr、ollama、rag 應為 running / healthy；mysql 不會自動啟動
+docker compose ps          # web、fastapi、ocr、rag 應為 running / healthy；mysql 不會自動啟動
 docker compose logs -f     # 看啟動紀錄
 ```
 
@@ -68,42 +68,25 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST http://<VM公網IP>/api/ocr
 docker network inspect "$(docker inspect "$(docker compose ps -q rag)" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')" --format '{{.Internal}}'
 ```
 
-## 五、Ollama / RAG 容器備援
+## 五、RAG 容器（檢索備援）
 
-2026-10-07 起備援搬到學校 VM：`ollama` 是官方 Ollama 容器，只在 NVIDIA NIM
-失敗時接手生成（順序仍是 `nvidia,ollama`）；`rag` 是 CPU embedding 服務，使用
-`shibing624/text2vec-base-chinese`（順序仍是 `nvidia,local`）。兩者只接 internal
-私有網段、不開主機 port、執行時不可連外。RAG 模型在映像建置時下載，執行時使用離線快取。
-
-首次上線，在 VM 專案根目錄先用可連外的一次性容器下載模型，再啟動服務：
+`rag` 使用 `shibing624/text2vec-base-chinese` 提供本地 embedding，NVIDIA embedding
+失敗時供法規檢索使用（順序 `nvidia,local`）。模型在映像建置時下載並包進映像，執行時使用離線快取。
+容器只接 internal 私有網段、不開主機 port，資源限制為 1 GB RAM / 1 CPU、單一 worker。
+在 FastAPI 容器內確認健康狀態：
 
 ```bash
-docker compose run --rm -e OLLAMA_PULL_MODEL=gemma3:4b ollama-pull
-docker compose up -d --build ollama rag fastapi
-```
-
-模型存在 `ollama_models` volume，重建容器不會重抓。切換生成模型時，先在 VM 執行
-`docker compose run --rm -e OLLAMA_PULL_MODEL=<新模型> ollama-pull`，再把 VM `.env` 的
-`OLLAMA_MODEL` 改成同一個名稱，最後在本機執行 `./deploy.sh fastapi`。
-容器 URL 已在 compose 固定為 `http://ollama:11434` / `http://rag:8000`；
-VM `.env` 即使留下 `OLLAMA_URL=http://127.0.0.1:11434` 也不會覆蓋它。
-VM `.env` 須設 `OLLAMA_OCR_ENABLED=false`，停用 OCR 的 Ollama 欄位複核；
-要恢復需讓 OCR 接 internal 網段並準備 vision 模型。
-
-VM 沒有 GPU。Ollama 限 5 GB RAM / 3 CPU，context 8192 避免截掉長合約提示的開頭，
-只載一個模型、一次處理一個請求（NIM 故障時其餘請求排隊），閒置 5 分鐘卸載模型釋放 RAM，
-留一核給 web / FastAPI / OCR。RAG 限 1 GB RAM / 1 CPU、單一 worker。
-
-在 VM 測試備援，環境變數只套用到這次診斷程序，線上後端仍維持原本 provider 順序：
-
-```bash
-# 不帶參數會分析腳本內的範例合約；--config 只列設定、--chat 則測對話。
-docker compose exec -e LLM_PROVIDER_ORDER=ollama fastapi python scripts/check_llm.py
-# 可選：確認 RAG 模型已載入
 docker compose exec fastapi python -c "import httpx; print(httpx.get('http://rag:8000/health').json())"
 ```
 
-診斷會共用 VM 的 CPU / RAM，請在低流量時執行。`mysql` 自 2026-10-07 起只供回退：
+### 為什麼正式環境沒有 Ollama
+
+2026-10-07 的 VM 沒有 GPU，只有 4 vCPU。`gemma3:4b` 合約分析耗時 515 秒，且輸出碰到
+8192 context 上限而截斷 JSON；`qwen2.5:3b` 仍耗時 265 秒，其中約 6,200 tokens 的 prompt
+評估就花了 165 秒。Law Chat 用 `qwen2.5:3b` 約需 7–29 秒，雖然可用，仍決定完全移除正式環境
+Ollama。NVIDIA NIM 失敗時，合約分析與法規問答 API 回傳 503。
+
+`mysql` 自 2026-10-07 起只供回退：
 先執行 `docker compose --profile rollback up -d mysql`，再把 compose 的 `DATABASE_URL`
 改回 `@mysql:3306` 並在本機執行 `./deploy.sh fastapi`；原本的 mysql volume 與 backend_net 都保留。
 

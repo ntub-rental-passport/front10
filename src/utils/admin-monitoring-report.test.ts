@@ -11,7 +11,6 @@ import {
   isHeartbeatStale,
   lastOutageNote,
   monitorOverview,
-  primaryModelNote,
   queueView,
   type ConfigItem,
   type MonitorEvent,
@@ -268,6 +267,13 @@ describe('buildEventRows', () => {
     expect(rows).toHaveLength(3)
   })
 
+  it('歷史退休服務事件沿用 API 提供的標籤', () => {
+    const rows = buildEventRows([
+      event('down', 5, { service: 'llm-ollama', serviceLabel: 'LLM 備援（Ollama，已移除）' }),
+    ])
+    expect(rows[0]).toMatchObject({ service: 'llm-ollama', title: 'LLM 備援（Ollama，已移除）斷線' })
+  })
+
   it('依類別篩選', () => {
     const rows = buildEventRows([
       event('server-error', 1, { detail: 'x' }),
@@ -288,17 +294,6 @@ describe('監控卡的補充說明', () => {
     ])
     // 12:00 往回 220 分鐘斷線、100 分鐘前恢復
     expect(lastOutageNote(rows, 'ocr')).toBe('上次斷線：9/27 08:20，持續 2 小時')
-    expect(lastOutageNote(rows, 'llm-ollama')).toBeNull()
-  })
-
-  it('說明 NVIDIA 主要模型狀態與 Ollama 備援的使用時機', () => {
-    expect(primaryModelNote([{ key: 'nvidia', label: '', ok: false, hint: '' }])).toBe(
-      'NVIDIA 金鑰未設定：每次分析都會落到 CPU 上的 Ollama，會很慢',
-    )
-    expect(primaryModelNote([{ key: 'nvidia', label: '', ok: true, hint: '' }])).toBe(
-      'NVIDIA 是主要模型；Ollama 只在 NVIDIA 失敗時才會用到',
-    )
-    expect(primaryModelNote(null)).toBeNull()
-    expect(primaryModelNote([])).toBeNull()
+    expect(lastOutageNote(rows, 'llm-desktop')).toBeNull()
   })
 })
