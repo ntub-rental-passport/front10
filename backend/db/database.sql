@@ -677,6 +677,24 @@ CREATE TABLE `trash_favorites` (
 
 -- ============ 7. 租金補助 ============
 
+CREATE TABLE `subsidy_files` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT NOT NULL,
+  `rental_id` INT DEFAULT NULL,
+  `doc_type` ENUM('application_form','identity','household','lease_copy','bankbook','other') NOT NULL,
+  `stored_name` VARCHAR(64) NOT NULL,
+  `original_name` VARBINARY(512) NOT NULL,
+  `content_type` VARCHAR(100) NOT NULL,
+  `size_bytes` INT NOT NULL,
+  `expires_at` DATETIME(6) NOT NULL,
+  `expiry_notified_at` DATETIME(6) DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT `fk_subsidy_files_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_subsidy_files_rental` FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE SET NULL,
+  INDEX `idx_subsidy_files_user_created` (`user_id`, `created_at`),
+  INDEX `idx_subsidy_files_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `subsidy_applications` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `user_id` INT NOT NULL,

@@ -31,7 +31,7 @@ class SchemaContractTests(unittest.TestCase):
     def test_every_table_column_type_nullability_and_foreign_key_matches_sql(self):
         sql = (Path(__file__).parents[1] / 'db' / 'database.sql').read_text(encoding='utf-8')
         tables = dict(re.findall(r'CREATE TABLE `([^`]+)`\s*\((.*?)\) ENGINE', sql, re.S))
-        self.assertEqual(len(tables), 62)
+        self.assertEqual(len(tables), 63)
         self.assertEqual(set(tables), set(Base.metadata.tables))
         for name, body in tables.items():
             columns = dict(re.findall(r'^\s*`([^`]+)`\s+([^\n]+)', body, re.M))
@@ -75,6 +75,23 @@ class SchemaContractTests(unittest.TestCase):
         self.assertIsNone(Base.metadata.tables['contract_reviews'].c.activity_at.default)
         self.assertIsInstance(Base.metadata.tables['contract_review_files'].c.original_name.type, EncryptedText)
         self.assertEqual(Base.metadata.tables['contract_review_files'].c.original_name.type.length, 512)
+
+    def test_subsidy_files_migration_only_creates_new_table_matching_schema(self):
+        backend = Path(__file__).parents[1]
+        sql = (backend / 'db' / 'database.sql').read_text(encoding='utf-8')
+        migration = (backend / 'migrations' / '20261008_subsidy_files.sql').read_text(encoding='utf-8')
+        migrated = dict(re.findall(r'CREATE TABLE IF NOT EXISTS `([^`]+)`\s*\((.*?)\) ENGINE', migration, re.S))
+        tables = dict(re.findall(r'CREATE TABLE `([^`]+)`\s*\((.*?)\) ENGINE', sql, re.S))
+        self.assertEqual(set(migrated), {'subsidy_files'})
+        self.assertEqual(migrated['subsidy_files'], tables['subsidy_files'])
+        statements = re.sub(r'--[^\n]*', '', migration).strip().split(';')
+        self.assertEqual(len([statement for statement in statements if statement.strip()]), 1)
+        self.assertNotIn('ON UPDATE', migrated['subsidy_files'])
+        table = Base.metadata.tables['subsidy_files']
+        self.assertIsInstance(table.c.original_name.type, EncryptedText)
+        self.assertEqual(table.c.original_name.type.length, 512)
+        self.assertIsNotNone(table.c.created_at.default)
+        self.assertIsNone(table.c.expires_at.onupdate)
 
 
 class NewSchemaApiTests(unittest.TestCase):
