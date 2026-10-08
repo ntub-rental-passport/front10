@@ -151,7 +151,11 @@ server {
         return 404;
     }
 
-    location /api/ {
+    # ^~：API 路徑不再比對下面的 regex location。少了它，結尾帶副檔名的 API
+    #（/api/content/banner-images/xxx.webp、DELETE /api/admin/banner-images/xxx.webp）
+    # 會被「帶副檔名就當靜態檔」那條規則攔走，直接回 nginx 404（2026-10-08 發現）。
+    # 隱藏檔與敏感副檔名的封鎖規則因此不套用到 /api/，但 /api/ 一律轉給 FastAPI，不會讀到磁碟上的檔案。
+    location ^~ /api/ {
         limit_req zone=api_limit burst=20 nodelay;
         proxy_pass http://fastapi:8000;
         proxy_set_header Host $host;
