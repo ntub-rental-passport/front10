@@ -3,6 +3,7 @@ import {
   LLM_OLLAMA_SERVICE,
   OCR_SERVICE,
   RAG_SERVICE,
+  backupMonitor,
   backendMonitor,
   databaseMonitor,
   errorRateMonitor,
@@ -144,7 +145,7 @@ export function useSystemHealth(options: { withEvents?: boolean } = {}) {
   const timer = window.setInterval(() => void check(), POLL_INTERVAL_MS)
   onScopeDispose(() => window.clearInterval(timer))
 
-  /** 已接上的監控項：前三項是後端本身，後兩項是它依賴的外部服務 */
+  /** 已接上的監控項：後端、資料庫、背景工作、外部服務與每日備份 */
   function liveMonitors(): MonitorReading[] {
     const now = serverNow()
     return [
@@ -159,6 +160,7 @@ export function useSystemHealth(options: { withEvents?: boolean } = {}) {
       serviceMonitor(services.value, LLM_OLLAMA_SERVICE, now),
       serviceMonitor(services.value, RAG_SERVICE, now),
       serviceMonitor(services.value, OCR_SERVICE, now),
+      backupMonitor(services.value, now),
     ]
   }
 

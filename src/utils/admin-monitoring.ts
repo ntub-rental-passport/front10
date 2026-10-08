@@ -385,6 +385,13 @@ export const OCR_SERVICE: ServiceMeta = {
   unconfigured: '後端沒有設定 OCR 服務位址（OCR_HEALTH_URL 或 OCR_API_PORT），所以沒有探測',
 }
 
+export const BACKUP_SERVICE: ServiceMeta = {
+  id: 'backup',
+  label: '每日備份',
+  description: '每天凌晨 3 點把資料庫、設定與上傳檔加密備份到 Google Drive（restic）',
+  unconfigured: '後端沒有設定備份狀態檔（BACKUP_STATUS_FILE），所以沒有探測；開發機本來就沒有',
+}
+
 /**
  * 後端探測的服務 → 監控項。
  *
@@ -440,6 +447,14 @@ export function serviceMonitor(
     detail: state.since ? `自 ${formatShortDateTime(state.since)} 起正常` : '',
     connected: true,
   }
+}
+
+/** 備份正常時以最近一次成功時間取代「自某時起正常」。 */
+export function backupMonitor(states: ServiceState[] | null, now: Date): MonitorReading {
+  const reading = serviceMonitor(states, BACKUP_SERVICE, now)
+  const detail = states?.find((item) => item.service === BACKUP_SERVICE.id)?.detail
+  if (reading.state === 'ok' && detail) return { ...reading, detail }
+  return reading
 }
 
 /**
