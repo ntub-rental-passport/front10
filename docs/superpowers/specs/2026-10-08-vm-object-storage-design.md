@@ -202,31 +202,33 @@ VM 主機上要安裝 `restic` 和 `rclone`（apt）。
 
 ## 5. P1：輪播圖庫
 
-### 5.1 後端（`backend/admin/banner_images.py`、`backend/routers/content_api.py`）
+2026-10-08 實作時調整了兩處：內建圖只由前端處理（後端容器讀不到 `public/banners/`，前端本來就有 `BUILTIN_BANNER_IMAGES`）；圖庫管理放在輪播分頁的「圖片庫」區塊，編輯對話框只負責選圖。
 
-- `listing()` 的每一筆要多回這些欄位：
-  - `builtin`：是不是內建圖。
-  - `usedBy`：引用這張圖的輪播 `[{id, title}]`，用 `banners.image_url` 比對。
-  - `deletable`：不是內建圖，而且 `usedBy` 是空的。
-- 內建圖是 `public/banners/*.webp`，跟現有內建選項的清單同一份。它會出現在列表裡，但 `deletable=false`。
-- `GET /api/admin/banner-images` 多回 `{ count, limit: 30 }`。`count` 只算上傳的圖，不算內建圖。
-- `POST /api/admin/banner-images`：上傳圖已經有 30 張時回 409「圖庫已滿（30 張），請先刪除未使用的圖片」。上傳一張已經存在的圖（同一個 sha 檔名）不重複計算。
+### 5.1 後端（`backend/admin/banner_images.py`、`backend/routers/content_api.py`、`content_service.banner_image_usage()`）
+
+- 後端只管理**上傳的圖**。`GET /api/admin/banner-images` 回傳 `{ items, count, limit: 30 }`，每一筆多兩個欄位：
+  - `usedBy`：引用這張圖的輪播 `[{id, title}]`。比對 `banners.image_url` 時取 `/api/content/banner-images/` 後面那一段並解碼，相對網址、絕對網址、帶查詢字串的寫法都算。
+  - `deletable`：`usedBy` 是空的。
+- `POST`：上傳圖已經有 30 張時回 409「圖庫已滿（30 張），請先刪除未使用的圖片。」。上傳一張內容完全相同的圖（同一個 sha 檔名）不重複計算。
 - 新增 `DELETE /api/admin/banner-images/{name}`：
-  - 名稱不合法或是內建圖，回 404。
-  - 還有輪播在用，回 409，`detail` 附上 `usedBy`。
-  - 成功回 204，並寫入稽核紀錄，沿用內容管理現有的稽核方式。
+  - 名稱不合法或找不到，回 404。
+  - 還有輪播在用，回 409，`detail` 是一段中文說明，最多列出 3 則輪播標題。
+  - 成功回 204，並寫入稽核紀錄（`內容管理／Banner 圖片`）。
 
-### 5.2 前端（`src/components/admin/content/BannersTab.vue`）
+### 5.2 前端（`BannersTab.vue`、`bannerImageApi.ts`、`src/utils/banner-library.ts`）
 
-- 圖庫區：縮圖格，標題旁顯示「12 / 30」。
-- 每張圖標示「內建」或「未使用」，點一下就把這張圖套用到正在編輯的輪播。
-- 刪除按鈕：內建圖不顯示。圖還在用時按鈕停用，滑過去會說明是哪幾則輪播在用。可以刪的圖，刪除前要先確認。
-- 圖庫滿了，上傳按鈕就停用並說明原因。
+- 輪播分頁新增「圖片庫」區塊：
+  - 標題旁顯示「12 / 30」（只算上傳的圖），並註明另有 3 張內建圖。
+  - 縮圖標示「內建」、「未使用」或「使用中 N」。內建圖的使用狀況由前端用輪播清單自己算。
+  - 刪除按鈕：內建圖或還在用的圖會停用，並說明原因；可以刪的圖，刪除前要先確認。
+  - 讀取失敗時顯示「圖片庫讀取失敗」和重試按鈕。
+- 編輯對話框維持原本的選圖方式，加上張數顯示；圖庫滿了就停用上傳。
+- 上傳、刪除圖片，以及新增、修改、刪除、排序輪播之後，都重新讀取圖庫，讓使用中的標示保持正確。
 
 ### 5.3 測試
 
-- 後端：列表會標示使用中和內建；刪除還在用的圖回 409；刪除內建圖回 404；第 31 張回 409；刪除後檔案不見，也有稽核紀錄。
-- 前端：計數、標示和停用狀態的元件測試。
+- 後端：網址比對的各種寫法、列表的 `usedBy`/`count`、刪除還在用的圖回 409、不合法的名稱回 404、第 31 張回 409、重複上傳不計數、刪除後檔案不見並有稽核紀錄。
+- 前端：`banner-library.ts` 的排序、使用狀況、可否刪除與原因、圖庫已滿的判斷。
 
 ## 6. P3：合約審閱上雲（處理紀錄、佐證圖片、報告）
 
