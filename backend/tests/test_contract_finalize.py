@@ -1,5 +1,6 @@
 """終版契約落地：只有使用者確認過的合約才進資料庫，個資欄位必須加密。"""
 import base64
+from datetime import datetime
 import os
 import unittest
 from unittest.mock import patch
@@ -13,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from db import database
 from db.database import Base, get_db
-from db.models import Rental, User, UserRole
+from db.models import ContractReview, Rental, User, UserRole
 from routers import contract
 from auth.security import CurrentUser, get_current_user
 
@@ -179,6 +180,49 @@ class ContractFinalizeTests(unittest.TestCase):
             with self.Session() as db:
                 with self.assertRaises(InvalidTag):
                     db.get(Rental, rental_id).landlord_name
+
+    def test_finalize_links_owned_review_in_the_same_transaction(self):
+        review_id = '11111111-1111-1111-1111-111111111111'
+        activity = datetime(2025, 1, 1)
+        with self.Session() as db:
+            db.add(ContractReview(id=review_id, user_id=1, records=[{'id': 'record-1'}], activity_at=activity))
+            db.commit()
+        response = self.finalize(review_id=review_id)
+        self.assertEqual(response.status_code, 201, response.text)
+        with self.Session() as db:
+            review = db.get(ContractReview, review_id)
+            self.assertEqual(review.rental_id, response.json()['rental_id'])
+            self.assertEqual(review.activity_at, activity)
+
+    def test_finalize_ignores_another_users_review(self):
+        review_id = '22222222-2222-2222-2222-222222222222'
+        with self.Session() as db:
+            db.add(ContractReview(id=review_id, user_id=2, records=[], activity_at=datetime.utcnow()))
+            db.commit()
+        response = self.finalize(review_id=review_id)
+        self.assertEqual(response.status_code, 201, response.text)
+        with self.Session() as db:
+            self.assertIsNone(db.get(ContractReview, review_id).rental_id)
+
+    def test_finalize_ignores_unknown_and_invalid_review_ids(self):
+        for index, review_id in enumerate(('33333333-3333-3333-3333-333333333333', 'invalid',
+                                          'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA')):
+            with self.subTest(review_id=review_id):
+                response = self.finalize(review_id=review_id, rental=rental_payload(address=f'不同地址 {index}'))
+                self.assertEqual(response.status_code, 201, response.text)
+        with self.Session() as db:
+            self.assertEqual(db.query(ContractReview).count(), 0)
+
+    def test_failed_finalize_rolls_back_review_link(self):
+        review_id = '44444444-4444-4444-4444-444444444444'
+        with self.Session() as db:
+            db.add(ContractReview(id=review_id, user_id=1, records=[], activity_at=datetime.utcnow()))
+            db.commit()
+        with patch.object(contract, 'build_bill_rows', side_effect=RuntimeError('測試帳單建立失敗')):
+            self.assertEqual(self.finalize(review_id=review_id).status_code, 500)
+        with self.Session() as db:
+            self.assertIsNone(db.get(ContractReview, review_id).rental_id)
+            self.assertEqual(db.query(Rental).count(), 0)
 
     def test_draft_contract_is_rejected_and_nothing_is_written(self):
         response = self.finalize(is_final=False)

@@ -18,6 +18,7 @@ from ai.deidentify import deidentify
 from ai.law_corpus import format_for_prompt, resolve_citations, retrieve
 from ai.llm_provider import LlmUnavailable, generate
 from auth.security import CurrentUser, get_current_user
+from routers.contract_reviews import REVIEW_ID
 
 router = APIRouter(
     prefix="/api/contract",
@@ -578,6 +579,7 @@ class FinalizeRequest(BaseModel):
     is_final: bool
     rental: RentalPayload
     contract_tag: Optional[str] = Field(default=None, max_length=MAX_CONTRACT_TAG_LEN)
+    review_id: Optional[str] = None
 
     @field_validator("is_final")
     @classmethod
@@ -635,6 +637,14 @@ def finalize_contract(
         )
         db.add(rental)
         db.flush()
+
+        if payload.review_id and REVIEW_ID.fullmatch(payload.review_id):
+            review = db.query(models.ContractReview).filter(
+                models.ContractReview.id == payload.review_id,
+                models.ContractReview.user_id == user.id,
+            ).with_for_update().first()
+            if review is not None:
+                review.rental_id = rental.id
 
         # 每期帳單在存檔當下一次建好：期間與應繳日在契約定版時就已確定。
         # 水電金額留 NULL —— 那要等實際帳單才知道，不是契約內容，

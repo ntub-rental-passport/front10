@@ -11,7 +11,7 @@ from admin.metrics import count_requests
 from routers import admin, auth, contract, garbage, landlord_properties, landlord_tenants, inspection, tenant_leases, outage
 from routers import notes, households, scheduled_notifications, platform_settings_api
 from routers import content_api, dashboard, repairs, inbox_api, admin_notifications_api, ai_usage_api, admin_user_records_api
-from routers import admin_repairs_api, subsidy_reminders
+from routers import admin_repairs_api, subsidy_reminders, contract_reviews
 from routers import landlord_finance, landlord_contracts, landlord_workspace_api, lease_invitations, tenant_landlord_leases
 from notifications.garbage_service import dispatch_due
 from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
@@ -67,6 +67,10 @@ async def lifespan(app):
                     await asyncio.to_thread(landlord_reminders.dispatch_due)
                 except Exception:
                     logging.getLogger(__name__).exception('Landlord reminder dispatcher failed')
+                try:
+                    await asyncio.to_thread(contract_reviews.dispatch_expiry)
+                except Exception:
+                    logging.getLogger(__name__).exception('合約審閱到期排程失敗')
             landlord_tick += 1
             await asyncio.sleep(20)
     async def monitor_loop():
@@ -120,6 +124,7 @@ app.add_middleware(
 
 # 將 AI 合約審查模組註冊進 FastAPI 總開關
 app.include_router(contract.router)
+app.include_router(contract_reviews.router)
 app.include_router(auth.router)
 app.include_router(landlord_properties.router)
 app.include_router(landlord_tenants.router)
