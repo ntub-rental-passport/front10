@@ -170,7 +170,7 @@ class MonitoringTests(AdminStoreTestCase):
             ({'embeddingReady': 'true'}, (False, 'embedding 模型未就緒')),
         ]:
             with self.subTest(payload=payload), \
-                 patch.dict(os.environ, {'EMBEDDING_PROVIDER': 'nvidia,local', 'LOCAL_EMBEDDING_URL': ' http://rag:8000/ '}), \
+                 patch.dict(os.environ, {'EMBEDDING_PROVIDER': 'local', 'LOCAL_EMBEDDING_URL': ' http://rag:8000/ '}), \
                  patch('httpx.get', return_value=httpx.Response(200, json=payload)) as get:
                 self.assertEqual(monitor.probe_rag(), expected)
             get.assert_called_once_with('http://rag:8000/health', timeout=monitor.PROBE_TIMEOUT_SECONDS)
@@ -314,7 +314,7 @@ class MonitoringTests(AdminStoreTestCase):
         self.assertTrue(next(i for i in items if i['key'] == 'smtp')['ok'])
 
     def test_container_services_have_the_expected_labels_and_probes(self):
-        self.assertEqual(monitor.SERVICE_LABELS['rag'], '檢索備援（RAG）')
+        self.assertEqual(monitor.SERVICE_LABELS['rag'], 'RAG 檢索服務')
         self.assertIs(monitor.PROBES['rag'], monitor.probe_rag)
 
     def test_config_checklist_has_nvidia_and_rag_but_no_ollama(self):

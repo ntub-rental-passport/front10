@@ -366,8 +366,8 @@ export interface ServiceMeta {
 
 export const RAG_SERVICE: ServiceMeta = {
   id: 'rag',
-  label: '檢索備援（RAG）',
-  description: 'NVIDIA embedding 失敗時才會用到的法規檢索備援（text2vec-base-chinese 容器）',
+  label: 'RAG 檢索服務',
+  description: '法規檢索用的 embedding 服務（text2vec-base-chinese 容器）；連不上時改把全部法規放進 prompt',
   unconfigured: '後端沒有設定 RAG 位址（LOCAL_EMBEDDING_URL），或檢索順序裡沒有 local，所以沒有探測',
 }
 

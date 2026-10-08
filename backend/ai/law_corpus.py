@@ -294,7 +294,7 @@ def _rank(query_vecs: list[list[float]], space: str, top_k: int) -> list[LawChun
 async def retrieve(query: str = "", limit: int | None = None) -> list[LawChunk]:
     """取回與 query 最相關的法規區塊。
 
-    依 EMBEDDING_PROVIDER 的順序嘗試（預設 nvidia；桌機架好後設 local,nvidia）。
+    依 EMBEDDING_PROVIDER 的順序嘗試（本機預設 nvidia；正式環境設 local）。
     query 為空、語料沒有可用向量、或所有 provider 都不可用時，退回全部給。
     退回而不是拋錯：檢索只是為了聚焦，全部給效果差一點但仍然可用。
     """

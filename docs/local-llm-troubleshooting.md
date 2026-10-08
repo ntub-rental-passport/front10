@@ -1,8 +1,8 @@
 # 本機契約 AI 分析設定
 
-正式環境只使用 NVIDIA 生成模型；NIM 失敗時 API 回傳 503。Ollama 可選供本機開發使用，設定 `LLM_PROVIDER_ORDER=nvidia,ollama` 與 `OLLAMA_URL`。RAG 是正式環境的 embedding 備援，設定見 [部署指南第五節](../deploy/README.md#五rag-容器檢索備援)。
-本機 embedding 備援可用 `docker compose build rag` 建置（映像內含模型）；若本機後端需呼叫它，
-須另設可達的 `LOCAL_EMBEDDING_URL`（正式 compose 不開主機 port），或設 `EMBEDDING_PROVIDER=nvidia` 跳過本機備援。
+正式環境只使用 NVIDIA 生成模型；NIM 失敗時 API 回傳 503。Ollama 可選供本機開發使用，設定 `LLM_PROVIDER_ORDER=nvidia,ollama` 與 `OLLAMA_URL`。正式環境 VM 的 `.env` 設定 `EMBEDDING_PROVIDER="local"`，只使用 RAG 容器作為 embedding 來源，詳見[部署指南第五節](../deploy/README.md#五rag-檢索服務)。連不上時檢索會退回全部 29 塊法規。
+本機可用 `docker compose build rag` 建置 RAG embedding 服務（映像內含模型）；若本機後端需呼叫它，
+須另設可達的 `LOCAL_EMBEDDING_URL`（正式 compose 不開主機 port），或保留預設 `EMBEDDING_PROVIDER=nvidia` 使用 NVIDIA embedding。
 
 前端 OCR 使用 `OLLAMA_OCR_MODEL`，Python 契約分析使用 `OLLAMA_MODEL`，兩者是獨立設定。修改專案根目錄 `.env` 後須重新啟動 Python 後端。
 

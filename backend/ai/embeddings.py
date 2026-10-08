@@ -1,4 +1,4 @@
-"""向量檢索用的 embedding：NVIDIA 為主，VM 上的 RAG 容器為備援。
+"""向量檢索用的 embedding：正式環境使用 VM 上的 RAG 容器。
 
 ## 兩個來源
 
@@ -6,11 +6,11 @@
             shibing624/text2vec-base-chinese（768 維）
     nvidia  雲端 API，nvidia/nemotron-3-embed-1b（2048 維）
 
-順序由 EMBEDDING_PROVIDER 決定，預設 "nvidia"（不必架 RAG 容器就能跑）。
-正式環境設為 "nvidia,local"，NVIDIA 失敗時才使用 RAG 容器。
+順序由 EMBEDDING_PROVIDER 決定，預設 "nvidia"（本機開發不必架 RAG 容器）。
+正式環境設為 "local"，只使用 RAG 容器；連不上時檢索退回全部 29 塊法規。
 
-為什麼要 local：組員花時間建的向量庫用的是那個模型。要讓那份成果
-真的被用到，查詢就得用同一個模型。但容器也可能連不上，所以不能只有它。
+正式環境使用 local：組員建置的向量庫使用 text2vec-base-chinese，查詢必須使用同一模型。
+本機開發預設仍使用 NVIDIA，方便沒有 RAG 容器時執行。
 
 ## ⚠️ 絕對不能混用向量空間
 
@@ -79,7 +79,7 @@ def _env(name: str, default: str = "") -> str:
 
 
 def provider_order() -> list[str]:
-    """嘗試順序。預設只有 nvidia —— RAG 容器是備援，不是必要條件。"""
+    """嘗試順序。預設只有 nvidia；正式環境設定為 local。"""
     raw = _env("EMBEDDING_PROVIDER", NVIDIA)
     names = [n.strip().lower() for n in raw.split(",") if n.strip()]
     order = [n for n in names if n in PROVIDERS]
