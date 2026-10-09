@@ -16,11 +16,14 @@ const props = withDefaults(defineProps<{
   description?: string
   showSignOut?: boolean
   homePath?: string
+  /** 整頁取代時要撐滿視窗；嵌在租客／房東 layout 時，避免疊加外層 padding 而溢出。 */
+  fullHeight?: boolean
 }>(), {
   title: '後台僅支援桌面瀏覽器',
   description: '管理後台可以變更使用者狀態、審核補助申請與查閱稽核紀錄，這些操作只在桌面環境進行。',
   showSignOut: true,
   homePath: '',
+  fullHeight: true,
 })
 
 const copied = ref(false)
@@ -45,7 +48,10 @@ async function copyCurrentUrl(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex min-h-[100dvh] items-center justify-center bg-background px-6 py-12">
+  <div
+    class="flex items-center justify-center bg-background px-6 py-12"
+    :class="fullHeight ? 'min-h-[100dvh]' : 'min-h-full'"
+  >
     <div class="w-full max-w-md text-center">
       <div class="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
         <Monitor class="h-7 w-7 text-muted-foreground" />
