@@ -6,12 +6,20 @@ import { cn } from '@/lib/utils'
 import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { useNavigation } from '@/src/composables/useNavigation'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'
+import { useTenantDeviceGate } from '@/src/composables/useDeviceGate'
+import { isMobileUnsupportedTenantPath } from '@/src/utils/mobile-surface'
+import DesktopOnlyNotice from '@/src/components/DesktopOnlyNotice.vue'
+import TenantNotificationBell from '@/src/components/TenantNotificationBell.vue'
 import FeatureMaintenanceNotice from '@/src/components/maintenance/FeatureMaintenanceNotice.vue'
 import MaintenanceToaster from '@/src/components/maintenance/MaintenanceToaster.vue'
 
 const route = useRoute()
 const { navItems, accountItem, mobileNavItems } = useNavigation()
 const { blocked, outage, isPathUnderMaintenance } = useFeatureGate()
+const { blocked: deviceBlocked } = useTenantDeviceGate()
+const mobileUnsupported = computed(
+  () => deviceBlocked.value && isMobileUnsupportedTenantPath(route.path),
+)
 const SIDEBAR_PIN_KEY = 'rentmate-sidebar-pinned'
 
 const isSidebarPinned = ref(false)
@@ -122,16 +130,33 @@ watch(isSidebarPinned, (value) => {
 
     <!-- Main Content -->
     <main class="flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pt-0 sm:pb-0">
+      <header class="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background px-4 sm:hidden">
+        <RouterLink to="/app" class="flex items-center gap-2 font-bold text-primary">
+          <img :src="brandLogoIcon" alt="RentMate Logo" class="h-6 w-6 shrink-0 object-contain" />
+          <span>租隊友 RentMate</span>
+        </RouterLink>
+        <TenantNotificationBell />
+      </header>
       <div :class="isWideContentRoute ? 'min-h-full w-full' : 'mx-auto min-h-full max-w-[1400px] p-4 md:p-6'">
         <!--
-          維護攔截刻意不 redirect：使用者要找的東西還在這個網址底下，只是
-          暫時關著，書籤與分享連結都該繼續有效。管理員不受這裡影響（見
-          useFeatureGate 的說明），因為改完設定總得自己點一遍確認。
+          維護是後端控制的停用狀態，任何裝置都不該進入，所以優先於裝置擋板。
+          兩種攔截都刻意不 redirect：保留書籤與分享連結，換到電腦仍能開同一網址。
+          租客只有部分頁面不支援手機，不給登出才能繼續使用點交、報修與垃圾清運。
+          管理員不受維護攔截影響（見 useFeatureGate 的說明），因為改完設定總得
+          自己點一遍確認。
         -->
         <FeatureMaintenanceNotice v-if="blocked && outage" :outage="outage" />
+        <DesktopOnlyNotice
+          v-else-if="mobileUnsupported"
+          title="這一頁請用電腦開"
+          description=""
+          :show-sign-out="false"
+          :full-height="false"
+          home-path="/app"
+        />
         <RouterView v-else />
       </div>
-      <footer class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300">
+      <footer v-if="!mobileUnsupported" class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300">
         <div class="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 py-4 text-center">
           <p class="text-sm text-slate-300/90">臺北商業大學畢業專題｜AI 租屋資訊整合與契約輔助平台展示頁</p>
           <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-400">

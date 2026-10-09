@@ -224,6 +224,7 @@ async function handleSignOut(): Promise<void> {
         title="這一頁請用電腦開"
         description=""
         :show-sign-out="false"
+        :full-height="false"
         home-path="/landlord"
       />
       <RouterView v-else />
