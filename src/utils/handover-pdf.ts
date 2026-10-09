@@ -1,354 +1,383 @@
 import { PDFDocument } from 'pdf-lib'
-import type { HandoverEvidence, HandoverItem, HandoverProperty } from '@/src/composables/useHandover'
-import { countItemsWithEvidence, firstEvidenceOfPhase, formatHandoverTimestamp } from './handover'
+import type { HandoverItem, HandoverProperty } from '../composables/useHandover'
 import {
-  baselineExportGroups,
-  checkoutConclusion,
-  checkoutExportItems,
-  formatConfidence,
-  paginateBaselineGroups,
-} from './handover-export'
+  firstEvidenceOfPhase,
+  formatHandoverTimestamp,
+  groupItemsByRoom,
+  baselinePhotoCount,
+} from './handover'
 
-const PAGE_WIDTH = 1240
-const PAGE_HEIGHT = 1754
-const MARGIN = 80
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2
-const CONTENT_TOP = 350
-const FOOTER_TOP = PAGE_HEIGHT - 76
-const TEXT_COLOR = '#25324a'
-const MUTED_COLOR = '#627088'
-const BORDER_COLOR = '#cbd0d8'
-const MIN_FONT_SIZE = 12
-
-// 分頁與繪製共用高度，避免調整版面後，項目或簽名區悄悄超出頁碼上緣。
-const CHECKLIST_HEIGHTS = {
-  roomTitle: 32,
-  tableHeading: 36,
-  roomGap: 8,
-  item: 48,
-  signatureTopGap: 30,
-  signatureLine: 40,
-  signatureLineGap: 16,
-}
-const BASELINE_HEIGHTS = { roomHeading: 44, itemBox: 250, itemGap: 16 }
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
-  const lines: string[] = []
-  for (const paragraph of text.split(/\r?\n/)) {
-    let line = ''
-    for (const char of paragraph) {
-      if (line && ctx.measureText(line + char).width > width) {
-        lines.push(line)
-        line = char
-      } else {
+/** Standalone A4 pages using local Chinese fonts, as in the contract PDF exporter. */
+export async function createHandoverPdf(
+  property: HandoverProperty,
+  items: HandoverItem[],
+  mode: 'full' | 'checklist',
+): Promise<Uint8Array> {
+  await document.fonts.ready
+  if (mode === 'full') return createEvidencePack(property, items)
+  const pdf = await PDFDocument.create()
+  const canvas = document.createElement('canvas')
+  canvas.width = 1240
+  canvas.height = 1754
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('瀏覽器無法產生 PDF。')
+  const font = '"Microsoft JhengHei", "PingFang TC", sans-serif'
+  let y = 85
+  const reset = () => {
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, 1240, 1754)
+    y = 85
+  }
+  reset()
+  const savePage = async () => {
+    ctx.font = `20px ${font}`
+    ctx.fillStyle = '#666666'
+    ctx.fillText(`RentMate · ${pdf.getPageCount() + 1}`, 550, 1700)
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PDF 產生失敗。'))), 'image/png'),
+    )
+    const image = await pdf.embedPng(await blob.arrayBuffer())
+    pdf.addPage([595.28, 841.89]).drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 })
+    reset()
+  }
+  const ensure = async (height: number) => {
+    if (y + height > 1620) await savePage()
+  }
+  const text = async (value: string, size = 24, bold = false) => {
+    const lines: string[] = []
+    ctx.font = `${bold ? 'bold ' : ''}${size}px ${font}`
+    for (const paragraph of value.split('\n')) {
+      let line = ''
+      for (const char of paragraph) {
+        if (ctx.measureText(line + char).width > 1080) {
+          lines.push(line)
+          line = ''
+        }
         line += char
       }
+      lines.push(line)
     }
-    lines.push(line)
-  }
-  return lines
-}
-
-function drawTextBox(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  size = 24,
-  color = TEXT_COLOR,
-): void {
-  ctx.fillStyle = color
-  ctx.textBaseline = 'top'
-  ctx.textAlign = 'left'
-  for (let fontSize = size; fontSize >= MIN_FONT_SIZE; fontSize -= 1) {
-    ctx.font = `${fontSize}px "Microsoft JhengHei", "PingFang TC", sans-serif`
-    const lines = wrapText(ctx, text, width)
-    const lineHeight = fontSize * 1.4
-    if (lines.length * lineHeight > height) continue
-    lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight))
-    return
-  }
-  // 長備註不應讓整份匯出失敗、迫使使用者刪除存證；縮到下限後明示截斷，避免誤認為已列出全文。
-  const lineHeight = MIN_FONT_SIZE * 1.4
-  const lines = wrapText(ctx, text, width).slice(0, Math.max(1, Math.floor(height / lineHeight)))
-  const suffix = '…（內容過長，完整內容請見 App）'
-  const lastLine = Array.from(lines[lines.length - 1])
-  while (lastLine.length && ctx.measureText(lastLine.join('') + suffix).width > width) {
-    lastLine.pop()
-  }
-  lines[lines.length - 1] = lastLine.join('') + suffix
-  lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight))
-}
-
-function drawRoomTitle(
-  ctx: CanvasRenderingContext2D,
-  room: string,
-  continued: boolean,
-  y: number,
-  height: number,
-): void {
-  ctx.fillStyle = '#f0f2f5'
-  ctx.fillRect(MARGIN, y, CONTENT_WIDTH, height)
-  drawTextBox(ctx, `${room}${continued ? '（續頁）' : ''}`, MARGIN + 12, y + 3, CONTENT_WIDTH - 24, height - 6, 26)
-}
-
-function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => blob ? resolve(blob) : reject(new Error('無法建立 PDF 頁面影像。')),
-      'image/jpeg',
-      quality,
-    )
-  })
-}
-
-async function flushPage(canvas: HTMLCanvasElement, pdf: PDFDocument): Promise<void> {
-  const blob = await canvasToJpegBlob(canvas, 0.82)
-  const image = await pdf.embedJpg(await blob.arrayBuffer())
-  pdf.addPage([595.28, 841.89]).drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 })
-}
-
-async function drawPhoto(
-  ctx: CanvasRenderingContext2D,
-  evidence: HandoverEvidence | null,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  missingLabel = '（未拍攝）',
-): Promise<void> {
-  ctx.fillStyle = '#fff'
-  ctx.fillRect(x, y, width, height)
-  let label = missingLabel
-  if (evidence) {
-    const image = new Image()
-    try {
-      image.src = evidence.url
-      await image.decode()
-      if (!image.naturalWidth || !image.naturalHeight) throw new Error('照片尺寸無效。')
-      const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight)
-      const sourceWidth = width / scale
-      const sourceHeight = height / scale
-      ctx.drawImage(
-        image,
-        (image.naturalWidth - sourceWidth) / 2,
-        (image.naturalHeight - sourceHeight) / 2,
-        sourceWidth,
-        sourceHeight,
-        x, y, width, height,
-      )
-      label = ''
-    } catch {
-      // 單張壞檔不應讓其他物品的存證一起無法匯出，也不能被誤認成從未存證。
-      label = '（照片讀取失敗）'
-    } finally {
-      // 不快取解碼後的照片，避免大量存證在手機上與頁面影像一起佔住記憶體。
-      image.removeAttribute('src')
+    for (const line of lines) {
+      await ensure(size * 1.65)
+      ctx.font = `${bold ? 'bold ' : ''}${size}px ${font}`
+      ctx.fillStyle = '#252525'
+      ctx.fillText(line, 80, y)
+      y += size * 1.65
     }
   }
-  ctx.strokeStyle = BORDER_COLOR
-  ctx.lineWidth = 1
-  ctx.strokeRect(x, y, width, height)
-  if (label) {
-    drawTextBox(ctx, label, x + 16, y + height / 2 - 18, width - 32, 40, 24, MUTED_COLOR)
-  }
-}
-
-async function generatePdf(
-  property: HandoverProperty,
-  title: string,
-  description: string,
-  totalPages: number,
-  drawContent: (ctx: CanvasRenderingContext2D, pageIndex: number) => Promise<void> | void,
-): Promise<Uint8Array> {
-  if (typeof document === 'undefined') throw new Error('點交 PDF 只能在瀏覽器中產生。')
-  if (!totalPages) throw new Error('沒有可匯出的點交項目。')
-  try {
-    await document.fonts.ready
-    const generatedAt = new Date()
-    const generatedAtLabel = formatHandoverTimestamp(generatedAt.toISOString())
-    const pdf = await PDFDocument.create()
-    pdf.setTitle(`RentMate｜${title}`)
-    pdf.setAuthor('RentMate')
-    pdf.setCreator('RentMate')
-    pdf.setCreationDate(generatedAt)
-
-    for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
-      const canvas = document.createElement('canvas')
-      try {
-        canvas.width = PAGE_WIDTH
-        canvas.height = PAGE_HEIGHT
-        const ctx = canvas.getContext('2d')
-        if (!ctx) throw new Error('無法建立 PDF，請換用支援 Canvas 的瀏覽器。')
-        ctx.fillStyle = '#fff'
-        ctx.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT)
-        drawTextBox(ctx, `RentMate｜${title}`, MARGIN, 70, CONTENT_WIDTH, 64, 42)
-        drawTextBox(ctx, `租屋處：${property.alias}（${property.address}）`, MARGIN, 146, CONTENT_WIDTH, 76, 26)
-        drawTextBox(ctx, `匯出時間：${generatedAtLabel}`, MARGIN, 228, CONTENT_WIDTH, 34, 22, MUTED_COLOR)
-        drawTextBox(ctx, description, MARGIN, 270, CONTENT_WIDTH, 62, 22, MUTED_COLOR)
-        await drawContent(ctx, pageIndex)
-        drawTextBox(ctx, `第 ${pageIndex + 1}／${totalPages} 頁`, MARGIN, FOOTER_TOP, CONTENT_WIDTH, 36, 22, MUTED_COLOR)
-        await flushPage(canvas, pdf)
-      } finally {
-        // iOS 無法承受數十張 A4 canvas 同時存活；每頁嵌入後立刻歸還 backing store，失敗也要釋放。
-        canvas.width = 0
-        canvas.height = 0
-      }
-    }
-    return await pdf.save()
-  } catch (cause) {
-    // 原生編碼與 pdf-lib 的錯誤可能只有英文，呼叫端需要可直接顯示的中文訊息。
-    const detail = cause instanceof Error ? cause.message : '請稍後再試。'
-    throw new Error(`點交 PDF 產生失敗：${detail}`, { cause })
-  }
-}
-
-export async function generateHandoverChecklistPdf(
-  property: HandoverProperty,
-  items: HandoverItem[],
-): Promise<Uint8Array> {
-  const groups = baselineExportGroups(items.filter((item) => item.propertyId === property.id))
-  const signatureLines = [
-    '租客簽名：__________________________',
-    '房東簽名：__________________________',
-    '日期：______年______月______日',
-  ]
-  const pages = paginateBaselineGroups(groups, {
-    availableHeight: FOOTER_TOP - CONTENT_TOP,
-    itemHeight: CHECKLIST_HEIGHTS.item,
-    roomHeadingHeight: CHECKLIST_HEIGHTS.roomTitle + CHECKLIST_HEIGHTS.tableHeading + CHECKLIST_HEIGHTS.roomGap,
-    lastPageReserve: CHECKLIST_HEIGHTS.signatureTopGap + signatureLines.length * CHECKLIST_HEIGHTS.signatureLine
-      + (signatureLines.length - 1) * CHECKLIST_HEIGHTS.signatureLineGap,
-  })
-  return generatePdf(
-    property,
-    '入住點交條列清單',
-    '說明：請於點交當天逐項勾選並於備註欄記錄物品現況，回家後再對照拍攝存證。',
-    pages.length,
-    (ctx, pageIndex) => {
-      let y = CONTENT_TOP
-      const columnWidths = [48, 324, 514, 194]
-      const drawRow = (values: string[], height: number, header = false) => {
-        let x = MARGIN
-        values.forEach((value, index) => {
-          const width = columnWidths[index]
-          if (header) {
-            ctx.fillStyle = '#fafafa'
-            ctx.fillRect(x, y, width, height)
-          }
-          ctx.strokeStyle = BORDER_COLOR
-          ctx.strokeRect(x, y, width, height)
-          drawTextBox(ctx, value, x + 8, y + 6, width - 16, height - 12, 22)
-          x += width
-        })
-        y += height
-      }
-      for (const section of pages[pageIndex].sections) {
-        drawRoomTitle(ctx, section.room, section.continued, y, CHECKLIST_HEIGHTS.roomTitle)
-        y += CHECKLIST_HEIGHTS.roomTitle
-        drawRow(['☐', '物品', '現況備註', '已拍攝'], CHECKLIST_HEIGHTS.tableHeading, true)
-        for (const item of section.items) {
-          drawRow(['☐', item.name, '', firstEvidenceOfPhase(item, 'baseline') ? '✓' : ''], CHECKLIST_HEIGHTS.item)
-        }
-        y += CHECKLIST_HEIGHTS.roomGap
-      }
-      if (pageIndex === pages.length - 1) {
-        y += CHECKLIST_HEIGHTS.signatureTopGap
-        for (const line of signatureLines) {
-          drawTextBox(ctx, line, MARGIN, y, CONTENT_WIDTH, CHECKLIST_HEIGHTS.signatureLine)
-          y += CHECKLIST_HEIGHTS.signatureLine + CHECKLIST_HEIGHTS.signatureLineGap
-        }
-      }
-    },
+  await text('入住點交條列清單', 36, true)
+  await text(`租屋處：${property.alias}（${property.address}）`)
+  await text(`匯出時間：${formatHandoverTimestamp(new Date().toISOString())}`, 21)
+  await text(
+    `共 ${items.length} 項，已存證 ${items.filter((it) => firstEvidenceOfPhase(it, 'baseline')).length} 項`,
+    21,
   )
+  for (const group of groupItemsByRoom(items)) {
+    await ensure(180)
+    y += 20
+    await text(group.room, 28, true)
+    for (const item of group.items) {
+      const evidence = firstEvidenceOfPhase(item, 'baseline')
+      await ensure(120)
+      await text(`${mode === 'checklist' ? '□ ' : ''}${item.name}`, 25, true)
+      if (mode === 'checklist') {
+        await text(
+          `照片：${evidence ? '已存證' : '未拍攝'}　現況備註：________________________________`,
+          22,
+        )
+      }
+      y += 22
+    }
+  }
+  if (mode === 'checklist') {
+    await ensure(160)
+    await text('租客簽名：________________　房東簽名：________________', 22)
+    await text('日期：______年______月______日', 22)
+  }
+  await savePage()
+  return pdf.save()
 }
 
-export async function generateHandoverBaselinePdf(
+/** Branded evidence tables; long notes continue in a new, labelled table. */
+async function createEvidencePack(
   property: HandoverProperty,
   items: HandoverItem[],
 ): Promise<Uint8Array> {
-  const propertyItems = items.filter((item) => item.propertyId === property.id)
-  const groups = baselineExportGroups(propertyItems)
-  const pages = paginateBaselineGroups(groups, {
-    availableHeight: FOOTER_TOP - CONTENT_TOP,
-    itemHeight: BASELINE_HEIGHTS.itemBox + BASELINE_HEIGHTS.itemGap,
-    roomHeadingHeight: BASELINE_HEIGHTS.roomHeading,
-  })
-  const description = `共 ${propertyItems.length} 項，其中 ${countItemsWithEvidence(propertyItems, 'baseline')} 項已存證，涵蓋 ${groups.length} 個房間。`
-  return generatePdf(property, '入住點交完整證據包', description, pages.length, async (ctx, pageIndex) => {
-    let y = CONTENT_TOP
-    for (const section of pages[pageIndex].sections) {
-      drawRoomTitle(ctx, section.room, section.continued, y, BASELINE_HEIGHTS.roomHeading)
-      y += BASELINE_HEIGHTS.roomHeading
-      for (const item of section.items) {
-        const evidence = firstEvidenceOfPhase(item, 'baseline')
-        ctx.strokeStyle = BORDER_COLOR
-        ctx.strokeRect(MARGIN, y, CONTENT_WIDTH, BASELINE_HEIGHTS.itemBox)
-        await drawPhoto(ctx, evidence, MARGIN + 16, y + 16, 280, 200)
-        const textX = MARGIN + 320
-        const textWidth = CONTENT_WIDTH - 336
-        drawTextBox(ctx, item.name, textX, y + 12, textWidth, 52, 30)
-        const lines: string[] = []
-        if (evidence) {
-          if (evidence.aiLabel) lines.push(`AI 標籤：${evidence.aiLabel}`)
-          const confidence = formatConfidence(evidence.aiConfidence)
-          if (confidence) lines.push(`AI 清晰度：${confidence}`)
-          lines.push(`拍攝時間：${formatHandoverTimestamp(evidence.capturedAt)}`)
-          if (evidence.integrityNote) lines.push(evidence.integrityNote)
-          if (evidence.note) lines.push(`備註：${evidence.note}`)
-          if (evidence.userNote) lines.push(`使用者備註：${evidence.userNote}`)
+  const pdf = await PDFDocument.create()
+  const canvas = document.createElement('canvas')
+  canvas.width = 1240
+  canvas.height = 1754
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('瀏覽器無法產生 PDF。')
+  const colors = {
+    primary: '#4d43ad',
+    ink: '#232139',
+    muted: '#706d85',
+    line: '#dedbea',
+    pale: '#f3f1fa',
+    white: '#ffffff',
+  }
+  const primary = getComputedStyle(document.documentElement)
+    .getPropertyValue('--primary-surface')
+    .trim()
+  if (primary && CSS.supports('color', primary)) colors.primary = primary
+  const font = '"Microsoft JhengHei", "PingFang TC", sans-serif'
+  const left = 72,
+    width = 1096,
+    bottom = 1618
+  let y = 0
+  const write = (
+    text: string,
+    x: number,
+    top: number,
+    size = 22,
+    bold = false,
+    color = colors.ink,
+  ) => {
+    ctx.font = `${bold ? 'bold ' : ''}${size}px ${font}`
+    ctx.textBaseline = 'top'
+    ctx.fillStyle = color
+    ctx.fillText(text, x, top)
+  }
+  const box = (x: number, top: number, w: number, h: number, fill: string, border = false) => {
+    ctx.fillStyle = fill
+    ctx.fillRect(x, top, w, h)
+    if (border) {
+      ctx.strokeStyle = colors.line
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(x, top, w, h)
+    }
+  }
+  const wrap = (value: string, maxWidth: number, size = 22, bold = false) => {
+    ctx.font = `${bold ? 'bold ' : ''}${size}px ${font}`
+    const lines: string[] = []
+    for (const paragraph of value.split('\n')) {
+      let line = ''
+      for (const char of paragraph) {
+        if (ctx.measureText(line + char).width > maxWidth && line) {
+          lines.push(line)
+          line = ''
         }
-        drawTextBox(ctx, lines.join('\n'), textX, y + 68, textWidth, 166, 23, MUTED_COLOR)
-        y += BASELINE_HEIGHTS.itemBox + BASELINE_HEIGHTS.itemGap
+        line += char
+      }
+      lines.push(line)
+    }
+    return lines
+  }
+  const reset = (first: boolean) => {
+    box(0, 0, 1240, 1754, colors.white)
+    box(0, 0, 1240, 12, colors.primary)
+    write('RentMate', left, 48, 32, true, colors.primary)
+    write('入住點交完整證據包', first ? left : 770, first ? 108 : 54, first ? 40 : 27, true)
+    y = first ? 180 : 112
+  }
+  const save = async () => {
+    box(left, 1650, width, 1, colors.line)
+    write('RentMate  /  入住點交紀錄', left, 1675, 19, false, colors.muted)
+    write(`第 ${pdf.getPageCount() + 1} 頁`, 1060, 1675, 19, false, colors.muted)
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PDF 產生失敗。'))), 'image/png'),
+    )
+    const image = await pdf.embedPng(await blob.arrayBuffer())
+    pdf.addPage([595.28, 841.89]).drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 })
+    reset(false)
+  }
+  const roomHeading = (room: string, count: number, continued = false) => {
+    const lines = wrap(`${room}${continued ? '（續）' : ''}`, width - 150, 26, true)
+    const height = Math.max(58, lines.length * 36 + 20)
+    box(left, y, width, height, colors.pale)
+    box(left, y, 5, height, colors.primary)
+    lines.forEach((line, i) => write(line, left + 20, y + 12 + i * 36, 26, true, colors.primary))
+    write(`${count} 項`, left + width - 80, y + 17, 21, false, colors.muted)
+    y += height + 16
+  }
+  reset(true)
+  const address = wrap(`${property.alias}（${property.address}）`, width - 155)
+  const metaHeight = 90 + address.length * 32
+  box(left, y, width, metaHeight, colors.pale, true)
+  write('租屋處', left + 22, y + 22, 21, true, colors.muted)
+  address.forEach((line, i) => write(line, left + 130, y + 22 + i * 32))
+  write(
+    `匯出時間  ${formatHandoverTimestamp(new Date().toISOString())}`,
+    left + 22,
+    y + metaHeight - 44,
+    20,
+    false,
+    colors.muted,
+  )
+  y += metaHeight + 16
+  const groups = groupItemsByRoom(items)
+  const summaries = [
+    `點交項目  ${items.length} 項`,
+    `已存證  ${items.filter(it => baselinePhotoCount(it) > 0).length} 項`,
+    `未拍照  ${items.filter(it => baselinePhotoCount(it) === 0).length} 項`,
+  ]
+  summaries.forEach((value, i) => {
+    const w = (width - 24) / 3
+    box(left + i * (w + 12), y, w, 58, colors.white, true)
+    write(value, left + i * (w + 12) + 20, y + 17, 23, true, colors.primary)
+  })
+  y += 90
+  for (const group of groups) {
+    if (y + 430 > bottom) await save()
+    roomHeading(group.room, group.items.length)
+    for (const { item, evidence, photoIndex } of group.items.flatMap((item) => {
+      const photos = [...item.evidences, ...(item.history ?? [])].filter(
+        (e) => e.phase === 'baseline',
+      )
+      return photos.length
+        ? photos.map((evidence, photoIndex) => ({ item, evidence, photoIndex }))
+        : [{ item, evidence: undefined, photoIndex: 0 }]
+    })) {
+      let image: HTMLImageElement | undefined
+      if (evidence)
+        image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image()
+          const timer = setTimeout(
+            () => reject(new Error(`「${item.name}」照片讀取逾時，請稍後重試。`)),
+            20000,
+          )
+          img.crossOrigin = 'anonymous'
+          img.referrerPolicy = 'no-referrer'
+          img.onload = () => {
+            clearTimeout(timer)
+            resolve(img)
+          }
+          img.onerror = () => {
+            clearTimeout(timer)
+            reject(new Error(`無法讀取「${item.name}」照片，請重新載入後再匯出。`))
+          }
+          img.src = evidence.url
+        })
+      const fields = evidence
+        ? [
+            ['存證編號', evidence.evidenceNumber || `RM-IN-${evidence.id.padStart(8, '0')}`],
+            [
+              '拍攝時間',
+              evidence.photoTakenAt
+                ? `${formatHandoverTimestamp(evidence.photoTakenAt)}（裝置回報）`
+                : '未取得；不以收件時間代替',
+            ],
+            ['收件時間', formatHandoverTimestamp(evidence.receivedAt || evidence.capturedAt)],
+            ['房屋', evidence.propertySnapshot?.address || property.address],
+            ['房間／物件', `${item.room}／${item.name}`],
+            [
+              '照片來源',
+              evidence.captureSource === 'camera'
+                ? '現場拍攝'
+                : evidence.captureSource === 'file'
+                  ? '檔案上傳'
+                  : '未記錄',
+            ],
+            ...(evidence.integrityNote ? [['來源說明', evidence.integrityNote]] : []),
+            ['辨識結果', evidence.aiLabel || '尚無辨識結果'],
+            [
+              '原始檔',
+              evidence.originalAvailable
+                ? '已保存收件原檔，可於系統下載核對'
+                : '舊紀錄未保存原始檔',
+            ],
+            ...(evidence.originalSha256 ? [['SHA-256', evidence.originalSha256]] : []),
+            [
+              '重拍紀錄',
+              evidence.replacesId
+                ? `重拍自 RM-IN-${evidence.replacesId.padStart(8, '0')}`
+                : '此筆未標記為重拍',
+            ],
+            ...(evidence.supersededBy
+              ? [['歷程狀態', `已由 RM-IN-${evidence.supersededBy.padStart(8, '0')} 取代`]]
+              : []),
+            ...(evidence.removedAt
+              ? [['歷程狀態', `已於 ${formatHandoverTimestamp(evidence.removedAt)} 移至歷程`]]
+              : []),
+            ['修改狀態', evidence.modificationNote || '上傳前是否修改無法查證'],
+            ['系統處理', evidence.processingNote || '舊紀錄僅保留處理後照片'],
+            ...(evidence.note ? [['備註', evidence.note]] : []),
+            ...(evidence.userNote ? [['使用者備註', evidence.userNote]] : []),
+            ...(evidence.descriptionHistory ?? []).map((entry) => [
+              '描述歷程',
+              `${formatHandoverTimestamp(entry.updatedAt)} 修改前：${entry.previous || '空白'}`,
+            ]),
+          ]
+        : [['存證狀態', '尚未拍攝']]
+      const rows = fields.flatMap(([label, value]) =>
+        wrap(value, 574).map((line, i) => ({
+          label: i === 0 ? label : '',
+          text: line,
+          start: i === 0,
+        })),
+      )
+      let offset = 0
+      const titleLines = wrap(
+        `${item.name}${evidence ? ` · 照片 ${photoIndex + 1}` : ''}`,
+        width - 210,
+        26,
+        true,
+      )
+      const titleHeight = Math.max(62, titleLines.length * 36 + 24)
+      while (offset < rows.length) {
+        const desired =
+          titleHeight +
+          Math.max(image && offset === 0 ? 290 : 100, (rows.length - offset) * 36 + 28)
+        if (y + Math.min(desired, 1100) > bottom) {
+          await save()
+          roomHeading(group.room, group.items.length, true)
+        }
+        const count = Math.max(
+          1,
+          Math.min(rows.length - offset, Math.floor((bottom - y - titleHeight - 28) / 36)),
+        )
+        const bodyHeight = Math.max(image && offset === 0 ? 290 : 100, count * 36 + 28)
+        const height = titleHeight + bodyHeight
+        box(left, y, width, height, colors.white, true)
+        box(left, y, width, titleHeight, colors.pale, true)
+        titleLines.forEach((line, i) => write(line, left + 20, y + 17 + i * 36, 26, true))
+        write(
+          offset
+            ? '續頁'
+            : evidence?.supersededBy || evidence?.removedAt
+              ? '歷程'
+              : evidence
+                ? '已收件'
+                : '待拍攝',
+          left + width - 112,
+          y + 20,
+          21,
+          false,
+          colors.primary,
+        )
+        const bodyY = y + titleHeight
+        box(left, bodyY, 320, bodyHeight, '#faf9fc', true)
+        if (image && offset === 0) {
+          const scale = Math.min(
+            280 / image.naturalWidth,
+            (Math.min(bodyHeight, 370) - 40) / image.naturalHeight,
+          )
+          const w = image.naturalWidth * scale,
+            h = image.naturalHeight * scale
+          ctx.drawImage(image, left + (320 - w) / 2, bodyY + 20, w, h)
+        } else
+          write(
+            offset ? '詳細紀錄（續）' : '尚未拍攝照片',
+            left + 80,
+            bodyY + 40,
+            21,
+            false,
+            colors.muted,
+          )
+        box(left + 320, bodyY, 144, bodyHeight, '#faf9fc', true)
+        rows.slice(offset, offset + count).forEach((row, i) => {
+          const top = bodyY + 14 + i * 36
+          if (row.start && i > 0) box(left + 320, top - 7, width - 320, 1, colors.line)
+          if (row.label) write(row.label, left + 334, top, 20, true, colors.muted)
+          write(row.text, left + 482, top, 22)
+        })
+        y += height + 20
+        offset += count
       }
     }
-  })
-}
-
-export async function generateHandoverCheckoutPdf(
-  property: HandoverProperty,
-  items: HandoverItem[],
-): Promise<Uint8Array> {
-  const exportItems = checkoutExportItems(items.filter((item) => item.propertyId === property.id))
-  return generatePdf(property, '退租點交證據包', `共 ${exportItems.length} 項搬入存證，每項一頁。`, exportItems.length, async (ctx, pageIndex) => {
-    const item = exportItems[pageIndex]
-    const baseline = firstEvidenceOfPhase(item, 'baseline')
-    const checkout = firstEvidenceOfPhase(item, 'checkout')
-    const photoWidth = (CONTENT_WIDTH - 32) / 2
-    const checkoutX = MARGIN + photoWidth + 32
-    drawTextBox(ctx, '搬入', MARGIN, CONTENT_TOP, photoWidth, 48, 30)
-    drawTextBox(ctx, '退租', checkoutX, CONTENT_TOP, photoWidth, 48, 30)
-    await drawPhoto(ctx, baseline, MARGIN, CONTENT_TOP + 56, photoWidth, 400)
-    await drawPhoto(ctx, checkout, checkoutX, CONTENT_TOP + 56, photoWidth, 400, '')
-    if (baseline) {
-      drawTextBox(ctx, `拍攝時間：${formatHandoverTimestamp(baseline.capturedAt)}`, MARGIN, 820, photoWidth, 64, 22, MUTED_COLOR)
-    }
-    if (checkout) {
-      drawTextBox(ctx, `拍攝時間：${formatHandoverTimestamp(checkout.capturedAt)}`, checkoutX, 820, photoWidth, 64, 22, MUTED_COLOR)
-    }
-    drawTextBox(ctx, `物品：${item.name}`, MARGIN, 930, CONTENT_WIDTH, 90, 38)
-    drawTextBox(ctx, `房間：${item.room}`, MARGIN, 1030, CONTENT_WIDTH, 64, 28)
-    drawTextBox(ctx, `結論：${checkoutConclusion(item)}`, MARGIN, 1110, CONTENT_WIDTH, 64, 34)
-    if (item.diff) {
-      drawTextBox(ctx, `信心度：${formatConfidence(item.diff.confidence)}`, MARGIN, 1190, CONTENT_WIDTH, 44, 26, MUTED_COLOR)
-      if (item.diff.summary) {
-        drawTextBox(ctx, `比對說明：${item.diff.summary}`, MARGIN, 1250, CONTENT_WIDTH, 360, 28)
-      }
-    }
-  })
-}
-
-export function downloadHandoverPdf(bytes: Uint8Array, fileName: string): void {
-  const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  // iOS 的下載流程不能依賴 detached anchor 恰好可用，先掛進 DOM 再觸發。
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+    y += 10
+  }
+  await save()
+  return pdf.save()
 }

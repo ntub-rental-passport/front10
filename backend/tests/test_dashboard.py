@@ -98,6 +98,100 @@ class DashboardTests(unittest.TestCase):
         self.assertIsNone(contract['cycles'][0]['waterAmount'])
         self.assertIsNone(contract['cycles'][0]['paidAt'])
 
+    def test_utilities_persist_calculations_and_partial_unknowns(self):
+        bill_id = self.contracts()[0]['cycles'][0]['id']
+        payload = {'electricity': {'method': 'meter', 'previous': '0', 'current': '120', 'rate': '5'},
+                   'water': {'method': 'pending'}}
+        response = self.client.put(f'/api/dashboard/bills/{bill_id}/utilities', json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        stored = self.contracts()[0]['cycles'][0]
+        self.assertEqual(stored['electricityAmount'], 600)
+        self.assertIsNone(stored['waterAmount'])
+        self.assertEqual(stored['utilityDetails']['electricity']['current'], '120')
+        payload['water'] = {'method': 'included'}
+        self.client.put(f'/api/dashboard/bills/{bill_id}/utilities', json=payload)
+        self.assertEqual(self.contracts()[0]['cycles'][0]['waterAmount'], 0)
+
+    def test_automatic_previous_reading_and_tenant_method_restrictions(self):
+        cycles = self.contracts()[0]['cycles']
+        first, second = cycles[0]['id'], cycles[1]['id']
+        payload = {'electricity': {'method': 'meter', 'previous': 0, 'current': 120, 'rate': 5}, 'water': {'method': 'pending'}}
+        self.assertEqual(self.client.put(f'/api/dashboard/bills/{first}/utilities', json=payload).status_code, 200)
+        initial_context = self.client.get(f'/api/dashboard/bills/{first}/utilities/context').json()
+        self.assertFalse(initial_context['initial'])
+        self.assertEqual(initial_context['previous'], '0')
+        context = self.client.get(f'/api/dashboard/bills/{second}/utilities/context').json()
+        self.assertEqual(context['previous'], '120')
+        self.assertFalse(context['initial'])
+        self.assertEqual(self.client.put(f'/api/dashboard/bills/{second}/utilities', json=payload).status_code, 409)
+        payload['electricity'] = {'method': 'meter', 'previous': 120, 'current': 220, 'rate': 5}
+        self.assertEqual(self.client.put(f'/api/dashboard/bills/{second}/utilities', json=payload).status_code, 200)
+        self.assertEqual(self.client.put(f'/api/dashboard/bills/{first}/utilities', json=payload).status_code, 409)
+        payload['electricity'] = {'method': 'shared', 'total': 900, 'share': 1, 'shares': 2}
+        self.assertEqual(self.client.put(f'/api/dashboard/bills/{second}/utilities', json=payload).status_code, 422)
+
+    def test_direct_and_landlord_paid_are_not_charged_to_tenant(self):
+        bill = self.contracts()[0]['cycles'][0]['id']
+        for payer in ('tenant_direct', 'landlord_absorb'):
+            response = self.client.put(f'/api/dashboard/bills/{bill}/utilities', json={
+                'electricity': {'method': 'amount', 'payer': payer}, 'water': {'method': 'included'}})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()['electricityAmount'], 0)
+            self.assertEqual(response.json()['utilityDetails']['electricity']['payer'], payer)
+
+    def test_utilities_reject_other_accounts_paid_bills_and_invalid_values(self):
+        bill_id = self.contracts()[0]['cycles'][0]['id']
+        url = f'/api/dashboard/bills/{bill_id}/utilities'
+        payload = {'electricity': {'method': 'amount', 'amount': 520}, 'water': {'method': 'included'}}
+        self.user_id = 2
+        self.assertEqual(self.client.put(url, json=payload).status_code, 404)
+        self.user_id = 1
+        invalid = {**payload, 'electricity': {'method': 'meter', 'previous': 200, 'current': 100, 'rate': 5}}
+        self.assertEqual(self.client.put(url, json=invalid).status_code, 422)
+        self.assertIsNone(self.contracts()[0]['cycles'][0]['electricityAmount'])
+        self.client.put(f'/api/dashboard/bills/{bill_id}/payment', json={'paid_at': '2025-08-03'})
+        self.assertEqual(self.client.put(url, json=payload).status_code, 409)
+        self.client.delete(f'/api/dashboard/bills/{bill_id}/payment')
+        self.assertEqual(self.client.put(url, json=payload).status_code, 200)
+
+    def test_water_nonbilling_month_is_zero_and_receipt_total_is_only_counted_once(self):
+        cycles = self.contracts()[0]['cycles']
+        for bill, water, expected in [
+            (cycles[0], {'method': 'amount', 'amount': 604}, 604),
+            (cycles[1], {'method': 'no_bill'}, 0),
+            (cycles[2], {'method': 'amount', 'amount': 0}, 0),
+            (cycles[3], {'method': 'pending'}, None),
+        ]:
+            response = self.client.put(f"/api/dashboard/bills/{bill['id']}/utilities", json={
+                'electricity': {'method': 'amount', 'payer': 'tenant_direct'}, 'water': water})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()['electricityAmount'], 0)
+        stored = self.contracts()[0]['cycles']
+        self.assertEqual([b['waterAmount'] for b in stored[:4]], [604, 0, 0, None])
+        self.assertEqual(stored[1]['utilityDetails']['water']['method'], 'no_bill')
+        self.assertEqual(stored[1]['rentAmount'] + stored[1]['electricityAmount'] + stored[1]['waterAmount'], 20000)
+
+    def test_water_payer_persists_and_only_landlord_collection_is_receivable(self):
+        bill_id = self.contracts()[0]['cycles'][0]['id']
+        url = f'/api/dashboard/bills/{bill_id}/utilities'
+        entries = [({'method': 'amount', 'amount': 604}, 604),
+                   ({'method': 'meter', 'previous': 100, 'current': 120, 'rate': 5}, 100)]
+        for entry, amount in entries:
+            for payer in ('tenant_direct', 'landlord_absorb', 'landlord_collect'):
+                with self.subTest(method=entry['method'], payer=payer):
+                    response = self.client.put(url, json={
+                        'electricity': {'method': 'amount', 'payer': 'tenant_direct'},
+                        'water': {**entry, 'payer': payer}})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    stored = self.contracts()[0]['cycles'][0]
+                    self.assertEqual(stored['waterAmount'], amount if payer == 'landlord_collect' else 0)
+                    self.assertEqual(stored['utilityDetails']['water']['payer'], payer)
+        response = self.client.put(url, json={
+            'electricity': {'method': 'pending'},
+            'water': {'method': 'amount', 'payer': 'tenant_direct'}})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['waterAmount'], 0)
+
     def test_a_user_without_contracts_gets_an_empty_list_not_sample_data(self):
         self.user_id = 2
         self.assertEqual(self.contracts(), [])

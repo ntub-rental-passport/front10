@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { extractContractFieldCandidates } from '@/shared/contract-field-extraction.js'
-import { CONTRACT_FIELD_GROUPS, detectContractConditions } from '@/shared/contract-field-schema.js'
+import { CONTRACT_FIELD_DEFINITIONS, CONTRACT_FIELD_GROUPS, detectContractConditions } from '@/shared/contract-field-schema.js'
 import { analyzeContractFields } from '../../server/contract-field-gate.js'
 import { isValidHandoverTime, isValidContractFieldFormat } from '@/shared/contract-field-validation.js'
 
@@ -81,6 +81,38 @@ describe('出租範圍、車位及設備附件', () => {
     const details = extractContractFieldCandidates(text).rental_equipment_details
     expect(details.value).toContain('冰箱1臺')
     expect(text).toContain(details.sourceValue)
+  })
+  it.each(['第二條', '第\n二\n條', '第２條'])('九項設備在 %s 前結束，不包含後續租金費用', (heading) => {
+    const inventory = `附屬設備清單與交屋預設狀態 1. 分離式冷氣1臺,功能正常,遙控器1支。
+2. 雙人床架與床墊1組,正常使用痕跡,無破損。 3. 衣櫃1個,門片與五金正常。 4. 書桌1張、椅子1張,結構
+正常。 5. 電熱水器1臺,預設加熱正常。 6. 小冰箱1臺,預設冷藏正常。 7. 窗簾1組、燈具2組,預設正常。
+8. 共用洗衣機1臺、Wi-Fi設備1組,可共用,不另收使用費。 9. 房門鑰匙2支、大門門禁卡1張、車道感應
+器1個。`
+    for (const note of ['', '（若有，詳如附件一租賃標的現況確認書。）']) {
+      const text = `租賃附屬設備：有\n${inventory}\n${note}\n${heading} 租賃期間\n租金18000元\n第五條 相關費用`
+      const details = extractContractFieldCandidates(text).rental_equipment_details
+      expect(details.value).toBe(inventory)
+      expect(details.sourceValue).toBe(inventory)
+      expect(details.value.match(/\d\./g)).toHaveLength(9)
+      const { fieldReviews } = analyzeContractFields({ text, pageTexts: [text], visionPages: [] })
+      expect(fieldReviews.rental_equipment_details.value).toBe(inventory)
+      expect(text.slice(fieldReviews.rental_equipment_details.sourceStart, fieldReviews.rental_equipment_details.sourceEnd)).toBe(inventory)
+    }
+  })
+  it('不把附件目錄當作設備，也不硬性限制設備只能有九項', () => {
+    expect(extractContractFieldCandidates('附件包括附屬設備清單、租賃住宅位置格局示意圖等。').rental_equipment_details.value).toBe('')
+    const inventory = `附屬設備清單\n${Array.from({ length: 12 }, (_, i) => `${i + 1}. 椅子1張。`).join('\n')}`
+    expect(extractContractFieldCandidates(`${inventory}\n第二條 租賃期間`).rental_equipment_details.value).toBe(inventory)
+  })
+})
+
+describe('電費計費方式可自由填寫', () => {
+  it('不再套用費用約定格式，但空白仍不通過', () => {
+    const field = CONTRACT_FIELD_DEFINITIONS.find((entry) => entry.id === 'electricity_billing')!
+    expect(isValidContractFieldFormat(field.format, '有')).toBe(true)
+    expect(isValidContractFieldFormat(field.format, '依雙方約定')).toBe(true)
+    expect(isValidContractFieldFormat(field.format, '')).toBe(false)
+    expect(CONTRACT_FIELD_DEFINITIONS.find((entry) => entry.id === 'management_fee')?.format).toBe('expense')
   })
 })
 

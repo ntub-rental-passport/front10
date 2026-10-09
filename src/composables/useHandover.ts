@@ -4,6 +4,7 @@ import { getAuthSession } from '@/src/composables/useAuth'
 
 export type EvidencePhase = 'baseline' | 'checkout'
 export type CaptureSource = 'camera' | 'file'
+export type CaptureAngle = 'front' | 'side' | 'detail' | 'other'
 
 export interface CaptureQuality {
   brightness: number
@@ -38,6 +39,36 @@ export interface HandoverEvidence {
   captureSource?: CaptureSource
   captureQuality?: CaptureQuality | null
   integrityNote?: string
+  angle?: CaptureAngle
+  evidenceNumber?: string
+  receivedAt?: string
+  photoTakenAt?: string | null
+  originalAvailable?: boolean
+  originalSha256?: string
+  originalName?: string
+  originalSize?: number
+  replacesId?: string | null
+  supersededBy?: string | null
+  removedAt?: string | null
+  processingNote?: string
+  modificationNote?: string
+  propertySnapshot?: HandoverProperty
+  descriptionHistory?: { previous: string; updatedAt: string }[]
+  angleHistory?: { previous: string; current: string; updatedAt: string }[]
+  /** 退租照片：對應的入住照片 id（每張入住照片各自配一張退租照片比對） */
+  pairsWith?: string | null
+  /** 這一組（入住＋這張退租照）的 AI 比對結果 */
+  comparison?: (HandoverPairResult & { computedAt: string }) | null
+}
+
+export interface HandoverPairResult {
+  index: number
+  baselineRecordId: string
+  checkoutRecordId: string
+  type?: HandoverDiff['type']
+  confidence?: number
+  summary?: string
+  error?: string
 }
 
 export type HandoverDiff = {
@@ -45,6 +76,10 @@ export type HandoverDiff = {
   confidence: number
   summary: string
   computedAt: string
+  /** 每一組的結果；項目的 type 取最嚴重的那組 */
+  pairs?: HandoverPairResult[]
+  /** 還沒拍退租照、沒有比對的入住照片 id */
+  pending?: string[]
 }
 
 export interface HandoverItem {
@@ -54,7 +89,12 @@ export interface HandoverItem {
   name: string
   category: 'appliance' | 'furniture' | 'fixture'
   evidences: HandoverEvidence[]
+  history?: HandoverEvidence[]
   diff?: HandoverDiff
+  /** 每張入住照片與對應的退租照片（checkoutId 為 null 代表還沒拍） */
+  pairs?: { baselineId: string; checkoutId: string | null }[]
+  /** 每張入住照片都有退租照片才算完成 */
+  checkoutComplete?: boolean
   createdAt: string
 }
 
@@ -195,7 +235,18 @@ export function useHandover() {
   async function addEvidence(
     itemId: string,
     phase: EvidencePhase,
-    payload: { url: string; note?: string; source: CaptureSource; quality: CaptureQuality | null },
+    payload: {
+      url: string
+      note?: string
+      source: CaptureSource
+      quality: CaptureQuality | null
+      angle?: CaptureAngle
+      append?: boolean
+      replacesId?: string
+      pairsWith?: string
+      originalName?: string
+      photoTakenAt?: string
+    },
   ) {
     await perform(async () => {
       const item = await inspectionRequest<HandoverItem>(
@@ -205,6 +256,12 @@ export function useHandover() {
           image_data: payload.url,
           user_note: payload.note ?? '',
           capture_source: payload.source,
+          ...(payload.angle ? { angle: payload.angle } : {}),
+          ...(payload.append ? { append: true } : {}),
+          ...(payload.replacesId ? { replaces_id: Number(payload.replacesId) } : {}),
+          ...(payload.pairsWith ? { pairs_with: Number(payload.pairsWith) } : {}),
+          ...(payload.originalName ? { original_name: payload.originalName } : {}),
+          ...(payload.photoTakenAt ? { photo_taken_at: payload.photoTakenAt } : {}),
           capture_quality:
             payload.source === 'camera' && payload.quality
               ? {
@@ -216,7 +273,9 @@ export function useHandover() {
         },
       )
       replaceItem(item)
-      const record = item.evidences.find((e) => e.phase === phase)!
+      const record = item.evidences
+        .filter((e) => e.phase === phase)
+        .reduce((a, b) => (Number(a.id) > Number(b.id) ? a : b))
       await analyze(itemId, record.id)
     })
   }
@@ -231,6 +290,23 @@ export function useHandover() {
         await inspectionRequest<HandoverItem>(`/items/${itemId}/photos/${recordId}`, 'DELETE'),
       ),
     )
+  }
+
+  async function updateEvidenceNote(
+    itemId: string,
+    recordId: string,
+    note: string,
+    angle?: CaptureAngle,
+  ) {
+    return perform(async () => {
+      replaceItem(
+        await inspectionRequest<HandoverItem>(`/items/${itemId}/photos/${recordId}/note`, 'PATCH', {
+          note,
+          angle,
+        }),
+      )
+      return true
+    })
   }
 
   async function runAutoDiff() {
@@ -265,6 +341,7 @@ export function useHandover() {
     removeItem,
     addEvidence,
     removeEvidence,
+    updateEvidenceNote,
     retryAnalysis,
     runAutoDiff,
     busy,

@@ -53,6 +53,14 @@ export function undoBillPayment(billId: string): Promise<RentalContract['cycles'
   return dashboardRequest(`/bills/${billId}/payment`, 'DELETE')
 }
 
+export function saveBillUtilities(billId: string, payload: import('@/src/utils/utility-billing').UtilityDetails): Promise<RentalContract['cycles'][number]> {
+  return dashboardRequest(`/bills/${billId}/utilities`, 'PUT', payload)
+}
+
+export function fetchUtilityContext(billId: string): Promise<import('@/src/utils/utility-billing').UtilityContext> {
+  return dashboardRequest(`/bills/${billId}/utilities/context`)
+}
+
 /** 房東平台租約：回報已繳款（通知房東確認入帳，不會直接標成已繳）。 */
 export async function reportLandlordPayment(
   cycleId: string,

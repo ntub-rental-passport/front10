@@ -42,6 +42,20 @@ async function loadedStore(items: HandoverItem[] = [item]) {
 }
 
 describe('database handover state', () => {
+  it('appends an angle and analyzes the new record even when the primary photo sorts first', async () => {
+    const store = await loadedStore([uploaded])
+    const multiple: HandoverItem = { ...uploaded, evidences: [
+      { ...uploaded.evidences[0], id: '22', angle: 'front' },
+      { ...uploaded.evidences[0], id: '21', angle: 'side' },
+    ] }
+    request.mockResolvedValueOnce(multiple).mockResolvedValueOnce({ item: multiple })
+    await store.addEvidence('10', 'baseline', {url:'original-data', source:'file', quality:null, append:true, angle:'front', replacesId:'20', originalName:'photo.png'})
+    expect(request).toHaveBeenCalledWith('/items/10/photos/baseline', 'PUT', expect.objectContaining({
+      image_data:'original-data', append:true, angle:'front', replaces_id:20, original_name:'photo.png',
+    }))
+    expect(request).toHaveBeenCalledWith('/analyze', 'POST', {item_id:10,record_id:22})
+    expect(store.itemsOfCurrentProperty.value[0].evidences).toHaveLength(2)
+  })
   it('sends camera source and measured quality to the API', async () => {
     const store = await loadedStore()
     request.mockResolvedValueOnce(structuredClone(uploaded))

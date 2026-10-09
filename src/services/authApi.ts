@@ -112,7 +112,7 @@ async function postAuth<T>(path: string, payload: unknown): Promise<T> {
   })
   const body = (await response.json().catch(() => null)) as (T & { detail?: string }) | null
   if (!response.ok) {
-    throw new Error(body?.detail || '驗證服務暫時無法使用，請稍後再試。')
+    throw new Error(typeof body?.detail === 'string' ? body.detail : '驗證服務暫時無法使用，請稍後再試。')
   }
   if (!body) throw new Error('驗證服務沒有回傳資料。')
   return body
@@ -214,4 +214,23 @@ export function loginWithEmail(
   role: 'tenant' | 'landlord',
 ): Promise<EmailLoginResponse> {
   return postAuth('/login', { email, password, role })
+}
+
+export interface PasswordResetChallenge {
+  challengeId: string
+  expiresIn: number
+  resendAvailableIn: number
+  message: string
+}
+
+export function startPasswordReset(email: string): Promise<PasswordResetChallenge> {
+  return postAuth('/password/reset/start', { email })
+}
+
+export function completePasswordReset(challengeId: string, code: string, newPassword: string): Promise<{ ok: boolean }> {
+  return postAuth('/password/reset/complete', { challengeId, code, newPassword })
+}
+
+export function changePassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean }> {
+  return postAuth('/password/change', { currentPassword, newPassword })
 }

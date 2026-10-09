@@ -13,6 +13,7 @@ from routers import notes, households, scheduled_notifications, platform_setting
 from routers import content_api, dashboard, repairs, inbox_api, admin_notifications_api, ai_usage_api, admin_user_records_api
 from routers import admin_repairs_api, subsidy_reminders, contract_reviews, subsidy_files
 from routers import landlord_finance, landlord_contracts, landlord_workspace_api, lease_invitations, tenant_landlord_leases
+from routers import password, contract_pdf
 from notifications.garbage_service import dispatch_due
 from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
 from admin import monitoring_service
@@ -129,7 +130,9 @@ app.add_middleware(
 # 將 AI 合約審查模組註冊進 FastAPI 總開關
 app.include_router(contract.router)
 app.include_router(contract_reviews.router)
+app.include_router(contract_pdf.router)
 app.include_router(auth.router)
+app.include_router(password.router)
 app.include_router(landlord_properties.router)
 app.include_router(landlord_tenants.router)
 app.include_router(landlord_finance.router)

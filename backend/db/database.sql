@@ -239,6 +239,7 @@ CREATE TABLE `bills` (
   `rent_amount` INT NOT NULL COMMENT '該期實際應繳金額',
   `electricity_amount` INT DEFAULT NULL COMMENT 'NULL = 尚未收到帳單',
   `water_amount` INT DEFAULT NULL COMMENT 'NULL = 尚未收到帳單',
+  `utility_details` JSON DEFAULT NULL COMMENT '租客自行填寫的水電計費方式與計算明細',
   `paid_at` DATETIME(6) DEFAULT NULL COMMENT 'NULL = 未繳',
   `payment_method` ENUM('bank-transfer','cash','line-pay','other') DEFAULT NULL COMMENT '該期實際支付方式',
   `payment_note` TEXT DEFAULT NULL,
@@ -469,6 +470,7 @@ CREATE TABLE `landlord_charges` (
   `period_end` DATE NOT NULL,
   `due_date` DATE NOT NULL,
   `amount` INT NOT NULL COMMENT '建立當下固定，改租金不回頭改舊帳',
+  `utility_details` JSON DEFAULT NULL,
   `voided_at` DATETIME(6) DEFAULT NULL,
   `void_reason` TEXT DEFAULT NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -787,6 +789,18 @@ CREATE TABLE `inspection_items` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
+CREATE TABLE `inspection_photo_details` (
+  `record_id` INT NOT NULL PRIMARY KEY,
+  `item_id` INT NOT NULL,
+  `angle` VARCHAR(20) NOT NULL DEFAULT 'other',
+  `provenance` JSON NOT NULL,
+  `superseded_by` INT DEFAULT NULL,
+  `removed_at` DATETIME(6) DEFAULT NULL,
+  INDEX `ix_inspection_photo_details_item_id` (`item_id`),
+  FOREIGN KEY (`record_id`) REFERENCES `inspection_records` (`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`item_id`) REFERENCES `inspection_items` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 後台自己的資料（2026-10-01 從 SQLite 搬進來，見 migrations/20261001_admin_tables_to_mysql.sql）
 
 -- 系統設定（site_settings.py）：網站名稱、維護模式、各種門檻
@@ -1056,6 +1070,25 @@ CREATE TABLE `garbage_reminders` (
   `push_status` VARCHAR(32) NOT NULL,
   PRIMARY KEY (`id`),
   INDEX `garbage_reminders_due` (`active`, `due`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Password recovery: codes are HMAC digests, never plaintext.
+CREATE TABLE `password_reset_challenges` (
+  `id` CHAR(36) NOT NULL PRIMARY KEY,
+  `email` VARCHAR(254) NOT NULL UNIQUE,
+  `user_id` INT DEFAULT NULL,
+  `code_hash` CHAR(64) NOT NULL,
+  `credential_hash` CHAR(64) NOT NULL,
+  `expires_at` DATETIME(6) NOT NULL,
+  `resend_available_at` DATETIME(6) NOT NULL,
+  `window_started_at` DATETIME(6) NOT NULL,
+  `attempt_count` INT NOT NULL DEFAULT 0,
+  `send_count` INT NOT NULL DEFAULT 0,
+  `request_ip` VARCHAR(45) NOT NULL,
+  `consumed` BOOLEAN NOT NULL DEFAULT FALSE,
+  INDEX `ix_password_reset_challenges_window_started_at` (`window_started_at`),
+  INDEX `ix_password_reset_challenges_request_ip` (`request_ip`),
+  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 1;

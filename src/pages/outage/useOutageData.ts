@@ -9,6 +9,8 @@ import {
 } from 'lucide-vue-next'
 
 import { listStoredContracts } from '@/src/services/contractApi'
+import { fetchTenantLeases } from '@/src/services/tenantLeaseApi'
+import { getAuthSession } from '@/src/composables/useAuth'
 import powerLightingImage from '@/src/assets/outage/01 .png'
 import powerBatteryImage from '@/src/assets/outage/08.png'
 import powerNoticeImage from '@/src/assets/outage/16.png'
@@ -65,8 +67,15 @@ export interface OutagePageTabItem {
 }
 
 // 響應式狀態
-let addressFromContractLoaded = false
-const rentalAddress = ref('台北市大安區和平東路二段')
+// 查詢地址一律來自使用者自己的資料或手動輸入，不放預設地址：
+// 以前寫死「台北市大安區和平東路二段」，查不到租約時會拿一個不相干的地址去查，
+// 而且會跟讀租約地址的請求互相搶，常常把正確的地址蓋回去。
+const rentalAddress = ref('')
+const addressSource = ref<'contract' | 'landlord' | 'manual' | 'none'>('none')
+const addressError = ref('')
+let initialization: Promise<void> | null = null
+let initializedFor = ''
+let requestSeq = 0
 const events = ref<UtilityEvent[]>([])
 const featuredSourceUpdatedAt = ref('尚未載入')
 const isLoading = ref(false)
@@ -90,28 +99,82 @@ const pageTabs: OutagePageTabItem[] = [
 
 // 核心請求：向後端抓取公告資料
 async function fetchOutages(addressToQuery?: string) {
+  const queryAddr = (addressToQuery || rentalAddress.value).trim()
+  if (!queryAddr) return
+  // 只採用最後一次發出的查詢結果：較早送出、較晚回來的回應不能蓋掉新的地址
+  const seq = ++requestSeq
   isLoading.value = true
-  const queryAddr = addressToQuery || rentalAddress.value
+  addressError.value = ''
 
   try {
     const res = await fetch(`${(import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/api\/?$/, '')}/api/outage/notices?address=${encodeURIComponent(queryAddr)}`)
     if (!res.ok) throw new Error(`HTTP 錯誤: ${res.status}`)
     const data = await res.json()
+    if (seq !== requestSeq) return
 
     events.value = data.events
     featuredSourceUpdatedAt.value = data.updatedAt
     rentalAddress.value = data.address
   } catch (error) {
+    if (seq !== requestSeq) return
     console.error('無法取得停水停電資訊:', error)
+    addressError.value = '停水停電資訊讀取失敗，請稍後重新整理。'
   } finally {
-    isLoading.value = false
+    if (seq === requestSeq) isLoading.value = false
   }
 }
 
 // 更換地址
 function updateAddress(newAddress: string) {
   if (!newAddress.trim()) return
+  rentalAddress.value = newAddress.trim()
+  addressSource.value = 'manual'
   fetchOutages(newAddress.trim())
+}
+
+/** 預設查詢地址：自己存的合約優先，其次是已加入的房東平台租約。都沒有就回空字串。 */
+async function resolveDefaultAddress(): Promise<{ address: string; source: 'contract' | 'landlord' | 'none' }> {
+  try {
+    // listStoredContracts 只選明文欄位，不會因為解密問題失敗
+    const stored = await listStoredContracts()
+    const address = stored.find((contract) => contract.address?.trim())?.address?.trim()
+    if (address) return { address, source: 'contract' }
+  } catch {
+    // 未登入或網路錯誤：改試房東平台的租約
+  }
+  try {
+    const leases = await fetchTenantLeases()
+    const current = leases.find((lease) => lease.effective) ?? leases[0]
+    const address = current?.address?.trim()
+    if (address && address !== '地址尚未填寫') return { address, source: 'landlord' }
+  } catch {
+    // 讀不到就讓使用者自己輸入
+  }
+  return { address: '', source: 'none' }
+}
+
+/**
+ * 外框與分頁都會呼叫 useOutageData，但初始化只做一次，大家等同一個 Promise。
+ * 以前各自在 onMounted 裡跑：一個在讀租約地址，另一個已經用預設地址查完，
+ * 誰比較晚回來畫面就顯示誰。
+ */
+function initialize(): Promise<void> {
+  const session = getAuthSession()
+  const key = session?.userId ?? session?.email ?? ''
+  if (initialization && initializedFor === key) return initialization
+  initializedFor = key
+  rentalAddress.value = ''
+  addressSource.value = 'none'
+  events.value = []
+  initialization = (async () => {
+    const found = await resolveDefaultAddress()
+    // 等待期間使用者已經手動換了地址，就不要再蓋掉
+    if (addressSource.value === 'manual') return
+    rentalAddress.value = found.address
+    addressSource.value = found.source
+    if (found.address) await fetchOutages(found.address)
+  })()
+  return initialization
 }
 
 const nextPowerNotice = computed(() =>
@@ -167,21 +230,8 @@ function getOfficialCardClass(utilityType: UtilityType): string {
 }
 
 export function useOutageData() {
-  onMounted(async () => {
-    if (events.value.length > 0) return
-    // 預設查詢地址取自使用者最新存檔的租約；沒有租約或讀取失敗就用預設值。
-    // listStoredContracts 只選明文欄位，不會因為解密問題失敗。
-    if (!addressFromContractLoaded) {
-      addressFromContractLoaded = true
-      try {
-        const stored = await listStoredContracts()
-        const address = stored.find((contract) => contract.address?.trim())?.address?.trim()
-        if (address) rentalAddress.value = address
-      } catch {
-        // 未登入或網路錯誤：沿用預設地址
-      }
-    }
-    fetchOutages()
+  onMounted(() => {
+    void initialize()
   })
 
   return {
@@ -202,6 +252,8 @@ export function useOutageData() {
     powerOfficialUrl,
     reminderLeadTime,
     rentalAddress,
+    addressSource,
+    addressError,
     syncRoommates,
     updateAddress,
     waterNotif,

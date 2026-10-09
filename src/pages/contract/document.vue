@@ -17,9 +17,13 @@ import {
   documentValuesFromRental,
   type ContractDocument,
 } from '@/src/utils/contract-document'
-import { readStoredContract } from '@/src/services/contractApi'
+import { readStoredContract, encryptContractPdf } from '@/src/services/contractApi'
+import { contractPdfPassword, createContractPdf } from '@/src/utils/contract-pdf'
 import { Button } from '@/components/ui/button/index'
-import { AlertTriangle, ArrowLeft, Loader2, Printer } from 'lucide-vue-next'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog/index'
+import { AlertTriangle, ArrowLeft, Loader2, LockKeyhole } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,8 +34,38 @@ const loadError = ref('')
 const heading = ref('契約內容（由校對欄位回拼）')
 const sourceNote = ref('')
 
-function printDocument(): void {
-  window.print()
+const tenantId = ref('')
+const exporting = ref(false)
+const exportError = ref('')
+const exportSuccess = ref(false)
+const downloadReminderOpen = ref(false)
+const passwordError = computed(() => {
+  try { contractPdfPassword(tenantId.value); return '' } catch (error) { return (error as Error).message }
+})
+
+async function downloadEncryptedPdf(): Promise<void> {
+  if (!document_.value || exporting.value || passwordError.value) return
+  downloadReminderOpen.value = false
+  exporting.value = true
+  exportError.value = ''
+  exportSuccess.value = false
+  try {
+    const password = contractPdfPassword(tenantId.value)
+    const pdf = await createContractPdf(document_.value, heading.value, sourceNote.value)
+    const encrypted = await encryptContractPdf(pdf, password)
+    const url = URL.createObjectURL(encrypted)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'RentMate_住宅租賃契約書_加密.pdf'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    exportSuccess.value = true
+  } catch (error) {
+    exportError.value = error instanceof Error && error.name !== 'TimeoutError'
+      ? error.message : '加密等待逾時，尚未下載檔案，請稍後再試。'
+  } finally { exporting.value = false }
 }
 
 const rentalId = computed(() => {
@@ -48,7 +82,9 @@ onMounted(async () => {
         '這個工作階段沒有校對結果。契約內容不會被存成全文，請回到契約辨識重新上傳，或從已存檔的終版契約開啟。'
       return
     }
-    document_.value = buildContractDocument(documentValuesFromFieldReviews(ocrResult.fieldReviews))
+    const values = documentValuesFromFieldReviews(ocrResult.fieldReviews)
+    tenantId.value = values.tenant_id || ''
+    document_.value = buildContractDocument(values)
     sourceNote.value = `來源：本次校對結果（${ocrResult.fileName || '未命名檔案'}），未存入資料庫`
     return
   }
@@ -56,7 +92,9 @@ onMounted(async () => {
   loading.value = true
   try {
     const stored = await readStoredContract(rentalId.value)
-    document_.value = buildContractDocument(documentValuesFromRental(stored.rental))
+    const values = documentValuesFromRental(stored.rental)
+    tenantId.value = values.tenant_id || ''
+    document_.value = buildContractDocument(values)
     heading.value = stored.contract_tag
       ? `契約內容：${stored.contract_tag}`
       : `契約內容（租約 #${stored.rental_id}）`
@@ -83,12 +121,37 @@ onMounted(async () => {
         v-if="document_"
         variant="outline"
         size="sm"
-        @click="printDocument"
+        :disabled="exporting || Boolean(passwordError)"
+        @click="downloadReminderOpen = true"
       >
-        <Printer :size="15" data-icon="inline-start" />
-        列印／存成 PDF
+        <Loader2 v-if="exporting" :size="15" class="animate-spin" data-icon="inline-start" />
+        <LockKeyhole v-else :size="15" data-icon="inline-start" />
+        {{ exporting ? '正在產生加密 PDF…' : '下載租賃契約 PDF' }}
       </Button>
     </header>
+
+    <Dialog v-model:open="downloadReminderOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>租賃契約 PDF 密碼提醒</DialogTitle>
+          <DialogDescription>
+            開啟密碼為租客的完整身分證字號，英文字母請輸入大寫。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" @click="downloadReminderOpen = false">取消</Button>
+          <Button :disabled="exporting || Boolean(passwordError)" @click="downloadEncryptedPdf">
+            我知道了，下載 PDF
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <div v-if="document_ && (passwordError || exportSuccess)" class="doc-export-note" role="status">
+      <template v-if="passwordError">{{ passwordError }} <button type="button" @click="router.back()">返回核對資料</button></template>
+      <template v-else>已下載加密 PDF。</template>
+    </div>
+    <p v-if="exportError" class="doc-error" role="alert">{{ exportError }}</p>
 
     <p v-if="loading" class="doc-status">
       <Loader2 :size="16" class="animate-spin" />

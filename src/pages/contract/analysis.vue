@@ -10,10 +10,12 @@ import { useRouter } from 'vue-router'
 // 與 authApi.ts 相同的 API 位址來源：開發模式讀 VITE_API_BASE_URL，正式環境走同源 /api
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 import { loadContractOcrResult, saveContractOcrResult } from '@/src/utils/contract-ocr'
+import { contractAnalysisKey, readContractAnalysis, writeContractAnalysis } from '@/src/utils/contract-analysis-cache'
 import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'
-import { buildContractAssessments, gateRemoteAssessments, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
+import { buildContractAssessments, gateRemoteAssessments, reconcileAssessments, isPendingAssessment, summarizeAssessments, assessmentLabels, type ContractAssessment } from '@/src/utils/contract-risk'
 import { contractSectionLabel, explainContractRisk } from '@/src/utils/contract-risk-explanation'
 import RiskExplanation from './RiskExplanation.vue'
+import AnalysisWaiting from './AnalysisWaiting.vue'
 import { Button } from '@/components/ui/button/index'
 import {
   AlertTriangle,
@@ -253,10 +255,10 @@ const risks = ref<RiskItem[]>(buildRisks())
 const reviewId = ocrResult?.reviewSessionId || ''
 const { records, files: reviewFiles, reports: savedReports, offline, offlineMessage, pendingSync, syncError, loading: reviewLoading, loadReview, saveRecord } = useContractReview(reviewId)
 const severityFilter = ref<string | null>(null)
-const activeRisks = computed(() => risks.value.filter(risk => !isDismissed(risk, records.value)))
+const activeRisks = computed(() => reconcileAssessments(risks.value).filter(risk => !isDismissed(risk, records.value)))
 const filteredRisks = computed(() => activeRisks.value.filter(risk => activeRiskTab.value === 'risk'
   ? risk.status === 'confirmed' && (!severityFilter.value || risk.severity === severityFilter.value)
-  : activeRiskTab.value === 'pending' ? !['confirmed', 'not_applicable'].includes(risk.status)
+  : activeRiskTab.value === 'pending' ? isPendingAssessment(risk)
   : risk.status === 'not_applicable'))
 const assessmentSummary = computed(() => summarizeAssessments(activeRisks.value))
 const processDialog = ref<HTMLDialogElement | null>(null)
@@ -378,7 +380,7 @@ const mediumRiskCount = computed(() => assessmentSummary.value.medium)
 const lowRiskCount = computed(() => assessmentSummary.value.low)
 const riskTabs = computed(() => [
   { id: 'risk' as const, label: '風險提醒', count: assessmentSummary.value.total },
-  { id: 'pending' as const, label: '待確認', count: activeRisks.value.filter(r => !['confirmed', 'not_applicable'].includes(r.status)).length },
+  { id: 'pending' as const, label: '待確認', count: assessmentSummary.value.pending },
   { id: 'history' as const, label: '處理紀錄', count: records.value.length + activeRisks.value.filter(r => r.status === 'not_applicable').length },
 ])
 /*
@@ -390,24 +392,61 @@ const riskTabs = computed(() => [
  */
 type AiAnalysisState = 'loading' | 'ok' | 'failed'
 const aiAnalysisState = ref<AiAnalysisState>('loading')
+const analysisError = ref('')
+let analysisController: AbortController | null = null
 
-async function loadBackendRagAndAiAnalysis() {
+function stopAnalysis() {
+  analysisController?.abort()
+  analysisController = null
+}
+
+function returnToEditor() {
+  stopAnalysis()
+  void router.push('/app/contract/editor')
+}
+
+function applyRemoteAnalysis(ragRisks: unknown[], aiRisks: unknown[]) {
+  risks.value = [...buildRisks(), ...gateRemoteAssessments(ragRisks, 'rag', pages.value), ...gateRemoteAssessments(aiRisks, 'ai', pages.value)]
+  aiAnalysisState.value = 'ok'
+}
+
+async function loadBackendRagAndAiAnalysis(force = false) {
+  if (analysisController) return
   if (!ocrResult?.text) {
+    analysisError.value = '找不到契約文字，請返回校對或重新上傳。'
     aiAnalysisState.value = 'failed'
     return
   }
 
   aiAnalysisState.value = 'loading'
+  analysisError.value = ''
+  const controller = new AbortController()
+  analysisController = controller
+  const timeout = setTimeout(() => controller.abort(), 240_000)
+  let cacheKey = ''
   try {
+    const requestBody = JSON.stringify({
+      ocr_text: ocrResult.text,
+      page_texts: ocrResult.pageTexts ?? [ocrResult.text],
+      field_reviews: ocrResult.fieldReviews ?? {},
+    })
+    cacheKey = await contractAnalysisKey(ocrResult.reviewSessionId || '', requestBody)
+    if (analysisController !== controller) return
+    const cached = force ? null : readContractAnalysis(cacheKey)
+    if (cached) {
+      if (cached.state === 'ok') applyRemoteAnalysis(cached.ragRisks, cached.aiRisks)
+      else {
+        analysisError.value = cached.message
+        aiAnalysisState.value = 'failed'
+      }
+      return
+    }
     const response = await fetch(`${API_BASE_URL}/contract/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({
-        ocr_text: ocrResult.text,
-        page_texts: ocrResult.pageTexts ?? [ocrResult.text],
-        field_reviews: ocrResult.fieldReviews ?? {}
-      })
+      signal: controller.signal,
+      body: requestBody,
     })
 
     if (response.status === 401) {
@@ -416,21 +455,28 @@ async function loadBackendRagAndAiAnalysis() {
       return
     }
     if (!response.ok) {
-      aiAnalysisState.value = 'failed'
-      return
+      throw new Error('AI 分析服務暫時無法完成請求，請稍後重試。')
     }
     const data = await response.json()
+    if (analysisController !== controller) return
     if (!data || !Array.isArray(data.rag_risks) || !Array.isArray(data.ai_risks)) {
       throw new Error('分析回應格式不完整')
     }
 
     // 取得後端真正的 RAG 與 AI 風險，並與本機 field 風險疊加
-    const localFieldRisks = buildRisks()
-    risks.value = [...localFieldRisks, ...gateRemoteAssessments(data.rag_risks, 'rag', pages.value), ...gateRemoteAssessments(data.ai_risks, 'ai', pages.value)]
-    aiAnalysisState.value = 'ok'
+    writeContractAnalysis(cacheKey, { state: 'ok', ragRisks: data.rag_risks, aiRisks: data.ai_risks })
+    applyRemoteAnalysis(data.rag_risks, data.ai_risks)
   } catch (error) {
+    if (analysisController !== controller) return
+    analysisError.value = controller.signal.aborted
+      ? '分析等待時間較長，已停止本次等待。您可以重新分析，或先檢視本機規則檢查結果。'
+      : 'AI 分析暫時未完成。您的校對內容仍然保留，可以稍後重新分析。'
     console.error('後端 API 呼叫失敗，維持本機檢核結果:', error)
     aiAnalysisState.value = 'failed'
+    if (cacheKey) writeContractAnalysis(cacheKey, { state: 'failed', message: analysisError.value })
+  } finally {
+    clearTimeout(timeout)
+    if (analysisController === controller) analysisController = null
   }
 }
 
@@ -585,6 +631,7 @@ function beginChatDrag(event: PointerEvent): void {
 
 onBeforeUnmount(() => {
   endChatDrag()
+  stopAnalysis()
 })
 
 onMounted(() => {
@@ -592,9 +639,6 @@ onMounted(() => {
   void loadBackendRagAndAiAnalysis()
 })
 
-onBeforeUnmount(() => {
-  endChatDrag()
-})
 async function fetchAiChatResponse(
   userMessage: string,
   activeRisk: RiskItem | undefined
@@ -677,7 +721,7 @@ async function exportAnalysisReport(saveToSpace = false): Promise<void> {
     )
     const report = await generateContractReportPdf({
       fileName: ocrResult?.fileName || '租屋契約.pdf',
-      risks: risks.value.map(risk => isDismissed(risk, records.value) ? { ...risk, status: 'not_applicable' as const, severity: null, description: '使用者確認不適用；原規則證據保留供追溯。' } : risk),
+      risks: reconcileAssessments(risks.value).map(risk => isDismissed(risk, records.value) ? { ...risk, status: 'not_applicable' as const, severity: null, description: '使用者確認不適用；原規則證據保留供追溯。' } : risk),
       handlingRecords: records.value.map(record => ({ ...record, outcome: reconcileRecord(record, risks.value) })),
       fieldValues,
       privacyMode: saveToSpace ? false : exportPrivacyMode.value,
@@ -720,7 +764,9 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
 </script>
 
 <template>
-  <main class="contract-analysis-page">
+  <Transition name="analysis-reveal" mode="out-in">
+  <AnalysisWaiting v-if="aiAnalysisState === 'loading'" :page-count="pageCount" @back="returnToEditor" />
+  <main v-else class="contract-analysis-page">
     <header class="analysis-page-header">
       <div>
         <button type="button" class="analysis-back-link" @click="router.push('/app/contract/editor')">
@@ -747,6 +793,12 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
         </Button>
       </div>
     </header>
+
+    <div v-if="aiAnalysisState === 'failed'" class="analysis-wait-error" role="alert">
+      <AlertTriangle :size="20" aria-hidden="true" />
+      <p>{{ analysisError }}<br><small>以下為本機規則檢查，並非完整 AI 分析結果。</small></p>
+      <Button v-if="ocrResult?.text" variant="outline" @click="loadBackendRagAndAiAnalysis(true)">重新分析</Button>
+    </div>
 
     <div
       v-if="exportDialogOpen"
@@ -833,7 +885,7 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
           <p v-else>目前規則未確認高風險；待確認與未完成分析不代表沒有問題。</p>
           <p>{{ assessmentSummary.pending }} 項待確認，不計入風險數量。</p>
         </div>
-        <span class="analysis-status-pill" :class="{ 'is-incomplete': aiAnalysisState !== 'ok' }"><CheckCircle2 :size="15" /> 欄位檢查完成／{{ aiAnalysisState === 'ok' ? 'AI 候選分析完成' : aiAnalysisState === 'loading' ? 'AI 分析中' : 'AI 分析未完成' }}</span>
+        <span class="analysis-status-pill" :class="{ 'is-incomplete': aiAnalysisState !== 'ok' }"><CheckCircle2 :size="15" /> 欄位檢查完成／{{ aiAnalysisState === 'ok' ? 'AI 候選分析完成' : 'AI 分析未完成' }}</span>
       </div>
       <div class="analysis-stats">
         <button type="button" class="is-high" :aria-pressed="activeRiskTab === 'risk' && severityFilter === 'high'" @click="filterSeverity('high')"><span>HIGH · 高風險</span><strong>{{ highRiskCount }}</strong><small>{{ aiAnalysisState === 'ok' ? '規則確認項目' : '完整統計尚未完成' }}</small></button>
@@ -1218,11 +1270,20 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
 
 
   </main>
+  </Transition>
 </template>
 
 <style scoped src="./analysis.css"></style>
 
 <style scoped>
+@reference "../../index.css";
+.analysis-reveal-enter-active, .analysis-reveal-leave-active { transition: opacity .25s ease, transform .25s ease; }
+.analysis-reveal-enter-from, .analysis-reveal-leave-to { opacity: 0; transform: translateY(6px); }
+.analysis-wait-error { @apply mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900; }
+.analysis-wait-error p { @apply min-w-0 flex-1; }
+.analysis-wait-error small { @apply text-xs; }
+@media (prefers-reduced-motion: reduce) { .analysis-reveal-enter-active, .analysis-reveal-leave-active { transition: none; } }
+
 .analysis-export-dialog { max-height: 90vh; overflow-y: auto; }
 .analysis-export-actions { flex-wrap: wrap; }
 .saved-reports { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2ddef; }
@@ -1233,4 +1294,5 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
 .saved-reports small { display: block; margin-top: 0.25rem; color: var(--ink-soft); }
 .saved-reports a, .saved-reports button { flex-shrink: 0; color: #74509f; }
 .saved-reports button:disabled { opacity: 0.5; }
+
 </style>

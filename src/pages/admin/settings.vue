@@ -691,7 +691,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   />
                   <p v-if="passwordError" class="text-sm text-destructive">{{ passwordError }}</p>
                   <p class="text-xs text-muted-foreground">
-                    只影響之後註冊的人。系統目前沒有修改密碼的功能，已經註冊的人不會被要求改。
+                    適用於註冊、重設與修改密碼。既有帳號不會被強制要求變更密碼。
                   </p>
                 </div>
                 <div class="space-y-2">

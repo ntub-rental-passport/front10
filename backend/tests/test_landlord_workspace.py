@@ -104,6 +104,32 @@ class LandlordWorkspaceTests(unittest.TestCase):
 
     # ---------------- 租約狀態 ----------------
 
+    def test_electricity_record_persists_and_rejects_duplicates_and_foreign_leases(self):
+        month = TODAY.strftime('%Y-%m')
+        rows = self.ok(self.call('GET', f'/api/landlord/finance/electricity?month={month}'))
+        self.assertEqual(rows[0]['previous'], '')
+        self.assertTrue(rows[0]['initial'])
+        payload = {'property_id': 1, 'month': month, 'due_date': TODAY.isoformat(), 'rows': [
+            {'lease_id': 1, 'entry': {'method': 'meter', 'previous': 0, 'current': 120, 'rate': 5, 'recorded_on': TODAY.isoformat()}}]}
+        self.assertEqual(self.call('POST', '/api/landlord/finance/electricity', user=OUTSIDER, json=payload).status_code, 404)
+        self.ok(self.call('POST', '/api/landlord/finance/electricity', json=payload), 201)
+        self.assertEqual(self.call('POST', '/api/landlord/finance/electricity', json=payload).status_code, 409)
+        rows = self.ok(self.call('GET', f'/api/landlord/finance/electricity?month={month}'))
+        self.assertEqual(rows[0]['amount'], 600)
+        self.assertEqual(rows[0]['saved']['current'], '120')
+        next_month = landlord_finance._add_months(TODAY.replace(day=1), 1).strftime('%Y-%m')
+        rows = self.ok(self.call('GET', f'/api/landlord/finance/electricity?month={next_month}'))
+        self.assertEqual(rows[0]['previous'], '120')
+
+    def test_landlord_absorbed_bill_creates_no_receivable(self):
+        payload = {'property_id': 1, 'month': TODAY.strftime('%Y-%m'), 'due_date': TODAY.isoformat(), 'rows': [
+            {'lease_id': 1, 'entry': {'method': 'amount', 'payer': 'landlord_absorb', 'recorded_on': TODAY.isoformat()}}]}
+        self.ok(self.call('POST', '/api/landlord/finance/electricity', json=payload), 201)
+        with self.Session() as db:
+            charge = db.query(LandlordCharge).filter_by(kind='electricity').one()
+            self.assertEqual(charge.amount, 0)
+            self.assertIn('房東負擔', charge.title)
+
     def test_future_lease_does_not_mark_room_rented(self):
         self.ok(self.add_tenant(), 201)
         rooms = {room['number']: room for room in self.ok(self.call('GET', '/api/landlord/properties'))['items'][0]['rooms']}

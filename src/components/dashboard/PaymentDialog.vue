@@ -84,7 +84,7 @@ function statusLabel(status: CycleStatus): string {
               <p class="text-sm font-semibold text-slate-900">應繳日 {{ formatDate(targetCycle.cycle.dueDate) }}</p>
               <p class="mt-1 text-xs text-slate-500">
                 {{ targetCycle.totalAmount == null
-                  ? `目前已知 ${formatCurrency(targetCycle.partialAmount)}，水電待匯入`
+                  ? `目前已知 ${formatCurrency(targetCycle.partialAmount)}，水電待填寫`
                   : `應繳金額 ${formatCurrency(targetCycle.totalAmount)}` }}
               </p>
             </div>

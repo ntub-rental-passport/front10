@@ -31,6 +31,7 @@ const report: ReviewFile = {
   reportId: 'RM-123', createdAt: '2026-10-08T00:00:00Z', url: `/api/contract/reviews/${id}/files/8`,
 }
 type AnalysisState = {
+  aiAnalysisState: Ref<'loading' | 'ok' | 'failed'>
   exportDialogOpen: Ref<boolean>
   exportPrivacyMode: Ref<boolean>
   exportError: Ref<string>
@@ -53,6 +54,9 @@ async function render(history = false) {
       state.exportDialogOpen.value = true
       if (history) state.activeRiskTab.value = 'history'
       await state.loadReview()
+      // 分析頁預設渲染等待畫面（aiAnalysisState 初值是 loading），報告區要等
+      // 分析回來才掛上去。這幾個案例測的是報告區的行為，所以直接進入完成狀態。
+      state.aiAnalysisState.value = 'ok'
       return result
     },
   }

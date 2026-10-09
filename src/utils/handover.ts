@@ -1,12 +1,13 @@
-import type {
-  EvidencePhase,
-  HandoverEvidence,
-  HandoverItem,
-} from '@/src/composables/useHandover'
+import type { EvidencePhase, HandoverEvidence, HandoverItem } from '@/src/composables/useHandover'
 
 export interface GroupedHandoverItems {
   room: string
   items: HandoverItem[]
+}
+
+/** 入住存證的照片張數（不含已移至歷程的）。至少一張就算這個項目已存證。 */
+export function baselinePhotoCount(item: HandoverItem): number {
+  return item.evidences.filter((e) => e.phase === 'baseline').length
 }
 
 export function createMockEvidenceUrl(seed: string): string {
@@ -19,7 +20,7 @@ export function hasEvidenceInPhase(item: HandoverItem, phase: EvidencePhase): bo
 
 export function firstEvidenceOfPhase(
   item: HandoverItem,
-  phase: EvidencePhase
+  phase: EvidencePhase,
 ): HandoverEvidence | null {
   return item.evidences.find((evidence) => evidence.phase === phase) ?? null
 }
@@ -39,7 +40,7 @@ export function groupItemsByRoom(items: HandoverItem[]): GroupedHandoverItems[] 
 
   return Array.from(groups.entries())
     .sort(([, leftItems], [, rightItems]) =>
-      leftItems[0].createdAt.localeCompare(rightItems[0].createdAt)
+      leftItems[0].createdAt.localeCompare(rightItems[0].createdAt),
     )
     .map(([room, roomItems]) => ({ room, items: roomItems }))
 }
@@ -48,8 +49,8 @@ export function formatHandoverTimestamp(iso: string): string {
   const date = new Date(iso)
 
   return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(
-    date.getDate()
+    date.getDate(),
   ).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes()
+    date.getMinutes(),
   ).padStart(2, '0')}`
 }

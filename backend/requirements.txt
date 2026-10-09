@@ -14,3 +14,4 @@ httpx
 openai
 Pillow
 cryptography
+pypdf[crypto]>=6.12.2,<7

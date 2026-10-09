@@ -116,8 +116,13 @@ describe('局部否定、更正及數值來源', () => {
     expect(confirmed(['房屋稅與地價稅由出租人負擔，管理費由承租人負擔。'])).toEqual([])
     expect(assess(['每月租金：18000元。押金：54000元，其中包含首月租金18000元。']).find((r) => r.ruleId === 'deposit-limit')?.status).toBe('recognition_pending')
   })
-  it('押金月數與金額互相矛盾，不強行選一個數值判高風險', () => {
+  it('明確超額金額仍列風險，並揭露月數與金額不一致', () => {
     const items = assess(['每月租金：新臺幣18,000元。押金：二個月租金，共新臺幣54,000元。'])
+    expect(items.find((r) => r.ruleId === 'deposit-limit')).toMatchObject({ status: 'confirmed', severity: 'high' })
+    expect(items.find((r) => r.ruleId === 'deposit-limit')?.description).toContain('與金額不一致')
+  })
+  it('只有月數超標、金額未超標時，仍需確認矛盾約定', () => {
+    const items = assess(['每月租金：新臺幣18,000元。押金：三個月租金，共新臺幣36,000元。'])
     expect(items.find((r) => r.ruleId === 'deposit-limit')).toMatchObject({ status: 'recognition_pending', severity: null })
   })
 })

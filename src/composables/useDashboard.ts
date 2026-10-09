@@ -11,7 +11,9 @@ import {
   recordBillPayment,
   reportLandlordPayment,
   undoBillPayment,
+  saveBillUtilities,
 } from '@/src/services/dashboardApi'
+import type { UtilityDetails } from '@/src/utils/utility-billing'
 import {
   accentStyles,
   defenseReminder,
@@ -115,6 +117,38 @@ export function useDashboard() {
   const paymentTargetCycleId = ref<string | null>(null)
   const confirmDialogOpen = ref(false)
   const confirmTargetCycleId = ref<string | null>(null)
+  const utilityDialogOpen = ref(false)
+  const utilityTargetCycleId = ref<string | null>(null)
+  const utilitySaving = ref(false)
+  const utilityError = ref('')
+  const utilityTargetCycle = computed(() => findCycleViewById(contractViews.value, utilityTargetCycleId.value))
+
+  function openUtilityDialog(cycleId: string) {
+    const location = findCycleLocation(contracts.value, cycleId)
+    if (!location) return
+    const contract = contracts.value[location[0]]
+    if (contract.source === 'landlord') return
+    utilityError.value = ''
+    utilityTargetCycleId.value = cycleId
+    utilityDialogOpen.value = true
+  }
+
+  async function submitUtilities(payload: UtilityDetails) {
+    if (utilitySaving.value || !utilityTargetCycleId.value) return
+    const location = findCycleLocation(contracts.value, utilityTargetCycleId.value)
+    if (!location) return
+    const cycle = contracts.value[location[0]].cycles[location[1]]
+    utilitySaving.value = true
+    utilityError.value = ''
+    try {
+      Object.assign(cycle, await saveBillUtilities(cycle.id, payload))
+      utilityDialogOpen.value = false
+    } catch (error) {
+      utilityError.value = error instanceof Error ? error.message : '儲存水電費失敗，請稍後重試。'
+    } finally {
+      utilitySaving.value = false
+    }
+  }
 
   const contractViews = computed<ContractView[]>(() =>
     contracts.value.map((contract) => {
@@ -193,7 +227,7 @@ export function useDashboard() {
   const reminderAmountLine = computed(() => {
     if (!activeCurrentCycle.value) return '本租約目前已全數繳清。'
     if (activeCurrentCycle.value.totalAmount == null) {
-      return `目前已知金額：${formatCurrency(activeCurrentCycle.value.cycle.rentAmount)}，水電待匯入`
+      return `目前已知金額：${formatCurrency(activeCurrentCycle.value.partialAmount)}，水電待填寫`
     }
     return `應繳金額：${formatCurrency(activeCurrentCycle.value.totalAmount)}`
   })
@@ -342,11 +376,11 @@ export function useDashboard() {
     if (status === 'paid') return '已繳費'
     if (status === 'current') return '處理中'
     if (status === 'overdue') return '已逾期'
-    return '待匯入'
+    return '未到期'
   }
 
   function totalAmountLabel(cycle: CycleView): string {
-    return cycle.totalAmount == null ? '待匯入' : formatCurrency(cycle.totalAmount)
+    return cycle.totalAmount == null ? '待填寫' : formatCurrency(cycle.totalAmount)
   }
 
   function leaseTermLabel(months: number): string {
@@ -364,6 +398,12 @@ export function useDashboard() {
   }
 
   return {
+    utilityDialogOpen,
+    utilityTargetCycle,
+    utilitySaving,
+    utilityError,
+    openUtilityDialog,
+    submitUtilities,
     accentStyles,
     actionError,
     activeContractView,

@@ -27,6 +27,8 @@ import {
 } from '@/src/composables/useLandlordFinance'
 import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import type { PaymentMethod } from '@/src/services/landlordWorkspaceApi'
+import ElectricityRecords from '@/src/components/landlord/ElectricityRecords.vue'
+const financeSection = ref<'finance' | 'electricity'>('finance')
 
 const {
   month,
@@ -47,6 +49,7 @@ const {
   reversePayment,
   markPaymentReminded,
   addUtilityCharge,
+  refresh,
   addExpense: saveExpense,
 } = useLandlordFinance()
 const { activeTenants } = useLandlordWorkspace()
@@ -241,6 +244,13 @@ function exportReport(): void {
       <div class="flex flex-wrap gap-2"><label class="btn secondary month-picker"><CalendarDays />{{ monthLabel }}<input type="month" :value="month" aria-label="選擇月份" @change="changeMonth" /></label><button class="btn secondary" @click="exportReport"><Download />匯出報表</button><button class="btn secondary" :disabled="!leaseOptions.length" @click="openUtility"><Droplets />新增水電費</button><button class="btn primary" @click="expenseOpen = true"><Plus />新增支出</button></div>
     </header>
 
+    <nav class="flex gap-2" aria-label="帳務分頁">
+      <button class="btn secondary" :aria-pressed="financeSection === 'finance'" @click="financeSection = 'finance'">收支總覽</button>
+      <button class="btn secondary" :aria-pressed="financeSection === 'electricity'" @click="financeSection = 'electricity'">電費記錄</button>
+    </nav>
+    <ElectricityRecords v-if="financeSection === 'electricity'" @saved="refresh" />
+    <div v-show="financeSection === 'finance'" class="space-y-5">
+
     <p v-if="loadError" class="load-error"><AlertTriangle />{{ loadError }}</p>
     <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6" :aria-busy="loading">
       <article class="metric neutral"><span>應收總額</span><strong>{{ money(total) }}</strong><small>{{ monthLabel }}到期帳款</small><i><ReceiptText /></i></article>
@@ -301,6 +311,7 @@ function exportReport(): void {
       <div v-if="expenseOpen" class="backdrop" @click.self="expenseOpen = false"><form class="dialog" @submit.prevent="addExpense"><header><div><p>保存房務支出與憑證</p><h2>新增支出</h2></div><button type="button" class="close" @click="expenseOpen = false"><X /></button></header><div class="grid gap-4 p-5 sm:grid-cols-2"><label class="field sm:col-span-2">支出項目<input v-model="expenseForm.title" required placeholder="例如：冷氣清洗" /></label><label class="field">分類<select v-model="expenseForm.category"><option>維修</option><option>管理費</option><option>網路</option><option>保險</option><option>其他</option></select></label><label class="field">金額<input v-model.number="expenseForm.amount" required min="1" type="number" /></label><label class="field">付款日期<input v-model="expenseForm.date" required type="date" /></label><label class="field">備註<input v-model="expenseForm.note" maxlength="200" placeholder="例如：發票號碼" /></label></div><footer><button type="button" class="btn secondary" @click="expenseOpen = false">取消</button><button class="btn primary" :disabled="busy">儲存支出</button></footer></form></div>
       <div v-if="utilityOpen" class="backdrop" @click.self="utilityOpen = false"><form class="dialog" @submit.prevent="saveUtility"><header><div><p>依帳單金額向租客收取</p><h2>新增水電費</h2></div><button type="button" class="close" @click="utilityOpen = false"><X /></button></header><div class="grid gap-4 p-5 sm:grid-cols-2"><label class="field sm:col-span-2">租客／房間<select v-model.number="utilityForm.leaseId" required><option v-for="tenant in leaseOptions" :key="tenant.lease_id!" :value="tenant.lease_id">{{ tenant.property_name }} {{ tenant.room_number }}・{{ tenant.name }}</option></select></label><label class="field">費用類別<select v-model="utilityForm.kind"><option value="electricity">電費</option><option value="water">水費</option><option value="other">其他費用</option></select></label><label class="field">金額<input v-model.number="utilityForm.amount" required min="1" type="number" /></label><label class="field sm:col-span-2">項目名稱<input v-model="utilityForm.title" maxlength="100" placeholder="例如：9-10 月電費（120 度）" /></label><label class="field">計費起日<input v-model="utilityForm.periodStart" type="date" /></label><label class="field">計費迄日<input v-model="utilityForm.periodEnd" type="date" :min="utilityForm.periodStart" /></label><label class="field">繳費期限<input v-model="utilityForm.dueDate" required type="date" /></label></div><footer><button type="button" class="btn secondary" @click="utilityOpen = false">取消</button><button class="btn primary" :disabled="busy">建立帳款</button></footer></form></div>
     </Teleport>
+    </div>
   </div>
 </template>
 

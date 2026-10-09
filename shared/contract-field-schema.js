@@ -291,7 +291,7 @@ export const CONTRACT_FIELD_DEFINITIONS = [
     'expenses',
     '電費計費方式',
     ['電費', '用電度數', '平均電價'],
-    'expense',
+    'text',
   ),
   field(
     'electricity_rate',

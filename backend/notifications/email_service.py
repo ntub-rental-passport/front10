@@ -68,6 +68,30 @@ def send_verification_email(recipient: str, code: str, expires_minutes: int = 2)
     _send(message, config)
 
 
+def send_password_reset_code(recipient: str, code: str, expires_minutes: int = 10) -> None:
+    config = _smtp_config()
+    message = EmailMessage()
+    message['Subject'] = 'RentMate 重設密碼驗證碼'
+    message['From'] = f"{config['from_name']} <{config['from_email']}>"
+    message['To'] = recipient
+    message.set_content(
+        f'您的 RentMate 重設密碼驗證碼：{code}\n\n'
+        f'有效時間 {expires_minutes} 分鐘，請回到 RentMate 輸入驗證碼並設定新密碼。\n'
+        '此變更適用於同一帳號的租客與房東身分。請勿將驗證碼交給任何人。\n'
+        '若不是您本人提出申請，請忽略這封信；您的密碼不會因此變更。'
+    )
+    message.add_alternative(
+        '<html><body style="font-family:Arial,sans-serif;color:#111827;line-height:1.8">'
+        '<h2>RentMate 重設密碼</h2><p>請在 RentMate 的重設密碼頁面輸入：</p>'
+        f'<p style="font-size:32px;font-weight:700;letter-spacing:8px">{code}</p>'
+        f'<p>驗證碼將在 {expires_minutes} 分鐘後失效，請勿提供給其他人。</p>'
+        '<p>同一帳號的租客與房東身分共用此密碼。</p>'
+        '<p>若不是您本人提出申請，請忽略這封信；您的密碼不會因此變更。</p>'
+        '</body></html>', subtype='html',
+    )
+    _send(message, config)
+
+
 def send_admin_login_code(
     recipient: str,
     code: str,

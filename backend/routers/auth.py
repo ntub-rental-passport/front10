@@ -367,7 +367,6 @@ def login_with_email(
 
     if password_hasher.check_needs_rehash(user.password_hash):
         user.password_hash = password_hasher.hash(payload.password)
-        user.password_changed_at = datetime.utcnow()
         db.commit()
 
     _reject_if_suspended(user)
@@ -965,7 +964,7 @@ def get_me(
         displayName=user.display_name,
         avatarUrl=getattr(user, "avatar_url", None),
         # 沿用 cookie 的到期時間：重新整理不該把登入期限延長一輪
-        accessToken=create_access_token(user.id, current.role, expires_at=current.exp, sid=current.sid),
+        accessToken=create_access_token(user.id, current.role, expires_at=current.exp, sid=current.sid, issued_at=current.issued_at),
     )
 
 
@@ -1005,7 +1004,7 @@ def update_profile(
         role=current.role,
         displayName=user.display_name,
         avatarUrl=getattr(user, "avatar_url", None),
-        accessToken=create_access_token(user.id, current.role),
+        accessToken=create_access_token(user.id, current.role, expires_at=current.exp, issued_at=current.issued_at),
     )
 
 

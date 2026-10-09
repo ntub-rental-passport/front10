@@ -99,6 +99,22 @@ class PendingRegistration(Base):
     created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
     updated_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
+class PasswordResetChallenge(Base):
+    __tablename__ = 'password_reset_challenges'
+    id = Column(CHAR(36), primary_key=True)
+    email = Column(String(254), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=True)
+    code_hash = Column(CHAR(64), nullable=False)
+    credential_hash = Column(CHAR(64), nullable=False)
+    expires_at = Column(Timestamp, nullable=False)
+    resend_available_at = Column(Timestamp, nullable=False)
+    window_started_at = Column(Timestamp, nullable=False, index=True)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    send_count = Column(Integer, nullable=False, default=0)
+    request_ip = Column(String(45), nullable=False, index=True)
+    consumed = Column(Boolean, nullable=False, default=False)
+
+
 class PendingAdminLogin(Base):
     __tablename__ = 'pending_admin_logins'
     __table_args__ = (Index('ix_pending_admin_logins_email', 'email'), Index('ix_pending_admin_logins_expires_at', 'expires_at'),)
@@ -248,6 +264,7 @@ class Bill(Base):
     rent_amount = Column(Integer, nullable=False)
     electricity_amount = Column(Integer, nullable=True)
     water_amount = Column(Integer, nullable=True)
+    utility_details = Column(JSON, nullable=True)
     paid_at = Column(Timestamp, nullable=True)
     payment_method = Column(Enum('bank-transfer','cash','line-pay','other', validate_strings=True, create_constraint=True), nullable=True)
     payment_note = Column(Text, nullable=True)
@@ -292,6 +309,16 @@ class InspectionRecord(Base):
     captured_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
 
     rental = relationship("Rental", back_populates="inspection_records")
+
+class InspectionPhotoDetail(Base):
+    __tablename__ = 'inspection_photo_details'
+    record_id = Column(Integer, ForeignKey('inspection_records.id', ondelete='CASCADE'), primary_key=True)
+    item_id = Column(Integer, ForeignKey('inspection_items.id', ondelete='CASCADE'), nullable=False, index=True)
+    angle = Column(String(20), nullable=False, default='other')
+    provenance = Column(JSON, nullable=False, default=dict)
+    superseded_by = Column(Integer, nullable=True)
+    removed_at = Column(Timestamp, nullable=True)
+
 
 class MessageBoard(Base):
     __tablename__ = 'message_boards'
@@ -458,6 +485,7 @@ class LandlordCharge(Base):
     period_end = Column(Date, nullable=False)
     due_date = Column(Date, nullable=False)
     amount = Column(Integer, nullable=False)
+    utility_details = Column(JSON, nullable=True)
     voided_at = Column(Timestamp, nullable=True)
     void_reason = Column(Text, nullable=True)
     created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)

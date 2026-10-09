@@ -23,6 +23,8 @@ import {
 
 import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
 import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
+import UtilityDialog from '@/src/components/dashboard/UtilityDialog.vue'
+import { utilityPayerLabel } from '@/src/utils/utility-billing'
 import { useDashboard } from '@/src/composables/useDashboard'
 import { paymentMethodLabel } from '@/src/utils/dashboard-contract'
 import {
@@ -70,6 +72,12 @@ const overflowAnnouncementCount = computed(() =>
 const { isPathUnderMaintenance } = useFeatureGate()
 
 const {
+  utilityDialogOpen,
+  utilityTargetCycle,
+  utilitySaving,
+  utilityError,
+  openUtilityDialog,
+  submitUtilities,
   accentStyles,
   actionError,
   activeContractView,
@@ -197,7 +205,7 @@ const {
             </div>
             <p class="mt-0.5 text-xs text-slate-500">已繳期數 / 全部期數</p>
             <p v-if="globalStats.pendingUtilityCount > 0" class="text-xs text-slate-500">
-              另有 {{ globalStats.pendingUtilityCount }} 期水電資料待匯入
+              另有 {{ globalStats.pendingUtilityCount }} 期水電資料待填寫
             </p>
           </div>
           <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
@@ -532,8 +540,15 @@ const {
                     </td>
                     <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatDate(cycleItem.cycle.dueDate) }}</td>
                     <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatCurrency(cycleItem.cycle.rentAmount) }}</td>
-                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatOptionalAmount(cycleItem.cycle.electricityAmount) }}</td>
-                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">{{ formatOptionalAmount(cycleItem.cycle.waterAmount) }}</td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">
+                      {{ formatOptionalAmount(cycleItem.cycle.electricityAmount) }}
+                      <p v-if="utilityPayerLabel(cycleItem.cycle.utilityDetails?.electricity.payer)" class="text-[11px] font-normal text-slate-500">{{ utilityPayerLabel(cycleItem.cycle.utilityDetails?.electricity.payer) }}</p>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-3 align-middle font-medium">
+                      {{ formatOptionalAmount(cycleItem.cycle.waterAmount) }}
+                      <p v-if="utilityPayerLabel(cycleItem.cycle.utilityDetails?.water.payer)" class="text-[11px] font-normal text-slate-500">{{ utilityPayerLabel(cycleItem.cycle.utilityDetails?.water.payer) }}</p>
+                      <p v-if="cycleItem.cycle.utilityDetails?.water.method === 'no_bill'" class="text-[11px] font-normal text-slate-500">本期不出帳</p>
+                    </td>
                     <td class="whitespace-nowrap px-3 py-3 text-right align-middle">
                       <p :class="['text-sm font-bold tracking-tight', cycleItem.status === 'paid' ? 'text-emerald-700' : 'text-slate-900']">
                         {{ totalAmountLabel(cycleItem) }}
@@ -543,6 +558,13 @@ const {
                       </p>
                     </td>
                     <td class="px-3 py-3 text-right align-middle">
+                      <Button
+                        v-if="activeContractView.source !== 'landlord'"
+                        size="sm"
+                        variant="outline"
+                        class="m-1 h-7 rounded-lg px-2.5 text-[11px]"
+                        @click.stop="openUtilityDialog(cycleItem.cycle.id)"
+                      >{{ cycleItem.cycle.paidAt ? '水電明細' : cycleItem.utilityReady ? '編輯水電' : '填寫水電' }}</Button>
                       <Button
                         v-if="!cycleItem.cycle.paidAt && cycleItem.status !== 'upcoming'"
                         size="sm"
@@ -565,7 +587,7 @@ const {
                         <RotateCcw class="mr-1 h-3 w-3" aria-hidden="true" />
                         撤銷已繳
                       </Button>
-                      <span v-else class="text-[11px] font-medium text-slate-400">待匯入</span>
+                      <span v-else-if="activeContractView.source === 'landlord'" class="text-[11px] font-medium text-slate-400">待房東更新</span>
                     </td>
                   </tr>
 
@@ -772,6 +794,14 @@ const {
     </section>
 
     <!-- ── Dialogs ────────────────────────────────────────────────────────────── -->
+    <UtilityDialog
+      :open="utilityDialogOpen"
+      :target-cycle="utilityTargetCycle"
+      :saving="utilitySaving"
+      :error="utilityError"
+      @update:open="utilityDialogOpen = $event"
+      @save="submitUtilities"
+    />
     <PaymentDialog
       :open="paymentDialogOpen"
       :target-cycle="paymentTargetCycle"

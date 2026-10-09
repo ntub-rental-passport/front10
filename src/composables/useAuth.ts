@@ -1,3 +1,4 @@
+import { clearContractAnalysis } from '@/src/utils/contract-analysis-cache'
 import {
   fetchCurrentUser,
   loginWithEmail,
@@ -335,6 +336,7 @@ export async function syncSessionWithServer(): Promise<AuthSession | null> {
 }
 
 export function signOut(): void {
+  clearContractAnalysis()
   if (!canUseStorage()) return
   window.localStorage.removeItem(AUTH_STORAGE_KEY)
   // HttpOnly cookie 前端刪不掉，必須請後端清除（fire-and-forget，不阻塞 UI）

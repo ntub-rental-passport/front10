@@ -39,6 +39,9 @@ const router = createRouter({
       component: () => import('@/src/pages/auth/register.vue'),
     },
     { path: '/staff-login', component: () => import('@/src/pages/auth/staff-login.vue') },
+    { path: '/forgot-password', component: () => import('@/src/pages/auth/password.vue') },
+    { path: '/change-password', component: () => import('@/src/pages/auth/password.vue'),
+      meta: { requiresAuth: true, roles: ['tenant', 'landlord'] as AuthRole[] } },
     { path: '/verify-email', component: () => import('@/src/pages/auth/verify-code.vue') },
     {
       path: '/welcome',

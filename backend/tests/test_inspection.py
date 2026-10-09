@@ -270,8 +270,9 @@ class InspectionTests(unittest.TestCase):
         replaced = self.upload(item['id'])
         self.assertIsNone(replaced['diff'])
         self.assertEqual(len(replaced['evidences']), 2)
+        self.assertEqual(len(replaced['history']), 1)
         with self.Session() as db:
-            self.assertEqual(db.query(InspectionRecord).count(), 2)
+            self.assertEqual(db.query(InspectionRecord).count(), 3)
         self.assertEqual(self.request('DELETE', f"/items/{item['id']}").status_code, 204)
         with self.Session() as db:
             self.assertEqual(db.query(InspectionRecord).count(), 0)
@@ -291,6 +292,112 @@ class InspectionTests(unittest.TestCase):
             ('POST', '/analyze', {'item_id': int(item['id']), 'record_id': int(record['id'])}),
         ]:
             self.assertEqual(self.request(method, path, user=2, json=payload).status_code, 404)
+
+    def test_multi_photo_original_integrity_notes_and_history(self):
+        import hashlib
+        from db.models import InspectionPhotoDetail
+        item = self.item()
+        for angle in ('front', 'side', 'detail'):
+            item = self.upload(item['id'], append=True, angle=angle, original_name='original.png')
+        self.assertEqual(len(item['evidences']), 3)
+        first = item['evidences'][0]
+        raw = base64.b64decode(self.photo.split(',')[1])
+        self.assertEqual(first['originalSha256'], hashlib.sha256(raw).hexdigest())
+        self.assertIsNone(first['photoTakenAt'])
+        self.assertEqual(first['propertySnapshot']['address'], 'Test address')
+        path = f"/items/{item['id']}/photos/{first['id']}"
+        self.assertEqual(self.request('GET', path + '/original').content, raw)
+        self.assertEqual(self.request('GET', path + '/original', user=2).status_code, 404)
+        self.assertEqual(self.request('PATCH', path + '/note', user=2, json={'note': 'no'}).status_code, 404)
+        updated = self.request('PATCH', path + '/note', json={'note': 'new description'}).json()
+        self.assertEqual(updated['evidences'][0]['descriptionHistory'][0]['previous'], 'note')
+        replaced = self.upload(item['id'], append=True, angle='front', replaces_id=int(first['id']))
+        self.assertEqual(len(replaced['evidences']), 3)
+        self.assertEqual(replaced['history'][0]['id'], first['id'])
+        self.assertEqual(self.request('GET', path + '/original').content, raw)
+        newest = max(replaced['evidences'], key=lambda e: int(e['id']))
+        self.assertEqual(newest['replacesId'], first['id'])
+        archived = self.request('DELETE', f"/items/{item['id']}/photos/{newest['id']}").json()
+        self.assertEqual(len(archived['evidences']), 2)
+        self.assertEqual(len(archived['history']), 2)
+        self.assertEqual(len(self.request('GET', '/items?rental_id=1').json()[0]['evidences']), 2)
+        with self.Session() as db:
+            detail = db.get(InspectionPhotoDetail, int(first['id']))
+            (inspection.photo_directory() / detail.provenance['originalPath']).write_bytes(b'tampered')
+        self.assertEqual(self.request('GET', path + '/original').status_code, 409)
+
+    def test_each_baseline_photo_is_compared_with_its_own_checkout_photo(self):
+        item = self.item()
+        for _ in range(3):
+            item = self.upload(item['id'], append=True)
+        baselines = [e['id'] for e in item['evidences'] if e['phase'] == 'baseline']
+        self.assertFalse(item['checkoutComplete'])
+        # 只補拍前兩張的退租照
+        for baseline_id in baselines[:2]:
+            item = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(baseline_id))
+        self.assertEqual([p['checkoutId'] is not None for p in item['pairs']], [True, True, False])
+        self.assertFalse(item['checkoutComplete'])
+        results = iter([
+            {'type': 'unchanged', 'confidence': 0.9, 'summary': '沒有差異'},
+            {'type': 'new_damage', 'confidence': 0.8, 'summary': '右下角新刮痕'},
+        ])
+        with patch.object(inspection, 'vision_result', side_effect=lambda *args, **kwargs: next(results)):
+            compared = self.request('POST', f"/items/{item['id']}/compare").json()
+        self.assertEqual(compared['diff']['type'], 'new_damage')
+        self.assertEqual([p['type'] for p in compared['diff']['pairs']], ['unchanged', 'new_damage'])
+        self.assertEqual(compared['diff']['pending'], [baselines[2]])
+        self.assertIn('第 2 組：右下角新刮痕', compared['diff']['summary'])
+        checkout = next(e for e in compared['evidences'] if e['phase'] == 'checkout' and e['pairsWith'] == baselines[1])
+        self.assertEqual(checkout['comparison']['type'], 'new_damage')
+        # 補拍第三張，才算完成
+        done = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(baselines[2]))
+        self.assertTrue(done['checkoutComplete'])
+        self.assertIsNone(done['diff'])  # 照片變了，舊的比對作廢
+
+    def test_retaking_a_checkout_photo_replaces_only_its_pair(self):
+        item = self.item()
+        item = self.upload(item['id'], append=True)
+        item = self.upload(item['id'], append=True)
+        first, second = [e['id'] for e in item['evidences'] if e['phase'] == 'baseline']
+        item = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(first))
+        item = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(second))
+        old = next(p['checkoutId'] for p in item['pairs'] if p['baselineId'] == first)
+        item = self.upload(item['id'], phase='checkout', append=True, pairs_with=int(first))
+        pairs = {p['baselineId']: p['checkoutId'] for p in item['pairs']}
+        self.assertNotEqual(pairs[first], old)
+        self.assertIsNotNone(pairs[second])
+        self.assertIn(old, [h['id'] for h in item['history']])
+        # 不能把退租照配到別的項目的入住照片
+        other = self.item()
+        response = self.request('PUT', f"/items/{other['id']}/photos/checkout",
+                                json={'image_data': self.photo, 'pairs_with': int(first)})
+        self.assertEqual(response.status_code, 409)
+
+    def test_retake_rejects_other_item_and_preserves_photos(self):
+        first = self.upload(self.item()['id'], append=True)
+        second = self.item()
+        response = self.request('PUT', f"/items/{second['id']}/photos/baseline", json={
+            'image_data': self.photo, 'append': True, 'replaces_id': int(first['evidences'][0]['id'])})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(len(self.request('GET', '/items?rental_id=1').json()[0]['evidences']), 1)
+
+    def test_legacy_photo_survives_idempotent_provenance_migration(self):
+        from db.models import InspectionPhotoDetail
+        from migrations.create_inspection_photo_details import upgrade as upgrade_photos
+        item = self.upload(self.item()['id'])
+        record_id = item['evidences'][0]['id']
+        InspectionPhotoDetail.__table__.drop(self.engine)
+        upgrade_photos(self.engine)
+        upgrade_photos(self.engine)
+        legacy = self.request('GET', '/items?rental_id=1').json()[0]['evidences'][0]
+        self.assertFalse(legacy['originalAvailable'])
+        self.assertEqual(legacy['angle'], 'other')
+        path = f"/items/{item['id']}/photos/{record_id}"
+        self.assertEqual(self.request('GET', path + '/original').status_code, 404)
+        result = self.request('PATCH', path + '/note', json={'note': 'note', 'angle': 'front'}).json()
+        self.assertEqual(result['evidences'][0]['angle'], 'front')
+        self.assertFalse(result['evidences'][0]['originalAvailable'])
+        self.assertEqual(result['evidences'][0]['angleHistory'][0]['previous'], 'other')
 
     def test_ai_failure_preserves_photo_and_can_retry(self):
         item = self.upload(self.item()['id'])
