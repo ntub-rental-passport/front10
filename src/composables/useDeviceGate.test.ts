@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDeviceGate, type GateWindow } from './useDeviceGate'
+import {
+  LANDLORD_DESKTOP_MIN_WIDTH,
+  shouldBlockLandlordSurface,
+  shouldBlockTenantSurface,
+  TENANT_DESKTOP_MIN_WIDTH,
+} from '@/src/utils/device-policy'
 
 function fakeWindow(coarse: boolean, width: number) {
   const pointerListeners = new Set<() => void>()
@@ -73,4 +79,33 @@ describe('createDeviceGate', () => {
     gate.stop()
     vi.unstubAllGlobals()
   })
+
+  it.each([
+    {
+      surface: 'landlord',
+      minWidth: LANDLORD_DESKTOP_MIN_WIDTH,
+      shouldBlock: shouldBlockLandlordSurface,
+    },
+    { surface: 'tenant', minWidth: TENANT_DESKTOP_MIN_WIDTH, shouldBlock: shouldBlockTenantSurface },
+  ])(
+    'uses the $surface policy on initial evaluation, resize and pointer changes',
+    ({ minWidth, shouldBlock }) => {
+      const browser = fakeWindow(true, minWidth - 1)
+      const gate = createDeviceGate(browser.win, shouldBlock)
+      expect(gate.blocked.value).toBe(true)
+      browser.resizeTo(minWidth)
+      expect(gate.blocked.value).toBe(false)
+      browser.resizeTo(minWidth - 1)
+      expect(gate.blocked.value).toBe(true)
+      browser.setCoarse(false)
+      expect(gate.blocked.value).toBe(false)
+      expect(gate.fieldCapture.value).toBe(false)
+      expect(gate.coarsePointer.value).toBe(false)
+      browser.setCoarse(true)
+      expect(gate.blocked.value).toBe(true)
+      expect(gate.fieldCapture.value).toBe(true)
+      gate.stop()
+      expect(browser.listenerCount()).toBe(0)
+    },
+  )
 })

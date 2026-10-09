@@ -3,8 +3,12 @@ import {
   cameraUnavailableReason,
   DESKTOP_MIN_WIDTH,
   isDesktopEnvironment,
+  LANDLORD_DESKTOP_MIN_WIDTH,
   shouldBlockAdminSurface,
+  shouldBlockLandlordSurface,
+  shouldBlockTenantSurface,
   supportsFieldCapture,
+  TENANT_DESKTOP_MIN_WIDTH,
 } from './device-policy'
 
 describe('device policy', () => {
@@ -23,6 +27,51 @@ describe('device policy', () => {
   it('offers live capture on touch devices at any width', () => {
     expect(supportsFieldCapture({ coarsePointer: true, viewportWidth: 1366 })).toBe(true)
     expect(supportsFieldCapture({ coarsePointer: false, viewportWidth: 390 })).toBe(false)
+  })
+})
+
+describe.each([
+  { surface: 'admin', minWidth: DESKTOP_MIN_WIDTH, shouldBlock: shouldBlockAdminSurface },
+  {
+    surface: 'landlord',
+    minWidth: LANDLORD_DESKTOP_MIN_WIDTH,
+    shouldBlock: shouldBlockLandlordSurface,
+  },
+  { surface: 'tenant', minWidth: TENANT_DESKTOP_MIN_WIDTH, shouldBlock: shouldBlockTenantSurface },
+])('$surface device policy', ({ minWidth, shouldBlock }) => {
+  it.each([
+    { coarsePointer: true, wide: false, blocked: true },
+    { coarsePointer: true, wide: true, blocked: false },
+    { coarsePointer: false, wide: false, blocked: false },
+    { coarsePointer: false, wide: true, blocked: false },
+  ])('handles coarsePointer=$coarsePointer and wide=$wide', ({ coarsePointer, wide, blocked }) => {
+    expect(shouldBlock({ coarsePointer, viewportWidth: wide ? minWidth : minWidth - 1 })).toBe(blocked)
+  })
+
+  it.each([0, 1, 390])('allows a fine pointer even at %ipx', (viewportWidth) => {
+    expect(shouldBlock({ coarsePointer: false, viewportWidth })).toBe(false)
+  })
+})
+
+describe('surface thresholds', () => {
+  it('aligns landlord and tenant thresholds with their navigation breakpoints', () => {
+    expect(LANDLORD_DESKTOP_MIN_WIDTH).toBe(1024)
+    expect(TENANT_DESKTOP_MIN_WIDTH).toBe(640)
+  })
+
+  it('allows a 1024px touch device for landlord and tenant but blocks admin', () => {
+    const snapshot = { coarsePointer: true, viewportWidth: 1024 }
+    expect(shouldBlockLandlordSurface(snapshot)).toBe(false)
+    expect(shouldBlockTenantSurface(snapshot)).toBe(false)
+    expect(shouldBlockAdminSurface(snapshot)).toBe(true)
+  })
+
+  it('accepts a custom inclusive desktop threshold while preserving the admin default', () => {
+    const snapshot = { coarsePointer: true, viewportWidth: 640 }
+    expect(isDesktopEnvironment(snapshot)).toBe(false)
+    expect(isDesktopEnvironment(snapshot, 640)).toBe(true)
+    expect(isDesktopEnvironment({ ...snapshot, viewportWidth: 639 }, 640)).toBe(false)
+    expect(isDesktopEnvironment({ coarsePointer: false, viewportWidth: 0 }, 640)).toBe(true)
   })
 })
 
