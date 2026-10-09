@@ -5,17 +5,14 @@
  * 這頁同時負責：
  *   1. 操作：新增點交項目、拍攝搬入照、重拍、刪除
  *   2. 彙整：依房間自動分組、搜尋、篩選
- *   3. 匯出：兩種格式二選一
+ *   3. 匯出：下載兩種格式的 PDF
  *      - 條列清單：每項一行，含勾選框與空白備註欄，列印帶去現場用
  *      - 完整證據包：每項含縮圖、AI 信心、時間、備註，作為退租依據存檔
- *
- * 匯出機制：把對應的 print-only 區塊用 v-if 渲染後呼叫 window.print()，
- * 瀏覽器列印對話框可以選擇實體列印或「另存 PDF」，兩種需求一次滿足。
  */
 import SmartCaptureCamera, {
   type CapturePayload,
 } from '@/src/components/handover/SmartCaptureCamera.vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Camera,
@@ -30,6 +27,8 @@ import {
   Search,
   FileDown,
   FileText,
+  ChevronDown,
+  Filter,
   X,
 } from 'lucide-vue-next'
 
@@ -58,6 +57,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog/index'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input/index'
 import { Label } from '@/components/ui/label/index'
 
@@ -68,6 +73,13 @@ import {
   groupItemsByRoom,
   hasEvidenceInPhase,
 } from '@/src/utils/handover'
+import {
+  generateHandoverChecklistPdf,
+  generateHandoverBaselinePdf,
+  downloadHandoverPdf,
+} from '@/src/utils/handover-pdf'
+import { handoverPdfFileName } from '@/src/utils/handover-export'
+
 // ---------- AR 相機彈窗狀態 ---------- //
 const showCameraDialog = ref(false)
 const activeTargetItem = ref<HandoverItem | null>(null)
@@ -233,13 +245,10 @@ const filteredItems = computed(() => {
   })
 })
 
-// ---------- 依房間分組（用於主畫面 + 完整匯出） ---------- //
+// ---------- 依房間分組 ---------- //
 
 type Grouped = { room: string; items: HandoverItem[] }
 const groupedByRoom = computed<Grouped[]>(() => groupItemsByRoom(filteredItems.value))
-
-/** 條列清單匯出：用「所有項目」而不是 filteredItems，避免使用者忘記重置篩選 */
-const allGroupedByRoom = computed<Grouped[]>(() => groupItemsByRoom(itemsOfCurrentProperty.value))
 
 // ---------- 統計 ---------- //
 
@@ -254,29 +263,26 @@ const stats = computed(() => {
 
 // ---------- 匯出（雙格式）---------- //
 
-type PrintMode = 'checklist' | 'full' | null
-const printMode = ref<PrintMode>(null)
+const exporting = ref<'checklist' | 'baseline' | null>(null)
+const exportError = ref('')
 
-/** 觸發瀏覽器列印對話框；user 可選實體印或「另存為 PDF」。 */
-async function triggerPrint(mode: Exclude<PrintMode, null>) {
-  printMode.value = mode
-  // 等 v-if 把對應的 print-only 區塊渲染進 DOM 後再列印
-  await nextTick()
-  window.print()
-  // window.print() 在大多數瀏覽器是同步的，但保險起見也聽 afterprint
+async function exportPdf(kind: 'checklist' | 'baseline') {
+  // 產生 PDF 期間仍可切換租屋處，檔名必須沿用這次匯出的租屋處。
+  const property = currentProperty.value
+  if (!property) return
+  exporting.value = kind
+  exportError.value = ''
+  try {
+    const bytes = kind === 'checklist'
+      ? await generateHandoverChecklistPdf(property, itemsOfCurrentProperty.value)
+      : await generateHandoverBaselinePdf(property, itemsOfCurrentProperty.value)
+    downloadHandoverPdf(bytes, handoverPdfFileName(kind, property.alias))
+  } catch (cause) {
+    exportError.value = cause instanceof Error ? cause.message : '匯出失敗，請稍後重試。'
+  } finally {
+    exporting.value = null
+  }
 }
-
-function resetPrintMode() {
-  printMode.value = null
-}
-
-// 列印結束（或使用者取消）時把畫面回復成正常檢視
-onMounted(() => {
-  window.addEventListener('afterprint', resetPrintMode)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('afterprint', resetPrintMode)
-})
 
 // ---------- 工具 ---------- //
 
@@ -302,8 +308,14 @@ function fmtDate(iso: string) {
       {{ error }}
       <Button variant="outline" size="sm" :disabled="busy" @click="reload">重新載入</Button>
     </div>
-    <!-- =================== 螢幕檢視（列印時隱藏） =================== -->
-    <div class="screen-only space-y-6">
+    <div
+      v-if="exportError"
+      role="alert"
+      class="rounded-md border border-destructive p-3 text-sm text-destructive"
+    >
+      {{ exportError }}
+    </div>
+    <div class="space-y-6">
       <!-- 麵包屑 + 標題 -->
       <div class="space-y-2">
         <Button variant="ghost" size="sm" class="-ml-2" @click="router.push('/app/handover')">
@@ -363,7 +375,7 @@ function fmtDate(iso: string) {
       </Card>
 
       <!-- 工具列：新增 / 搜尋 / 篩選 / 兩種匯出 -->
-      <div v-if="currentProperty" class="flex flex-wrap items-end gap-3 border-b pb-3">
+      <div v-if="currentProperty" class="flex flex-wrap items-center gap-3 border-b pb-3 sm:flex-nowrap">
         <Dialog v-model:open="showAddItemDialog">
           <DialogTrigger as-child>
             <Button size="sm"> <Plus class="mr-1 h-4 w-4" /> 新增點交項目 </Button>
@@ -425,24 +437,40 @@ function fmtDate(iso: string) {
           </DialogContent>
         </Dialog>
 
-        <div class="flex-1 min-w-[200px] space-y-1">
-          <Label class="text-xs">搜尋</Label>
+        <div class="order-first w-full sm:order-none sm:w-auto sm:flex-1">
           <div class="relative">
             <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input v-model="keyword" placeholder="搜尋物品、房間或備註" class="pl-8" />
           </div>
         </div>
 
-        <Button variant="outline" size="sm" @click="onlyDone = !onlyDone">
-          {{ onlyDone ? '只看已存證' : '顯示全部' }}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button size="sm" :disabled="exporting !== null">
+              {{ exporting ? '產生 PDF 中…' : '匯出' }}
+              <ChevronDown class="ml-1 h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem :disabled="exporting !== null" @select="exportPdf('checklist')">
+              <FileText class="h-4 w-4" /> 匯出條列清單
+            </DropdownMenuItem>
+            <DropdownMenuItem :disabled="exporting !== null" @select="exportPdf('baseline')">
+              <FileDown class="h-4 w-4" /> 匯出完整證據包
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        <!-- 兩種匯出：給使用者明確選擇 -->
-        <Button variant="outline" size="sm" @click="triggerPrint('checklist')">
-          <FileText class="mr-1 h-4 w-4" /> 匯出條列清單
-        </Button>
-        <Button size="sm" @click="triggerPrint('full')">
-          <FileDown class="mr-1 h-4 w-4" /> 匯出完整證據包
+        <Button
+          :variant="onlyDone ? 'default' : 'outline'"
+          size="sm"
+          :aria-pressed="onlyDone"
+          :aria-label="onlyDone
+            ? '目前只顯示已存證項目，按一下顯示全部'
+            : '目前顯示全部項目，按一下只顯示已存證項目'"
+          @click="onlyDone = !onlyDone"
+        >
+          <Filter class="h-4 w-4" />
         </Button>
       </div>
 
@@ -624,95 +652,6 @@ function fmtDate(iso: string) {
       </Card>
     </div>
 
-    <!-- =================== 匯出版面：條列清單 =================== -->
-    <!-- 平時 display:none，由 @media print 啟用顯示。內容刻意極簡，
-         一頁可塞多項，附勾選框與空白備註欄供現場手寫。 -->
-    <div v-if="printMode === 'checklist'" class="print-only print-checklist">
-      <div class="print-header">
-        <h1 class="text-2xl font-bold">入住點交條列清單</h1>
-        <div v-if="currentProperty" class="text-sm mt-1">
-          租屋處：{{ currentProperty.alias }}（{{ currentProperty.address }}）
-        </div>
-        <div class="text-xs">匯出時間：{{ fmtDate(new Date().toISOString()) }}</div>
-        <div class="text-xs mt-2 text-gray-600">
-          說明：請於點交當天逐項勾選並於備註欄記錄物品現況，回家後再對照拍攝存證。
-        </div>
-      </div>
-
-      <div v-for="group in allGroupedByRoom" :key="group.room" class="checklist-room">
-        <h2 class="checklist-room-title">{{ group.room }}</h2>
-        <table class="checklist-table">
-          <thead>
-            <tr>
-              <th style="width: 24px">☐</th>
-              <th style="width: 30%">物品</th>
-              <th>現況備註</th>
-              <th style="width: 18%">已拍攝</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="it in group.items" :key="it.id">
-              <td>☐</td>
-              <td>{{ it.name }}</td>
-              <td>&nbsp;</td>
-              <td>{{ firstBaseline(it) ? '✓' : '' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="print-signature">
-        <div>租客簽名：__________________________</div>
-        <div>房東簽名：__________________________</div>
-        <div>日期：______年______月______日</div>
-      </div>
-    </div>
-
-    <!-- =================== 匯出版面：完整證據包 =================== -->
-    <!-- 每項一個區塊，含縮圖、AI 信心、時間、備註，作為退租依據存檔。 -->
-    <div v-if="printMode === 'full'" class="print-only print-full">
-      <div class="print-header">
-        <h1 class="text-2xl font-bold">入住點交完整證據包</h1>
-        <div v-if="currentProperty" class="text-sm mt-1">
-          租屋處：{{ currentProperty.alias }}（{{ currentProperty.address }}）
-        </div>
-        <div class="text-xs">匯出時間：{{ fmtDate(new Date().toISOString()) }}</div>
-        <div class="text-xs mt-1">
-          共 {{ stats.total }} 項，其中 {{ stats.done }} 項已存證，涵蓋 {{ stats.rooms }} 個房間。
-        </div>
-      </div>
-
-      <div v-for="group in allGroupedByRoom" :key="group.room" class="full-room">
-        <h2 class="full-room-title">{{ group.room }}</h2>
-        <div class="full-items">
-          <div v-for="it in group.items" :key="it.id" class="full-item">
-            <div class="full-item-photo">
-              <img
-                v-if="firstBaseline(it)"
-                :src="firstBaseline(it)!.url"
-                :alt="it.name"
-                referrerpolicy="no-referrer"
-              />
-              <div v-else class="full-item-no-photo">（未拍攝）</div>
-            </div>
-            <div class="full-item-meta">
-              <div class="full-item-name">{{ it.name }}</div>
-              <div v-if="firstBaseline(it)" class="full-item-line">
-                拍攝時間：{{ fmtDate(firstBaseline(it)!.capturedAt) }}
-              </div>
-              <p v-if="firstBaseline(it)?.integrityNote" class="print-integrity">{{ firstBaseline(it)!.integrityNote }}</p>
-              <div v-if="firstBaseline(it)?.aiConfidence" class="full-item-line">
-                AI 清晰度：{{ ((firstBaseline(it)!.aiConfidence ?? 0) * 100).toFixed(0) }}%
-              </div>
-              <div v-if="firstBaseline(it)?.note" class="full-item-note">
-                備註：{{ firstBaseline(it)!.note }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- AR 智慧相機彈窗 -->
     <SmartCaptureCamera
       v-if="activeTargetItem"
@@ -724,129 +663,3 @@ function fmtDate(iso: string) {
     />
   </div>
 </template>
-
-<style scoped>
-/* ---------- 預設：螢幕顯示時，print-only 區塊隱藏 ---------- */
-.print-only {
-  display: none;
-}
-
-/* ---------- 列印 ---------- */
-@media print {
-  /* 列印時：原本的螢幕內容隱藏，只留 print-only */
-  :deep(.screen-only) {
-    display: none !important;
-  }
-  .screen-only {
-    display: none !important;
-  }
-  .print-only {
-    display: block !important;
-  }
-
-  /* 統一字級與邊距，避免瀏覽器預設過大 */
-  .print-header {
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #999;
-  }
-  .print-integrity {
-    font-size: 10pt;
-    color: #444;
-    margin-top: 2pt;
-  }
-}
-
-/* ---------- 條列清單版面 ---------- */
-.print-checklist .checklist-room {
-  margin-top: 1rem;
-  page-break-inside: avoid;
-}
-.print-checklist .checklist-room-title {
-  font-size: 1rem;
-  font-weight: 700;
-  margin-bottom: 0.25rem;
-  background: #f0f0f0;
-  padding: 0.25rem 0.5rem;
-}
-.print-checklist .checklist-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-.print-checklist .checklist-table th,
-.print-checklist .checklist-table td {
-  border: 1px solid #999;
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-}
-.print-checklist .checklist-table th {
-  background: #fafafa;
-  font-weight: 600;
-}
-.print-signature {
-  margin-top: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  font-size: 0.9rem;
-  page-break-inside: avoid;
-}
-
-/* ---------- 完整證據包版面 ---------- */
-.print-full .full-room {
-  margin-top: 1rem;
-  page-break-inside: avoid;
-}
-.print-full .full-room-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  border-left: 4px solid #444;
-  padding-left: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-.print-full .full-item {
-  display: flex;
-  gap: 0.75rem;
-  border: 1px solid #ccc;
-  padding: 0.5rem;
-  margin-bottom: 0.5rem;
-  page-break-inside: avoid;
-}
-.print-full .full-item-photo {
-  width: 140px;
-  height: 100px;
-  flex-shrink: 0;
-  border: 1px solid #ddd;
-  background: #f4f4f4;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.print-full .full-item-photo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.print-full .full-item-no-photo {
-  font-size: 0.8rem;
-  color: #999;
-}
-.print-full .full-item-meta {
-  flex: 1;
-  font-size: 0.85rem;
-}
-.print-full .full-item-name {
-  font-weight: 700;
-  font-size: 1rem;
-  margin-bottom: 0.25rem;
-}
-.print-full .full-item-line {
-  color: #555;
-  font-size: 0.8rem;
-}
-.print-full .full-item-note {
-  margin-top: 0.25rem;
-}
-</style>
