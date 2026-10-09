@@ -169,11 +169,15 @@ def dispatch_expiry(now=None):
                 deletion_date = min(max(file.expires_at, notice_cutoff) for file in files)
                 types = '、'.join(f'{label} {sum(file.doc_type == kind for file in files)} 份'
                                  for kind, label in DOC_TYPES.items() if any(file.doc_type == kind for file in files))
+                # 其他通知都帶 action_url，唯獨這則沒有，桌機使用者收到提醒後沒有一鍵前往的
+                # 路徑。文案特別點名「電腦」是因為 /app/subsidy 在手機上掛著擋板：這是所有
+                # 通知裡唯一會主動把使用者推向被擋頁面的一則，不先講清楚會讓人以為連結壞了。
                 notify_user(
                     db, db.get(User, user_id), category='補貼', source_label='補助文件', created_by='system',
                     title='補助文件將於 14 天後刪除',
                     body=f'你有 {len(files)} 份補助文件（{types}）即將到期，'
-                         f'最早將於 {deletion_date.date().isoformat()} 刪除。請在到期前下載以保留副本。',
+                         f'最早將於 {deletion_date.date().isoformat()} 刪除。請在到期前於電腦上登入下載以保留副本。',
+                    action_url='/app/subsidy', action_label='前往補助文件',
                 )
                 for file in files:
                     file.expiry_notified_at = now
