@@ -1,6 +1,7 @@
 import { PDFDocument } from 'pdf-lib'
-import type { HandoverItem, HandoverProperty } from '../composables/useHandover'
+import type { HandoverEvidence, HandoverItem, HandoverProperty } from '../composables/useHandover'
 import {
+  checkoutPairConclusion,
   firstEvidenceOfPhase,
   formatHandoverTimestamp,
   groupItemsByRoom,
@@ -33,10 +34,11 @@ export async function createHandoverPdf(
     ctx.font = `20px ${font}`
     ctx.fillStyle = '#666666'
     ctx.fillText(`RentMate · ${pdf.getPageCount() + 1}`, 550, 1700)
+    // 證據包每頁都是照片，無損 PNG 每頁 2–3MB、三十頁近 90MB，手機難以上傳或儲存；JPEG 約 12MB。
     const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PDF 產生失敗。'))), 'image/png'),
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PDF 產生失敗。'))), 'image/jpeg', 0.82),
     )
-    const image = await pdf.embedPng(await blob.arrayBuffer())
+    const image = await pdf.embedJpg(await blob.arrayBuffer())
     pdf.addPage([595.28, 841.89]).drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 })
     reset()
   }
@@ -175,10 +177,11 @@ async function createEvidencePack(
     box(left, 1650, width, 1, colors.line)
     write('RentMate  /  入住點交紀錄', left, 1675, 19, false, colors.muted)
     write(`第 ${pdf.getPageCount() + 1} 頁`, 1060, 1675, 19, false, colors.muted)
+    // 證據包每頁都是照片，無損 PNG 每頁 2–3MB、三十頁近 90MB，手機難以上傳或儲存；JPEG 約 12MB。
     const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PDF 產生失敗。'))), 'image/png'),
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PDF 產生失敗。'))), 'image/jpeg', 0.82),
     )
-    const image = await pdf.embedPng(await blob.arrayBuffer())
+    const image = await pdf.embedJpg(await blob.arrayBuffer())
     pdf.addPage([595.28, 841.89]).drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 })
     reset(false)
   }
@@ -379,5 +382,258 @@ async function createEvidencePack(
     y += 10
   }
   await save()
+  return pdf.save()
+}
+
+export async function createCheckoutPdf(
+  property: HandoverProperty,
+  items: HandoverItem[],
+): Promise<Uint8Array> {
+  await document.fonts.ready
+  const pdf = await PDFDocument.create()
+  // 每頁重用同一張畫布，避免手機同時保留多份 A4 backing store 耗盡記憶體。
+  const canvas = document.createElement('canvas')
+  canvas.width = 1240
+  canvas.height = 1754
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('瀏覽器無法產生 PDF。')
+  const colors = {
+    primary: '#4d43ad',
+    ink: '#232139',
+    muted: '#706d85',
+    line: '#dedbea',
+    pale: '#f3f1fa',
+    white: '#ffffff',
+  }
+  const primary = getComputedStyle(document.documentElement)
+    .getPropertyValue('--primary-surface')
+    .trim()
+  if (primary && CSS.supports('color', primary)) colors.primary = primary
+  const font = '"Microsoft JhengHei", "PingFang TC", sans-serif'
+  const left = 72,
+    width = 1096
+  let y = 0
+  const write = (
+    text: string,
+    x: number,
+    top: number,
+    size = 22,
+    bold = false,
+    color = colors.ink,
+  ) => {
+    ctx.font = `${bold ? 'bold ' : ''}${size}px ${font}`
+    ctx.textBaseline = 'top'
+    ctx.fillStyle = color
+    ctx.fillText(text, x, top)
+  }
+  const box = (x: number, top: number, w: number, h: number, fill: string, border = false) => {
+    ctx.fillStyle = fill
+    ctx.fillRect(x, top, w, h)
+    if (border) {
+      ctx.strokeStyle = colors.line
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(x, top, w, h)
+    }
+  }
+  const wrap = (value: string, maxWidth: number, size = 22, bold = false) => {
+    ctx.font = `${bold ? 'bold ' : ''}${size}px ${font}`
+    const lines: string[] = []
+    for (const paragraph of value.split('\n')) {
+      let line = ''
+      for (const char of paragraph) {
+        if (ctx.measureText(line + char).width > maxWidth && line) {
+          lines.push(line)
+          line = ''
+        }
+        line += char
+      }
+      lines.push(line)
+    }
+    return lines
+  }
+  const textBlock = (
+    value: string,
+    x: number,
+    top: number,
+    w: number,
+    h: number,
+    size = 22,
+    bold = false,
+    color = colors.ink,
+  ) => {
+    let lines = wrap(value, w, size, bold)
+    // 每組必須留在同一頁；長結論縮字而不截斷，避免遺漏影響舉證的說明。
+    while (lines.length * size * 1.5 > h) {
+      size *= 0.9
+      lines = wrap(value, w, size, bold)
+    }
+    lines.forEach((line, i) => write(line, x, top + i * size * 1.5, size, bold, color))
+  }
+  const reset = (first: boolean) => {
+    box(0, 0, 1240, 1754, colors.white)
+    box(0, 0, 1240, 12, colors.primary)
+    write('RentMate', left, 48, 32, true, colors.primary)
+    write('退租點交證據包', first ? left : 770, first ? 108 : 54, first ? 40 : 27, true)
+    y = first ? 180 : 112
+  }
+  const savePage = async () => {
+    box(left, 1650, width, 1, colors.line)
+    write('RentMate  /  退租點交紀錄', left, 1675, 19, false, colors.muted)
+    write(`第 ${pdf.getPageCount() + 1} 頁`, 1060, 1675, 19, false, colors.muted)
+    // 證據包每頁都是照片，PNG 三十頁近 90MB，手機難以上傳或儲存；JPEG 同頁數約 12MB。
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PDF 產生失敗。'))), 'image/jpeg', 0.82),
+    )
+    const image = await pdf.embedJpg(await blob.arrayBuffer())
+    pdf.addPage([595.28, 841.89]).drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 })
+    reset(false)
+  }
+  const ensure = async (height: number) => {
+    if (y + height > 1620) await savePage()
+  }
+  const roomHeading = (room: string, count: number) => {
+    box(left, y, width, 70, colors.pale)
+    box(left, y, 5, 70, colors.primary)
+    textBlock(room, left + 20, y + 12, width - 150, 48, 26, true, colors.primary)
+    write(`${count} 項`, left + width - 80, y + 22, 21, false, colors.muted)
+    y += 86
+  }
+  const photoWidth = (width - 24) / 2
+  const drawPhoto = async (
+    evidence: HandoverEvidence | null,
+    label: string,
+    x: number,
+    top: number,
+    itemName: string,
+    placeholder: string,
+  ) => {
+    write(label, x, top, 26, true, colors.primary)
+    box(x, top + 44, photoWidth, 590, colors.white, true)
+    if (evidence) {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        const timer = setTimeout(
+          () => reject(new Error(`「${itemName}」${label}照片讀取逾時，請稍後重試。`)),
+          20000,
+        )
+        img.crossOrigin = 'anonymous'
+        img.referrerPolicy = 'no-referrer'
+        img.onload = () => {
+          clearTimeout(timer)
+          resolve(img)
+        }
+        img.onerror = () => {
+          clearTimeout(timer)
+          reject(new Error(`無法讀取「${itemName}」${label}照片，請重新載入後再匯出。`))
+        }
+        img.src = evidence.url
+      })
+      const scale = Math.min((photoWidth - 32) / image.naturalWidth, 558 / image.naturalHeight)
+      const w = image.naturalWidth * scale,
+        h = image.naturalHeight * scale
+      ctx.drawImage(image, x + (photoWidth - w) / 2, top + 44 + (590 - h) / 2, w, h)
+      const timestamp = evidence.photoTakenAt
+        ? `${formatHandoverTimestamp(evidence.photoTakenAt)}（裝置回報）`
+        : formatHandoverTimestamp(evidence.capturedAt)
+      textBlock(
+        `拍攝時間：${timestamp}${evidence.evidenceNumber ? `\n存證編號：${evidence.evidenceNumber}` : ''}`,
+        x,
+        top + 654,
+        photoWidth,
+        120,
+        21,
+        false,
+        colors.muted,
+      )
+    } else {
+      textBlock(placeholder, x + 32, top + 300, photoWidth - 64, 90, 24, false, colors.muted)
+    }
+  }
+
+  const includedItems = items.filter((item) => baselinePhotoCount(item) > 0)
+  const groups = groupItemsByRoom(includedItems)
+  const pairCount = includedItems.reduce((count, item) => count + (item.pairs?.length ?? 0), 0)
+  const comparedCount = includedItems.reduce(
+    (count, item) => count + (item.pairs ?? []).filter(
+      (pair) => checkoutPairConclusion(item, pair).status === 'compared',
+    ).length,
+    0,
+  )
+  reset(true)
+  box(left, y, width, 180, colors.pale, true)
+  write('租屋處', left + 22, y + 22, 21, true, colors.muted)
+  textBlock(`${property.alias}（${property.address}）`, left + 130, y + 22, width - 155, 100)
+  write(
+    `匯出時間  ${formatHandoverTimestamp(new Date().toISOString())}`,
+    left + 22,
+    y + 136,
+    20,
+    false,
+    colors.muted,
+  )
+  y += 196
+  const summaries = [
+    `點交項目  ${includedItems.length} 項`,
+    `配對總組數  ${pairCount} 組`,
+    `已完成比對  ${comparedCount} 組`,
+    `退租照已拍齊  ${includedItems.filter((item) => item.checkoutComplete).length} 項`,
+  ]
+  summaries.forEach((value, i) => {
+    const w = (width - 12) / 2
+    const x = left + (i % 2) * (w + 12)
+    const top = y + Math.floor(i / 2) * 74
+    box(x, top, w, 58, colors.white, true)
+    write(value, x + 20, top + 17, 23, true, colors.primary)
+  })
+  y += 180
+  textBlock('每組入住與退租照片各佔一頁；未拍攝、尚未比對與比對失敗均保留於證據包。', left, y, width, 90)
+  y += 110
+  for (const group of groups) {
+    for (const item of group.items) {
+      const pairs = item.pairs?.length ? item.pairs : [null]
+      for (const [index, pair] of pairs.entries()) {
+        await ensure(1500)
+        const pageTop = y
+        roomHeading(group.room, group.items.length)
+        textBlock(item.name, left, y, width - 220, 90, 32, true)
+        if (pairs.length > 1) {
+          write(`第 ${index + 1}／${pairs.length} 組`, left + width - 200, y + 6, 23, true, colors.primary)
+        }
+        y += 106
+        const baseline = pair
+          ? item.evidences.find((e) => e.id === pair.baselineId) ?? null
+          : firstEvidenceOfPhase(item, 'baseline')
+        const checkout = pair
+          ? item.evidences.find((e) => e.id === pair.checkoutId) ?? null
+          : null
+        await drawPhoto(baseline, '搬入', left, y, item.name, '照片紀錄不存在')
+        await drawPhoto(
+          checkout,
+          '退租',
+          left + photoWidth + 24,
+          y,
+          item.name,
+          pair?.checkoutId ? '照片紀錄不存在' : '尚未拍攝',
+        )
+        y += 800
+        const conclusion = pair
+          ? checkoutPairConclusion(item, pair)
+          : { text: '沒有可比對的配對', summary: undefined }
+        const height = pageTop + 1500 - y
+        box(left, y, width, height, colors.pale, true)
+        write('比對結論', left + 22, y + 20, 25, true, colors.primary)
+        textBlock(
+          `${conclusion.text}${conclusion.summary ? `\n${conclusion.summary}` : ''}`,
+          left + 22,
+          y + 66,
+          width - 44,
+          height - 88,
+          24,
+        )
+        y = pageTop + 1500
+      }
+    }
+  }
+  await savePage()
   return pdf.save()
 }
