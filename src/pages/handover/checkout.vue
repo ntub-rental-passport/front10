@@ -4,14 +4,14 @@
  * ---------------------------------------------------------
  * 職責：
  *   1. 顯示每個點交項目的「搬入照（左、唯讀）」對照「退租照（右、可拍）」
- *   2. 提供工具列按鈕：執行自動差異比對、匯出 PDF 證據包
+ *   2. 提供工具列按鈕：執行自動差異比對、下載退租 PDF 證據包
  *   3. 在每張卡片顯示 diff 結果 Badge（狀態相同 / 使用痕跡 / 新增瑕疵）
  *
  * 不允許在這頁編輯搬入照，避免使用者退租時誤把搬入基準改掉
  * （那會讓比對失去意義）。要修搬入照請回 baseline 頁。
  */
 
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Camera,
@@ -50,6 +50,9 @@ import {
   formatHandoverTimestamp,
   hasEvidenceInPhase,
 } from '@/src/utils/handover'
+
+import { generateHandoverCheckoutPdf, downloadHandoverPdf } from '@/src/utils/handover-pdf'
+import { handoverPdfFileName } from '@/src/utils/handover-export'
 
 const router = useRouter()
 const {
@@ -193,11 +196,23 @@ async function handleRunDiff() {
   await runAutoDiff()
 }
 
-function exportPdf() {
-  window.alert(
-    `（示意）將匯出「${currentProperty.value?.alias}」之退租證據包 PDF。\n` +
-      `已比對項目：${stats.value.diffDone} / ${stats.value.total}`,
-  )
+const exporting = ref(false)
+const exportError = ref('')
+
+async function exportPdf() {
+  // 產生 PDF 期間仍可切換租屋處，檔名必須沿用這次匯出的租屋處。
+  const property = currentProperty.value
+  if (!property) return
+  exporting.value = true
+  exportError.value = ''
+  try {
+    const bytes = await generateHandoverCheckoutPdf(property, itemsOfCurrentProperty.value)
+    downloadHandoverPdf(bytes, handoverPdfFileName('checkout', property.alias))
+  } catch (cause) {
+    exportError.value = cause instanceof Error ? cause.message : '匯出失敗，請稍後重試。'
+  } finally {
+    exporting.value = false
+  }
 }
 </script>
 
@@ -214,6 +229,13 @@ function exportPdf() {
       {{ error }}
       <Button variant="outline" size="sm" :disabled="busy" @click="reload">重新載入</Button>
     </div>
+    <div
+      v-if="exportError"
+      role="alert"
+      class="rounded-md border border-destructive p-3 text-sm text-destructive"
+    >
+      {{ exportError }}
+    </div>
     <!-- 麵包屑 + 標題 -->
     <div class="space-y-2">
       <Button variant="ghost" size="sm" class="-ml-2" @click="router.push('/app/handover')">
@@ -222,7 +244,13 @@ function exportPdf() {
       <div>
         <h1 class="text-3xl font-bold tracking-tight">退租前點交與比對</h1>
         <p class="text-muted-foreground">
-          對照搬入時的存證照重新拍攝，系統自動比對差異並產出 PDF 證據包。
+          對照搬入時的存證照重新拍攝，執行自動差異比對後可下載 PDF 證據包。
+        </p>
+        <!-- HandoverDiff.type 已有 'missing'，但 runAutoDiff() 的 candidates 要求同時有
+             baseline 與 checkout evidence；不拍就永遠拿不到 missing 判定，PDF 只會有
+             一頁「本項無退租存證」。拍空位才能得到 AI 判定的遺失證據，爭押金時效力強得多。 -->
+        <p class="text-muted-foreground">
+          東西不見了也請拍下原本的位置，AI 會判定為遺失。
         </p>
       </div>
     </div>
@@ -274,8 +302,8 @@ function exportPdf() {
       <Button size="sm" @click="handleRunDiff" :disabled="busy || stats.checkoutDone === 0">
         <ArrowLeftRight class="mr-1 h-4 w-4" /> 執行自動差異比對
       </Button>
-      <Button variant="outline" size="sm" @click="exportPdf" :disabled="stats.diffDone === 0">
-        <FileDown class="mr-1 h-4 w-4" /> 匯出退租證據包
+      <Button variant="outline" size="sm" @click="exportPdf" :disabled="stats.diffDone === 0 || exporting">
+        <FileDown class="mr-1 h-4 w-4" /> {{ exporting ? '產生 PDF 中…' : '匯出退租證據包' }}
       </Button>
       <span v-if="lastDiffRunAt" class="text-xs text-muted-foreground ml-2">
         上次比對：{{ fmtDate(lastDiffRunAt) }}
