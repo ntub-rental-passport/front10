@@ -5,7 +5,7 @@
  * 職責：
  *   1. 每個點交項目的每一張搬入照，各自配一張退租照（左唯讀、右可拍），一組一組比對。
  *      每張搬入照都有對應的退租照，這個項目才算完成（2026-10-08 決定：方案 A）。
- *   2. 提供工具列按鈕：執行自動差異比對、匯出 PDF 證據包
+ *   2. 匯出每組配對各佔一頁的 PDF，保留未拍攝、未比對與比對失敗，供分階段搬遷存檔與舉證。
  *   3. 在每張卡片顯示 diff 結果 Badge（狀態相同 / 使用痕跡 / 新增瑕疵）
  *
  * 不允許在這頁編輯搬入照，避免使用者退租時誤把搬入基準改掉
@@ -42,15 +42,16 @@ import { Button } from '@/components/ui/button/index'
 import { Badge } from '@/components/ui/badge/index'
 import {
   useHandover,
-  type HandoverDiff,
   type HandoverEvidence,
   type HandoverItem,
 } from '@/src/composables/useHandover'
 import {
+  diffLabels,
   firstEvidenceOfPhase,
   formatHandoverTimestamp,
   hasEvidenceInPhase,
 } from '@/src/utils/handover'
+import { createCheckoutPdf } from '@/src/utils/handover-pdf'
 
 const router = useRouter()
 const {
@@ -187,23 +188,6 @@ function pairProgress(item: HandoverItem) {
   return { done: pairs.filter((pair) => pair.checkoutId).length, total: pairs.length }
 }
 
-const diffLabels: Record<HandoverDiff['type'], { text: string; cls: string }> = {
-  uncertain: { text: '無法判定', cls: 'bg-gray-100 text-gray-800' },
-  unchanged: {
-    text: '狀態相同',
-    cls: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
-  },
-  new_damage: {
-    text: '新增瑕疵',
-    cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100',
-  },
-  missing: { text: '物品消失', cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
-  degraded: {
-    text: '使用痕跡',
-    cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
-  },
-}
-
 function fmtDate(iso: string) {
   return formatHandoverTimestamp(iso)
 }
@@ -222,11 +206,25 @@ async function handleRunDiff() {
   await runAutoDiff()
 }
 
-function exportPdf() {
-  window.alert(
-    `（示意）將匯出「${currentProperty.value?.alias}」之退租證據包 PDF。\n` +
-      `已比對項目：${stats.value.diffDone} / ${stats.value.total}`,
-  )
+const exporting = ref(false)
+const exportError = ref('')
+async function exportPdf() {
+  if (!currentProperty.value || exporting.value || busy.value) return
+  exporting.value = true
+  exportError.value = ''
+  try {
+    const bytes = await createCheckoutPdf(currentProperty.value, itemsOfCurrentProperty.value)
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '退租點交證據包.pdf'
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (cause) {
+    exportError.value = cause instanceof Error ? cause.message : 'PDF 匯出失敗，請再試一次。'
+  } finally {
+    exporting.value = false
+  }
 }
 const desktop = useMediaQuery('(min-width: 640px)')
 </script>
@@ -244,6 +242,14 @@ const desktop = useMediaQuery('(min-width: 640px)')
       {{ error }}
       <Button variant="outline" size="sm" :disabled="busy" @click="reload">重新載入</Button>
     </div>
+    <div
+      v-if="exportError"
+      role="alert"
+      class="rounded-md border border-destructive p-3 text-sm text-destructive"
+    >
+      {{ exportError }}
+    </div>
+    <p v-if="exporting" role="status" class="text-sm text-muted-foreground">正在產生 PDF…</p>
     <HandoverOverviewHeader
       phase="checkout"
       title="退租前點交與比對"
@@ -272,12 +278,26 @@ const desktop = useMediaQuery('(min-width: 640px)')
       <Button size="sm" @click="handleRunDiff" :disabled="busy || !stats.comparable">
         <ArrowLeftRight class="mr-1 h-4 w-4" /> 執行自動差異比對
       </Button>
-      <Button variant="outline" size="sm" @click="exportPdf" :disabled="stats.diffDone === 0">
+      <Button
+        variant="outline"
+        size="sm"
+        @click="exportPdf"
+        :disabled="stats.diffDone === 0 || exporting"
+      >
         <FileDown class="mr-1 h-4 w-4" /> 匯出退租證據包
       </Button>
       <span v-if="lastDiffRunAt" class="text-xs text-muted-foreground ml-2">
         上次比對：{{ fmtDate(lastDiffRunAt) }}
       </span>
+    </div>
+
+    <div v-if="currentProperty" class="space-y-1 text-sm text-muted-foreground">
+      <p>
+        請從相同位置逐張拍攝退租照，再執行差異比對。證據包每組各佔一頁，也會保留尚未拍攝、尚未比對或比對失敗的組，可分階段匯出存檔。
+      </p>
+      <!-- missing 判定需要成對的入住照與退租照；不拍只會留下「尚未拍攝退租存證」。
+           拍下空位才能取得 AI 判定的遺失證據，爭押金時比缺少退租照更有力。 -->
+      <p>東西不見了也請拍下原本的位置，AI 會判定為遺失。</p>
     </div>
 
     <!-- 對照清單 -->
