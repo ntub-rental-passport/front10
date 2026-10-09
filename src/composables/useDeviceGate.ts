@@ -1,6 +1,8 @@
 import { onUnmounted, ref, type Ref } from 'vue'
 import {
   shouldBlockAdminSurface,
+  shouldBlockLandlordSurface,
+  shouldBlockTenantSurface,
   supportsFieldCapture,
   type DeviceSnapshot,
 } from '@/src/utils/device-policy'
@@ -39,13 +41,16 @@ export function readSnapshot(win: GateWindow | undefined): DeviceSnapshot {
  * 平板轉成橫向、或把桌機視窗拉大，都不會重新判斷。這裡監聽 resize 與指標變化，
  * 所以狀態會跟著裝置即時更新。
  */
-export function createDeviceGate(win: GateWindow | undefined): DeviceGate {
+export function createDeviceGate(
+  win: GateWindow | undefined,
+  shouldBlock: (snapshot: DeviceSnapshot) => boolean = shouldBlockAdminSurface,
+): DeviceGate {
   const blocked = ref(false)
   const fieldCapture = ref(false)
   const coarsePointer = ref(false)
   const evaluate = () => {
     const snapshot = readSnapshot(win)
-    blocked.value = shouldBlockAdminSurface(snapshot)
+    blocked.value = shouldBlock(snapshot)
     fieldCapture.value = supportsFieldCapture(snapshot)
     coarsePointer.value = snapshot.coarsePointer
   }
@@ -68,6 +73,24 @@ export function createDeviceGate(win: GateWindow | undefined): DeviceGate {
 
 export function useAdminDeviceGate(): Pick<DeviceGate, 'blocked'> {
   const gate = createDeviceGate(typeof window === 'undefined' ? undefined : window)
+  onUnmounted(gate.stop)
+  return { blocked: gate.blocked }
+}
+
+export function useLandlordDeviceGate(): Pick<DeviceGate, 'blocked'> {
+  const gate = createDeviceGate(
+    typeof window === 'undefined' ? undefined : window,
+    shouldBlockLandlordSurface,
+  )
+  onUnmounted(gate.stop)
+  return { blocked: gate.blocked }
+}
+
+export function useTenantDeviceGate(): Pick<DeviceGate, 'blocked'> {
+  const gate = createDeviceGate(
+    typeof window === 'undefined' ? undefined : window,
+    shouldBlockTenantSurface,
+  )
   onUnmounted(gate.stop)
   return { blocked: gate.blocked }
 }
