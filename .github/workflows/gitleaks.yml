@@ -1,0 +1,20 @@
+# 2026-05 曾有 GCP 服務帳號金鑰經網頁上傳進入公開 repo（見資安重測報告 6-3）。
+# 每次 push / PR 都掃一次新增的 commit；輸出一律遮蔽，避免 log 再洩一次。
+# 不用 gitleaks-action：組織 repo 需要授權金鑰。直接跑官方 CLI 映像並鎖定版本。
+# 日期需寫完整時間與時區，避免 Git 將只有日期的 --since 解讀成當天執行時刻而漏掃。
+name: gitleaks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 \
+            git /repo --redact --no-banner --config /repo/.gitleaks.toml \
+            --log-opts="--since=2026-10-10T00:00:00+08:00"
