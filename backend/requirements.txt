@@ -11,6 +11,7 @@ sqlalchemy
 uvicorn[standard]
 PyJWT
 httpx
+certifi
 openai
 Pillow
 cryptography
