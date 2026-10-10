@@ -444,7 +444,7 @@ git commit -m "ci: GitHub Actions 鎖定 commit SHA，新增 gitleaks 掃描新 
 > ✅ 2026-10-11 完成。
 > - CSP 觀察：四種身分都看過，唯一違規來自 reka-ui，結果促成 Task 7 改用 hash。
 > - 評級：securityheaders A+；SSL Labs 原為 B，原因是 Cloudflare 接受 TLS 1.0、1.1，已在 Cloudflare 改為最低 TLS 1.2。
-> - 注意：`./deploy.sh web` 不會重建 fastapi 和 ocr。後端已在 10-11 用 `./deploy.sh fastapi` 補上；ocr 的 npm 升級待確認。
+> - 注意：`./deploy.sh web` 不會重建 fastapi 和 ocr。後端已在 10-11 用 `./deploy.sh fastapi` 補上；ocr 的 npm 升級已在容器內確認上線（multer 2.4.0、sharp 0.35.5、proxy-addr 2.0.8）。
 
 **執行者：** 使用者。Claude 負責判讀結果。
 
