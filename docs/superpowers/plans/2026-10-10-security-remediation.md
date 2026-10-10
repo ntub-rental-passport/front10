@@ -441,6 +441,11 @@ git commit -m "ci: GitHub Actions 鎖定 commit SHA，新增 gitleaks 掃描新 
 
 ### Task 5：部署到正式站、觀察 CSP、重新評級
 
+> ✅ 2026-10-11 完成。
+> - CSP 觀察：四種身分都看過，唯一違規來自 reka-ui，結果促成 Task 7 改用 hash。
+> - 評級：securityheaders A+；SSL Labs 原為 B，原因是 Cloudflare 接受 TLS 1.0、1.1，已在 Cloudflare 改為最低 TLS 1.2。
+> - 注意：`./deploy.sh web` 不會重建 fastapi 和 ocr。後端已在 10-11 用 `./deploy.sh fastapi` 補上；ocr 的 npm 升級待確認。
+
 **執行者：** 使用者。Claude 負責判讀結果。
 
 **前提：** Task 1–4 已合併到 `merge/main-into-vm`。
@@ -498,6 +503,11 @@ copy(JSON.stringify(__cspv, null, 2))
 ---
 
 ### Task 6：隔離環境重掃 web
+
+> ✅ 2026-10-11 完成。
+> - web：WARN 4 → 1，只剩 Proxy Disclosure；PASS 138 → 141。
+> - 另外重掃 api 兩個角色，結果和 10-10 完全相同。
+> - 詳見 `Doc/資安重測-2026-10/01-ZAP掃描/ZAP前後對照.md`。
 
 **執行者：** 使用者
 
