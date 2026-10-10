@@ -79,15 +79,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('分析頁報告儲存', () => {
-  it('存到我的空間固定產生完整版並使用產出的檔名和編號，成功後更新清單', async () => {
+  it('存到我的空間固定產生隱私保護版並使用產出的檔名和編號，成功後更新清單', async () => {
     const { state, html } = await render()
     expect(html).toContain('存到我的空間')
     expect(html).toContain('請勿上傳完整租約，只收圖片。')
     await state.exportAnalysisReport(true)
-    expect(mocks.generateContractReportPdf).toHaveBeenCalledWith(expect.objectContaining({ privacyMode: false }))
+    expect(mocks.generateContractReportPdf).toHaveBeenCalledWith(expect.objectContaining({ privacyMode: true }))
     expect(mocks.uploadReport).toHaveBeenCalledWith(id, new Uint8Array([1, 2]), '診斷.pdf', 'RM-123')
     expect(mocks.downloadPdf).not.toHaveBeenCalled()
-    expect(state.exportSuccess.value).toBe('完整資料版報告已存到我的空間。')
+    expect(state.exportSuccess.value).toBe('隱私保護版報告已存到我的空間。')
     expect(state.savedReports.value.map(file => file.id)).toEqual([8, 9])
     expect(state.exportDialogOpen.value).toBe(true)
   })
