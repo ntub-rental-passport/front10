@@ -21,6 +21,7 @@ import GarbageFilters from '@/src/components/garbage/GarbageFilters.vue'
 import CollectionCountdown from '@/src/components/garbage/CollectionCountdown.vue'
 import WeeklySchedule from '@/src/components/garbage/WeeklySchedule.vue'
 import { matchesStatus, stopStatus, type StatusFilter } from '@/src/utils/garbage-status'
+import { base64UrlToBytes, isSameKey } from '@/src/utils/push-key'
 import {
   operatesOn,
   collectionSchedules,
@@ -513,11 +514,12 @@ async function subscribePush() {
   const registration = await navigator.serviceWorker.register('/garbage-sw.js')
   await navigator.serviceWorker.ready
   const existing = await registration.pushManager.getSubscription()
-  if (existing) return existing.toJSON()
-  const key = caps.value.publicKey.replace(/-/g, '+').replace(/_/g, '/')
-  const bytes = Uint8Array.from(atob(key.padEnd(Math.ceil(key.length / 4) * 4, '=')), (c) =>
-    c.charCodeAt(0),
-  )
+  const bytes = base64UrlToBytes(caps.value.publicKey)
+  if (existing) {
+    if (isSameKey(existing.options.applicationServerKey, bytes)) return existing.toJSON()
+    // 換 VAPID 金鑰後，舊訂閱無法接收新金鑰簽署的推播，必須重新訂閱。
+    await existing.unsubscribe()
+  }
   return (
     await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes })
   ).toJSON()
@@ -574,6 +576,7 @@ const statusLabels: Record<string, string> = {
   sending: '發送中／待確認',
   sent: '已發送',
   failed: '發送失敗',
+  expired: '裝置通知已失效，請重新開啟推播',
   missed: '已逾時',
   disabled: '未啟用',
 }

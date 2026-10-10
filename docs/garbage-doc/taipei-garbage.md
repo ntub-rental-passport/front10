@@ -61,27 +61,21 @@ API 路徑：`GET /api/garbage/vehicles`。後端快取 20 秒，頁面每 30 �
 
 ## 提醒服務
 
-使用既有正式租客 Bearer token 與 MySQL 帳號資料驗證身分，寄送對象固定為該帳號的 email，前端不能指定其他收件者。提醒資料存於 `backend/garbage-reminders.db`（Git 已忽略 `*.db`），可透過 `GARBAGE_REMINDER_DB` 指定持久化路徑。
+使用既有正式租客 Bearer token 與 MySQL 帳號資料驗證身分，寄送對象固定為該帳號的 email，前端不能指定其他收件者。2026-10-02 起提醒資料存於專案 MySQL 的 `garbage_reminders` 表，訂閱各自放在每筆提醒的 payload，沒有獨立訂閱表。
 
-FastAPI lifespan 會啟動每 20 秒檢查一次的排程。正式使用需保持後端常駐，並確保提醒 SQLite 檔案可持久保存。相同 DB 檔案中的原子領取避免多 worker 重複寄送；不支援多台主機各自維護獨立 DB 的部署方式。提醒超過五分鐘才被排程器看到會標記 `missed`，失敗標記 `failed`；若程序在領取後中斷，會保留 `sending` 待人工確認，以免不確定的 SMTP 交易自動重寄。SMTP 接受郵件不保證收件匣送達。
+FastAPI lifespan 會啟動每 20 秒檢查一次的排程。正式使用需保持後端常駐，所有 worker 使用同一個專案資料庫，透過原子領取避免重複寄送。提醒超過五分鐘才被排程器看到會標記 `missed`，一般失敗標記 `failed`；若程序在領取後中斷，會保留 `sending` 待人工確認，以免不確定的 SMTP 交易自動重寄。SMTP 接受郵件不保證收件匣送達。
 
 API：`GET /capabilities`、`GET/POST /reminders`、`PATCH/DELETE /reminders/{id}`，均位於 `/api/garbage` 下。讀寫提醒必須登入，最多 50 筆未到期且啟用的提醒。時間固定使用 UTC+08:00，拒絕停收日、過期時間與一年後的日期。
 
 ### Gmail
 
-沿用 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USERNAME`、`SMTP_APP_PASSWORD`、`SMTP_FROM_EMAIL`。預設 Gmail 主機與 STARTTLS 587。需完成 SMTP 設定後重新啟動後端；本次驗證使用 mock 寄送器，沒有發送真實郵件。
+沿用 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USERNAME`、`SMTP_APP_PASSWORD`、`SMTP_FROM_EMAIL`。預設 Gmail 主機與 STARTTLS 587。正式機使用 `rentmate.software@gmail.com`，登入與寄件信箱必須相同；完成 SMTP 設定後以 `docker compose up -d --force-recreate fastapi` 重建容器，光 restart 不會重讀 `env_file`。應用程式密碼、客服信箱 migration 與驗證步驟見 [部署指南「推播與寄件信箱」](../../deploy/README.md#推播與寄件信箱2026-10-10)。
 
 ### 系統推播
 
-安裝更新後的 `backend/requirements.txt`（新增 `pywebpush`），並在後端設定：
+正式機 VAPID 金鑰的產生指令與 `.env` 設定見 [部署指南「推播與寄件信箱」](../../deploy/README.md#推播與寄件信箱2026-10-10)，使用 fastapi 容器已有套件，不另裝工具。`VAPID_SUBJECT` 為 `mailto:rentmate.software@gmail.com`，金鑰寫入 VM `.env` 後須重新建立容器。私鑰及 SMTP 密碼禁止提交。未設定或未安裝推播套件時，前端會禁用該通知方式。
 
-```dotenv
-VAPID_PUBLIC_KEY=
-VAPID_PRIVATE_KEY=
-VAPID_SUBJECT=mailto:your-service-contact@example.com
-```
-
-公私鑰需為相同 P-256 VAPID 金鑰組，公鑰為 base64url 編碼的未壓縮公鑰，私鑰可為 pywebpush 支援的 PEM 檔案路徑。私鑰及 SMTP 密碼禁止提交。未設定或未安裝推播套件時，前端會禁用該通知方式。
+換金鑰後，保存提醒時會比對既有訂閱的公鑰，不同或無法取得時先取消再重新訂閱。推播服務回 404／410 時，本筆與同使用者、同端點的其他 pending 推播會標記 `expired` 並移除訂閱，避免逐筆重送失效端點；Email 狀態不受影響。
 
 推播需 HTTPS（localhost 可開發測試），由使用者按保存提醒時授權；service worker `/garbage-sw.js` 處理背景通知及導向清運頁。服務部署於網域根目錄；iOS 等裝置可能需安裝到主畫面。支援 Chrome/Firefox/Edge/Safari 常見推播端點，拒絕使用者提供任意主機。新瀏覽器供應者需經確認後更新端點允許清單。
 

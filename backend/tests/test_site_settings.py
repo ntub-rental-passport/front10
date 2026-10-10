@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import time
@@ -33,10 +34,30 @@ class DefaultsTests(SiteSettingsTestCase):
         # 每個頁面載入都會讀公開設定；讀的時候建檔，測試就會在 backend/ 底下留資料庫
         values = site.get_settings()
         self.assertEqual(values['siteName'], 'RentMate 租隊友')
+        self.assertEqual(values['supportEmail'], 'rentmate.software@gmail.com')
         self.assertFalse(values['maintenanceMode'])
         self.assertEqual(values['platformVisionPageQuota'], 3000)
         self.assertEqual(site.list_outages(), [])
         self.assertFalse(self.db_path.exists())
+
+    def test_support_email_migration_only_replaces_the_old_json_default(self):
+        sql = (Path(__file__).resolve().parents[1] / 'migrations/20261010_support_email.sql').read_text()
+        with site._open() as db:
+            db.execute(sql)
+            self.assertIsNone(db.execute("SELECT value FROM site_settings WHERE `key`='supportEmail'").fetchone())
+        for email in ('support@rentmate.tw', 'SUPPORT@rentmate.tw', 'custom@example.com', 'rentmate.software@gmail.com'):
+            with self.subTest(email=email):
+                site.update_settings({'supportEmail': email}, actor='admin@example.com')
+                with site._open() as db:
+                    row = db.execute("SELECT value FROM site_settings WHERE `key`='supportEmail'").fetchone()
+                    self.assertEqual(row['value'], json.dumps(email))
+                    db.upsert('site_settings', {'key': 'siteName'}, {'value': json.dumps(email)})
+                    db.execute(sql)
+                    # 重跑也不會改到自訂信箱或其他設定。
+                    db.execute(sql)
+                    self.assertEqual(db.execute("SELECT value FROM site_settings WHERE `key`='siteName'").fetchone()['value'], json.dumps(email))
+                expected = 'rentmate.software@gmail.com' if email == 'support@rentmate.tw' else email
+                self.assertEqual(site.get_settings()['supportEmail'], expected)
 
 class UpdateTests(SiteSettingsTestCase):
     def test_update_is_persisted_and_returns_the_full_settings(self):

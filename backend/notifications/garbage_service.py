@@ -138,12 +138,41 @@ def send_email(data):
         smtp.send_message(message)
 
 
+class PushSubscriptionGone(Exception):
+    """推播端點已失效；重送不會恢復，必須由使用者重新訂閱。"""
+
+
 def send_push(data):
-    from pywebpush import webpush
-    webpush(subscription_info=data['subscription'], data=json.dumps({
-        'id': data['stationId'] + '|' + data['date'],
-        'title': 'RentMate 清運提醒', 'body': f"{data['stationName']}，表定 {data['arrival']} 抵達。", 'url': '/app/garbage',
-    }, ensure_ascii=False), vapid_private_key=os.environ['VAPID_PRIVATE_KEY'], vapid_claims={'sub': os.environ['VAPID_SUBJECT']}, ttl=300, timeout=15)
+    from pywebpush import WebPushException, webpush
+    try:
+        webpush(subscription_info=data['subscription'], data=json.dumps({
+            'id': data['stationId'] + '|' + data['date'],
+            'title': 'RentMate 清運提醒', 'body': f"{data['stationName']}，表定 {data['arrival']} 抵達。", 'url': '/app/garbage',
+        }, ensure_ascii=False), vapid_private_key=os.environ['VAPID_PRIVATE_KEY'], vapid_claims={'sub': os.environ['VAPID_SUBJECT']}, ttl=300, timeout=15)
+    except WebPushException as error:
+        # requests 的錯誤 response 會被視為 False，不能用 if error.response 判斷。
+        if error.response is not None and error.response.status_code in (404, 410):
+            raise PushSubscriptionGone() from error
+        raise
+
+
+def expire_push_subscription(row):
+    endpoint = json.loads(row['payload'])['subscription']['endpoint']
+    with connect() as db:
+        # 訂閱各自存在提醒 payload，連未到期／暫停的 pending 提醒也要清掉。
+        # 鎖住列再改，避免覆蓋其他 worker 已領取的狀態。
+        reminders = db.lock(
+            "SELECT id, payload FROM garbage_reminders WHERE user_id=? AND (id=? OR push_status='pending')",
+            (row['user_id'], row['id']),
+        ).fetchall()
+        for reminder in reminders:
+            payload = json.loads(reminder['payload'])
+            if payload.get('subscription', {}).get('endpoint') != endpoint:
+                continue
+            payload.pop('subscription')
+            db.execute("UPDATE garbage_reminders SET push_status='expired', payload=? WHERE id=?",
+                       (json.dumps(payload, ensure_ascii=False), reminder['id']))
+    logger.warning('Garbage push subscription expired for reminder %s', row['id'])
 
 
 def dispatch_due(now=None):
@@ -164,6 +193,9 @@ def dispatch_due(now=None):
             try:
                 sender(json.loads(row['payload']))
                 state = 'sent'
+            except PushSubscriptionGone:
+                expire_push_subscription(row)
+                continue
             except Exception:
                 logger.warning('Garbage %s delivery failed for reminder %s', channel, row['id'])
                 state = 'failed'

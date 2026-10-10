@@ -1,9 +1,13 @@
+import json
+import os
 import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from pywebpush import WebPushException
+from requests import Response
 from tests.admin_store import AdminStoreTestCase
 from notifications import garbage_service as service
 from routers.garbage import ActiveInput, list_reminders, toggle_reminder, delete_reminder, validate_subscription
@@ -110,6 +114,71 @@ class GarbageReminderTests(AdminStoreTestCase):
         with patch.object(service, 'send_email', side_effect=RuntimeError('offline')):
             service.dispatch_due(datetime.fromisoformat(reminder['dueAt']))
         self.assertEqual(list_reminders(self.user)[0]['emailStatus'], 'failed')
+
+    def test_gone_push_subscription_expires_only_matching_pending_reminders(self):
+        for status in (404, 410):
+            with self.subTest(status=status):
+                with service.connect() as db:
+                    db.execute('DELETE FROM garbage_reminders')
+                subscription = {'endpoint': 'https://fcm.googleapis.com/send/gone',
+                                'keys': {'auth': 'a' * 22, 'p256dh': 'b' * 87}}
+                self.values.update(notifyPush=True, subscription=subscription)
+                current = self.create()
+                same_batch = self.create()
+                future = self.create()
+                paused = self.create()
+                sent = self.create()
+                other_user = service.create_reminder(self.other.id, 'other@example.com', self.values)
+                self.values['subscription'] = subscription | {'endpoint': 'https://fcm.googleapis.com/send/other'}
+                other_endpoint = self.create()
+                due = datetime.fromisoformat(current['dueAt'])
+                with service.connect() as db:
+                    for reminder in (future, paused, sent, other_user, other_endpoint):
+                        db.execute('UPDATE garbage_reminders SET due=? WHERE id=?',
+                                   ((due + timedelta(hours=1)).timestamp(), reminder['id']))
+                    db.execute('UPDATE garbage_reminders SET active=0 WHERE id=?', (paused['id'],))
+                    db.execute("UPDATE garbage_reminders SET push_status='sent' WHERE id=?", (sent['id'],))
+                response = Response()
+                response.status_code = status
+                with patch.dict(os.environ, {'VAPID_PRIVATE_KEY': 'test-key', 'VAPID_SUBJECT': 'mailto:test@example.com'}), \
+                        patch('pywebpush.webpush', side_effect=WebPushException('gone', response=response)) as send, \
+                        patch.object(service, 'send_email'), \
+                        self.assertLogs(service.logger, level='WARNING') as logs:
+                    service.dispatch_due(due)
+                    service.dispatch_due(due + timedelta(seconds=30))
+                send.assert_called_once()
+                self.assertEqual(len(logs.output), 1)
+                self.assertNotIn(subscription['endpoint'], logs.output[0])
+                with service.connect() as db:
+                    rows = {row['id']: row for row in db.execute('SELECT * FROM garbage_reminders').fetchall()}
+                for reminder in (current, same_batch, future, paused):
+                    row = rows[reminder['id']]
+                    self.assertEqual(row['push_status'], 'expired')
+                    self.assertNotIn('subscription', json.loads(row['payload']))
+                    self.assertEqual(row['email_status'], 'sent' if reminder in (current, same_batch) else 'pending')
+                for reminder in (other_user, other_endpoint, sent):
+                    row = rows[reminder['id']]
+                    self.assertEqual(row['push_status'], 'sent' if reminder is sent else 'pending')
+                    self.assertIn('subscription', json.loads(row['payload']))
+
+    def test_other_push_errors_remain_failed_and_keep_subscription(self):
+        response = Response()
+        response.status_code = 500
+        for error in (RuntimeError('offline'), WebPushException('server error', response=response),
+                      WebPushException('no response')):
+            with self.subTest(error=type(error).__name__):
+                self.values.update(notifyPush=True, notifyEmail=False, subscription={
+                    'endpoint': 'https://fcm.googleapis.com/send/test',
+                    'keys': {'auth': 'a' * 22, 'p256dh': 'b' * 87},
+                })
+                reminder = self.create()
+                with patch.dict(os.environ, {'VAPID_PRIVATE_KEY': 'test-key', 'VAPID_SUBJECT': 'mailto:test@example.com'}), \
+                        patch('pywebpush.webpush', side_effect=error):
+                    service.dispatch_due(datetime.fromisoformat(reminder['dueAt']))
+                with service.connect() as db:
+                    row = db.execute('SELECT * FROM garbage_reminders WHERE id=?', (reminder['id'],)).fetchone()
+                self.assertEqual(row['push_status'], 'failed')
+                self.assertIn('subscription', json.loads(row['payload']))
 
     def test_push_rejects_arbitrary_urls(self):
         for endpoint in ['http://fcm.googleapis.com/send/a', 'https://127.0.0.1/push', 'https://fcm.googleapis.com.evil.test/push']:

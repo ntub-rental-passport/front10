@@ -42,6 +42,10 @@ rsync -avz --delete \
 | `FRONTEND_URL` | `https://rentmate.software` |
 | `CORS_ORIGINS` | `https://rentmate.software`（拿掉 localhost） |
 | `COOKIE_SECURE` | 上 TLS 後在 compose 或 .env 改 `true` |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | 在 VM 產生成對的 P-256 金鑰，見下方「推播與寄件信箱」 |
+| `VAPID_SUBJECT` | `mailto:rentmate.software@gmail.com` |
+| `SMTP_USERNAME` / `SMTP_FROM_EMAIL` | 兩者都填 `rentmate.software@gmail.com` |
+| `SMTP_APP_PASSWORD` | 公用 Gmail 開兩步驟驗證後產生的應用程式密碼，不是登入密碼 |
 
 ## 三、啟動
 
@@ -52,6 +56,62 @@ docker compose logs -f     # 看啟動紀錄
 ```
 
 資料表由 FastAPI 啟動時依 `models.py` 自動建立（`Base.metadata.create_all`）。
+
+### 推播與寄件信箱（2026-10-10）
+
+以下在 VM 的 `~/rentmate` 執行，先確認更新的程式碼與映像已部署、fastapi 容器正在運行。
+金鑰由部署者在 VM 產生；不要使用開發環境的金鑰。
+
+1. 用 fastapi 容器裡已有的 `cryptography`（`pywebpush` 的相依套件）產生 VAPID 金鑰：
+
+   ```bash
+   cd ~/rentmate
+   docker compose exec fastapi python -c "from base64 import urlsafe_b64encode as b64; from cryptography.hazmat.primitives.asymmetric import ec; from cryptography.hazmat.primitives import serialization as s; k=ec.generate_private_key(ec.SECP256R1()); print('VAPID_PUBLIC_KEY='+b64(k.public_key().public_bytes(s.Encoding.X962, s.PublicFormat.UncompressedPoint)).decode().rstrip('=')); print('VAPID_PRIVATE_KEY='+b64(k.private_bytes(s.Encoding.DER, s.PrivateFormat.PKCS8, s.NoEncryption())).decode().rstrip('='))"
+   ```
+
+   將輸出的 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY` 填進 VM 的 `.env`，並設定
+   `VAPID_SUBJECT="mailto:rentmate.software@gmail.com"`。公鑰解碼後是 65 bytes 的未壓縮
+   P-256 公鑰，供前端 `applicationServerKey` 使用；私鑰是無 padding 的 base64url DER，
+   可由 `py_vapid.Vapid.from_string` 讀取並交給 `pywebpush` 簽署。
+   **私鑰只放 VM 的 `.env`，不進 git、不貼到聊天或 issue。** 已啟用後保留同一組金鑰；
+   若需換金鑰，使用者下次保存推播提醒時會取消舊訂閱並重新訂閱。
+
+2. 登入 `rentmate.software@gmail.com`，先開兩步驟驗證，再產生該帳號的
+   [應用程式密碼](https://support.google.com/mail/answer/185833?hl=zh-Hant)。修改 VM `.env`：
+   `SMTP_USERNAME` 與 `SMTP_FROM_EMAIL` 都填 `rentmate.software@gmail.com`，
+   `SMTP_APP_PASSWORD` 填剛產生的應用程式密碼。Gmail 不允許用 A 帳號登入卻以 B 名義寄信；
+   密碼不要放進版本控制。主機／連接埠沿用 `smtp.gmail.com`／`587`。
+
+3. 執行客服信箱 migration。設定的 value 是含雙引號的 JSON 字串，這支 SQL 只改舊預設值，
+   管理員自訂信箱不會被蓋掉；沒有設定列時由新的程式預設值提供信箱。
+   正式資料庫在學校主機，沿用 fastapi 的 `DATABASE_URL`，不要對 rollback 的 mysql 服務執行：
+
+   ```bash
+   docker compose exec -T fastapi python -c 'import sys; from db.database import engine; from sqlalchemy import text
+   with engine.begin() as db: db.execute(text(sys.stdin.read()))' \
+     < backend/migrations/20261010_support_email.sql
+   ```
+
+4. 重建 fastapi 容器，讓 `.env` 的新值生效：
+
+   ```bash
+   docker compose up -d --force-recreate fastapi
+   ```
+
+   `.env` 內容改變時必須重新建立容器，光 `docker compose restart fastapi` 不會重讀 `env_file`。
+
+5. （可選）更新 Let's Encrypt 帳號的聯絡信箱，讓憑證通知由團隊接收：
+
+   ```bash
+   docker compose run --rm certbot update_account --email rentmate.software@gmail.com
+   ```
+
+6. 驗證後台「系統監控」的「瀏覽器推播（VAPID）」顯示正常；確認
+   `https://rentmate.software/api/garbage/capabilities` 的 `push` 為 `true`。
+   登入垃圾車頁面後勾選推播、允許通知並保存一筆即將到期的提醒，確認實際收到一則。
+   確認維護頁與房東設定「意見回饋」顯示 `rentmate.software@gmail.com`；
+   寄一封重設密碼信並檢查寄件人是新信箱。管理員若曾自訂客服信箱，畫面會保留自訂值，
+   要統一成團隊信箱時請在後台「系統設定」手動修改。
 
 ## 四、部署後驗證（蒐證用）
 
@@ -133,7 +193,7 @@ cd ~/rentmate && docker compose up -d --build
 
 # 1. 首次簽發憑證（HTTP-01 webroot 驗證，nginx.conf 已預留 acme 路徑）
 docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
-  -d rentmate.software --email <你的信箱> --agree-tos --no-eff-email
+  -d rentmate.software --email rentmate.software@gmail.com --agree-tos --no-eff-email
 
 # 2. 套用 TLS 設定：把 deploy/nginx-tls.conf.example 內容覆蓋到 deploy/nginx.conf
 #    （全檔把 rentmate.example.me 換成你的網域）
