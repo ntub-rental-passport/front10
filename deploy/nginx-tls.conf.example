@@ -84,6 +84,13 @@ server {
     server_tokens off;
     client_max_body_size 80m;
 
+    # 正式 CORS 僅允許本站；desktop/ 已無用戶端程式，開發前端也走 /api 代理。
+    # 不需要 OPTIONS preflight；擋掉其他方法，避免 TRACE/TRACK 等洩漏代理資訊。
+    # 自訂 405 內容，避免預設錯誤頁帶出伺服器名稱；if 內只使用合法的 return。
+    if ($request_method !~ "^(GET|HEAD|POST|PUT|PATCH|DELETE)$") {
+        return 405 "Method Not Allowed\n";
+    }
+
     # ===== 安全標頭 =====
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
@@ -96,24 +103,30 @@ server {
     # 可阻斷 SSL stripping（中間人把連線降級為明文）攻擊。
     # 注意：一旦瀏覽器記住，期限內無法以 HTTP 存取本網域，故需確保憑證續期不中斷。
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    # 隔離瀏覽環境，防止跨來源視窗操作本頁（allow-popups 保留 OAuth 彈窗流程的相容性）
-    add_header Cross-Origin-Opener-Policy "same-origin-allow-popups" always;
+    # 隔離瀏覽環境，防止跨來源視窗操作本頁；Google 登入是整頁轉址，不需要彈窗相容。
+    # 通知鈴鐺的 window.open 已設 noopener,noreferrer；補助文件開 about:blank 後寫入，
+    # 仍是 same-origin，兩者在此政策下都能正常使用。
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    # 只限制別站嵌入本站資源，不影響本站自己載入外部圖片。
+    add_header Cross-Origin-Resource-Policy "same-origin" always;
+    # 不用 require-corp：外部圖片沒有 CORP 標頭會被擋。
+    # credentialless 讓跨來源 no-cors 請求不帶 cookie 載入；本站外部圖片都是公開資源，故不受影響。
+    # 不支援的瀏覽器（如 Safari）會忽略此標頭，不會壞掉。
+    add_header Cross-Origin-Embedder-Policy "credentialless" always;
     # CSP 正式模式（2026-08-19 由 Report-Only 轉正式）
     # 已驗證：前端所有外部資源皆為圖片（Google 圖示、QR code）或頁面跳轉，
     # 無任何外部 script/stylesheet，故 script-src 'self' 不會誤擋。
     # 地圖功能需要 connect-src 放行 openfreemap（向量圖磚）與 nominatim（地理編碼），
     # maplibre 使用 blob worker 故需 worker-src blob:。
-    # 注意：未加 Cross-Origin-Embedder-Policy —— require-corp 會擋掉上述跨域圖片，
-    # 而其防範的 Spectre 類跨域洩漏在本系統（未使用 SharedArrayBuffer）不適用。
     # form-action / base-uri / frame-ancestors 這三個指令「不會」繼承 default-src，
     # 未明確宣告等於完全無防護（ZAP 規則 10055 即檢查此點）：
     #   form-action 'self'  → 表單只能提交回本站，防止竄改後的表單把資料送到攻擊者伺服器
     #   base-uri 'self'     → 防止注入 <base href="evil.com"> 竄改全站相對路徑的解析目標
     #   frame-ancestors 'none' → 禁止被任何網站 iframe（點擊劫持防護）
-    # style-src 保留 'unsafe-inline'：Vue 的 :style 動態綁定（本專案 15 個元件使用，
-    # 如進度條寬度、圖表色塊、選單位移）產生的是執行時計算的行內樣式，nonce/hash 無法涵蓋。
-    # 風險等級遠低於 script-src 的 unsafe-inline —— XSS 的主要載體是 script，
-    # 而 script-src 維持 'self' 且不含 unsafe-inline，該防線完整。
+    # style-src 暫時保留 'unsafe-inline'（2026-10-10）：原先認為 Vue :style 需要它，仍待驗證。
+    # Vue 透過 CSSOM el.style 設定 :style，CSP 不限制此方式；真正可能需要的是
+    # 會自行插入 <style> 的套件（如 motion）。先用 Report-Only 觀察 console 違規，
+    # 確認沒有違規再移除強制 CSP 的 'unsafe-inline'；不設 report-uri，不傳送違規報告。
     #
     # img-src 已由 https:（萬用）收斂為實際使用的來源清單（ZAP 規則 10055 Wildcard Directive）：
     #   gstatic / jsdelivr      → 登入註冊頁的 Google 圖示 SVG
@@ -123,6 +136,7 @@ server {
     #   *.googleusercontent.com → Google 登入使用者的頭像
     # 新增外部圖片來源時必須同步更新此清單，否則圖片會被瀏覽器擋下。
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gstatic.com https://cdn.jsdelivr.net https://api.qrserver.com https://placehold.co https://picsum.photos https://tiles.openfreemap.org https://*.googleusercontent.com; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; form-action 'self'; base-uri 'self'; frame-ancestors 'none'" always;
+    add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://www.gstatic.com https://cdn.jsdelivr.net https://api.qrserver.com https://placehold.co https://picsum.photos https://tiles.openfreemap.org https://*.googleusercontent.com; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; form-action 'self'; base-uri 'self'; frame-ancestors 'none'" always;
 
     # ===== 路由 + 分段限流（與 HTTP 版相同）=====
     location /api/auth/ {
