@@ -1,14 +1,19 @@
 """不連 Docker，以真實過濾器與掃描 driver 驗證安全邊界。"""
 import base64
 from contextlib import redirect_stdout
+import html
 import importlib.util
 import io
 import json
 from pathlib import Path
+import re
+import shlex
 import subprocess
 import sys
 import time
 from types import SimpleNamespace
+from urllib.error import HTTPError
+from urllib.parse import quote
 
 import pytest
 
@@ -59,12 +64,12 @@ def test_filter_cli(tmp_path):
     assert not result.stdout
 
 
-@pytest.fixture
-def driver(tmp_path, monkeypatch):
+@pytest.fixture(params=["landlord", "tenant"])
+def driver(tmp_path, monkeypatch, request):
     script = (TEST_DIR / "run-zap.sh").read_text(encoding="utf-8")
     source = script.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
     # 執行 shell 內的實際 driver 定義，把入口留給測試控制。
-    monkeypatch.setattr(sys, "argv", ["scan-driver.py", "api", "landlord"])
+    monkeypatch.setattr(sys, "argv", ["scan-driver.py", "api", request.param])
     monkeypatch.setenv("SCAN_PASSWORD", "fake-secret-password")
     for key in ("ZAP_AUTH_HEADER", "ZAP_AUTH_HEADER_VALUE", "ZAP_AUTH_HEADER_SITE"):
         monkeypatch.setenv(key, "")
@@ -75,9 +80,51 @@ def driver(tmp_path, monkeypatch):
     token = "eyJhbGciOiJIUzI1NiJ9." + claims + ".fake-signature"
     login = io.BytesIO(json.dumps({"accessToken": "fake-bearer-secret"}).encode())
     login.headers = SimpleNamespace(get_all=lambda *args: ["access_token=" + token + "; HttpOnly"])
-    monkeypatch.setattr(namespace["opener"], "open", lambda *args, **kwargs: login)
+    def open_request(request, **kwargs):
+        if request.full_url.endswith("/api/auth/login"):
+            return login
+        response = io.BytesIO()
+        response.status = 200
+        return response
+
+    monkeypatch.setattr(namespace["opener"], "open", open_request)
     namespace["auth_me"] = lambda token: 200
     return namespace, token
+
+
+@pytest.mark.parametrize("login", [{}, {"accessToken": ""}, {"accessToken": None}, {"accessToken": 123}])
+def test_scan_requires_access_token(driver, monkeypatch, capsys, login):
+    namespace, token = driver
+    response = io.BytesIO(json.dumps(login).encode())
+    response.headers = SimpleNamespace(get_all=lambda *args: ["access_token=" + token + "; HttpOnly"])
+    monkeypatch.setattr(namespace["opener"], "open", lambda *args, **kwargs: response)
+    namespace["auth_me"] = lambda token: pytest.fail("缺少 Bearer 不能檢查登入或啟動 ZAP")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("缺少 Bearer 不能啟動 ZAP"))
+    assert namespace["main"]() == 3
+    output = capsys.readouterr()
+    assert output.err == "登入沒有取得 accessToken；中止。\n"
+    assert not output.out
+    assert not list(namespace["WORK"].iterdir())
+
+
+@pytest.mark.parametrize("status", [200, 401, 403, 500])
+def test_bearer_check_uses_role_endpoint_without_cookie(driver, monkeypatch, status):
+    namespace, token = driver
+    path = "/api/landlord/workspaces" if namespace["role"] == "landlord" else "/api/tenant/leases"
+
+    def open_request(request, timeout):
+        assert request.full_url == "http://fastapi:8000" + path
+        assert request.get_method() == "GET"
+        assert dict(request.header_items()) == {"Authorization": "Bearer fake-bearer-secret"}
+        assert timeout == 30
+        if status != 200:
+            raise HTTPError(request.full_url, status, "failed", {}, None)
+        response = io.BytesIO()
+        response.status = status
+        return response
+
+    monkeypatch.setattr(namespace["opener"], "open", open_request)
+    assert namespace["auth_bearer"]("fake-bearer-secret") == status
 
 
 def test_scan_requires_authenticated_me(driver, monkeypatch, capsys):
@@ -89,21 +136,69 @@ def test_scan_requires_authenticated_me(driver, monkeypatch, capsys):
     assert not list(namespace["WORK"].iterdir())
 
 
-@pytest.mark.parametrize("post_status, scan_status, expected", [(200, 2, 2), (401, 0, 3), (200, 1, 1)])
+@pytest.mark.parametrize("status", [401, 403, 500])
+def test_scan_requires_authenticated_bearer(driver, monkeypatch, capsys, status):
+    namespace, token = driver
+    namespace["auth_bearer"] = lambda access_token: status
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("Bearer 失敗不能啟動 ZAP"))
+    assert namespace["main"]() == 3
+    path = namespace["BEARER_PATHS"][namespace["role"]]
+    assert f"掃描前 Bearer GET {path}：{status}" in capsys.readouterr().out
+    assert not list(namespace["WORK"].iterdir())
+
+
+@pytest.mark.parametrize("post_status, bearer_status, scan_status, expected", [
+    (200, 200, 2, 2), (401, 200, 0, 3), (200, 200, 1, 1),
+    (200, 401, 0, 3), (200, 403, 2, 3), (200, 500, 1, 3),
+])
 def test_scan_reports_coverage_redacts_secrets_and_keeps_exit_code(driver, monkeypatch, capsys,
-                                                                 post_status, scan_status, expected):
+                                                                 post_status, bearer_status, scan_status, expected):
     namespace, token = driver
     statuses = iter([200, post_status])
     namespace["auth_me"] = lambda token: next(statuses)
+    bearer_statuses = iter([200, bearer_status])
+    bearer_checks = []
+
+    def auth_bearer(access_token):
+        bearer_checks.append(access_token)
+        return next(bearer_statuses)
+
+    namespace["auth_bearer"] = auth_bearer
 
     def scan(args, stdout, **kwargs):
         assert args[:1] == ["zap-api-scan.py"]
         assert args[args.index("-O") + 1] == "http://fastapi:8000"
         assert args[args.index("-c") + 1] == str(namespace["WORK"] / "zap-rules.tsv")
+        assert namespace["os"].environ["ZAP_AUTH_HEADER"] == "Cookie"
         assert namespace["os"].environ["ZAP_AUTH_HEADER_VALUE"] == "access_token=" + token
+        assert namespace["os"].environ["ZAP_AUTH_HEADER_SITE"] == "fastapi"
+        options = shlex.split(args[args.index("-z") + 1])
+        assert options[::2] == ["-config"] * (len(options) // 2)
+        config = dict(option.split("=", 1) for option in options[1::2])
+        prefix = "replacer.full_list(0)."
+        assert config[prefix + "enabled"] == "true"
+        assert config[prefix + "matchtype"] == "REQ_HEADER"
+        assert config[prefix + "matchstr"] == "Authorization"
+        assert config[prefix + "regex"] == "false"
+        assert config[prefix + "replacement"] == "Bearer fake-bearer-secret"
+        assert config[prefix + "initiators"] == ""
+        pattern = config[prefix + "url"]
+        for url in ("http://fastapi:8000", "http://fastapi:8000/api/auth/me",
+                    "http://fastapi:8000/api/tenant/leases?probe=1", "http://fastapi:8000?probe=1"):
+            assert re.search(pattern, url)
+        for url in ("http://web:8000/api/auth/me", "http://fastapi:8001/api/auth/me",
+                    "http://fastapi:8000.evil/api/auth/me", "http://fastapi:8000@evil/api/auth/me",
+                    "https://fastapi:8000/api/auth/me", "http://evil/fastapi:8000/api/auth/me"):
+            assert not re.search(pattern, url)
         content = " ".join([namespace["password"], token, "fake-bearer-secret"])
-        Path(args[args.index("-r") + 1]).write_text(content, encoding="utf-8")
-        Path(args[args.index("-J") + 1]).write_text(json.dumps({"evidence": content}), encoding="utf-8")
+        zap_options = args[args.index("-z") + 1]
+        assert kwargs["cwd"] != namespace["WORK"]
+        Path(kwargs["cwd"] / "zap.out").write_text(shlex.join(args), encoding="utf-8")
+        report = {"evidence": content, "zap_options": zap_options,
+                  "encoded_options": quote(zap_options, safe=""),
+                  "headers": [{"Authorization": "Bearer fake-bearer-secret"}]}
+        Path(args[args.index("-r") + 1]).write_text(content + "\n" + html.escape(zap_options), encoding="utf-8")
+        Path(args[args.index("-J") + 1]).write_text(json.dumps(report), encoding="utf-8")
         hook = {}
         exec(Path(args[args.index("--hook") + 1]).read_text(encoding="utf-8"), hook)
         messages = [
@@ -120,19 +215,29 @@ def test_scan_reports_coverage_redacts_secrets_and_keeps_exit_code(driver, monke
             hook["zap_pre_shutdown"](zap)
             print("FAIL-NEW: 0\tWARN-NEW: 1\tPASS: 8")
             print(content)
+            print(shlex.join(args))
         return SimpleNamespace(returncode=scan_status)
 
     monkeypatch.setattr(subprocess, "run", scan)
     assert namespace["main"]() == expected
-    output = capsys.readouterr().out
+    captured = capsys.readouterr()
+    output = captured.out
+    assert bearer_checks == ["fake-bearer-secret", "fake-bearer-secret"]
+    path = namespace["BEARER_PATHS"][namespace["role"]]
+    assert f"掃描後 Bearer GET {path}：{bearer_status}" in output
+    if bearer_status != 200:
+        assert "Bearer 登入已失效" in captured.err
     assert "實際打到的 API 網址數量：2" in output
     assert "API 回應：3；401/403：1" in output
     artifacts = list(namespace["WORK"].iterdir())
-    assert {path.name for path in artifacts} == {"api-landlord.html", "api-landlord.json"}
-    for content in [output, *(path.read_text(encoding="utf-8") for path in artifacts)]:
+    assert {path.name for path in artifacts} == {namespace["name"] + ".html", namespace["name"] + ".json"}
+    for content in [output, captured.err, *(path.read_text(encoding="utf-8") for path in artifacts)]:
         for secret in (namespace["password"], token, "fake-bearer-secret"):
             assert secret not in content
-    assert json.loads((namespace["WORK"] / "api-landlord.json").read_text())["evidence"] == "[REDACTED] [REDACTED] [REDACTED]"
+    report = json.loads((namespace["WORK"] / (namespace["name"] + ".json")).read_text())
+    assert report["evidence"] == "[REDACTED] [REDACTED] [REDACTED]"
+    assert "replacement=Bearer [REDACTED]" in report["zap_options"]
+    assert report["headers"] == [{"Authorization": "Bearer [REDACTED]"}]
 
 
 @pytest.mark.parametrize("case, mode, expected", [
