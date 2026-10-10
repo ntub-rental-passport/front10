@@ -56,6 +56,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -65,6 +66,9 @@ from urllib.parse import quote, quote_plus
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 BASE = "http://fastapi:8000"
+# 房東用 /api/landlord/workspaces、租客用 /api/tenant/leases，分別直接由
+# get_current_landlord / get_current_tenant 保護，無需資源 ID，空業務資料也能驗證 Bearer。
+BEARER_PATHS = {"landlord": "/api/landlord/workspaces", "tenant": "/api/tenant/leases"}
 WORK = Path("/zap/wrk")
 mode, role = sys.argv[1:]
 name = "web" if mode == "web" else "api-" + role
@@ -84,6 +88,16 @@ opener = build_opener(NoRedirect)
 def auth_me(token):
     try:
         with opener.open(Request(BASE + "/api/auth/me", headers={"Cookie": "access_token=" + token}),
+                         timeout=30) as response:
+            return response.status
+    except HTTPError as error:
+        return error.code
+
+
+def auth_bearer(access_token):
+    try:
+        with opener.open(Request(BASE + BEARER_PATHS[role],
+                                 headers={"Authorization": "Bearer " + access_token}),
                          timeout=30) as response:
             return response.status
     except HTTPError as error:
@@ -127,10 +141,18 @@ def main():
         if not token:
             print("登入沒有取得 access_token；中止。", file=sys.stderr)
             return 3
-        secrets.extend([token, login.get("accessToken", "")])
-        secrets[:] = [secret for secret in secrets if secret]
+        access_token = login.get("accessToken")
+        if not isinstance(access_token, str) or not access_token:
+            print("登入沒有取得 accessToken；中止。", file=sys.stderr)
+            return 3
+        # Replacer 的 -z 參數也可能被 ZAP 寫進 log 或報告，兩種憑證都必須遮蔽。
+        secrets.extend([token, access_token])
         status = auth_me(token)
         print(f"{name} 掃描前 GET /api/auth/me：{status}")
+        if status != 200:
+            return 3
+        status = auth_bearer(access_token)
+        print(f"{name} 掃描前 Bearer GET {BEARER_PATHS[role]}：{status}")
         if status != 200:
             return 3
         claims = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=" * (-len(token.split(".")[1]) % 4)))
@@ -145,6 +167,16 @@ def main():
         args += ["-c", str(WORK / "zap-rules.tsv"), "-r", str(temp / "report.html"),
                  "-J", str(temp / "report.json")]
         if mode == "api":
+            # packaged scan 的環境變數只能注入一個標頭；第二個以 Replacer 補上，
+            # 並鎖定完整測試 origin，避免轉址或其他主機的請求帶走 Bearer。
+            replacer = {"description": "rentmate-bearer", "enabled": "true",
+                        "matchtype": "REQ_HEADER", "matchstr": "Authorization", "regex": "false",
+                        "replacement": "Bearer " + access_token,
+                        "url": r"^http://fastapi:8000(?:[/?].*)?$", "initiators": ""}
+            options = []
+            for key, value in replacer.items():
+                options += ["-config", "replacer.full_list(0)." + key + "=" + value]
+            args += ["-z", shlex.join(options)]
             hook = temp / "coverage.py"
             hook.write_text('''
 import json
@@ -176,9 +208,10 @@ def zap_pre_shutdown(zap):
                                            "unauthorized": unauthorized}))
 ''', encoding="utf-8")
             args += ["--hook", str(hook)]
-        # 不轉印 ZAP 原始輸出：警告中的 evidence 可能反射密碼或 Cookie。
+        # 不轉印 ZAP 原始輸出：evidence 或 -z 參數可能含密碼、Cookie 或 Bearer；
+        # 工作目錄也留在暫存區，避免相對路徑的 log 把憑證寫入掛載目錄。
         with (temp / "scan.log").open("w+") as log:
-            result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, check=False)
+            result = subprocess.run(args, cwd=temp, stdout=log, stderr=subprocess.STDOUT, check=False)
             log.seek(0)
             output = log.read()
         code = result.returncode
@@ -211,6 +244,11 @@ def zap_pre_shutdown(zap):
             print(f"{name} 掃描後 GET /api/auth/me：{status}")
             if status != 200:
                 print("登入已失效；請重新登入後重跑，這份報告的登入涵蓋不完整。", file=sys.stderr)
+                code = 3
+            status = auth_bearer(access_token)
+            print(f"{name} 掃描後 Bearer GET {BEARER_PATHS[role]}：{status}")
+            if status != 200:
+                print("Bearer 登入已失效；請重新登入後重跑，這份報告的登入涵蓋不完整。", file=sys.stderr)
                 code = 3
         return code
 

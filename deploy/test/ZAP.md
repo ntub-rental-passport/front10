@@ -63,17 +63,23 @@ FastAPI 映像必須包含這次修改後的 seed 腳本；程式碼更新後請
    環境變數優先，不會把密碼寫入 `.env`。請勿自行用 `printenv`、`set -x`
    或除錯工具記錄憑證。
 
-   每個角色都必須先得到 `GET /api/auth/me = 200` 才會啟動 ZAP。
+   每個角色都必須先得到 cookie 的 `GET /api/auth/me = 200`，以及 Bearer 的角色
+   檢查端點回 200，才會啟動 ZAP：房東使用 `GET /api/landlord/workspaces`，
+   租客使用 `GET /api/tenant/leases`。兩者分別直接由 `get_current_landlord` /
+   `get_current_tenant` 保護，不需要路徑參數，空業務資料也能驗證授權。
+   登入回應若缺少 cookie 或 JSON 的 `accessToken`，會中止並回報流程錯誤。
    透過 packaged scan 支援的 `ZAP_AUTH_HEADER=Cookie`、
    `ZAP_AUTH_HEADER_VALUE=access_token=...`、`ZAP_AUTH_HEADER_SITE=fastapi`
-   注入 cookie，OpenAPI server 與 `-O` 都固定到測試 FastAPI。
+   注入 cookie，同時透過 `-z` 的 Replacer 規則注入 `Authorization: Bearer ...`，
+   Bearer 規則只匹配 `http://fastapi:8000`；OpenAPI server 與 `-O` 都固定到測試 FastAPI。
    腳本先檢查執行中的 `rentmate-test` project 容器與測試網路，不接受自訂目標。
 
 4. 查看 `deploy/test/zap-out/<YYYYmmdd-HHMMSS>/`：
    `web.html` / `web.json`、`api-landlord.html` / `api-landlord.json`、
    `api-tenant.html` / `api-tenant.json`。API 模式另保存原始與過濾後的 OpenAPI，
    所有掃描使用複製到該目錄的 `zap-rules.tsv`。
-   原始 ZAP 輸出及報告只留在暫存容器內，輸出目錄的報告會移除密碼與 token；
+   原始 ZAP 輸出及報告只留在暫存容器內，輸出目錄的報告會移除密碼與兩種 token，
+   包括報告中可能出現的 Replacer `-z` 參數；
    終端機只印統計，不轉印可能含憑證的 evidence。
    工作目錄允許 ZAP 容器使用者寫入，外層新建的 `zap-out` 目錄維持 0700。
 
@@ -81,8 +87,8 @@ FastAPI 映像必須包含這次修改後的 seed 腳本；程式碼更新後請
    （以不同路徑計，不含 query）、總回應數與 401/403 數。這包含 OpenAPI
    匯入時的請求與主動掃描請求，不只是「規格裡有多少端點」，也不依賴
    只有觸發 alert 的網址才會出現在 JSON 報告裡。
-   若沒有 API 回應、全部都是 401/403、缺少報告／統計，或掃描後 `/me` 不再是
-   200，視為流程失敗，不能用這份報告宣稱登入掃描完成。
+   若沒有 API 回應、全部都是 401/403、缺少報告／統計，或掃描後 `/me` 或角色的
+   Bearer 檢查端點不再是 200，視為流程失敗，不能用這份報告宣稱登入掃描完成。
 
    exit code 最後統一回報：0 = PASS、1 = FAIL、2 = WARN、3 = 流程錯誤。
    WARN 不會中斷下一個角色的掃描；綜合結果優先順序為流程錯誤、FAIL、WARN、PASS。
@@ -120,16 +126,15 @@ FastAPI 映像必須包含這次修改後的 seed 腳本；程式碼更新後請
 - OCR 的 Node 服務不在 FastAPI OpenAPI 中，這套 API 掃描不涵蓋 OCR。
 - 沒有登入 admin。保留的 `/api/admin/*` 業務 API 會被探測，但沒有管理員權限，
   不能當成管理員功能已經通過登入掃描。
-- 部分房東／租客 API 的 `get_current_landlord` / `get_current_tenant` **只接受
-  Authorization Bearer**。本任務依規格只注入 cookie，這些端點仍會得到 401，
-  即使 `/api/auth/me` 是 200。網址涵蓋數不等於所有端點都通過授權或進入業務流程；
-  終端機另印 401/403 統計。要補齊這類登入涵蓋，需要後續加入 Bearer 注入。
+- API 掃描會同時帶 cookie 與 Bearer，並在掃描前後檢查 `/api/auth/me` 與角色的
+  Bearer 端點（房東 `/api/landlord/workspaces`、租客 `/api/tenant/leases`）。
+  網址涵蓋數仍不等於所有端點都通過授權或進入業務流程；終端機另印 401/403 統計。
 - landlord 與 tenant 都使用 `session_seconds(role) = session_minutes() * 60`。
   隔離環境沒有覆寫設定時，實際為 **86,400 秒（24 小時）**；可選設定為
   1,800、3,600、7,200、28,800、86,400、259,200、604,800 秒。
   `/me` 不會延長有效期限，也沒有自動 refresh。每個角色掃描前重新登入，
   腳本會顯示這顆 JWT 的剩餘秒數；長時間掃描超過期限仍會變成 401。
-  掃描後 `/me` 若失效會回報流程錯誤，需重新登入重跑，不能把中途過期的
+  掃描後 `/me` 或 Bearer 檢查若失效會回報流程錯誤，需重新登入重跑，不能把中途過期的
   報告當作完整登入掃描。
 - 空測試資料庫的資源 ID、驗證碼與檔案上傳可能無法符合 API 前置條件，
   匯入及主動探測不保證每個操作都進入業務邏輯。這次不做 IDOR 測試。
