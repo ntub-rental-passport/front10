@@ -279,7 +279,7 @@ const mobileUnsupported = computed(() =>
 
 - [ ] **不要 redirect**，網址要留在原地（這樣「複製目前網址」才有意義）。
 - [ ] **不要改 `src/pages/landlord/dashboard.vue` 上任何連往 `/landlord/finance` 或 `/landlord/contracts` 的 RouterLink**。它們全部留著可點：`:110` 的月份鈕、`:151` 的「查看收款明細」、`:186`、`:86` 的「待收款」待辦、`:88` 的「合約提醒」待辦。點進去會看到擋板，這是刻意的。
-- [ ] `src/components/landlord/RentalCenterPopover.vue` 的待辦用動態 `task.route`。**實作時 grep 一次確認它產生的路由裡有沒有 `/landlord/finance` 或 `/landlord/contracts`** —— 目前 grep 不到硬編碼字串，但要確認它不是從別處組出來的。有的話一樣留著不動。
+- [ ] `src/components/landlord/LandlordNotificationBell.vue` 的待辦用動態 `task.route`。**實作時 grep 一次確認它產生的路由裡有沒有 `/landlord/finance` 或 `/landlord/contracts`** —— 目前 grep 不到硬編碼字串，但要確認它不是從別處組出來的。有的話一樣留著不動。
 - [ ] 瀏覽器確認：375px 寬打開 `/landlord/finance` 看到擋板、網址沒變、「返回首頁」回到 `/landlord`、沒有登出按鈕；1280px 寬打開同一個網址看到正常頁面。
 
 ## Task 5 — 房東手機版面（只修保留的 5 頁）
