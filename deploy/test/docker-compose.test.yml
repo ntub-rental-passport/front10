@@ -37,6 +37,11 @@ services:
     environment:
       DATABASE_URL: "mysql+pymysql://rentmate:test_app_pw@mysql:3306/115-RentMate"
       JWT_SECRET: "test_only_jwt_secret_not_for_production_use_00000000"
+      # 後端缺這三個會拒絕簽發 Bearer token、驗證碼或讀寫個資欄位（見 backend/auth、db/encrypted_fields.py）。
+      # 一律是測試專用假值，不可沿用正式金鑰。PII 金鑰為 base64 的 32 bytes。
+      AUTH_TOKEN_SECRET: "test_only_auth_token_secret_not_for_production_0000"
+      VERIFICATION_CODE_SECRET: "test_only_verification_secret_not_for_production_00"
+      PII_ENCRYPTION_KEY: "dGVzdC1vbmx5LXBpaS1rZXktbm90LWZvci1wcm9kISE="
       COOKIE_SECURE: "true"
       CORS_ORIGINS: "https://web,https://localhost"
       TEST_LANDLORD_PASSWORD: "zap-test-Landlord-2026"
