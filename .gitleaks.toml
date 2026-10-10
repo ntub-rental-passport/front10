@@ -1,0 +1,16 @@
+[extend]
+useDefault = true
+
+# 隔離測試環境只放測試用假憑證，排除此設定檔以免誤報。
+[[allowlists]]
+description = "隔離測試環境的假憑證"
+paths = [
+  '''(^|/)deploy/test/docker-compose\.test\.yml$''',
+]
+
+# 測試程式中的憑證字串是固定假值，不代表可用的秘密。
+[[allowlists]]
+description = "後端測試程式的假憑證"
+paths = [
+  '''(^|/)backend/tests/.*''',
+]
