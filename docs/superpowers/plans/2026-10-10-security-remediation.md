@@ -523,6 +523,16 @@ bash deploy/test/run-zap.sh web 2>&1 | tee deploy/test/zap-out/run-web-rescan.lo
 
 ### Task 7：移除 `style-src 'unsafe-inline'`
 
+> ✅ 2026-10-11 設定已合併（commit `f07db2bd`，merge `52f2d631`），**待使用者部署**。
+>
+> **實際做法和下方 Step 1 不同**：觀察結果**有** style 違規（管理員 4 筆、租客 2 筆），全部來自 reka-ui `SelectViewport` 寫死的隱藏捲軸 CSS（詳見 `Doc/資安重測-2026-10/08-正式站驗證/CSP-ReportOnly觀察.md`）。這段 CSS 內容固定，所以改成 `style-src 'self' 'sha256-60LHlRjW/B3CtzIoE/Lf1/NEDvko9efWMFaGVhHu/cs='`，同樣拿掉了 `'unsafe-inline'`，也移除了 Report-Only 標頭。改由 Codex（tier `light`）實作，並新增 `src/utils/csp-style-hash.test.ts`。這個測試會從 `node_modules` 重新計算 hash 並和兩個 nginx 檔比對，同時禁止引入 ScrollArea、Combobox 等其他會插入 `<style>` 的 reka-ui 元件。
+>
+> Claude 驗證：
+> - grep：`unsafe-inline` 0、`Report-Only` 0、hash 1。
+> - 故意把 hash 改錯，測試會失敗；故意引入 ScrollArea，測試也會失敗。
+> - `npm test`：146 個測試檔通過。
+> - crossplane：status ok。
+
 **執行者：** Claude 修改設定檔（只動設定），使用者負責部署
 
 **前提：** Task 5 Step 4 的觀察結果中，**沒有** `style-src`、`style-src-elem`、`style-src-attr` 的違規。如果有，這個 Task 改成「找出是哪個套件造成，評估替代方案」，不直接修改設定。
