@@ -27,10 +27,12 @@
 import json
 import logging
 import re
+import ssl
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+import certifi
 import httpx
 from fastapi import APIRouter, HTTPException
 
@@ -43,6 +45,16 @@ POWER_DATA_PATH = ROOT / "public/data/taipower-outage.json"
 POWER_SOURCE_PATH = ROOT / "public/data/taipower-outage-source.json"
 
 WATER_API_URL = "https://web.water.gov.tw/wateroffapi/f/case/search"
+
+
+def _tls_context() -> ssl.SSLContext:
+    # 自來水公司網站的憑證由 TWCA 簽發（根憑證在 certifi 清單內），鏈與主機名稱都能正常驗證。
+    # 以前用 verify=False 整個關掉驗證，真正的原因只是 TWCA 中繼憑證缺少 Subject Key Identifier，
+    # 被 Python 3.13 起預設開啟的 VERIFY_X509_STRICT 擋下。這裡只放寬這一項，其餘驗證全部保留。
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+    return context
+
 
 # ---------- 停水（即時查台水） ---------------------------------------
 
@@ -68,8 +80,7 @@ async def fetch_real_water_outage(address: str):
     }
 
     try:
-        # verify=False 略過政府網站的 GCA 憑證驗證
-        async with httpx.AsyncClient(timeout=8.0, verify=False) as client:
+        async with httpx.AsyncClient(timeout=8.0, verify=_tls_context()) as client:
             resp = await client.post(WATER_API_URL, json=payload, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
