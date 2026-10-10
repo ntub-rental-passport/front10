@@ -11,7 +11,6 @@ import {
   WalletCards,
   Wrench,
 } from 'lucide-vue-next'
-import RentalCenterPopover from '@/src/components/landlord/RentalCenterPopover.vue'
 import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import { useLandlordFinance } from '@/src/composables/useLandlordFinance'
 import { useRepairTickets } from '@/src/composables/useRepairTickets'
@@ -110,8 +109,8 @@ const toneClasses: Record<string, string> = {
           to="/landlord/finance"
           class="inline-flex items-center gap-2 rounded-full border border-[#dfd9cc] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm"
         >
-          <CalendarDays class="h-4 w-4" />{{ monthLabel }}</RouterLink
-        ><RentalCenterPopover />
+          <CalendarDays class="h-4 w-4" />{{ monthLabel }}
+        </RouterLink>
       </div>
     </header>
 

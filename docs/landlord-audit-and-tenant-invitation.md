@@ -90,7 +90,7 @@
 - `src/pages/landlord/contracts.vue:154`：編輯提交只有租期、租金、押金、繳租日與編號，其他可編輯欄位未保存。
 - `src/pages/landlord/contracts.vue:47`：空資料時 selected 為 undefined；template 詳情直接用 selected.state 等屬性，缺少 v-if／空狀態保護（程式確認，未做瀏覽器重現）。
 - `src/composables/useLandlordFinance.ts:172` 及 `src/pages/landlord/finance.vue:111`：沒有通知 API 卻顯示「已發送提醒」。
-- `src/components/landlord/RentalCenterPopover.vue:31`：通知資料為固定 tasks。
+- 原總覽頁租務中心：稽核時待辦資料為固定 tasks；現已由 `src/composables/useLandlordOverviewTasks.ts` 讀取後端，整合至頂部鈴鐺。
 
 建議：只有後端確認成功才呈現完成。未串接者應明示示範／未啟用；新增續約及附件要有可再次查到的後端紀錄。
 
