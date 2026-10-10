@@ -144,7 +144,7 @@ class Store:
         assignment = ', '.join(f'`{k}` = `{k}` + ?' if add else f'`{k}` = ?' for k in values)
         where = ' AND '.join(f'`{k}` = ?' for k in keys)
         updated = self.execute(
-            f'UPDATE {table} SET {assignment} WHERE {where}',
+            f'UPDATE {table} SET {assignment} WHERE {where}',  # nosec B608 # 現有呼叫端固定表名與字典鍵，資料值另綁定。
             (*values.values(), *keys.values()),
         ).rowcount
         if updated:
@@ -153,7 +153,7 @@ class Store:
         placeholders = ', '.join('?' for _ in columns)
         names = ', '.join(f'`{c}`' for c in columns)
         self.execute(
-            f'INSERT INTO {table} ({names}) VALUES ({placeholders})',
+            f'INSERT INTO {table} ({names}) VALUES ({placeholders})',  # nosec B608 # 現有呼叫端固定表名與字典鍵，僅產生問號佔位符。
             (*keys.values(), *values.values()),
         )
 
@@ -163,14 +163,14 @@ class Store:
         呼叫端用這個回傳值判斷「是不是我搶到的」（例如額度告警每月只發一次）。
         """
         where = ' AND '.join(f'`{k}` = ?' for k in keys)
-        existing = self.execute(f'SELECT 1 FROM {table} WHERE {where}', tuple(keys.values())).fetchone()
+        existing = self.execute(f'SELECT 1 FROM {table} WHERE {where}', tuple(keys.values())).fetchone()  # nosec B608 # 現有呼叫端固定表名與字典鍵，條件值另綁定。
         if existing:
             return 0
         columns = list(keys) + list(values)
         placeholders = ', '.join('?' for _ in columns)
         names = ', '.join(f'`{c}`' for c in columns)
         self.execute(
-            f'INSERT INTO {table} ({names}) VALUES ({placeholders})',
+            f'INSERT INTO {table} ({names}) VALUES ({placeholders})',  # nosec B608 # 現有呼叫端固定表名與字典鍵，僅產生問號佔位符。
             (*keys.values(), *values.values()),
         )
         return 1

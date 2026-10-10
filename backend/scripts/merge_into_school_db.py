@@ -133,10 +133,10 @@ def main() -> int:
             new_id = id_map['users'][uid]
             if email.strip().lower() not in target_users:
                 continue
-            row = source.execute(text(f'SELECT {", ".join(f"`{c}`" for c in user_columns)} FROM users WHERE id = :i'),
+            row = source.execute(text(f'SELECT {", ".join(f"`{c}`" for c in user_columns)} FROM users WHERE id = :i'),  # nosec B608 # 欄名來自維運資料庫的結構中繼資料，帳號識別碼另綁定。
                                  {'i': uid}).first()
             assignment = ', '.join(f'`{c}` = :{c}' for c in user_columns)
-            target.execute(text(f'UPDATE users SET {assignment} WHERE id = :id'),
+            target.execute(text(f'UPDATE users SET {assignment} WHERE id = :id'),  # nosec B608 # 欄名來自維運資料庫結構，使用者資料另綁定。
                            {**dict(zip(user_columns, row)), 'id': new_id})
         print(f'  （{len(merged)} 個帳號的密碼與狀態改以 VM 為準）')
 
@@ -144,11 +144,11 @@ def main() -> int:
         for uid, email in sorted(source_users.items()):
             if email.strip().lower() in target_users:
                 continue
-            row = source.execute(text(f'SELECT {", ".join(f"`{c}`" for c in user_columns)} FROM users WHERE id = :i'),
+            row = source.execute(text(f'SELECT {", ".join(f"`{c}`" for c in user_columns)} FROM users WHERE id = :i'),  # nosec B608 # 欄名來自維運資料庫的結構中繼資料，帳號識別碼另綁定。
                                  {'i': uid}).first()
             names = ', '.join(f'`{c}`' for c in ['id'] + user_columns)
             holders = ', '.join(f':{c}' for c in ['id'] + user_columns)
-            target.execute(text(f'INSERT INTO users ({names}) VALUES ({holders})'),
+            target.execute(text(f'INSERT INTO users ({names}) VALUES ({holders})'),  # nosec B608 # 欄名與參數名來自維運資料庫結構，資料值另綁定。
                            {'id': id_map['users'][uid], **dict(zip(user_columns, row))})
 
         # ── 其餘資料表：依對照表改號後搬過去 ────────────────────────
@@ -158,11 +158,11 @@ def main() -> int:
             if table in SKIP or not table_exists(source, table) or not table_exists(target, table):
                 continue
             cols = columns_of(source, table)
-            rows = source.execute(text(f'SELECT {", ".join(f"`{c}`" for c in cols)} FROM `{table}`')).fetchall()
+            rows = source.execute(text(f'SELECT {", ".join(f"`{c}`" for c in cols)} FROM `{table}`')).fetchall()  # nosec B608 # 表名來自 PLAN 常數，欄名來自維運資料庫結構。
             if not rows:
                 continue
             id_map.setdefault(table, {})
-            offset = (target.execute(text(f'SELECT COALESCE(MAX(`{pk}`), 0) FROM `{table}`')).scalar() or 0) if pk else 0
+            offset = (target.execute(text(f'SELECT COALESCE(MAX(`{pk}`), 0) FROM `{table}`')).scalar() or 0) if pk else 0  # nosec B608 # 表名與主鍵欄名都來自 PLAN 常數。
             moved = skipped = duplicated = 0
             for row in rows:
                 data = dict(zip(cols, row))
@@ -188,7 +188,7 @@ def main() -> int:
                 # 一起吞掉，看起來像全部略過，其實是全部沒搬進去。
                 try:
                     with target.begin_nested():
-                        target.execute(text(f'INSERT INTO `{table}` ({names}) VALUES ({holders})'), data)
+                        target.execute(text(f'INSERT INTO `{table}` ({names}) VALUES ({holders})'), data)  # nosec B608 # 表名來自 PLAN，欄名來自維運資料庫結構，資料值另綁定。
                     moved += 1
                 except IntegrityError as error:
                     if getattr(error.orig, 'args', [None])[0] != 1062:
@@ -208,14 +208,14 @@ def main() -> int:
                 print(f'  {table:32} 目標還沒有這張表（先跑 20261001 的建表 SQL）')
                 continue
             cols = columns_of(source, table)
-            rows = source.execute(text(f'SELECT {", ".join(f"`{c}`" for c in cols)} FROM `{table}`')).fetchall()
+            rows = source.execute(text(f'SELECT {", ".join(f"`{c}`" for c in cols)} FROM `{table}`')).fetchall()  # nosec B608 # 表名來自 ADMIN_TABLES 常數，欄名來自維運資料庫結構。
             moved = 0
             for row in rows:
                 data = dict(zip(cols, row))
                 names = ', '.join(f'`{c}`' for c in data)
                 holders = ', '.join(f':{c}' for c in data)
                 updates = ', '.join(f'`{c}` = :{c}' for c in data)
-                target.execute(text(f'INSERT INTO `{table}` ({names}) VALUES ({holders}) '
+                target.execute(text(f'INSERT INTO `{table}` ({names}) VALUES ({holders}) '  # nosec B608 # 表名來自 ADMIN_TABLES，欄名來自維運資料庫結構，資料值另綁定。
                                     f'ON DUPLICATE KEY UPDATE {updates}'), data)
                 moved += 1
             total += moved
