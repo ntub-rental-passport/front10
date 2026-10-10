@@ -41,7 +41,7 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   passwordMinLength: DEFAULT_PASSWORD_MIN_LENGTH,
   passwordMaxLength: DEFAULT_PASSWORD_MAX_LENGTH,
   siteName: 'RentMate 租隊友',
-  supportEmail: 'support@rentmate.tw',
+  supportEmail: 'rentmate.software@gmail.com',
   maintenance: { mode: false, message: '', startsAt: '', endsAt: '' },
   maintenanceBypass: false,
   featureOutages: [],

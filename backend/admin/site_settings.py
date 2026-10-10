@@ -62,7 +62,7 @@ class Field:
 #: 順序就是稽核紀錄裡列出變更的順序（跟 src/utils/settings-labels.ts 一樣）。
 FIELDS: dict[str, Field] = {
     'siteName': Field('網站名稱', 'text', 'RentMate 租隊友', max_length=60),
-    'supportEmail': Field('客服信箱', 'text', 'support@rentmate.tw', max_length=254),
+    'supportEmail': Field('客服信箱', 'text', 'rentmate.software@gmail.com', max_length=254),
     'maintenanceMode': Field('維護模式', 'boolean', False),
     'maintenanceMessage': Field('維護說明文字', 'text', '系統維護中，預計 30 分鐘後恢復，造成不便敬請見諒。', max_length=500),
     'maintenanceStartsAt': Field('維護開始時間', 'datetime', ''),
