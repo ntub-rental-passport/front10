@@ -49,6 +49,8 @@
 
 ### Task 1：npm 小版本升級
 
+> ✅ 2026-10-10 完成（commit `ea8b56a4`）。
+
 **執行者：** Codex（tier `standard`）
 
 **Files:**
@@ -126,6 +128,8 @@ git commit -m "fix(deps): 升級 multer、sharp、proxy-addr、vue 修補已知�
 ---
 
 ### Task 2：共用資料存取層加入識別字白名單
+
+> ✅ 2026-10-10 完成（commit `a35e72ec`）。
 
 **執行者：** Codex（tier `light`。程式碼已經在下面寫好）
 
@@ -230,6 +234,8 @@ git commit -m "fix(db): Store.upsert/insert_ignore 驗證表名與欄名，只�
 ---
 
 ### Task 3：停水 API 改為驗證政府憑證
+
+> **2026-10-10 執行結果（取代下方原步驟）**：實測發現 `web.water.gov.tw` 的憑證是 TWCA 簽發（TWCA Global Root CA 已在 certifi 清單內），不是 GCA／GRCA。`verify=False` 真正的原因是 TWCA 中繼憑證缺少 Subject Key Identifier，被 Python 3.13 起預設的 `VERIFY_X509_STRICT` 擋下。最終做法：`certifi` + 只清掉 `VERIFY_X509_STRICT`，不加入任何自訂 CA（commit `bcfa8c2b`）。下方原計劃保留作為紀錄。
 
 **執行者：** Codex（tier `standard`。要取得正確的 CA 憑證）
 
@@ -359,6 +365,8 @@ git commit -m "fix(outage): 停水 API 改為驗證政府 CA 憑證，不再關�
 
 ### Task 4：GitHub Actions 鎖定 SHA、CI 加入 gitleaks
 
+> ✅ 2026-10-10 完成（commit `18e46333`）。
+
 **執行者：** Codex（tier `light`）
 
 **Files:**
@@ -405,7 +413,7 @@ jobs:
       - name: gitleaks
         run: |
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 \
-            git /repo --redact --no-banner --log-opts="--since=2026-10-10"
+            git /repo --redact --no-banner --log-opts="--since=2026-10-10T00:00:00+08:00"
 ```
 
 > 只掃 2026-10-10 之後的 commit：那把已撤銷的金鑰（2026-05-31）還留在歷史裡，掃全部歷史會永遠失敗。歷史清除放在 Task 11。用日期而不用 `before..sha` 的範圍寫法，是因為第一次 push（`before` 全為 0）和 pull_request 事件都沒有可用的 `before`。
