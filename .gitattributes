@@ -1,1 +1,9 @@
 * text=auto eol=lf
+
+# Windows 的批次檔與 PowerShell 腳本要保持 CRLF。
+# 上面那條 eol=lf 會把它們正規化成 LF，而 cmd.exe 對 LF 的批次檔
+# 在某些情況下（label、goto）會解析錯 —— 為了幾個位元組不值得賭。
+*.bat text eol=crlf
+# ps1 標成 binary：它有 UTF-8 BOM，Windows PowerShell 5.1 沒有 BOM
+# 就會把中文當 ANSI 讀成亂碼。讓 git 別去正規化它。
+*.ps1 -text

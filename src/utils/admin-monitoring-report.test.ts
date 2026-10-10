@@ -11,7 +11,6 @@ import {
   isHeartbeatStale,
   lastOutageNote,
   monitorOverview,
-  nvidiaBackupNote,
   queueView,
   type ConfigItem,
   type MonitorEvent,
@@ -136,7 +135,7 @@ describe('collectAttention', () => {
 
   it('未設定、資料過期（idle）不算 —— 缺的設定只在設定那一段數一次', () => {
     const items = collectAttention({
-      readings: [reading('AI 模型（桌機）', 'unavailable')],
+      readings: [reading('LLM 備援（Ollama）', 'unavailable')],
       queues: [],
       config: null,
       heartbeatStale: false,
@@ -268,6 +267,13 @@ describe('buildEventRows', () => {
     expect(rows).toHaveLength(3)
   })
 
+  it('歷史退休服務事件沿用 API 提供的標籤', () => {
+    const rows = buildEventRows([
+      event('down', 5, { service: 'llm-ollama', serviceLabel: 'LLM 備援（Ollama，已移除）' }),
+    ])
+    expect(rows[0]).toMatchObject({ service: 'llm-ollama', title: 'LLM 備援（Ollama，已移除）斷線' })
+  })
+
   it('依類別篩選', () => {
     const rows = buildEventRows([
       event('server-error', 1, { detail: 'x' }),
@@ -289,11 +295,5 @@ describe('監控卡的補充說明', () => {
     // 12:00 往回 220 分鐘斷線、100 分鐘前恢復
     expect(lastOutageNote(rows, 'ocr')).toBe('上次斷線：9/27 08:20，持續 2 小時')
     expect(lastOutageNote(rows, 'llm-desktop')).toBeNull()
-  })
-
-  it('NVIDIA 備援有沒有設定，決定桌機一睡是變慢還是直接失敗', () => {
-    expect(nvidiaBackupNote([{ key: 'nvidia', label: '', ok: false, hint: '' }])).toContain('直接失敗')
-    expect(nvidiaBackupNote([{ key: 'nvidia', label: '', ok: true, hint: '' }])).toContain('會改用它')
-    expect(nvidiaBackupNote(null)).toBeNull()
   })
 })

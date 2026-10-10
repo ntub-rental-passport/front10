@@ -16,17 +16,40 @@
  */
 export const DESKTOP_MIN_WIDTH = 1280
 
+/**
+ * 對齊房東底部列的 lg 斷點，刻意不沿用 admin 的 1280，避免觸控平板在
+ * 1024–1280px 之間看到側邊欄入口，點進去卻被擋。
+ */
+export const LANDLORD_DESKTOP_MIN_WIDTH = 1024
+
+/**
+ * 對齊租客底部列的 sm 斷點，刻意不沿用 admin 的 1280，避免觸控裝置在
+ * 640–1280px 之間看到側邊欄入口，點進去卻被擋。
+ */
+export const TENANT_DESKTOP_MIN_WIDTH = 640
+
 export interface DeviceSnapshot {
   coarsePointer: boolean
   viewportWidth: number
 }
 
-export function isDesktopEnvironment(snapshot: DeviceSnapshot): boolean {
-  return !snapshot.coarsePointer || snapshot.viewportWidth >= DESKTOP_MIN_WIDTH
+export function isDesktopEnvironment(
+  snapshot: DeviceSnapshot,
+  minWidth: number = DESKTOP_MIN_WIDTH,
+): boolean {
+  return !snapshot.coarsePointer || snapshot.viewportWidth >= minWidth
 }
 
 export function shouldBlockAdminSurface(snapshot: DeviceSnapshot): boolean {
   return !isDesktopEnvironment(snapshot)
+}
+
+export function shouldBlockLandlordSurface(snapshot: DeviceSnapshot): boolean {
+  return !isDesktopEnvironment(snapshot, LANDLORD_DESKTOP_MIN_WIDTH)
+}
+
+export function shouldBlockTenantSurface(snapshot: DeviceSnapshot): boolean {
+  return !isDesktopEnvironment(snapshot, TENANT_DESKTOP_MIN_WIDTH)
 }
 
 /**

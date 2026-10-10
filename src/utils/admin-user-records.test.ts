@@ -38,7 +38,7 @@ describe('realDepositView', () => {
     const view = realDepositView(deposit({ tenantDeclared: null, tenantId: null }))
     expect(view.match).toBe('pending')
     expect(view.gap).toBe(0)
-    expect(view.tenantUserId).toBe('')
+    expect(view.tenantUserId).toBeNull()
   })
 })
 

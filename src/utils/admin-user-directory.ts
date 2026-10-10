@@ -5,13 +5,25 @@
  * 這個檔案負責把散在各 collection 的資料接成一列一列的使用者，以及套用列表的篩選條件。
  */
 
-import type { AdminRole, AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admin/users'
+import type { AdminUser, AdminUserRole, AdminUserStatus } from '@/src/mocks/admin/users'
 import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
-import type { PlanId, Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
+import type { Subscription } from '@/src/mocks/admin/subscription'
+import type { AccountUsage } from '@/src/types/admin-usage'
+import { accountUsageLimits } from './admin-usage'
 import { depositGap, depositMatchOf, type DepositMatch } from './admin-deposit'
 import type { MaintenanceStatus } from './admin-maintenance'
-import { featureVerdict } from './admin-entitlements'
+import type { RealMaintenanceTicket } from './admin-repair'
+import {
+  effectivePlanKey,
+  getPlanLimits,
+  hasActivePaidPlan,
+  isInTrial,
+  planRoleOf,
+  tenantAiUsage,
+  userPlan,
+} from './admin-plans'
+import { subscriptionPlans, type PlanKey, type PlanRole } from './subscription-plans'
 
 /**
  * 訂閱是否即將到期。
@@ -26,7 +38,7 @@ export function isSubscriptionExpiring(
   expiringSoonDays: number,
   now: Date = new Date(),
 ): boolean {
-  if (!subscription || !subscription.active) return false
+  if (!subscription || !hasActivePaidPlan(subscription)) return false
   const remainingMs = new Date(subscription.expiresAt).getTime() - now.getTime()
   return remainingMs > 0 && remainingMs <= expiringSoonDays * 24 * 60 * 60 * 1000
 }
@@ -39,18 +51,12 @@ export function isSubscriptionExpiring(
  */
 export function isQuotaExhausted(
   subscription: Subscription | null,
-  plan: SubscriptionPlan | null,
+  emailVerified: boolean,
+  now: Date = new Date(),
 ): boolean {
-  if (!subscription || !subscription.active || !plan) return false
-
-  // 契約分析的額度改由功能矩陣決定，並把單次加購算進去
-  const analysis = featureVerdict(
-    plan.features['contract-analysis'],
-    subscription.aiUsed,
-    subscription.extraCredits['contract-analysis'] ?? 0,
-  )
-  const storageFull = plan.storageMb > 0 && subscription.storageUsedMb >= plan.storageMb
-  return analysis === 'exhausted' || storageFull
+  if (!subscription?.active || subscription.role !== 'tenant') return false
+  const storage = getPlanLimits('tenant', effectivePlanKey(subscription, now)).storage.limit
+  return tenantAiUsage(subscription, emailVerified, now).exhausted || subscription.storageUsedMb >= storage
 }
 
 /** 列表與案件裡呈現使用者的名稱，沒有暱稱時退回 email */
@@ -98,9 +104,11 @@ export interface UserDirectoryRow {
    * 區分真假的地方，兩個欄位可能不同步，一個不會。
    */
   realAccountId?: number
-  /** 沒有訂閱記錄時為 null，詳情頁顯示空狀態 */
+  /** 沒有訂閱記錄時為 null，仍適用該角色的 Free。 */
   subscription: Subscription | null
-  plan: SubscriptionPlan | null
+  /** null 表示讀不到或不適用，計數為零必須有來源資料。 */
+  usage: AccountUsage | null
+  overLimit: boolean
   deposits: UserDepositView[]
   tickets: UserTicketView[]
   openTicketCount: number
@@ -120,19 +128,17 @@ export interface RealAccountInput {
   emailVerified: boolean
   createdAt: string | null
   lastLoginAt: string | null
+  usage?: AccountUsage | null
 }
 
 
 /**
  * 把資料庫的真實帳號接成列表的一列。
  *
- * 真實帳號沒有訂閱、押金、工單這些關聯資料 —— 那些是展示資料集為了
- * 呈現各模組而生成的，彼此以固定 id 互相指涉。所以這裡一律給空值，
- * 讓畫面顯示「—」，而不是編造數字。
+ * 先整理帳號本身，押金與工單由 joinRealUserDirectory 接真實來源。
+ * 計數用量只取後端回傳，方案則由角色決定 Free，避免編造使用紀錄。
  *
- * adminRole 一律是 'super'：後台沒有、也刻意不做「網頁上新增管理員」的
- * 功能，管理員只能由能登入伺服器的人用 manage_admin.py 授予。
- * 所以資料庫裡帶 admin 角色的人，就是最高權限的那一群。
+ * 管理員只能由能登入伺服器的人用 manage_admin.py 授予，後台不提供新增管理員。
  */
 export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
   const isAdmin = account.roles.includes('admin')
@@ -141,6 +147,7 @@ export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
     : account.roles.includes('landlord')
       ? 'landlord'
       : 'user'
+  const usage = account.usage ?? null
 
   return {
     realAccountId: account.id,
@@ -150,14 +157,14 @@ export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
       email: account.email,
       nickname: account.displayName,
       role,
-      adminRole: isAdmin ? 'super' : null,
       status: account.status === 'suspended' ? 'suspended' : 'active',
       emailVerified: account.emailVerified,
       registeredAt: account.createdAt ?? '',
       lastLoginAt: account.lastLoginAt,
     },
     subscription: null,
-    plan: null,
+    usage,
+    overLimit: accountUsageLimits(userPlan({ role }, null), usage)?.overLimit ?? false,
     deposits: [],
     tickets: [],
     openTicketCount: 0,
@@ -169,12 +176,62 @@ export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
 }
 
 
+/** 共用案件關聯規則；呼叫端分開傳真實與展示來源，避免兩邊混接。 */
+export function joinUserCases(
+  row: UserDirectoryRow,
+  deposits: DepositRecord[],
+  tickets: (MaintenanceTicket & { overdue?: boolean })[],
+): UserDirectoryRow {
+  const userDeposits: UserDepositView[] = deposits
+    .filter((item) => item.tenantUserId === row.user.id || item.landlordUserId === row.user.id)
+    .map((item) => ({
+      ...item,
+      side: item.tenantUserId === row.user.id ? 'tenant' : 'landlord',
+      match: depositMatchOf(item.landlordDeclared, item.tenantDeclared),
+      gap: depositGap(item.landlordDeclared, item.tenantDeclared),
+    }))
+
+  const userTickets: UserTicketView[] = tickets
+    .filter((item) => item.tenantUserId === row.user.id || item.landlordUserId === row.user.id)
+    .map((item) => ({
+      ...item,
+      side: item.tenantUserId === row.user.id ? 'tenant' : 'landlord',
+      open: isTicketOpen(item.status),
+    }))
+
+  return {
+    ...row,
+    deposits: userDeposits,
+    tickets: userTickets,
+    openTicketCount: userTickets.filter((item) => item.open).length,
+    // 真實工單的逾期是獨立旗標，展示工單則沿用狀態。
+    overdueTicketCount: userTickets.filter((item) =>
+      'overdue' in item ? item.overdue === true : item.status === 'overdue',
+    ).length,
+    mismatchedDepositCount: userDeposits.filter((item) => item.match === 'mismatched').length,
+  }
+}
+
+/** 只在使用者關聯時換 id，工單頁仍使用後端的數字字串。 */
+export function joinRealUserDirectory(
+  accounts: RealAccountInput[],
+  deposits: DepositRecord[],
+  tickets: RealMaintenanceTicket[],
+): UserDirectoryRow[] {
+  const directoryTickets = tickets.map((ticket) => ({
+    ...ticket,
+    landlordUserId: `real-${ticket.landlordUserId}`,
+    tenantUserId: `real-${ticket.tenantUserId}`,
+  }))
+  return accounts.map((account) => joinUserCases(realAccountToRow(account), deposits, directoryTickets))
+}
+
 export interface UserDirectorySources {
   users: AdminUser[]
   tickets: MaintenanceTicket[]
   deposits: DepositRecord[]
   subscriptions: Subscription[]
-  plans: SubscriptionPlan[]
+  usageByUserId?: Record<string, AccountUsage>
 }
 
 /**
@@ -188,43 +245,27 @@ export function joinUserDirectory(
   expiringSoonDays: number,
   now: Date = new Date(),
 ): UserDirectoryRow[] {
-  const { users, tickets, deposits, subscriptions, plans } = sources
+  const { users, tickets, deposits, subscriptions } = sources
 
   return users.map((user) => {
-    const subscription = subscriptions.find((item) => item.userId === user.id) ?? null
-    const plan = subscription
-      ? (plans.find((item) => item.id === subscription.planId) ?? null)
-      : null
+    const subscription = subscriptions.find(
+      (item) => item.userId === user.id && item.role === planRoleOf(user.role),
+    ) ?? null
+    const usage = sources.usageByUserId?.[user.id] ?? null
 
-    const userDeposits: UserDepositView[] = deposits
-      .filter((item) => item.tenantUserId === user.id || item.landlordUserId === user.id)
-      .map((item) => ({
-        ...item,
-        side: item.tenantUserId === user.id ? 'tenant' : 'landlord',
-        match: depositMatchOf(item.landlordDeclared, item.tenantDeclared),
-        gap: depositGap(item.landlordDeclared, item.tenantDeclared),
-      }))
-
-    const userTickets: UserTicketView[] = tickets
-      .filter((item) => item.tenantUserId === user.id || item.landlordUserId === user.id)
-      .map((item) => ({
-        ...item,
-        side: item.tenantUserId === user.id ? 'tenant' : 'landlord',
-        open: isTicketOpen(item.status),
-      }))
-
-    return {
+    return joinUserCases({
       user,
       subscription,
-      plan,
-      deposits: userDeposits,
-      tickets: userTickets,
-      openTicketCount: userTickets.filter((item) => item.open).length,
-      overdueTicketCount: userTickets.filter((item) => item.status === 'overdue').length,
-      mismatchedDepositCount: userDeposits.filter((item) => item.match === 'mismatched').length,
+      usage,
+      overLimit: accountUsageLimits(userPlan(user, subscription, now), usage)?.overLimit ?? false,
+      deposits: [],
+      tickets: [],
+      openTicketCount: 0,
+      overdueTicketCount: 0,
+      mismatchedDepositCount: 0,
       subscriptionExpiring: isSubscriptionExpiring(subscription, expiringSoonDays, now),
-      quotaExhausted: isQuotaExhausted(subscription, plan),
-    }
+      quotaExhausted: isQuotaExhausted(subscription, user.emailVerified, now),
+    }, deposits, tickets)
   })
 }
 
@@ -233,20 +274,21 @@ export type UserAlert =
   | 'ticket-overdue'
   | 'subscription-expiring'
   | 'quota-exhausted'
+  | 'over-limit'
 
 export const userAlertLabels: Record<UserAlert, string> = {
   'deposit-mismatch': '押金金額不符',
   'ticket-overdue': '工單逾期',
   'subscription-expiring': '訂閱即將到期',
   'quota-exhausted': '額度已用滿',
+  'over-limit': '超出方案上限',
 }
 
 export interface UserDirectoryFilter {
   keyword: string
   role: AdminUserRole | 'all'
   status: AdminUserStatus | 'all'
-  /** 'none' 篩出沒有訂閱記錄的使用者 */
-  plan: PlanId | 'none' | 'all'
+  plan: `${PlanRole}-${PlanKey}` | 'all'
   alert: UserAlert | 'all'
 }
 
@@ -277,10 +319,10 @@ function matchesKeyword(row: UserDirectoryRow, keyword: string): boolean {
   )
 }
 
-function matchesPlan(row: UserDirectoryRow, plan: UserDirectoryFilter['plan']): boolean {
+function matchesPlan(row: UserDirectoryRow, plan: UserDirectoryFilter['plan'], now: Date): boolean {
   if (plan === 'all') return true
-  if (plan === 'none') return row.subscription === null
-  return row.subscription?.planId === plan
+  const current = userPlan(row.user, row.subscription, now)
+  return !!current && `${current.role}-${current.key}` === plan
 }
 
 function matchesAlert(row: UserDirectoryRow, alert: UserDirectoryFilter['alert']): boolean {
@@ -295,62 +337,58 @@ function matchesAlert(row: UserDirectoryRow, alert: UserDirectoryFilter['alert']
       return row.subscriptionExpiring
     case 'quota-exhausted':
       return row.quotaExhausted
+    case 'over-limit':
+      return row.overLimit
     default:
       return true
   }
 }
 
-/** 訂閱方案分布的一段。planId 為 'none' 代表尚未訂閱。 */
 export interface PlanDistributionSegment {
-  planId: PlanId | 'none'
+  planKey: PlanKey
   label: string
   value: number
+  trialCount: number
 }
 
-/**
- * 訂閱方案分布。永遠以全量 rows 計算 —— 圖表的用途是「進來先看一眼盤子長怎樣」，
- * 跟著篩選跑的話篩到單一方案時圖表只剩一段，等於自己把自己吃掉。
- */
+/** 分布吃全量使用者；只依角色分組，避免列表篩到單一方案後圖表也只剩一段。 */
 export function planDistribution(
   rows: UserDirectoryRow[],
-  plans: SubscriptionPlan[],
+  role: PlanRole,
+  now: Date = new Date(),
 ): PlanDistributionSegment[] {
-  const segments: PlanDistributionSegment[] = plans.map((plan) => ({
-    planId: plan.id,
-    label: plan.name,
-    value: rows.filter((row) => row.subscription?.planId === plan.id).length,
-  }))
-
-  segments.push({
-    planId: 'none',
-    label: '尚未訂閱',
-    value: rows.filter((row) => row.subscription === null).length,
+  return subscriptionPlans[role].map((plan) => {
+    const members = rows.filter((row) => {
+      const current = userPlan(row.user, row.subscription, now)
+      return current?.role === role && current.key === plan.key
+    })
+    return {
+      planKey: plan.key,
+      label: plan.name,
+      value: members.length,
+      trialCount: members.filter((row) =>
+        row.subscription?.role === role && row.subscription.active && isInTrial(row.subscription.trialEndsAt, now),
+      ).length,
+    }
   })
-
-  return segments
 }
 
-/** 管理員權限角色人數。adminRole 為 null 時視為超級管理員，與詳情頁的預設值一致。 */
-export function adminRoleCounts(rows: UserDirectoryRow[]): Record<AdminRole, number> {
-  const counts: Record<AdminRole, number> = { super: 0, admin: 0 }
-  for (const row of rows) {
-    if (row.user.role !== 'admin') continue
-    counts[row.user.adminRole ?? 'super'] += 1
-  }
-  return counts
+export function adminCount(rows: UserDirectoryRow[]): number {
+  return rows.filter((row) => row.user.role === 'admin').length
 }
 
 /** 五軸皆為 AND 疊加 */
 export function filterUserDirectory(
   rows: UserDirectoryRow[],
   filter: UserDirectoryFilter,
+  now: Date = new Date(),
 ): UserDirectoryRow[] {
   return rows.filter(
     (row) =>
       matchesKeyword(row, filter.keyword) &&
       (filter.role === 'all' || row.user.role === filter.role) &&
       (filter.status === 'all' || row.user.status === filter.status) &&
-      matchesPlan(row, filter.plan) &&
+      matchesPlan(row, filter.plan, now) &&
       matchesAlert(row, filter.alert),
   )
 }

@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import httpx
+
 from tests.admin_store import AdminStoreTestCase
 from admin import monitoring_service as monitor
 
@@ -116,7 +118,7 @@ class MonitoringTests(AdminStoreTestCase):
         monitor.record_check('ocr', True, now=T0)
         monitor.record_check('ocr', False, '連不上', now=T0 + 100)
         monitor.record_check('ocr', True, now=T0 + 200)          # recovered 不另算一次
-        monitor.record_check('llm-desktop', False, '連線逾時', now=T0 + 300)
+        monitor.record_check('ocr', False, '連線逾時', now=T0 + 300)
         summary = monitor.summary(now=now)
         self.assertEqual(summary['down'], 1)
         self.assertEqual(summary['events24h'], 2)
@@ -128,6 +130,53 @@ class MonitoringTests(AdminStoreTestCase):
         self.assertEqual(summary['lastHeartbeat'], monitor._iso(T0))
 
     # -------------------- 探測 --------------------
+
+    def test_backup_probe_skips_when_status_file_is_unset(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(monitor.probe_backup(now=T0))
+
+    def test_backup_probe_reports_missing_file(self):
+        with patch.dict(os.environ, {'BACKUP_STATUS_FILE': '/missing/backup-status'}):
+            self.assertEqual(monitor.probe_backup(now=T0), (False, '尚無成功備份紀錄'))
+
+    def test_backup_probe_reports_invalid_contents_and_future_timestamps(self):
+        with tempfile.NamedTemporaryFile(mode='w+') as status:
+            with patch.dict(os.environ, {'BACKUP_STATUS_FILE': status.name}):
+                status.write('garbage')
+                status.flush()
+                self.assertEqual(monitor.probe_backup(now=T0), (False, '備份狀態檔格式錯誤'))
+                status.seek(0)
+                status.truncate()
+                status.write(str(T0 + 301))
+                status.flush()
+                self.assertEqual(monitor.probe_backup(now=T0), (False, '備份狀態檔格式錯誤'))
+
+    def test_backup_probe_reports_stale_and_fresh_timestamps_in_taipei_time(self):
+        with tempfile.NamedTemporaryFile(mode='w+') as status, \
+             patch.dict(os.environ, {'BACKUP_STATUS_FILE': status.name}):
+            status.write(str(T0 - 27 * 3600))
+            status.flush()
+            ok, detail = monitor.probe_backup(now=T0)
+            self.assertFalse(ok)
+            self.assertEqual(detail, '上次成功備份：2026-09-20 19:13（27 小時前）')
+            status.seek(0)
+            status.truncate()
+            status.write(str(T0 - 3600))
+            status.flush()
+            ok, detail = monitor.probe_backup(now=T0)
+            self.assertTrue(ok)
+            self.assertNotIn('小時前', detail)
+
+    def test_run_checks_records_backup_state_when_status_file_is_configured(self):
+        with tempfile.NamedTemporaryFile(mode='w+') as status, \
+             patch.dict(os.environ, {'BACKUP_STATUS_FILE': status.name}):
+            status.write(str(monitor.time.time()))
+            status.flush()
+            with patch.dict(monitor.PROBES, {'backup': monitor.probe_backup}, clear=True):
+                monitor.run_checks(now=T0)
+        backup = next(s for s in monitor.service_states() if s['service'] == 'backup')
+        self.assertEqual(backup['label'], '每日備份')
+        self.assertEqual(backup['status'], 'up')
 
     def test_probe_failure_detail_never_leaks_addresses_or_raw_errors(self):
         import httpx
@@ -149,32 +198,68 @@ class MonitoringTests(AdminStoreTestCase):
         with patch.dict(os.environ, {'OCR_API_PORT': '', 'OCR_HEALTH_URL': ''}):
             self.assertIsNone(monitor.probe_ocr())
 
-    def test_llm_probe_sends_the_same_credentials_as_real_requests(self):
-        # 少帶一個標頭，Cloudflare Access 會在邊緣擋掉，監控就會誤報桌機連不上
-        captured = {}
+    def test_ollama_probe_skips_when_not_in_order(self):
+        with patch.dict(os.environ, {'LLM_PROVIDER_ORDER': 'nvidia', 'OLLAMA_URL': 'http://ollama:11434'}), patch('httpx.get') as get:
+            self.assertIsNone(monitor.probe_llm_ollama())
+        get.assert_not_called()
 
-        class Response:
-            status_code = 200
+    def test_ollama_probe_skips_when_base_is_empty(self):
+        with patch.dict(os.environ, {'LLM_PROVIDER_ORDER': 'ollama'}), patch('ai.llm_provider.ollama_base', return_value=''), patch('httpx.get') as get:
+            self.assertIsNone(monitor.probe_llm_ollama())
+        get.assert_not_called()
 
-        def fake_get(url, headers, timeout):
-            captured.update(headers)
-            return Response()
+    def test_ollama_probe_uses_container_url_without_headers(self):
+        with patch.dict(os.environ, {'LLM_PROVIDER_ORDER': 'nvidia,ollama', 'OLLAMA_URL': 'http://ollama:11434/'}), patch('httpx.get', return_value=httpx.Response(200)) as get:
+            self.assertEqual(monitor.probe_llm_ollama(), (True, None))
+        get.assert_called_once_with('http://ollama:11434/api/tags', timeout=monitor.PROBE_TIMEOUT_SECONDS)
 
-        with patch.dict(os.environ, {
-            'LLM_TUNNEL_URL': 'https://tunnel.example',
-            'LLM_TUNNEL_API_KEY': 'k',
-            'CF_ACCESS_CLIENT_ID': 'id',
-            'CF_ACCESS_CLIENT_SECRET': 'secret',
-            'LLM_PROVIDER_ORDER': 'ollama,nvidia',
-        }), patch('httpx.get', side_effect=fake_get):
-            self.assertEqual(monitor.probe_llm_desktop(), (True, None))
-        self.assertEqual(captured.get('X-API-Key'), 'k')
-        self.assertEqual(captured.get('CF-Access-Client-Id'), 'id')
+    def test_rag_probe_skips_when_not_in_order(self):
+        with patch.dict(os.environ, {'EMBEDDING_PROVIDER': 'nvidia', 'LOCAL_EMBEDDING_URL': 'http://rag:8000'}), \
+             patch('httpx.get') as get:
+            self.assertIsNone(monitor.probe_rag())
+        get.assert_not_called()
+
+    def test_rag_probe_skips_when_url_is_unset(self):
+        with patch.dict(os.environ, {'EMBEDDING_PROVIDER': 'local'}, clear=True), patch('httpx.get') as get:
+            self.assertIsNone(monitor.probe_rag())
+        get.assert_not_called()
+
+    def test_rag_probe_requires_a_ready_model_and_sends_no_headers(self):
+        for payload, expected in [
+            ({'embeddingReady': True}, (True, None)),
+            ({'embeddingReady': False}, (False, 'embedding 模型未就緒')),
+            ({}, (False, 'embedding 模型未就緒')),
+            ({'embeddingReady': 'true'}, (False, 'embedding 模型未就緒')),
+        ]:
+            with self.subTest(payload=payload), \
+                 patch.dict(os.environ, {'EMBEDDING_PROVIDER': 'local', 'LOCAL_EMBEDDING_URL': ' http://rag:8000/ '}), \
+                 patch('httpx.get', return_value=httpx.Response(200, json=payload)) as get:
+                self.assertEqual(monitor.probe_rag(), expected)
+            get.assert_called_once_with('http://rag:8000/health', timeout=monitor.PROBE_TIMEOUT_SECONDS)
+
+    def test_container_probes_report_http_errors(self):
+        for probe in (monitor.probe_llm_ollama, monitor.probe_rag):
+            with self.subTest(probe=probe.__name__), patch.dict(os.environ, {
+                'LLM_PROVIDER_ORDER': 'ollama', 'OLLAMA_URL': 'http://ollama:11434',
+                'EMBEDDING_PROVIDER': 'local', 'LOCAL_EMBEDDING_URL': 'http://rag:8000',
+            }), patch('httpx.get', return_value=httpx.Response(503)):
+                self.assertEqual(probe(), (False, 'HTTP 503'))
+
+    def test_container_probes_describe_connection_errors_and_timeouts(self):
+        for probe in (monitor.probe_llm_ollama, monitor.probe_rag):
+            for error, detail in [
+                (httpx.ConnectError('private-address'), '連不上'),
+                (httpx.ReadTimeout('private-address'), '連線逾時'),
+            ]:
+                with self.subTest(probe=probe.__name__, error=type(error).__name__), patch.dict(os.environ, {
+                    'LLM_PROVIDER_ORDER': 'ollama', 'OLLAMA_URL': 'http://ollama:11434',
+                    'EMBEDDING_PROVIDER': 'local', 'LOCAL_EMBEDDING_URL': 'http://rag:8000',
+                }), patch('httpx.get', side_effect=error):
+                    self.assertEqual(probe(), (False, detail))
 
     def test_one_crashing_probe_does_not_stop_the_others(self):
         with patch.dict(monitor.PROBES, {
             'database': lambda: (_ for _ in ()).throw(RuntimeError('boom')),
-            'llm-desktop': lambda: None,
             'ocr': lambda: (True, None),
         }, clear=True):
             monitor.run_checks(now=T0)
@@ -182,7 +267,48 @@ class MonitoringTests(AdminStoreTestCase):
         self.assertEqual(states['database']['status'], 'down')
         self.assertEqual(states['database']['detail'], '檢查程式出錯')
         self.assertEqual(states['ocr']['status'], 'up')
-        self.assertNotIn('llm-desktop', states)
+        self.assertNotIn('llm-ollama', states)
+
+    def test_retired_service_state_is_removed_without_events_or_alerts(self):
+        monitor.record_check('llm-desktop', False, '連不上', now=T0)
+        events = monitor.list_events()
+        self.assertEqual(monitor.summary(now=T0)['down'], 1)
+        with patch.dict(monitor.PROBES, {}, clear=True), patch.object(monitor, '_alert_transition') as alert:
+            monitor.run_checks(now=T0 + 60)
+        self.assertEqual(monitor.service_states(), [])
+        self.assertEqual(monitor.summary(now=T0 + 60)['down'], 0)
+        self.assertEqual(monitor.list_events(), events)
+        alert.assert_not_called()
+
+    def test_unconfigured_probe_removes_existing_state_without_events_or_alerts(self):
+        for service in ('rag', 'ocr', 'database'):
+            for ok in (False, True):
+                with self.subTest(service=service, ok=ok):
+                    monitor.record_check(service, ok, now=T0)
+                    events = monitor.list_events()
+                    self.assertEqual(monitor.summary(now=T0)['down'], 0 if ok else 1)
+                    with patch.dict(monitor.PROBES, {service: lambda: None}, clear=True), \
+                         patch.object(monitor, '_alert_transition') as alert:
+                        monitor.run_checks(now=T0 + 60)
+                    self.assertEqual(monitor.service_states(), [])
+                    self.assertEqual(monitor.summary(now=T0 + 60)['down'], 0)
+                    self.assertEqual(monitor.list_events(), events)
+                    alert.assert_not_called()
+
+    def test_state_cleanup_leaves_non_probe_services_untouched(self):
+        for service in ('backend', 'scheduled-notification'):
+            monitor.record_check(service, False, '連不上', now=T0)
+        states = monitor.service_states()
+        monitor.record_check('llm-desktop', False, '連不上', now=T0)
+        monitor.record_check('rag', False, '連不上', now=T0)
+        events = monitor.list_events()
+        with patch.dict(monitor.PROBES, {'rag': lambda: None}, clear=True), \
+             patch.object(monitor, '_alert_transition') as alert:
+            monitor.run_checks(now=T0 + 60)
+        self.assertEqual(monitor.service_states(), states)
+        self.assertEqual(monitor.summary(now=T0 + 60)['down'], 2)
+        self.assertEqual(monitor.list_events(), events)
+        alert.assert_not_called()
 
     # -------------------- 佇列與設定 --------------------
 
@@ -248,6 +374,34 @@ class MonitoringTests(AdminStoreTestCase):
         self.assertNotIn('someone@gmail.com', blob)
         self.assertNotIn('hunter2', blob)
         self.assertTrue(next(i for i in items if i['key'] == 'smtp')['ok'])
+
+    def test_container_services_have_the_expected_labels_and_probes(self):
+        self.assertEqual(monitor.SERVICE_LABELS['llm-ollama'], 'LLM 備援（Ollama）')
+        self.assertEqual(monitor.SERVICE_LABELS['rag'], 'RAG 檢索服務')
+        self.assertIs(monitor.PROBES['llm-ollama'], monitor.probe_llm_ollama)
+        self.assertIs(monitor.PROBES['rag'], monitor.probe_rag)
+
+    def test_config_checklist_contains_ollama_nvidia_and_rag(self):
+        with patch.dict(os.environ, {
+            'LLM_PROVIDER_ORDER': 'nvidia,ollama', 'OLLAMA_URL': 'http://ollama:11434',
+            'NVIDIA_API_KEY': 'test-key', 'LOCAL_EMBEDDING_URL': 'http://rag:8000',
+        }, clear=True):
+            items = {item['key']: item for item in monitor.config_status()}
+        for service in ('llm-ollama', 'nvidia', 'rag'):
+            self.assertTrue(items[service]['ok'])
+        self.assertIn('OLLAMA_URL', items['llm-ollama']['hint'])
+        self.assertIn('Ollama', items['nvidia']['hint'])
+        self.assertIn('LOCAL_EMBEDDING_URL', items['rag']['hint'])
+
+    def test_retired_service_alert_uses_its_retired_label(self):
+        with patch('admin.admin_notifications.record_alert') as alert:
+            monitor._alert_transition('llm-desktop', 'down', '連不上')
+        self.assertEqual(alert.call_args.args[0], 'AI 模型（桌機，已移除）連不上')
+
+    def test_unknown_service_keys_fall_back_to_raw_labels(self):
+        monitor.record_check('unknown-service', False, '連不上', now=T0)
+        self.assertEqual(monitor.list_events()[0]['serviceLabel'], 'unknown-service')
+        self.assertEqual(monitor.service_states()[0]['label'], 'unknown-service')
 
 
     def vision_ok(self):

@@ -10,10 +10,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from admin import banner_images
+from admin import audit_service, banner_images, content_service
 from auth.security import get_current_admin
 from db.database import get_db
 from routers import content_api
+from tests.admin_store import AdminStoreTestCase
 
 
 def image_bytes(size=(2400, 800), fmt='WEBP', color=(70, 69, 165)) -> bytes:
@@ -24,6 +25,7 @@ def image_bytes(size=(2400, 800), fmt='WEBP', color=(70, 69, 165)) -> bytes:
 
 class BannerImageTestCase(unittest.TestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.dir = Path(self.temp.name) / 'banners'
         self.env = patch.dict(os.environ, {'BANNER_IMAGE_DIR': str(self.dir)})
@@ -59,7 +61,7 @@ class StoreTests(BannerImageTestCase):
     def test_the_same_image_twice_keeps_one_copy(self):
         data = image_bytes()
         first = banner_images.save(data, 'banner.webp')
-        second = banner_images.save(data, '別的名字.webp')
+        second = banner_images.save(data, 'another-name.webp')
         self.assertEqual(first['name'], second['name'])
         self.assertEqual(len(list(self.dir.iterdir())), 1)
 
@@ -96,13 +98,23 @@ class StoreTests(BannerImageTestCase):
                 self.assertIsNone(banner_images.path_of(name))
 
 
-class ApiTests(BannerImageTestCase):
+    def test_delete_removes_the_file_and_missing_or_invalid_names_raise(self):
+        saved = banner_images.save(image_bytes(size=(600, 200)), 'ok.webp')
+        banner_images.delete(saved['name'])
+        self.assertFalse((self.dir / saved['name']).exists())
+        self.assertEqual(banner_images.listing(), [])
+        for name in (saved['name'], '../x.webp', 'unknown.webp'):
+            with self.subTest(name=name), self.assertRaises(LookupError):
+                banner_images.delete(name)
+
+
+class ApiTests(BannerImageTestCase, AdminStoreTestCase):
     admin = MagicMock(id=1, email='admin@example.com')
 
     def client(self, admin_ok=True):
         app = FastAPI()
         app.include_router(content_api.router)
-        # 輪播圖不碰資料庫，但 get_current_admin 的相依會去要連線：不換掉的話，
+        # 內容服務用測試資料庫，但 get_current_admin 的相依會另外去要連線：不換掉的話，
         # 沒有 .env 的環境（CI、暫存工作區）會先回 503，測不到 401。
         app.dependency_overrides[get_db] = lambda: None
         if admin_ok:
@@ -113,14 +125,31 @@ class ApiTests(BannerImageTestCase):
         return client.post('/api/admin/banner-images',
                            files={'file': (filename, data if data is not None else image_bytes(), content_type)})
 
+    def create_banner(self, url, title='新功能'):
+        return content_service.create_banner({
+            'title': title, 'imageUrl': url, 'linkUrl': '/app/subsidy',
+            'published': False, 'startAt': '2026-01-01T00:00:00Z', 'endAt': None,
+        }, actor=self.admin.email)
+
+    def fill_library(self):
+        images = [image_bytes(size=(60, 20), fmt='PNG', color=(i, 0, 0)) for i in range(banner_images.LIMIT)]
+        saved = [banner_images.save(data, f'{index}.png') for index, data in enumerate(images)]
+        return images, saved
+
     def test_upload_then_list_then_read_the_image(self):
         client = self.client()
         response = self.upload(client)
         self.assertEqual(response.status_code, 201, response.text)
         url = response.json()['url']
+        self.assertEqual(response.json()['usedBy'], [])
+        self.assertTrue(response.json()['deletable'])
+        self.assertEqual(set(response.json()),
+                         {'name', 'url', 'size', 'uploadedAt', 'width', 'height', 'usedBy', 'deletable'})
 
         listed = client.get('/api/admin/banner-images')
         self.assertEqual([item['url'] for item in listed.json()['items']], [url])
+        self.assertEqual(listed.json()['count'], 1)
+        self.assertEqual(listed.json()['limit'], 30)
 
         # 公開讀取：首頁未登入也要看得到圖
         public = self.client(admin_ok=False).get(url)
@@ -128,10 +157,102 @@ class ApiTests(BannerImageTestCase):
         self.assertEqual(public.headers['content-type'], 'image/webp')
         self.assertIn('max-age', public.headers.get('cache-control', ''))
 
-    def test_upload_and_list_require_an_admin(self):
+    def test_upload_list_and_delete_require_an_admin(self):
         client = self.client(admin_ok=False)
         self.assertEqual(self.upload(client).status_code, 401)
         self.assertEqual(client.get('/api/admin/banner-images').status_code, 401)
+        self.assertEqual(client.delete('/api/admin/banner-images/nope.webp').status_code, 401)
+
+    def test_list_shows_usage_and_preserves_newest_first_order(self):
+        first = banner_images.save(image_bytes(size=(60, 20), fmt='PNG'), 'first.png')
+        second = banner_images.save(image_bytes(size=(60, 20), fmt='PNG', color=(1, 2, 3)), 'second.png')
+        for index, item in enumerate((first, second)):
+            os.utime(self.dir / item['name'], (100 + index, 100 + index))
+        banner = self.create_banner(first['url'])
+        response = self.client().get('/api/admin/banner-images')
+        self.assertEqual(response.status_code, 200)
+        expected = []
+        for item, used_by in ((second, []), (first, [{'id': banner['id'], 'title': banner['title']}])):
+            expected.append({**{key: item[key] for key in ('name', 'url', 'size')},
+                             'uploadedAt': 101.0 if item is second else 100.0,
+                             'usedBy': used_by, 'deletable': not used_by})
+        self.assertEqual(response.json(), {'items': expected, 'count': 2, 'limit': 30})
+
+    def test_empty_library_does_not_list_builtin_images(self):
+        self.assertEqual(self.client().get('/api/admin/banner-images').json(),
+                         {'items': [], 'count': 0, 'limit': 30})
+
+    def test_delete_unused_image_removes_file_and_records_audit(self):
+        saved = banner_images.save(image_bytes(size=(60, 20)), 'unused.webp')
+        response = self.client().delete(f'/api/admin/banner-images/{saved["name"]}')
+        self.assertEqual(response.status_code, 204, response.text)
+        self.assertEqual(response.content, b'')
+        self.assertFalse((self.dir / saved['name']).exists())
+        events = audit_service.list_events(subject=f'banner-image:{saved["name"]}')
+        self.assertEqual(len(events), 1)
+        self.assertEqual({key: events[0][key] for key in ('action', 'target', 'detail', 'actor', 'subject')}, {
+            'action': '內容管理', 'target': 'Banner 圖片', 'detail': f'刪除輪播圖片「{saved["name"]}」',
+            'actor': self.admin.email, 'subject': f'banner-image:{saved["name"]}',
+        })
+
+    def test_delete_used_image_is_conflict_and_keeps_file(self):
+        saved = banner_images.save(image_bytes(size=(60, 20)), 'used.webp')
+        self.create_banner(saved['url'], 'A')
+        self.create_banner('https://host' + saved['url'] + '?v=1#image', 'B')
+        response = self.client().delete(f'/api/admin/banner-images/{saved["name"]}')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), {
+            'detail': '這張圖片還有 2 則輪播在用：「A」、「B」。請先替那些輪播換圖再刪除。',
+        })
+        self.assertTrue((self.dir / saved['name']).exists())
+        self.assertEqual(audit_service.list_events(subject=f'banner-image:{saved["name"]}'), [])
+
+    def test_delete_conflict_shows_at_most_three_titles(self):
+        saved = banner_images.save(image_bytes(size=(60, 20)), 'used.webp')
+        for title in ('A', 'B', 'C', 'D', 'E'):
+            self.create_banner(saved['url'], title)
+        response = self.client().delete(f'/api/admin/banner-images/{saved["name"]}')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['detail'],
+                         '這張圖片還有 5 則輪播在用：「A」、「B」、「C」等 5 則。請先替那些輪播換圖再刪除。')
+        self.assertTrue((self.dir / saved['name']).exists())
+
+    def test_delete_invalid_and_unknown_names_is_404(self):
+        client = self.client()
+        for name in ('..%2Fx.webp', 'unknown.webp', 'bad.exe'):
+            with self.subTest(name=name):
+                response = client.delete(f'/api/admin/banner-images/{name}')
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json(), {'detail': '找不到這張圖片。'})
+        self.assertEqual(audit_service.list_events(), [])
+
+    def test_distinct_upload_when_full_is_conflict_without_a_new_file(self):
+        self.fill_library()
+        names = {path.name for path in self.dir.iterdir()}
+        response = self.upload(self.client(), image_bytes(size=(60, 20), fmt='PNG', color=(255, 0, 0)))
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), {'detail': '圖庫已滿（30 張），請先刪除未使用的圖片。'})
+        self.assertEqual({path.name for path in self.dir.iterdir()}, names)
+        self.assertEqual(len(banner_images.listing()), 30)
+
+    def test_identical_upload_when_full_reuses_name_and_reports_existing_usage(self):
+        images, saved = self.fill_library()
+        banner = self.create_banner(saved[0]['url'])
+        client = self.client()
+        for filename in ('0.png', 'renamed.png'):
+            with self.subTest(filename=filename):
+                response = self.upload(client, images[0], filename=filename)
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertEqual(response.json()['name'], saved[0]['name'])
+                self.assertEqual(response.json()['usedBy'], [{'id': banner['id'], 'title': banner['title']}])
+                self.assertFalse(response.json()['deletable'])
+                self.assertEqual(len(list(self.dir.iterdir())), 30)
+
+    def test_invalid_upload_when_full_keeps_existing_400_error(self):
+        self.fill_library()
+        response = self.upload(self.client(), b'not an image')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {'detail': '這個檔案不是圖片，請改上傳 WebP、PNG 或 JPG。'})
 
     def test_a_bad_file_gets_a_chinese_reason(self):
         response = self.upload(self.client(), data=b'not an image')

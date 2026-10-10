@@ -110,20 +110,13 @@ def show_config() -> None:
     print()
 
     url = llm_provider.ollama_base()
-    print("  ① Ollama")
-    print(f"     位址       : {url}")
-    if os.getenv("LLM_TUNNEL_URL"):
-        print(f"     （OCR 另走 : {os.getenv('OLLAMA_URL', '未設定')}，不受隧道影響）")
+    print("  Ollama 備援")
+    print(f"     OLLAMA_URL : {url}")
     print(f"     分析模型   : {llm_provider._model_for('ollama', 'analyze')}")
     print(f"     對話模型   : {llm_provider._model_for('ollama', 'chat')}")
-    print(f"     隧道 API key: {'已設定' if os.getenv('LLM_TUNNEL_API_KEY') else '未設定'}")
-    has_cf = bool(os.getenv("CF_ACCESS_CLIENT_ID") and os.getenv("CF_ACCESS_CLIENT_SECRET"))
-    print(f"     CF Access  : {'已設定' if has_cf else '未設定'}")
-    if url.startswith("https://") and not has_cf:
-        print("     ⚠️  位址是 https 但沒有 Access 憑證 —— 隧道端點可能對外裸奔")
     print()
 
-    print("  ② NVIDIA")
+    print("  NVIDIA 主要模型")
     if os.getenv("NVIDIA_API_KEY"):
         print("     金鑰       : 已設定")
         print(f"     分析模型   : {llm_provider._model_for('nvidia', 'analyze')}"
@@ -163,7 +156,8 @@ def show_embedding_config() -> None:
     print("=" * 60)
 
     order = embeddings.provider_order()
-    print(f"  嘗試順序      : {' → '.join(order)}")
+    print(f"  EMBEDDING_PROVIDER  : {' → '.join(order)}")
+    print(f"  LOCAL_EMBEDDING_URL : {embeddings._local_base() or '未設定'}")
     spaces = law_corpus.stats()["spaces"]
     if not spaces:
         print("  ❌ 語料沒有任何可用的向量空間 —— 一律退回「全部給」")
@@ -185,7 +179,7 @@ def show_embedding_config() -> None:
             print(f"     建一份：python scripts/build_vectors.py --provider {provider}")
         elif not embeddings.is_configured(provider):
             hint = ("設定 NVIDIA_API_KEY" if provider == "nvidia"
-                    else "設定 OLLAMA_URL 或 LOCAL_EMBEDDING_URL")
+                    else "設定 LOCAL_EMBEDDING_URL")
             print(f"  ❌ {provider}：未設定（請{hint}）")
         elif wanted != space["model"]:
             print(f"  ❌ {provider}：語料用 {space['model']} 建，但設定要用 {wanted}")

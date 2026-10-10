@@ -15,6 +15,7 @@ from fastapi.responses import Response
 from openai import OpenAI
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, ConfigDict
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload, object_session
 from db.database import get_db
 from db.models import InspectionItem, InspectionRecord, InspectionPhotoDetail, Rental, User
@@ -64,6 +65,37 @@ def clean_and_parse_json(raw_text: str) -> dict:
 
 def photo_directory():
     return Path(os.getenv('INSPECTION_UPLOAD_DIR', str(BASE_DIR / 'uploads' / 'inspection')))
+
+
+def delete_photo_files(db, photo_urls):
+    # 提交成功後才刪檔，避免回滾時紀錄仍在但照片已遺失。
+    for name in set(photo_urls):
+        if not isinstance(name, str) or not re.fullmatch(r'[0-9a-f]{32}\.jpg', name):
+            continue
+        try:
+            directory = photo_directory().resolve()
+            path = directory / name
+            if not path.resolve().is_relative_to(directory):
+                continue
+            if db.query(InspectionRecord.id).filter(InspectionRecord.photo_url == name).first():
+                continue
+            path.unlink(missing_ok=True)
+        # 紀錄已經 commit，刪檔或查引用失敗都只留 log，不能讓已成功的刪除回 500
+        except (OSError, SQLAlchemyError):
+            logging.getLogger(__name__).warning('點交照片刪檔失敗：%s', name, exc_info=True)
+
+
+def delete_original_files(names):
+    for name in names:
+        if not isinstance(name, str) or not re.fullmatch(r'[0-9a-f]{32}\.original', name):
+            continue
+        try:
+            directory = photo_directory().resolve()
+            path = directory / name
+            if path.resolve().is_relative_to(directory):
+                path.unlink(missing_ok=True)
+        except OSError:
+            logging.getLogger(__name__).warning('點交原始檔刪除失敗：%s', name, exc_info=True)
 
 
 def read_photo(record):
@@ -465,12 +497,16 @@ def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depend
     item = owned_item(db, item_id, user, lock=True)
     claim_version(db, item, item.version)
     records = item_records(item, True)
+    photo_urls = [record.photo_url for record in records]
+    originals = [(db.get(InspectionPhotoDetail, record.id).provenance or {}).get('originalPath')
+                 for record in records if db.get(InspectionPhotoDetail, record.id)]
     db.delete(item)
     db.flush()
     for record in records:
         db.delete(record)
     db.commit()
-    # Retain image files for backup/recovery; they are never publicly served.
+    delete_photo_files(db, photo_urls)
+    delete_original_files(originals)
 
 
 @router.put('/items/{item_id}/photos/{phase}')
@@ -566,6 +602,7 @@ def delete_photo(item_id: int, record_id: int, db: Session = Depends(get_db), us
     if detail is None:
         detail = InspectionPhotoDetail(record_id=record_id, item_id=item.id, angle='other', provenance={})
         db.add(detail)
+    # 單張刪除與重拍都只封存：照片留在歷史裡當存證，檔案要等整個項目刪掉才一起刪
     detail.removed_at = datetime.utcnow()
     if getattr(item, phase + '_record_id') == record_id:
         setattr(item, phase, next((r for r in item_records(item) if r.id != record_id and r.type == record.type), None))

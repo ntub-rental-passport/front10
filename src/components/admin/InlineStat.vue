@@ -20,15 +20,17 @@ import { formatStatValue, resolveInlineStatVisual } from './inline-stat'
  * 四張並排的卡如果只有文字，掃視時長得一模一樣 —— 必須停下來讀字才知道
  * 哪張是哪張。一個圖形讓眼睛可以直接跳到要找的那張。
  *
- * ## 沒有 sublabel、沒有 sparkline
+ * ## 只保留簡短狀態、沒有 sparkline
  *
- * 這個高度塞不下，硬塞只會讓每一行都變得難讀。需要那些細節的數字，
- * 應該留在下方的圖表卡裡 —— 那裡本來就有空間講清楚組成。
+ * 這個高度塞不下詳細組成，應該留在下方的圖表卡裡。
+ * 讀取狀態則用小字補充，避免把說明塞進大數字的位置而擠壞版面。
  */
 const props = defineProps<{
   icon: Component
   label: string
   value: string | number
+  /** 缺少資料不能當成零，用簡短小字交代佔位符的原因 */
+  note?: string
   /** 沒有可比較的歷史資料時不要傳，TrendChip 會自己不渲染 */
   trend?: number
   /**
@@ -77,6 +79,7 @@ const visual = computed(() => resolveInlineStatVisual(props.hero))
       <span class="block truncate text-xs" :class="visual.labelClass">{{ label }}</span>
       <span class="flex flex-wrap items-baseline gap-x-2">
         <span class="text-2xl font-bold leading-tight tracking-tight">{{ display }}</span>
+        <span v-if="note" class="text-xs" :class="visual.labelClass">{{ note }}</span>
         <TrendChip v-if="trend" :value="trend" suffix="%" :period="trendPeriod" />
       </span>
     </span>

@@ -39,7 +39,7 @@ import {
   useAdminMaintenance,
   type MaintenanceTicketView,
 } from '@/src/composables/admin/useAdminMaintenance'
-import { adminUsersCollection } from '@/src/composables/admin/useAdminUsers'
+import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import {
   maintenanceCategoryLabels,
   maintenanceStatusLabels,
@@ -53,6 +53,7 @@ import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-
 
 const route = useRoute()
 const router = useRouter()
+const { rows: directoryRows } = useAdminDirectory()
 
 const {
   ticketViews,
@@ -90,8 +91,10 @@ watch(
 
 const filteredUserName = computed(() => {
   if (!userFilter.value) return ''
-  const user = adminUsersCollection.value.find((item) => item.id === userFilter.value)
-  return user ? userDisplayName(user) : userFilter.value
+  const row = directoryRows.value.find((item) =>
+    item.user.id === userFilter.value || String(item.realAccountId) === userFilter.value,
+  )
+  return row ? userDisplayName(row.user) : userFilter.value
 })
 
 const selectedId = ref<string | null>(null)

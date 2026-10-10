@@ -424,10 +424,3 @@ export function lastOutageNote(rows: EventRow[], service: string): string | null
   const duration = row.durationSeconds === null ? '' : `，持續 ${formatDuration(row.durationSeconds)}`
   return `上次斷線：${formatShortDateTime(row.startedAt)}${duration}`
 }
-
-/** AI 模型卡上的備援說明。桌機一睡，有沒有備援決定了分析是變慢還是直接失敗。 */
-export function nvidiaBackupNote(config: ConfigItem[] | null): string | null {
-  const item = config?.find((entry) => entry.key === 'nvidia')
-  if (!item) return null
-  return item.ok ? 'NVIDIA 備援已設定：桌機連不上時會改用它' : 'NVIDIA 備援未設定：桌機連不上時，分析會直接失敗'
-}

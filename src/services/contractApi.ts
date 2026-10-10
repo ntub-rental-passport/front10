@@ -17,6 +17,7 @@ export interface FinalizeContractRequest {
   rental: RentalPayload
   /** 契約別名，方便使用者在點交、帳單等頁面辨識這份租約。 */
   contract_tag?: string | null
+  review_id?: string
 }
 
 export interface FinalizeContractResponse {

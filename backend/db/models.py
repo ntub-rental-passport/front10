@@ -222,6 +222,36 @@ class Rental(Base):
         cascade="all, delete-orphan",
     )
 
+class ContractReview(Base):
+    __tablename__ = 'contract_reviews'
+    __table_args__ = (
+        Index('idx_contract_reviews_rental_activity', 'rental_id', 'activity_at'),
+        Index('idx_contract_reviews_user', 'user_id'),
+    )
+    id = Column(CHAR(36), primary_key=True, nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='SET NULL'), nullable=True)
+    records = Column(JSON, nullable=False)
+    activity_at = Column(Timestamp, nullable=False)
+    expiry_notified_at = Column(Timestamp, nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+
+class ContractReviewFile(Base):
+    __tablename__ = 'contract_review_files'
+    __table_args__ = (Index('idx_contract_review_files_review_kind', 'review_id', 'kind'),)
+    id = Column(Integer, primary_key=True, nullable=False, autoincrement=True)
+    review_id = Column(CHAR(36), ForeignKey('contract_reviews.id', ondelete='CASCADE'), nullable=False)
+    kind = Column(Enum('evidence','report', validate_strings=True, create_constraint=True), nullable=False)
+    record_key = Column(String(64), nullable=True)
+    stored_name = Column(String(64), nullable=False)
+    original_name = Column(EncryptedText(512), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    report_id = Column(String(64), nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+
 class Bill(Base):
     __tablename__ = 'bills'
     __table_args__ = (UniqueConstraint('rental_id', 'period_index', name='uq_bills_rental_period'),Index('idx_bills_due_unpaid', 'due_date', 'paid_at'),)
@@ -769,6 +799,25 @@ class TrashFavorite(Base):
     station_name = Column(String(255), nullable=False)
 
     user = relationship("User", back_populates="trash_favorites")
+
+class SubsidyFile(Base):
+    __tablename__ = 'subsidy_files'
+    __table_args__ = (
+        Index('idx_subsidy_files_user_created', 'user_id', 'created_at'),
+        Index('idx_subsidy_files_expires', 'expires_at'),
+    )
+    id = Column(Integer, primary_key=True, nullable=False, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='SET NULL'), nullable=True)
+    doc_type = Column(Enum('application_form','identity','household','lease_copy','bankbook','other', validate_strings=True, create_constraint=True), nullable=False)
+    stored_name = Column(String(64), nullable=False)
+    original_name = Column(EncryptedText(512), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    expires_at = Column(Timestamp, nullable=False)
+    expiry_notified_at = Column(Timestamp, nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
 
 class SubsidyApplication(Base):
     __tablename__ = 'subsidy_applications'

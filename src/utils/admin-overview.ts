@@ -2,7 +2,7 @@
  * 後台總覽的資料聚合。純邏輯，不依賴 Vue。
  *
  * 頁面講兩件事：「這個系統長什麼樣」（規模、組成、趨勢）與「有什麼在等你處理」（待辦佇列）。
- * 這個檔案負責把散在各 collection 的資料算成那兩者需要的形狀。
+ * 這個檔案負責把使用者目錄、押金與工單等來源算成那兩者需要的形狀。
  */
 
 import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
@@ -72,7 +72,8 @@ export function monthlyUserGrowth(
   for (let i = months - 1; i >= 0; i -= 1) {
     const cutoff = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
     const label = `${cutoff.getMonth() === 0 ? 12 : cutoff.getMonth()}月`
-    const total = users.filter((user) => new Date(user.registeredAt) < cutoff).length
+    // 真實帳號可能沒有註冊時間，不替未知日期編造月份。
+    const total = users.filter((user) => user.registeredAt && new Date(user.registeredAt) < cutoff).length
     points.push({ label, value: total })
   }
 

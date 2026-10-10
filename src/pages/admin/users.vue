@@ -19,6 +19,8 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select/index'
@@ -57,12 +59,13 @@ import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vu
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
 import { userAlertLabels, type UserAlert } from '@/src/utils/admin-user-directory'
+import { userPlan } from '@/src/utils/admin-plans'
+import { subscriptionPlans } from '@/src/utils/subscription-plans'
 import { realAccountStats, registrationSources } from '@/src/utils/admin-real-accounts'
 import type {
   PlanDistributionSegment,
   UserDirectoryRow,
 } from '@/src/utils/admin-user-directory'
-import type { AdminRole } from '@/src/utils/admin-rbac'
 import { chartColor, chartSeries } from '@/src/constants/admin-chart'
 import { useNow } from '@/src/composables/useNow'
 import { formatDateTime } from '@/src/utils/admin-format'
@@ -89,32 +92,31 @@ const {
   filterActive,
   clearFilter,
   planSegments,
-  adminCounts,
+  planRole,
+  adminTotal,
   realAccounts,
+  depositsState,
+  ticketsState,
   realAccountsLoading,
   realAccountsError,
   reloadRealAccounts,
   setRealAccountStatus,
 } = useAdminDirectory()
 
-// 對應 planDistribution 的順序：免費、進階、專業、尚未訂閱。
-// 用明度表達層級 —— 方案越高階顏色越深，未訂閱最淡。
+// 對應 Free、Plus、Pro，用明度表達方案越高階顏色越深。
 const planColors = computed(() => [
   chartColor('series-3'),
   chartColor('series-2'),
   chartColor('series-1'),
-  chartColor('series-5'),
 ])
-const adminRoleColors = computed<Record<AdminRole, string>>(() => ({
-  super: chartColor('series-1'),
-  admin: chartColor('series-3'),
-}))
 
 // 再點一次同一個方案就取消篩選，不用特地跑去按「清除篩選」。
 // 圖表搬到列表下方之後，點了圖卻看不到列表變化 —— 所以篩完捲回列表。
 const listCard = ref<HTMLElement | null>(null)
-function handlePlanSelect(planId: PlanDistributionSegment['planId']): void {
-  filter.value.plan = filter.value.plan === planId ? 'all' : planId
+function handlePlanSelect(planKey: PlanDistributionSegment['planKey']): void {
+  const plan = `${planRole.value}-${planKey}` as const
+  filter.value.role = planRole.value === 'landlord' ? 'landlord' : 'user'
+  filter.value.plan = filter.value.plan === plan ? 'all' : plan
   listCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
@@ -124,6 +126,33 @@ watch(
   (value) => {
     if (typeof value === 'string' && value in userAlertLabels) {
       filter.value.alert = value as UserAlert
+    }
+  },
+  { immediate: true },
+)
+
+// 訂閱總覽帶角色與方案進來；只接受列表已有的篩選值，避免無效 query 清空結果。
+watch(
+  () => route.query.role,
+  (value) => {
+    if (value === 'landlord' || value === 'user' || value === 'admin' || value === 'all') {
+      filter.value.role = value
+      if (value === 'landlord' || value === 'user') {
+        planRole.value = value === 'landlord' ? 'landlord' : 'tenant'
+      }
+    }
+  },
+  { immediate: true },
+)
+watch(
+  () => route.query.plan,
+  (value) => {
+    if (value === 'all') filter.value.plan = value
+    for (const role of ['landlord', 'tenant'] as const) {
+      for (const plan of subscriptionPlans[role]) {
+        const key = `${role}-${plan.key}` as const
+        if (value === key) filter.value.plan = key
+      }
     }
   },
   { immediate: true },
@@ -143,15 +172,7 @@ const sourceSegments = computed(() =>
   registrationSources(realAccounts.value).map((s) => ({ label: s.label, value: s.count })),
 )
 
-/**
- * 身分欄的文字。
- *
- * 「超級管理員」與一般管理員分開顯示：前者只能由能登入伺服器的人用
- * manage_admin.py 授予，權限與影響範圍完全不同，混用同一個標籤
- * 會讓人以為後台可以自己加。
- */
 function roleLabel(row: UserDirectoryRow): string {
-  if (row.user.role === 'admin' && row.user.adminRole === 'super') return '超級管理員'
   return adminRoleLabels[row.user.role]
 }
 
@@ -184,6 +205,9 @@ async function toggleStatus(row: UserDirectoryRow): Promise<void> {
 }
 
 function depositLabel(row: UserDirectoryRow): string {
+  if (row.realAccountId !== undefined && depositsState.value !== 'ready') {
+    return depositsState.value === 'error' ? '讀不到押金資料' : '讀取中'
+  }
   if (row.deposits.length === 0) return '—'
   if (row.mismatchedDepositCount > 0) return `${row.mismatchedDepositCount} 筆不符`
   const pending = row.deposits.filter((item) => item.match === 'pending').length
@@ -464,10 +488,12 @@ function displayName(row: UserDirectoryRow): string {
               <SelectTrigger class="w-32"><SelectValue placeholder="方案" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部方案</SelectItem>
-                <SelectItem value="free">免費方案</SelectItem>
-                <SelectItem value="plus">進階方案</SelectItem>
-                <SelectItem value="pro">專業方案</SelectItem>
-                <SelectItem value="none">尚未訂閱</SelectItem>
+                <SelectGroup v-for="role in (['landlord', 'tenant'] as const)" :key="role">
+                  <SelectLabel>{{ role === 'landlord' ? '房東' : '租客' }}</SelectLabel>
+                  <SelectItem v-for="plan in subscriptionPlans[role]" :key="plan.key" :value="`${role}-${plan.key}`">
+                    {{ plan.name }}
+                  </SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
 
@@ -659,8 +685,10 @@ function displayName(row: UserDirectoryRow): string {
                 </TableCell>
 
                 <TableCell class="whitespace-nowrap">
-                  <span v-if="row.plan">{{ row.plan.name }}</span>
-                  <span v-else class="text-muted-foreground">尚未訂閱</span>
+                  <span :class="row.user.role === 'admin' ? 'text-muted-foreground' : ''">{{ userPlan(row.user, row.subscription, now)?.name ?? '—' }}</span>
+                  <div v-if="row.overLimit" class="mt-1">
+                    <StatusDot tone="warn" :label="userAlertLabels['over-limit']" emphasize />
+                  </div>
                 </TableCell>
 
                 <TableCell
@@ -674,7 +702,10 @@ function displayName(row: UserDirectoryRow): string {
                   class="whitespace-nowrap"
                   :class="row.overdueTicketCount > 0 ? 'font-semibold text-destructive' : ''"
                 >
-                  <span v-if="row.openTicketCount === 0" class="text-muted-foreground">—</span>
+                  <span v-if="row.realAccountId !== undefined && ticketsState !== 'ready'" class="text-muted-foreground">
+                    {{ ticketsState === 'error' ? '讀不到工單資料' : '讀取中' }}
+                  </span>
+                  <span v-else-if="row.openTicketCount === 0" class="text-muted-foreground">—</span>
                   <span v-else>
                     {{ row.openTicketCount }} 件
                     <template v-if="row.overdueTicketCount > 0">
@@ -784,18 +815,18 @@ function displayName(row: UserDirectoryRow): string {
     />
 
     <!--
-      甜甜圈要留白給外側標籤所以吃比較多寬度；管理員人數只有兩個數字，
+      甜甜圈要留白給外側標籤所以吃比較多寬度；管理員人數只有一個數字，
       給它等寬只會空一大片。items-start 讓它照內容收高，不被甜甜圈撐平。
     -->
     <div class="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
       <PlanDistributionCard
+        v-model="planRole"
         :segments="planSegments"
         :colors="planColors"
-        :total="rows.length"
         :active-plan="filter.plan"
         @select="handlePlanSelect"
       />
-      <AdminRoleCountCard :counts="adminCounts" :colors="adminRoleColors" />
+      <AdminRoleCountCard :count="adminTotal" />
     </div>
 
     <!--

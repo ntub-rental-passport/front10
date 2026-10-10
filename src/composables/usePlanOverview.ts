@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { useLandlordWorkspace } from './useLandlordWorkspace'
 import { useLandlordSettings } from './useLandlordSettings'
-import { subscriptionPlans, type PlanRole } from '@/src/utils/subscription-plans'
+import { planLimits, subscriptionPlans, type PlanRole } from '@/src/utils/subscription-plans'
 
 export interface PlanUsage {
   label: string
@@ -12,7 +12,7 @@ export interface PlanUsage {
 }
 
 export function usePlanOverview(role: PlanRole) {
-  // Paid subscriptions are not connected yet. Never infer an entitlement from a local checkout.
+  // 付費訂閱尚未串接，不能從本機結帳紀錄推定已取得權益。
   const currentPlan = subscriptionPlans[role][0]!
   const workspace = role === 'landlord' ? useLandlordWorkspace() : null
   const settings = role === 'landlord' ? useLandlordSettings() : null
@@ -26,21 +26,21 @@ export function usePlanOverview(role: PlanRole) {
         {
           label: '管理物件',
           used: available ? workspace.properties.value.length : null,
-          limit: 1,
+          limit: planLimits.landlord.free.properties.limit,
           unit: '個',
           note: '依目前房務資料計算',
         },
         {
           label: '管理房間',
           used: available ? workspace.rooms.value.length : null,
-          limit: 5,
+          limit: planLimits.landlord.free.rooms.limit,
           unit: '間',
           note: '包含所有物件的房間',
         },
         {
           label: '管理者席次',
           used: 1 + settings.state.members.filter((m) => m.status === 'active').length,
-          limit: 1,
+          limit: planLimits.landlord.free.managers.limit,
           unit: '席',
           note: '含擁有者；依團隊成員名冊，不含待接受邀請',
         },
@@ -50,21 +50,21 @@ export function usePlanOverview(role: PlanRole) {
       {
         label: 'AI 契約分析',
         used: null,
-        limit: 1,
+        limit: planLimits.tenant.free.analysis.limit,
         unit: '次',
         note: '驗證帳號一次性贈送；使用紀錄尚未串接',
       },
       {
         label: '附件總容量',
         used: null,
-        limit: 200,
+        limit: planLimits.tenant.free.storage.limit,
         unit: 'MB',
         note: '規劃額度；用量統計尚未開放',
       },
       {
         label: '室友共享人數',
         used: null,
-        limit: 3,
+        limit: planLimits.tenant.free.sharedMembers.limit,
         unit: '人',
         note: '規劃 1 個空間，含訂閱者；用量統計尚未開放',
       },

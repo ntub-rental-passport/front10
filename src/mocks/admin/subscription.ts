@@ -1,172 +1,122 @@
-import { createRandom, daysAgo, daysAhead, intBetween } from './helpers'
-import { TRIAL_DAYS, type PlanFeatureKey, type PlanFeatures } from '@/src/utils/admin-entitlements'
+import { createRandom, daysAgo, daysAhead, intBetween, monthsAgo } from './helpers'
+import { TRIAL_DAYS, billingDate, getPlanLimits, usageMonth } from '@/src/utils/admin-plans'
+import type { BillingCycle, PlanKey, PlanRole } from '@/src/utils/subscription-plans'
 import { seedAdminUsers, type AdminUser } from './users'
 
-export type PlanId = 'free' | 'plus' | 'pro'
-
-export interface SubscriptionPlan {
-  id: PlanId
-  name: string
-  priceLabel: string
-  storageMb: number
-  /**
-   * 各功能的開關與額度。
-   *
-   * 契約分析的額度原本存在 aiQuota，已併進這裡 —— 一個功能只留一個上限來源，
-   * 否則「這人到底能用幾次」要查兩個地方。storageMb 留著，那是資源不是功能。
-   */
-  features: PlanFeatures
-}
-
-export interface Subscription {
+interface SubscriptionBase {
   id: string
   userId: string
-  planId: PlanId
+  planKey: PlanKey
+  billingCycle: BillingCycle | null
+  startedAt: string
   expiresAt: string
-  aiUsed: number
-  storageUsedMb: number
   active: boolean
-  /** 限時試用到期日；null 代表沒有試用。試用期間套用試用方案的權益。 */
   trialEndsAt: string | null
-  /**
-   * 單次加購的額度，疊加在方案上限之上。
-   *
-   * 只記權益不記金流 —— 平台沒有串金流，這裡的數字是管理員手動加的，
-   * 錢怎麼進來等接上金流再說，後台不假造付款紀錄。
-   */
-  extraCredits: Partial<Record<PlanFeatureKey, number>>
 }
 
-/** 開關與額度寫在一起，讀起來就是一張方案對照表 */
-function planFeatures(
-  spec: Partial<Record<PlanFeatureKey, boolean | number | null>>,
-): PlanFeatures {
-  const build = (value: boolean | number | null | undefined) => {
-    if (value === undefined || value === false) return { enabled: false, limit: null }
-    if (value === true || value === null) return { enabled: true, limit: null }
-    return { enabled: true, limit: value }
-  }
-  return {
-    'contract-analysis': build(spec['contract-analysis']),
-    handover: build(spec.handover),
-    subsidy: build(spec.subsidy),
-    garbage: build(spec.garbage),
-    outage: build(spec.outage),
-    notes: build(spec.notes),
-  }
+export interface ContractCheckPack {
+  id: string
+  source: 'purchase' | 'admin'
+  quantity: number
+  createdAt: string
+  /** 一個時間代表一包已消耗；與月份分開保存，才不會重置加購權益。 */
+  usedAt: string[]
 }
 
-export function seedPlans(): SubscriptionPlan[] {
-  return [
-    {
-      id: 'free',
-      name: '免費方案',
-      priceLabel: 'NT$0',
-      storageMb: 200,
-      features: planFeatures({ 'contract-analysis': 3, handover: 1, subsidy: 1, garbage: true }),
-    },
-    {
-      id: 'plus',
-      name: '進階方案',
-      priceLabel: 'NT$99／月',
-      storageMb: 2048,
-      features: planFeatures({
-        'contract-analysis': 20,
-        handover: 5,
-        subsidy: 3,
-        garbage: true,
-        outage: true,
-        notes: true,
-      }),
-    },
-    {
-      id: 'pro',
-      name: '專業方案',
-      priceLabel: 'NT$299／月',
-      storageMb: 10240,
-      // null = 無上限
-      features: planFeatures({
-        'contract-analysis': null,
-        handover: null,
-        subsidy: null,
-        garbage: true,
-        outage: true,
-        notes: true,
-      }),
-    },
-  ]
+export interface TenantSubscription extends SubscriptionBase {
+  role: 'tenant'
+  /** 只記方案內的本月用量；加購消耗由包的 usedAt 記錄。 */
+  aiUsed: number
+  aiUsageMonth: string
+  freeAiUsed: number
+  storageUsedMb: number
+  checkPacks: ContractCheckPack[]
 }
 
-const QUOTA: Record<PlanId, { ai: number; storage: number }> = {
-  free: { ai: 3, storage: 200 },
-  plus: { ai: 20, storage: 2048 },
-  pro: { ai: 100, storage: 10240 },
+export interface LandlordSubscription extends SubscriptionBase {
+  role: 'landlord'
 }
 
-/**
- * 方案與到期日用固定循環分配，不靠機率。
- *
- * 純機率會讓小樣本嚴重偏離期望值 —— 專業方案可能一筆都抽不到，
- * 到期日也很難剛好落進「即將到期」那 14 天，警示卡就永遠是 0。
- */
-const PLAN_CYCLE: PlanId[] = ['free', 'plus', 'free', 'pro', 'plus', 'free', 'plus', 'free', 'pro', 'plus']
+export type Subscription = TenantSubscription | LandlordSubscription
 
-/** 每 7 筆安排 1 筆落在 14 天內到期，確保到期警示有東西可看 */
-const EXPIRING_EVERY = 7
+/** 各角色分開循環，避免小樣本抽不到某方案、週期或警示情境。 */
+const PLAN_CYCLE: PlanKey[] = ['free', 'plus', 'pro', 'plus', 'pro', 'free']
 
-/** 每 9 筆安排 1 筆把額度用滿 */
-const EXHAUSTED_EVERY = 9
-
-/** 每 6 筆安排 1 筆仍在限時試用中 */
-const TRIAL_EVERY = 6
-
-/** 每 8 筆安排 1 筆有單次加購額度 */
-const EXTRA_CREDIT_EVERY = 8
-
-/** 管理員不訂閱；其餘使用者約八成有訂閱記錄，留下一批「尚未訂閱」供空狀態驗證 */
 export function seedSubscriptions(users: AdminUser[] = seedAdminUsers()): Subscription[] {
   const random = createRandom(302558)
-  const subscriptions: Subscription[] = []
-  let index = 0
-
-  for (const user of users) {
-    if (user.role === 'admin') continue
-    if (random() > 0.8) continue
-
-    const planId = PLAN_CYCLE[index % PLAN_CYCLE.length]
-    const quota = QUOTA[planId]
-
-    // 停用帳號的訂閱一併失效，且到期日落在過去
-    const active = user.status === 'active' && random() > 0.06
-    const expiringSoon = active && index % EXPIRING_EVERY === 0
-    const expiresAt = !active
-      ? daysAgo(intBetween(random, 2, 60))
-      : expiringSoon
-        ? daysAhead(intBetween(random, 2, 13))
-        : daysAhead(intBetween(random, 25, 330))
-
-    // 每 9 筆安排 1 筆把額度用滿，其餘落在一到八成之間
-    const exhausted = active && index % EXHAUSTED_EVERY === EXHAUSTED_EVERY - 1
-    const usageRatio = exhausted ? 1 : 0.12 + random() * 0.68
-
-    index += 1
-    // 試用只給還在使用中的帳號，過期帳號再掛試用會自相矛盾
-    const inTrial = active && index % TRIAL_EVERY === 0
-    const hasExtra = index % EXTRA_CREDIT_EVERY === 0
-
-    subscriptions.push({
-      id: `sub-${index}`,
+  const now = new Date()
+  const indexes: Record<PlanRole, number> = { tenant: 0, landlord: 0 }
+  return users.flatMap((user): Subscription[] => {
+    if (user.role === 'admin') return []
+    const role = user.role === 'landlord' ? 'landlord' : 'tenant'
+    const index = indexes[role]++
+    const planKey = PLAN_CYCLE[index % PLAN_CYCLE.length]
+    const billingCycle: BillingCycle | null =
+      planKey === 'free' ? null : index % 2 === 0 ? 'yearly' : 'monthly'
+    const active = user.status === 'active'
+    const trialEndsAt =
+      active && index % 6 === 5 ? daysAhead(intBetween(random, 1, TRIAL_DAYS - 1)) : null
+    let startedAt: string
+    let expiresAt: string
+    if (!billingCycle) {
+      startedAt = user.registeredAt
+      expiresAt = !active ? daysAgo(3) : daysAhead(intBetween(random, 15, 27))
+    } else {
+      // 月繳保留即將到期情境；其餘開始日分散，年繳收款才不會集中在同一月份。
+      const soon = billingCycle === 'monthly' && index % 3 === 1
+      const nextWeek = new Date(now)
+      nextWeek.setDate(nextWeek.getDate() + 7)
+      const day = soon ? nextWeek.getDate() : intBetween(random, 1, 28)
+      // 停用者保留至少一期已付款歷史，再於某個過去的續扣日前取消。
+      const minimumMonths = active ? 1 : billingCycle === 'yearly' ? 13 : 2
+      startedAt = monthsAgo(intBetween(random, minimumMonths, 18), day)
+      const start = new Date(startedAt)
+      let period = 1
+      let next = billingDate(start, billingCycle, period)
+      while (next <= now) next = billingDate(start, billingCycle, ++period)
+      expiresAt = (active ? next : billingDate(start, billingCycle, period - 1)).toISOString()
+    }
+    const common = {
+      id: `sub-${user.id}`,
       userId: user.id,
-      planId,
+      planKey,
+      billingCycle,
+      startedAt,
       expiresAt,
-      trialEndsAt: inTrial ? daysAhead(intBetween(random, 1, TRIAL_DAYS)) : null,
-      extraCredits: hasExtra ? { 'contract-analysis': intBetween(random, 3, 10) } : {},
-      // 用 floor：免費方案額度只有 3 次，四捨五入會讓一半的人都被算成用滿
-      aiUsed: Math.min(quota.ai, Math.floor(quota.ai * usageRatio)),
-      storageUsedMb: Math.min(quota.storage, Math.floor(quota.storage * usageRatio)),
       active,
-    })
-  }
-
-  return subscriptions
+      trialEndsAt,
+    }
+    if (role === 'landlord') return [{ ...common, role }]
+    const limits = getPlanLimits(role, trialEndsAt ? 'plus' : active ? planKey : 'free')
+    const exhausted = index % 6 === 1
+    return [
+      {
+        ...common,
+        role,
+        aiUsageMonth: usageMonth(),
+        aiUsed: limits.analysis.period === 'monthly' && exhausted ? limits.analysis.limit : 0,
+        freeAiUsed: planKey === 'free' && user.emailVerified && index % 2 === 0 ? 1 : 0,
+        storageUsedMb: Math.floor(limits.storage.limit * (exhausted ? 1 : random() * 0.8)),
+        checkPacks:
+          index % 6 === 2
+            ? [
+                {
+                  id: `pack-${user.id}-purchase`,
+                  source: 'purchase',
+                  quantity: 3,
+                  createdAt: daysAgo(40),
+                  usedAt: [daysAgo(35)],
+                },
+                {
+                  id: `pack-${user.id}-admin`,
+                  source: 'admin',
+                  quantity: 1,
+                  createdAt: daysAgo(2),
+                  usedAt: [],
+                },
+              ]
+            : [],
+      },
+    ]
+  })
 }

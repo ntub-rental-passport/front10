@@ -200,6 +200,35 @@ CREATE TABLE `rentals` (
   INDEX `idx_rentals_user_status` (`user_id`, `rental_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `contract_reviews` (
+  `id` CHAR(36) NOT NULL PRIMARY KEY,
+  `user_id` INT NOT NULL,
+  `rental_id` INT DEFAULT NULL,
+  `records` JSON NOT NULL,
+  `activity_at` DATETIME(6) NOT NULL COMMENT '由程式明確更新，作為未連結審閱的到期起算時間',
+  `expiry_notified_at` DATETIME(6) DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT `fk_contract_reviews_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_contract_reviews_rental` FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE SET NULL,
+  INDEX `idx_contract_reviews_rental_activity` (`rental_id`, `activity_at`),
+  INDEX `idx_contract_reviews_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `contract_review_files` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `review_id` CHAR(36) NOT NULL,
+  `kind` ENUM('evidence','report') NOT NULL,
+  `record_key` VARCHAR(64) DEFAULT NULL,
+  `stored_name` VARCHAR(64) NOT NULL,
+  `original_name` VARBINARY(512) NOT NULL,
+  `content_type` VARCHAR(100) NOT NULL,
+  `size_bytes` INT NOT NULL,
+  `report_id` VARCHAR(64) DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT `fk_contract_review_files_review` FOREIGN KEY (`review_id`) REFERENCES `contract_reviews`(`id`) ON DELETE CASCADE,
+  INDEX `idx_contract_review_files_review_kind` (`review_id`, `kind`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `bills` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `rental_id` INT NOT NULL,
@@ -689,6 +718,24 @@ CREATE TABLE `trash_favorites` (
 
 
 -- ============ 7. 租金補助 ============
+
+CREATE TABLE `subsidy_files` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT NOT NULL,
+  `rental_id` INT DEFAULT NULL,
+  `doc_type` ENUM('application_form','identity','household','lease_copy','bankbook','other') NOT NULL,
+  `stored_name` VARCHAR(64) NOT NULL,
+  `original_name` VARBINARY(512) NOT NULL,
+  `content_type` VARCHAR(100) NOT NULL,
+  `size_bytes` INT NOT NULL,
+  `expires_at` DATETIME(6) NOT NULL,
+  `expiry_notified_at` DATETIME(6) DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT `fk_subsidy_files_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_subsidy_files_rental` FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE SET NULL,
+  INDEX `idx_subsidy_files_user_created` (`user_id`, `created_at`),
+  INDEX `idx_subsidy_files_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `subsidy_applications` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,

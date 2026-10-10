@@ -11,11 +11,15 @@ import {
   signOut,
   type AuthRole,
 } from '@/src/composables/useAuth'
-import { canAdminAccessPath } from '@/src/utils/admin-rbac'
-import { getCurrentAdminRole } from '@/src/composables/admin/useAdminRbac'
 import { syncSessionWithServer } from '@/src/composables/useAuth'
 import { isMaintenanceBypassPath } from '@/src/utils/maintenance'
-import { isMaintenanceBlocking, publicSettings, refreshPublicSettings } from '@/src/composables/usePublicSettings'
+import {
+  hasLoadedPublicSettings,
+  isMaintenanceBlocking,
+  publicSettings,
+  refreshPublicSettings,
+  refreshPublicSettingsInBackground,
+} from '@/src/composables/usePublicSettings'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -71,7 +75,6 @@ const router = createRouter({
         { path: 'users', component: () => import('@/src/pages/admin/users.vue') },
         { path: 'users/:id', component: () => import('@/src/pages/admin/user-detail.vue') },
         { path: 'maintenance-tickets', component: () => import('@/src/pages/admin/maintenance-tickets.vue') },
-        { path: 'subsidy', component: () => import('@/src/pages/admin/subsidy.vue') },
         // 押金退還已併入使用者詳情，保留舊路徑避免既有書籤與稽核紀錄連結 404
         { path: 'deposits', redirect: '/admin/users' },
         { path: 'content', component: () => import('@/src/pages/admin/content.vue') },
@@ -201,8 +204,18 @@ const router = createRouter({
   ],
 })
 
+function maintenanceRedirect(path: string): '/maintenance' | '/' | undefined {
+  const maintenanceOn = isMaintenanceBlocking(publicSettings.value)
+  if (maintenanceOn && !isMaintenanceBypassPath(path)) return '/maintenance'
+  if (!maintenanceOn && path === '/maintenance') return '/'
+}
+
 /*
  * 每次載入頁面只跟後端對一次帳。
+ *
+ * 對帳與公開設定一起讀，避免首次導覽等兩趟網路；設定首次讀完前仍要等，才能判斷維護模式。
+ * 之後換頁先用快取，過期才背景重讀；讀完再檢查當下路徑，兼顧換頁速度與維護限制。
+ * 白名單由後端看登入的 cookie 判斷，因此設定不必等 /me 完成才送出。
  *
  * 不是每次導覽都對：那會讓站內切換頁面都多一次網路往返。
  * 一次就夠了 —— cookie 在同一次瀏覽期間失效的機率很低，
@@ -211,11 +224,16 @@ const router = createRouter({
 let sessionSynced = false
 
 router.beforeEach(async (to) => {
+  let backgroundRefresh: Promise<void> | null = null
   // 只在「本機認為已登入」時才對帳；沒登入的話沒有東西可以驗，
   // 每個訪客都打一次 /me 只是浪費請求。
   if (!sessionSynced && getAuthSession()?.isAuthenticated) {
     sessionSynced = true
-    await syncSessionWithServer()
+    await Promise.all([syncSessionWithServer(), refreshPublicSettings()])
+  } else if (!hasLoadedPublicSettings()) {
+    await refreshPublicSettings()
+  } else {
+    backgroundRefresh = refreshPublicSettingsInBackground()
   }
 
   let session = getAuthSession()
@@ -226,16 +244,15 @@ router.beforeEach(async (to) => {
     session = null
   }
 
-  // 維護模式存在後端：一分鐘內換頁只讀一次（見 usePublicSettings）。
-  // 白名單由後端看登入的 cookie 判斷，名單本身不會送到瀏覽器
-  await refreshPublicSettings()
-  const maintenanceOn = isMaintenanceBlocking(publicSettings.value)
-  if (maintenanceOn && !isMaintenanceBypassPath(to.path)) {
-    return '/maintenance'
+  const redirect = maintenanceRedirect(to.path)
+  if (backgroundRefresh) {
+    void backgroundRefresh.then(() => {
+      const currentRedirect = maintenanceRedirect(router.currentRoute.value.path)
+      // 守衛已回傳同一個維護跳轉時，不再送一次 replace，避免取消正在進行的導覽。
+      if (currentRedirect && currentRedirect !== redirect) return router.replace(currentRedirect)
+    }).catch(() => {})
   }
-  if (!maintenanceOn && to.path === '/maintenance') {
-    return '/'
-  }
+  if (redirect) return redirect
 
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth)
   const pendingRegistration = getPendingRegistration()
@@ -267,10 +284,6 @@ router.beforeEach(async (to) => {
 
   if (requiredRoles && !requiredRoles.includes(session.role)) {
     return resolveRoleHome(session.role)
-  }
-
-  if (to.path.startsWith('/admin') && !canAdminAccessPath(getCurrentAdminRole(), to.path)) {
-    return '/admin'
   }
 
   if (to.path === '/welcome' && !needsNicknameSetup(session)) {

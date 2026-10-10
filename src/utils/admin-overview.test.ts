@@ -46,7 +46,6 @@ function user(id: string, registeredAt: string, over: Partial<AdminUser> = {}): 
     email: `${id}@example.com`,
     nickname: null,
     role: 'user',
-    adminRole: null,
     status: 'active',
     lastLoginAt: null,
     emailVerified: true,
@@ -98,6 +97,13 @@ describe('weeklyTicketTrend', () => {
 })
 
 describe('monthlyUserGrowth', () => {
+  it('缺少或無效註冊時間不算入任何月份', () => {
+    const points = monthlyUserGrowth([
+      user('missing', ''), user('invalid', 'invalid'), user('known', '2026-08-01'),
+    ], 3, NOW)
+    expect(points.map((point) => point.value)).toEqual([0, 0, 1])
+  })
+
   it('回傳累計數且單調不遞減', () => {
     const users = [
       user('a', '2026-01-05T00:00:00.000Z'),

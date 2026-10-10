@@ -364,11 +364,18 @@ export interface ServiceMeta {
   unconfigured: string
 }
 
-export const LLM_DESKTOP_SERVICE: ServiceMeta = {
-  id: 'llm-desktop',
-  label: 'AI 模型（桌機）',
-  description: '合約分析與法規對話的主要模型，經 Cloudflare Tunnel 連到桌機',
-  unconfigured: '後端沒有設定桌機位址（LLM_TUNNEL_URL 或 OLLAMA_URL），所以沒有探測',
+export const LLM_OLLAMA_SERVICE: ServiceMeta = {
+  id: 'llm-ollama',
+  label: 'LLM 備援（Ollama）',
+  description: 'NVIDIA 失敗時才會用到的備援模型，VM 上的 Ollama 容器（只有 CPU，很慢）',
+  unconfigured: '後端沒有設定 Ollama 位址（OLLAMA_URL），或嘗試順序裡沒有 ollama，所以沒有探測',
+}
+
+export const RAG_SERVICE: ServiceMeta = {
+  id: 'rag',
+  label: 'RAG 檢索服務',
+  description: '法規檢索用的 embedding 服務（text2vec-base-chinese 容器）；連不上時改把全部法規放進 prompt',
+  unconfigured: '後端沒有設定 RAG 位址（LOCAL_EMBEDDING_URL），或檢索順序裡沒有 local，所以沒有探測',
 }
 
 export const OCR_SERVICE: ServiceMeta = {
@@ -376,6 +383,13 @@ export const OCR_SERVICE: ServiceMeta = {
   label: 'OCR 服務',
   description: '合約掃描的文字辨識，獨立的 Node 服務',
   unconfigured: '後端沒有設定 OCR 服務位址（OCR_HEALTH_URL 或 OCR_API_PORT），所以沒有探測',
+}
+
+export const BACKUP_SERVICE: ServiceMeta = {
+  id: 'backup',
+  label: '每日備份',
+  description: '每天凌晨 3 點把資料庫、設定與上傳檔加密備份到 Google Drive（restic）',
+  unconfigured: '後端沒有設定備份狀態檔（BACKUP_STATUS_FILE），所以沒有探測；開發機本來就沒有',
 }
 
 /**
@@ -433,6 +447,14 @@ export function serviceMonitor(
     detail: state.since ? `自 ${formatShortDateTime(state.since)} 起正常` : '',
     connected: true,
   }
+}
+
+/** 備份正常時以最近一次成功時間取代「自某時起正常」。 */
+export function backupMonitor(states: ServiceState[] | null, now: Date): MonitorReading {
+  const reading = serviceMonitor(states, BACKUP_SERVICE, now)
+  const detail = states?.find((item) => item.service === BACKUP_SERVICE.id)?.detail
+  if (reading.state === 'ok' && detail) return { ...reading, detail }
+  return reading
 }
 
 /**

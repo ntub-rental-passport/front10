@@ -148,7 +148,7 @@ function goCheckout() {
             <CardTitle>入住前點交</CardTitle>
           </div>
           <CardDescription>
-            搬入時建立家具清單、逐項拍攝、依房間分組檢視，可列印或匯出 PDF。
+            搬入時建立家具清單、逐項拍攝、依房間分組檢視，可下載 PDF。
           </CardDescription>
         </CardHeader>
         <CardContent>

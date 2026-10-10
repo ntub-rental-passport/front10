@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  LLM_DESKTOP_SERVICE,
+  BACKUP_SERVICE,
+  LLM_OLLAMA_SERVICE,
+  RAG_SERVICE,
   SERVICE_STALE_MS,
+  backupMonitor,
   backendMonitor,
   classifyResponseTime,
   databaseMonitor,
@@ -212,8 +215,8 @@ const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_00
 
 function probe(overrides: Partial<ServiceState> = {}): ServiceState {
   return {
-    service: 'llm-desktop',
-    label: 'AI 模型（桌機）',
+    service: 'rag',
+    label: 'RAG 檢索服務',
     status: 'up',
     since: minutesAgo(3 * 24 * 60),
     detail: null,
@@ -267,8 +270,16 @@ describe('formatTimeAgo', () => {
 })
 
 describe('serviceMonitor', () => {
-  it('在線：寫「自某時起正常」，不宣稱「連續在線」—— 後端停機的那段沒人在看', () => {
-    const reading = serviceMonitor([probe()], LLM_DESKTOP_SERVICE, NOW)
+  it('Ollama 備援在線可監控', () => {
+    expect(serviceMonitor([probe({ service: 'llm-ollama' })], LLM_OLLAMA_SERVICE, NOW).state).toBe('ok')
+  })
+
+  it('Ollama 未設定時指出 OLLAMA_URL', () => {
+    expect(serviceMonitor([], LLM_OLLAMA_SERVICE, NOW).detail).toContain('OLLAMA_URL')
+  })
+
+  it('在線：寫「自某時起正常」，不宣稱「連續在線」', () => {
+    const reading = serviceMonitor([probe()], RAG_SERVICE, NOW)
     expect(reading.state).toBe('ok')
     expect(reading.value).toBe('在線')
     expect(reading.detail).toBe(`自 ${formatShortDateTime(minutesAgo(3 * 24 * 60))} 起正常`)
@@ -278,7 +289,7 @@ describe('serviceMonitor', () => {
   it('斷線：大字是原因，下面寫從什麼時候開始、已經多久', () => {
     const reading = serviceMonitor(
       [probe({ status: 'down', detail: '連線逾時', since: minutesAgo(42) })],
-      LLM_DESKTOP_SERVICE,
+      RAG_SERVICE,
       NOW,
     )
     expect(reading.state).toBe('down')
@@ -287,33 +298,64 @@ describe('serviceMonitor', () => {
   })
 
   it('後端沒探測（沒設定位址）是「未設定」，不是掛了', () => {
-    const reading = serviceMonitor([], LLM_DESKTOP_SERVICE, NOW)
+    const reading = serviceMonitor([], RAG_SERVICE, NOW)
     expect(reading.state).toBe('unavailable')
     expect(reading.stateLabel).toBe('未設定')
-    expect(reading.detail).toContain('LLM_TUNNEL_URL')
+    expect(reading.detail).toContain('LOCAL_EMBEDDING_URL')
   })
 
-  it('讀不到監控數據時是「無法取得」—— 不知道它在不在，就不說它掛了', () => {
-    const reading = serviceMonitor(null, LLM_DESKTOP_SERVICE, NOW)
+  it('讀不到監控數據時是「無法取得」', () => {
+    const reading = serviceMonitor(null, RAG_SERVICE, NOW)
     expect(reading.state).toBe('unavailable')
     expect(reading.stateLabel).toBe('無法取得')
   })
 
-  it('檢查時間太舊就是資料過期：背景迴圈停了，那顆綠燈是很久以前的樣子', () => {
+  it('檢查時間太舊就是資料過期', () => {
     const staleMinutes = SERVICE_STALE_MS / 60_000 + 1
-    const reading = serviceMonitor([probe({ checkedAt: minutesAgo(staleMinutes) })], LLM_DESKTOP_SERVICE, NOW)
+    const reading = serviceMonitor([probe({ checkedAt: minutesAgo(staleMinutes) })], RAG_SERVICE, NOW)
     expect(reading.state).toBe('unavailable')
     expect(reading.stateLabel).toBe('資料過期')
     expect(reading.value).toBeNull()
   })
 
-  it('斷線但資料過期時也不報紅 —— 過期的紅燈跟過期的綠燈一樣不能信', () => {
+  it('斷線但資料過期時不報紅', () => {
     const reading = serviceMonitor(
       [probe({ status: 'down', detail: '連不上', checkedAt: minutesAgo(60) })],
-      LLM_DESKTOP_SERVICE,
+      RAG_SERVICE,
       NOW,
     )
     expect(reading.state).toBe('unavailable')
+  })
+})
+
+describe('backupMonitor', () => {
+  it('正常時顯示後端回報的最近成功備份時間', () => {
+    const reading = backupMonitor(
+      [probe({ service: 'backup', detail: '上次成功備份：2026-10-08 03:01' })],
+      NOW,
+    )
+    expect(reading.state).toBe('ok')
+    expect(reading.detail).toBe('上次成功備份：2026-10-08 03:01')
+  })
+
+  it('正常但沒有 detail 時沿用一般正常說明', () => {
+    const reading = backupMonitor([probe({ service: 'backup', detail: null })], NOW)
+    expect(reading.detail).toBe(`自 ${formatShortDateTime(minutesAgo(3 * 24 * 60))} 起正常`)
+  })
+
+  it('斷線時以後端狀態 detail 作為主要顯示值', () => {
+    const reading = backupMonitor(
+      [probe({ service: 'backup', status: 'down', detail: '尚無成功備份紀錄' })],
+      NOW,
+    )
+    expect(reading.state).toBe('down')
+    expect(reading.value).toBe('尚無成功備份紀錄')
+  })
+
+  it('沒有狀態時顯示未設定說明', () => {
+    const reading = backupMonitor([], NOW)
+    expect(reading.stateLabel).toBe('未設定')
+    expect(reading.detail).toBe(BACKUP_SERVICE.unconfigured)
   })
 })
 

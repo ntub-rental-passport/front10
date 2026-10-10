@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
 import {
@@ -32,15 +32,26 @@ import notesMascotImage from '@/src/assets/notes/note-mascot.png'
 import { useNotesState } from './useNotesState'
 
 const notes = reactive(useNotesState('roommate'))
+
+// 同步狀態列拿掉之後，這個框只剩下偶爾才出現的提示與協作空間設定；
+// 不加條件的話，沒有任何提示時會留下一個空白邊框。
+const showSyncPanel = computed(
+  () =>
+    Boolean(notes.syncError) ||
+    notes.hasLegacyNotes ||
+    notes.groups.length > 0 ||
+    Boolean(notes.pendingInvite) ||
+    (!notes.householdId && !notes.isLoading),
+)
 </script>
 
 <template>
   <div class="room-rhythm-page">
-    <section class="mx-4 my-3 rounded-xl border border-slate-200 bg-white p-3 text-sm" aria-label="記事同步">
-      <div class="flex flex-wrap items-center gap-3">
-        <span role="status">{{ notes.isLoading ? '載入記事中…' : notes.isSaving ? '儲存中…' : '記事儲存於帳號，可跨裝置讀取' }}</span>
-        <button type="button" class="underline" :disabled="notes.isLoading || notes.isSaving" @click="notes.reloadNotes">重新整理</button>
-      </div>
+    <section
+      v-if="showSyncPanel"
+      class="mx-4 my-3 rounded-xl border border-slate-200 bg-white p-3 text-sm"
+      aria-label="記事同步"
+    >
       <p v-if="notes.syncError" role="alert" class="mt-2 text-red-700">{{ notes.syncError }}</p>
       <p v-if="notes.hasLegacyNotes" class="mt-2 text-slate-600">此瀏覽器仍保留舊版記事，尚未匯入帳號。<button type="button" class="ml-2 underline" @click="notes.exportLegacyNotes">下載舊資料備份</button></p>
       <label v-if="notes.groups.length" class="mt-3 flex items-center gap-2">

@@ -3,7 +3,7 @@
  *
  * 這裡刻意不做「在線人數」——那需要 session heartbeat、WebSocket 連線數或後端
  * access log，本專案三樣都沒有，任何即時人數都只能是編出來的。改為統計「近 N 天
- * 曾經登入過的人」：數字來自實際發生過的登入，登入時由 recordLogin() 寫入時間戳，
+ * 曾經登入過的人」：真實帳號的時間戳由後端提供，本地再疊加展示帳號的登入時間，
  * 是這個資料模型撐得起的最強說法。
  */
 export interface ActivityUser {

@@ -4,9 +4,9 @@ import { buildHealthBarItems } from './admin-health-bar'
 import type { DbPoolSnapshot, RequestSnapshot, ServiceState } from './admin-monitoring'
 
 describe('buildHealthBarItems', () => {
-  it('固定回傳三項：資料庫、API 錯誤率、AI 模型（桌機）', () => {
+  it('固定回傳三項：資料庫、API 錯誤率、RAG 檢索服務', () => {
     const items = buildHealthBarItems(null, null)
-    expect(items.map((item) => item.id)).toEqual(['db-pool', 'error-rate', 'llm-desktop'])
+    expect(items.map((item) => item.id)).toEqual(['db-pool', 'error-rate', 'rag'])
   })
 
   describe('資料庫連線池', () => {
@@ -89,12 +89,12 @@ describe('buildHealthBarItems', () => {
     })
   })
 
-  describe('AI 模型（桌機）', () => {
+  describe('RAG 檢索服務', () => {
     const now = new Date(2026, 8, 27, 12, 0)
     const recent = new Date(now.getTime() - 60_000).toISOString()
     const probe = (overrides: Partial<ServiceState>): ServiceState => ({
-      service: 'llm-desktop',
-      label: 'AI 模型（桌機）',
+      service: 'rag',
+      label: 'RAG 檢索服務',
       status: 'up',
       since: recent,
       detail: null,
@@ -102,13 +102,13 @@ describe('buildHealthBarItems', () => {
       ...overrides,
     })
     const llmOf = (services: ServiceState[] | null) =>
-      buildHealthBarItems(null, null, services, now).find((item) => item.id === 'llm-desktop')
+      buildHealthBarItems(null, null, services, now).find((item) => item.id === 'rag')
 
     it('讀不到監控數據：無法取得，tone 是 idle，絕不是 ok', () => {
       expect(llmOf(null)).toMatchObject({ statusText: '無法取得', tone: 'idle' })
     })
 
-    it('後端沒設定桌機位址：說「未設定」，不是故障', () => {
+    it('後端沒設定 Ollama 位址：說「未設定」，不是故障', () => {
       expect(llmOf([])).toMatchObject({ statusText: '未設定', tone: 'idle' })
     })
 

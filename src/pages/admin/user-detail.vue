@@ -37,7 +37,6 @@ import TicketDetailPanel from '@/src/components/admin/TicketDetailPanel.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import {
   adminRoleLabels,
-  getCurrentAdminRole,
   useAdminUsers,
 } from '@/src/composables/admin/useAdminUsers'
 import { useAdminSubscription } from '@/src/composables/admin/useAdminSubscription'
@@ -45,7 +44,6 @@ import {
   useAdminMaintenance,
   type MaintenanceTicketView,
 } from '@/src/composables/admin/useAdminMaintenance'
-import { ADMIN_ROLES, adminRoleLabels as rbacRoleLabels, type AdminRole } from '@/src/utils/admin-rbac'
 import {
   caseSideLabels,
   type UserDepositView,
@@ -82,30 +80,33 @@ import {
   subscriptionFlags,
 } from '@/src/utils/admin-user-detail'
 import { useNow } from '@/src/composables/useNow'
-import type { AdminUserRole, PlanId } from '@/src/mocks/admin-seed'
-import type { Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
+import type { AdminUserRole } from '@/src/mocks/admin-seed'
 import {
-  PLAN_FEATURES,
-  PLAN_FEATURE_KEYS,
-  effectivePlanId,
+  billingLabel,
+  checkPackSummary,
+  getPlan,
+  getPlanLimits,
+  hasActivePaidPlan,
   isInTrial,
-  isMetered,
-  type PlanFeatureKey,
-} from '@/src/utils/admin-entitlements'
+  tenantAiUsage,
+  userPlan,
+} from '@/src/utils/admin-plans'
+import { subscriptionPlans, tenantCheckPack, type PlanKey } from '@/src/utils/subscription-plans'
 import { useRegisterAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
 import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
 import { fetchAdminAudit, type ServerAuditEvent } from '@/src/services/adminAuditApi'
 import { latestSuspension, suspensionNote } from '@/src/utils/admin-audit-sources'
 import { planInclusions } from '@/src/utils/admin-plan-summary'
+import { accountUsageLimits } from '@/src/utils/admin-usage'
 
 const route = useRoute()
 const router = useRouter()
 
 const { rowOf, setRealAccountStatus } = useAdminDirectory()
-const { setStatus, setRole, setAdminRole } = useAdminUsers()
-const { plans, planOf, changePlan, grantCredits, isExpiringSoon } = useAdminSubscription()
-const { ticketViews } = useAdminMaintenance()
+const { setStatus, setRole } = useAdminUsers()
+const { changePlan, grantCheckPacks, isExpiringSoon } = useAdminSubscription()
+const { ticketViews, loadState: ticketsState, reload: reloadTickets } = useAdminMaintenance()
 const { records: handoverRecords } = useAdminHandover()
 
 const userId = computed(() => String(route.params.id ?? ''))
@@ -116,9 +117,6 @@ useRegisterAdminPageTitle(
   computed(() => route.path),
   computed(() => row.value?.user.nickname ?? row.value?.user.email ?? null),
 )
-
-// 停用帳號與調整角色屬於高風險操作，維持只有超級管理員能執行
-const isSuper = computed(() => getCurrentAdminRole() === 'super')
 
 /**
  * 這一頁看的是不是資料庫裡真的存在的人。
@@ -135,11 +133,16 @@ const now = useNow()
 
 const subscriptionStatusFlags = computed(() => {
   const current = row.value
-  if (!current?.subscription) return []
+  if (!current) return []
+  const plan = userPlan(current.user, current.subscription, now.value)
+  if (!plan) return []
   return subscriptionFlags({
-    active: current.subscription.active,
-    expiringSoon: isExpiringSoon(current.subscription),
+    active: current.subscription?.active ?? true,
+    planKey: current.subscription?.planKey ?? plan.key,
+    role: plan.role,
+    expiringSoon: current.subscription ? isExpiringSoon(current.subscription) : false,
     quotaExhausted: current.quotaExhausted,
+    overLimit: current.overLimit,
   })
 })
 
@@ -235,101 +238,72 @@ function usagePercent(used: number, quota: number): number {
   return Math.min(100, Math.round((used / quota) * 100))
 }
 
-// ── 試用 ────────────────────────────────────────────────────────
+// ── 方案與用量 ────────────────────────────────────────────────────
 
-const inTrial = computed(
-  () => !!row.value?.subscription && isInTrial(row.value.subscription.trialEndsAt),
+const effectivePlan = computed(() =>
+  row.value ? userPlan(row.value.user, row.value.subscription, now.value) : null,
 )
-
-/** 試用期間實際生效的方案，可能與他名下掛的不同 */
-/*
- * 「方案包含什麼」：方案內容只由程式定義（系統設定頁不再能改），需要查的時機
- * 是處理某個人的時候 —— 所以放在他的方案旁邊，連他用了多少一起講。
- * 逐人用量目前只有契約分析有記錄，其他功能只列上限。
- */
+const countUsage = computed(() => accountUsageLimits(effectivePlan.value, row.value?.usage ?? null))
+const landlordMetrics = computed(() => {
+  const usage = countUsage.value
+  if (usage?.role !== 'landlord') return []
+  return [
+    { label: '管理物件', unit: '個', suffix: '', ...usage.properties },
+    { label: '管理房間', unit: '間', suffix: '', ...usage.rooms },
+    { label: '管理者席次', unit: '席', suffix: '（含擁有者）', ...usage.seats },
+  ]
+})
+const subscriptionPlanKey = computed<PlanKey>(() =>
+  row.value?.subscription?.active ? row.value.subscription.planKey : 'free',
+)
+const inTrial = computed(() =>
+  !!row.value?.subscription?.active && isInTrial(row.value.subscription.trialEndsAt, now.value),
+)
 const planDetailsOpen = ref(false)
-const planItems = computed(() => {
-  const subscription = row.value?.subscription
-  const plan = effectivePlan.value
-  if (!subscription || !plan) return []
-  return planInclusions(plan.features, {
-    used: { 'contract-analysis': subscription.aiUsed },
-    extraCredits: subscription.extraCredits,
-  })
-})
-
-const effectivePlan = computed<SubscriptionPlan | null>(() => {
-  const subscription = row.value?.subscription
-  if (!subscription) return null
-  const planId = effectivePlanId(subscription.planId, subscription.trialEndsAt)
-  return plans.value.find((plan) => plan.id === planId) ?? planOf(subscription)
-})
-
+const planItems = computed(() =>
+  effectivePlan.value ? planInclusions(effectivePlan.value.role, effectivePlan.value.key) : [],
+)
+const tenantSubscription = computed(() =>
+  row.value?.subscription?.role === 'tenant' ? row.value.subscription : null,
+)
+const analysisUsage = computed(() => tenantSubscription.value
+  ? tenantAiUsage(tenantSubscription.value, !!row.value?.user.emailVerified, now.value)
+  : null,
+)
+const storageLimit = computed(() => effectivePlan.value?.role === 'tenant'
+  ? getPlanLimits('tenant', effectivePlan.value.key).storage.limit
+  : 0,
+)
+const packs = computed(() =>
+  tenantSubscription.value ? checkPackSummary(tenantSubscription.value) : null,
+)
 const trialDaysLeft = computed(() => {
   const endsAt = row.value?.subscription?.trialEndsAt
   if (!endsAt) return 0
-  const ms = new Date(endsAt).getTime() - Date.now()
-  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)))
+  return Math.max(0, Math.ceil((new Date(endsAt).getTime() - now.value.getTime()) / 86_400_000))
 })
 
-// ── 單次加購 ────────────────────────────────────────────────────
-
-const meteredKeys = PLAN_FEATURE_KEYS.filter(isMetered)
-
 const creditOpen = ref(false)
-const creditKey = ref<PlanFeatureKey>('contract-analysis')
-const creditAmount = ref(10)
-
-const creditsInUse = computed(() =>
-  meteredKeys
-    .map((key) => ({ key, amount: row.value?.subscription?.extraCredits[key] ?? 0 }))
-    .filter((item) => item.amount > 0),
-)
+const creditAmount = ref(1)
+const validCreditAmount = computed(() => Number.isSafeInteger(creditAmount.value) && creditAmount.value > 0)
 
 function openCreditDialog(): void {
-  creditKey.value = 'contract-analysis'
-  creditAmount.value = 10
+  creditAmount.value = 1
   creditOpen.value = true
 }
 
 function confirmCredit(): void {
-  if (!row.value?.subscription) return
-  grantCredits(row.value.subscription.id, creditKey.value, creditAmount.value)
+  if (!tenantSubscription.value || !validCreditAmount.value) return
+  grantCheckPacks(tenantSubscription.value.id, creditAmount.value)
   creditOpen.value = false
 }
 
-/** 契約分析的可用次數，含單次加購。無上限時顯示「無上限」而不是一個假的大數字。 */
-function analysisAllowance(subscription: Subscription, plan: SubscriptionPlan): number | null {
-  const rule = plan.features['contract-analysis']
-  if (!rule.enabled) return 0
-  if (rule.limit === null) return null
-  return rule.limit + (subscription.extraCredits['contract-analysis'] ?? 0)
-}
-
-function analysisLimitLabel(subscription: Subscription, plan: SubscriptionPlan): string {
-  const allowance = analysisAllowance(subscription, plan)
-  return allowance === null ? '無上限' : String(allowance)
-}
-
-/** 無上限時進度條固定為 0 —— 沒有分母就沒有百分比可言 */
-function analysisPercent(subscription: Subscription, plan: SubscriptionPlan): number {
-  const allowance = analysisAllowance(subscription, plan)
-  if (allowance === null) return 0
-  return usagePercent(subscription.aiUsed, allowance)
-}
-
-
-// 身分與權限角色只對展示資料開放。真實帳號在畫面上是唯讀的（見 template），
+// 身分只對展示資料開放。真實帳號在畫面上是唯讀的（見 template），
 // 這裡再擋一次：後端沒有改角色的 API，就算有人繞過畫面呼叫到這裡，
 // 也不能讓它「看起來改了」。
 function handleRoleChange(value: unknown): void {
   if (!row.value || isReal.value) return
   setRole(row.value.user.id, value as AdminUserRole)
-}
-
-function handleAdminRoleChange(value: unknown): void {
-  if (!row.value || isReal.value) return
-  setAdminRole(row.value.user.id, value as AdminRole)
 }
 
 const statusBusy = ref(false)
@@ -408,7 +382,7 @@ const suspensionText = computed(() => {
 
 function handlePlanChange(value: unknown): void {
   if (!row.value?.subscription) return
-  changePlan(row.value.subscription.id, value as PlanId)
+  changePlan(row.value.subscription.id, row.value.subscription.role, value as PlanKey)
 }
 
 function goToTickets(): void {
@@ -490,7 +464,7 @@ function openSendDialog(): void {
             <dt class="text-foreground/70">身分</dt>
             <dd>
               <Select
-                v-if="isSuper && !isReal"
+                v-if="!isReal"
                 :model-value="row.user.role"
                 @update:model-value="handleRoleChange"
               >
@@ -504,25 +478,6 @@ function openSendDialog(): void {
               <span v-else class="font-medium">{{ adminRoleLabels[row.user.role] }}</span>
             </dd>
 
-            <template v-if="row.user.role === 'admin'">
-              <dt class="text-foreground/70">權限角色</dt>
-              <dd>
-                <Select
-                  v-if="isSuper && !isReal"
-                  :model-value="row.user.adminRole ?? 'super'"
-                  @update:model-value="handleAdminRoleChange"
-                >
-                  <SelectTrigger class="h-8 w-32"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="adminRole in ADMIN_ROLES" :key="adminRole" :value="adminRole">
-                      {{ rbacRoleLabels[adminRole] }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <span v-else class="font-medium">{{ rbacRoleLabels[row.user.adminRole ?? 'super'] }}</span>
-              </dd>
-            </template>
-
             <dt class="text-foreground/70">註冊於</dt>
             <dd>{{ formatDate(row.user.registeredAt) }}</dd>
 
@@ -535,15 +490,12 @@ function openSendDialog(): void {
             </dd>
           </dl>
 
-          <p v-if="!isSuper" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
-            調整角色與停用帳號僅限超級管理員，以上為唯讀。
-          </p>
           <!--
             真實帳號的角色不開放從網頁改：後端沒有這支 API，而且這是刻意的 ——
-            超級管理員只能由能登入伺服器的人用 manage_admin.py 授予（見 admin.py）。
+            管理員只能由能登入伺服器的人用 manage_admin.py 授予（見 admin.py）。
           -->
-          <p v-else-if="isReal" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
-            身分與權限角色在這裡是唯讀，需要由系統管理者在伺服器上調整。
+          <p v-if="isReal" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
+            身分在這裡是唯讀，需要由系統管理者在伺服器上調整。
           </p>
 
           <p
@@ -563,7 +515,6 @@ function openSendDialog(): void {
               發送通知
             </Button>
             <Button
-              v-if="isSuper"
               :variant="row.user.status === 'active' ? 'destructive' : 'outline'"
               :disabled="statusBusy"
               @click="toggleStatus"
@@ -575,23 +526,31 @@ function openSendDialog(): void {
 
         <!--
           原本頂部那四張 text-2xl 的大卡片。它們是「這個人的資料」而不是頁面
-          等級的 KPI，所以併進左欄，用跟工單／租補詳情同一種重點資料格。
+          等級的 KPI，所以併進左欄，用跟工單詳情同一種重點資料格。
           異常才上色：不符、逾期用實心紅 chip，其餘安靜。
         -->
         <dl class="grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl bg-muted/40 p-5 text-sm">
           <div class="space-y-0.5">
-            <dt class="text-xs text-foreground/70">AI 用量</dt>
+            <dt class="text-xs text-foreground/70">{{ row.user.role === 'landlord' ? '物件' : 'AI 用量' }}</dt>
             <dd class="font-semibold tabular-nums">
-              <template v-if="row.subscription && effectivePlan">
-                {{ row.subscription.aiUsed }} / {{ analysisLimitLabel(row.subscription, effectivePlan) }}
+              <template v-if="countUsage?.role === 'landlord'">
+                {{ countUsage.properties.used }} / {{ countUsage.properties.limit }}
+              </template>
+              <span v-else-if="row.user.role === 'landlord'" class="font-normal text-muted-foreground">讀不到用量</span>
+              <template v-else-if="analysisUsage">
+                {{ analysisUsage.used }} / {{ analysisUsage.available }}
               </template>
               <span v-else class="font-normal text-muted-foreground">—</span>
             </dd>
           </div>
           <div class="space-y-0.5">
-            <dt class="text-xs text-foreground/70">儲存用量</dt>
+            <dt class="text-xs text-foreground/70">{{ row.user.role === 'landlord' ? '房間' : '儲存用量' }}</dt>
             <dd class="font-semibold tabular-nums">
-              <template v-if="row.subscription">{{ storageLabel(row.subscription.storageUsedMb) }}</template>
+              <template v-if="countUsage?.role === 'landlord'">
+                {{ countUsage.rooms.used }} / {{ countUsage.rooms.limit }}
+              </template>
+              <span v-else-if="row.user.role === 'landlord'" class="font-normal text-muted-foreground">讀不到用量</span>
+              <template v-else-if="tenantSubscription">{{ storageLabel(tenantSubscription.storageUsedMb) }}</template>
               <span v-else class="font-normal text-muted-foreground">—</span>
             </dd>
           </div>
@@ -607,7 +566,12 @@ function openSendDialog(): void {
           </div>
           <div class="space-y-1">
             <dt class="text-xs text-foreground/70">工單待處理</dt>
-            <dd class="font-semibold tabular-nums">{{ row.openTicketCount }} 件</dd>
+            <dd class="font-semibold tabular-nums">
+              <span v-if="isReal && ticketsState !== 'ready'" class="font-normal text-muted-foreground">
+                {{ ticketsState === 'error' ? '讀不到工單資料' : '讀取中' }}
+              </span>
+              <template v-else>{{ row.openTicketCount }} 件</template>
+            </dd>
             <dd v-if="row.overdueTicketCount > 0">
               <StatusDot tone="danger" :label="`${row.overdueTicketCount} 件逾期`" emphasize />
             </dd>
@@ -620,30 +584,35 @@ function openSendDialog(): void {
         <Card class="rounded-3xl">
           <CardHeader class="p-5"><CardTitle>訂閱與容量</CardTitle></CardHeader>
           <CardContent class="px-5 pb-5">
-            <!--
-              真實帳號永遠沒有訂閱資料（後端沒有訂閱功能），畫面上跟沒訂閱的展示帳號寫法一樣：
-              網站目前不對外開放，後台不再區分真實帳號與展示資料（2026-09-28 決定）。
-            -->
-            <p v-if="!row.subscription" class="text-muted-foreground">此帳號尚未訂閱任何方案。</p>
-
+            <p v-if="!row.subscription && row.user.role !== 'admin'" class="mb-4 text-sm text-muted-foreground">
+              方案與加購尚未串接金流，目前無法在後台調整
+            </p>
+            <p v-if="row.user.role === 'admin'" class="text-muted-foreground">管理員帳號不適用方案</p>
             <div v-else-if="effectivePlan" class="space-y-4">
               <div class="flex flex-wrap items-start gap-6">
                 <div class="space-y-1.5">
-                  <p class="text-sm text-muted-foreground">方案</p>
-                  <Select :model-value="row.subscription.planId" @update:model-value="handlePlanChange">
-                    <SelectTrigger class="w-36"><SelectValue /></SelectTrigger>
+                  <p class="text-sm text-muted-foreground">生效方案</p>
+                  <p class="font-medium">{{ effectivePlan.name }}</p>
+                </div>
+                <div v-if="row.subscription" class="space-y-1.5">
+                  <p class="text-sm text-muted-foreground">訂閱方案</p>
+                  <Select :model-value="subscriptionPlanKey" @update:model-value="handlePlanChange">
+                    <SelectTrigger class="w-48"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="free">免費方案</SelectItem>
-                      <SelectItem value="plus">進階方案</SelectItem>
-                      <SelectItem value="pro">專業方案</SelectItem>
+                      <SelectItem v-for="plan in subscriptionPlans[effectivePlan.role]" :key="plan.key" :value="plan.key">
+                        {{ plan.name }}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div class="space-y-1.5">
-                  <p class="text-sm text-muted-foreground">到期日</p>
+                  <p class="text-sm text-muted-foreground">計費資訊</p>
+                  <p class="text-sm">{{ billingLabel(row.subscription) }}</p>
+                  <p v-if="row.subscription && hasActivePaidPlan(row.subscription)" class="text-sm">
+                    下次扣款日：{{ formatDate(row.subscription.expiresAt) }}
+                  </p>
+                  <!-- 即將到期、額度已用滿是列表的警示條件（warn）；已停用是既成事實（idle）。 -->
                   <div class="flex flex-wrap items-center gap-2">
-                    <span class="font-medium">{{ formatDate(row.subscription.expiresAt) }}</span>
-                    <!-- 即將到期、額度已用滿是列表的警示條件（warn）；已停用是既成事實（idle） -->
                     <StatusDot
                       v-for="flag in subscriptionStatusFlags"
                       :key="flag.label"
@@ -653,18 +622,19 @@ function openSendDialog(): void {
                     />
                   </div>
                 </div>
-                <div v-if="inTrial" class="space-y-1.5">
+                <div v-if="inTrial && row.subscription" class="space-y-1.5">
                   <p class="text-sm text-muted-foreground">限時試用</p>
-                  <!-- 試用天數是資訊不是狀態，不需要膠囊 -->
                   <p class="text-sm">
+                    <!-- 試用天數是資訊不是狀態，不需要膠囊。 -->
                     <span class="font-medium">還有 {{ trialDaysLeft }} 天</span>
                     <span class="text-muted-foreground">
-                      ，期間享 {{ effectivePlan.name }}權益，到期自動回到{{ planOf(row.subscription).name }}
+                      ，期間享 {{ effectivePlan.name }}權益，到期自動回到{{ getPlan(row.subscription.role, row.subscription.planKey).name }}
                     </span>
                   </p>
                 </div>
               </div>
 
+              <!-- 方案內容沿用前台權益表原文，避免後台另編一套說法。 -->
               <div class="rounded-2xl border">
                 <button
                   type="button"
@@ -682,59 +652,108 @@ function openSendDialog(): void {
                     aria-hidden="true"
                   />
                 </button>
-                <dl
-                  v-if="planDetailsOpen"
-                  class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 border-t px-4 py-3 text-sm"
-                >
-                  <template v-for="item in planItems" :key="item.key">
-                    <dt class="text-foreground/70">{{ item.label }}</dt>
-                    <dd :class="item.included ? 'font-medium' : 'text-muted-foreground'">{{ item.text }}</dd>
-                  </template>
-                </dl>
-              </div>
-
-              <div class="grid gap-4 sm:grid-cols-2">
-                <div class="space-y-1.5">
-                  <div class="flex justify-between text-sm">
-                    <span class="text-muted-foreground">AI 分析</span>
-                    <span class="tabular-nums">
-                      {{ row.subscription.aiUsed }} /
-                      {{ analysisLimitLabel(row.subscription, effectivePlan) }} 次
-                    </span>
-                  </div>
-                  <Progress :model-value="analysisPercent(row.subscription, effectivePlan)" />
-                </div>
-                <div class="space-y-1.5">
-                  <div class="flex justify-between text-sm">
-                    <span class="text-muted-foreground">儲存空間</span>
-                    <span class="tabular-nums">
-                      {{ storageLabel(row.subscription.storageUsedMb) }} /
-                      {{ storageLabel(effectivePlan.storageMb) }}
-                    </span>
-                  </div>
-                  <Progress
-                    :model-value="usagePercent(row.subscription.storageUsedMb, effectivePlan.storageMb)"
-                  />
+                <div v-if="planDetailsOpen" class="space-y-4 border-t px-4 py-3">
+                  <section v-for="group in planItems" :key="group.group" class="space-y-2">
+                    <h4 class="text-sm font-medium">{{ group.group }}</h4>
+                    <dl class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
+                      <template v-for="item in group.items" :key="item.label">
+                        <dt class="text-foreground/70">
+                          {{ item.label }}
+                          <Badge v-if="item.planned" variant="secondary" class="ml-1 text-xs">規劃中</Badge>
+                        </dt>
+                        <dd>{{ item.text }}</dd>
+                      </template>
+                    </dl>
+                  </section>
                 </div>
               </div>
 
-              <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted/40 p-4">
+              <div v-if="effectivePlan.role === 'landlord'" class="grid gap-4 sm:grid-cols-3">
+                <template v-if="countUsage?.role === 'landlord'">
+                  <div v-for="metric in landlordMetrics" :key="metric.label" class="space-y-1.5">
+                    <p class="text-sm tabular-nums">
+                      {{ metric.label }} {{ metric.used }} / {{ metric.limit }} {{ metric.unit }}{{ metric.suffix }}
+                    </p>
+                    <Progress
+                      :model-value="usagePercent(metric.used, metric.limit)"
+                      :class="metric.overLimit ? '[&>div]:bg-accent' : ''"
+                    />
+                    <StatusDot v-if="metric.overLimit" tone="warn" label="超出上限" emphasize />
+                  </div>
+                </template>
+                <template v-else>
+                  <p v-for="label in ['管理物件', '管理房間', '管理者席次（含擁有者）']" :key="label" class="text-sm text-muted-foreground">
+                    {{ label }}：讀不到用量
+                  </p>
+                </template>
+              </div>
+              <div v-else class="space-y-4">
+                <template v-if="countUsage?.role === 'tenant'">
+                  <div class="space-y-1.5">
+                    <p class="text-sm tabular-nums">共享空間 {{ countUsage.sharedSpaces.used }} / {{ countUsage.sharedSpaces.limit }} 個</p>
+                    <Progress
+                      :model-value="usagePercent(countUsage.sharedSpaces.used, countUsage.sharedSpaces.limit)"
+                      :class="countUsage.sharedSpaces.overLimit ? '[&>div]:bg-accent' : ''"
+                    />
+                    <StatusDot v-if="countUsage.sharedSpaces.overLimit" tone="warn" label="超出上限" emphasize />
+                  </div>
+                  <div v-for="space in countUsage.ownedSpaces" :key="space.id" class="space-y-1.5">
+                    <p class="text-sm font-medium">{{ space.name }}</p>
+                    <p class="text-sm tabular-nums">空間人數 {{ space.used }} / {{ space.limit }} 人（含付費者）</p>
+                    <Progress
+                      :model-value="usagePercent(space.used, space.limit)"
+                      :class="space.overLimit ? '[&>div]:bg-accent' : ''"
+                    />
+                    <StatusDot v-if="space.overLimit" tone="warn" label="超出上限" emphasize />
+                  </div>
+                  <p v-for="space in row.usage?.tenant?.joinedSpaces" :key="space.id" class="text-sm text-muted-foreground">
+                    加入 {{ space.ownerName ?? '姓名未知的建立者' }} 的空間（共 {{ space.memberCount }} 人），不佔此帳號額度
+                  </p>
+                  <p v-if="countUsage.ownedSpaces.length === 0 && !row.usage?.tenant?.joinedSpaces.length" class="text-sm text-muted-foreground">
+                    尚未建立共享空間
+                  </p>
+                </template>
+                <template v-else>
+                  <p class="text-sm text-muted-foreground">共享空間：讀不到用量</p>
+                  <p class="text-sm text-muted-foreground">空間人數：讀不到用量</p>
+                </template>
+              </div>
+              <div v-if="tenantSubscription && analysisUsage" class="grid gap-4 sm:grid-cols-2">
+                <div class="space-y-1.5">
+                  <div class="flex justify-between gap-2 text-sm">
+                    <span class="text-muted-foreground">AI 契約分析</span>
+                    <span class="tabular-nums">{{ analysisUsage.used }} / {{ analysisUsage.available }} 次</span>
+                  </div>
+                  <Progress :model-value="usagePercent(analysisUsage.used, analysisUsage.available)" />
+                  <p class="text-xs text-muted-foreground">
+                    {{ analysisUsage.period === 'verified-once' ? '驗證帳號一次性贈送' : '本月額度，按月重置、不累積' }}；含可用加購包
+                  </p>
+                </div>
+                <div class="space-y-1.5">
+                  <div class="flex justify-between gap-2 text-sm">
+                    <span class="text-muted-foreground">附件容量</span>
+                    <span class="tabular-nums">{{ storageLabel(tenantSubscription.storageUsedMb) }} / {{ storageLabel(storageLimit) }}</span>
+                  </div>
+                  <Progress :model-value="usagePercent(tenantSubscription.storageUsedMb, storageLimit)" />
+                </div>
+              </div>
+              <div v-else-if="effectivePlan.role === 'tenant'" class="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
+                <p>AI 契約分析：尚未串接</p>
+                <p>附件容量：尚未串接</p>
+              </div>
+
+              <div v-if="effectivePlan.role === 'tenant'" class="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted/40 p-4">
                 <div class="space-y-1">
-                  <p class="text-sm font-medium">單次加購額度</p>
-                  <p v-if="creditsInUse.length === 0" class="text-sm text-muted-foreground">
-                    尚未加購，目前只使用方案內建的額度。
+                  <p class="text-sm font-medium">{{ tenantCheckPack.name }}</p>
+                  <p v-if="packs" class="text-sm text-muted-foreground">
+                    剩餘 {{ packs.remaining }} 包；購買 {{ packs.purchased }} 包、補發 {{ packs.granted }} 包
                   </p>
-                  <p v-else class="text-sm text-muted-foreground">
-                    <span v-for="(item, index) in creditsInUse" :key="item.key">
-                      <span v-if="index > 0">、</span>
-                      {{ PLAN_FEATURES[item.key].label }} +{{ item.amount }}
-                      {{ PLAN_FEATURES[item.key].unit }}
-                    </span>
-                  </p>
+                  <p v-else class="text-sm text-muted-foreground">尚未串接</p>
+                  <p class="text-xs text-muted-foreground">1 包含 1 次契約分析與該次報告匯出；先用方案額度，不自動續訂、不隨月重置。</p>
                 </div>
-                <Button variant="outline" size="sm" @click="openCreditDialog">
+                <Button v-if="tenantSubscription" variant="outline" size="sm" @click="openCreditDialog">
                   <Plus class="mr-1 h-4 w-4" />
-                  加購額度
+                  補發契約檢查包
                 </Button>
               </div>
             </div>
@@ -900,22 +919,16 @@ function openSendDialog(): void {
           <CardHeader class="p-5">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <CardTitle>報修工單</CardTitle>
-              <!-- 真實帳號在工單頁也查不到任何東西（原因見下方說明），不給一顆會帶到空頁的按鈕 -->
-              <Button v-if="!isReal" variant="outline" size="sm" @click="goToTickets">
+              <Button variant="outline" size="sm" @click="goToTickets">
                 在工單頁查看全部
                 <ExternalLink class="ml-1 h-3.5 w-3.5" />
               </Button>
             </div>
           </CardHeader>
           <CardContent class="space-y-6 px-5 pb-5">
-            <!--
-              注意：這裡的「沒有」不代表對方沒報修過。前台（租客端與房東端）的報修
-              自 2026-09-30 起存在資料庫（repair_tickets／repair_ticket_events／
-              repair_ticket_photos，API 見 backend/routers/repairs.py），但後台工單頁讀的
-              仍是另一份 adminMaintenanceCollection，兩邊還沒接起來。
-              畫面上不說明這件事（2026-09-28 決定）。
-            -->
-            <p v-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
+            <!-- 真實帳號的案件已接後端；讀取失敗不能顯示成沒有報修過。 -->
+            <AdminLoadNotice v-if="isReal && ticketsState !== 'ready'" :state="ticketsState" what="報修工單" @retry="reloadTickets" />
+            <p v-else-if="row.tickets.length === 0" class="text-muted-foreground">沒有相關的報修工單。</p>
 
             <div v-for="group in ticketGroups" :key="group.side" class="space-y-2">
               <h3 class="text-xs font-semibold tracking-wide text-foreground/70">
@@ -1005,36 +1018,16 @@ function openSendDialog(): void {
     <Dialog v-model:open="creditOpen">
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>加購單次額度</DialogTitle>
-          <DialogDescription>
-            加購的額度疊加在方案上限之上，本期未用完不會退回。
-          </DialogDescription>
+          <DialogTitle>補發契約檢查包</DialogTitle>
+          <DialogDescription>補發不產生收款紀錄。每包包含 1 次契約分析與該次報告匯出，不隨月重置。</DialogDescription>
         </DialogHeader>
-
-        <div class="space-y-4">
-          <div class="space-y-2">
-            <Label>功能</Label>
-            <Select v-model="creditKey">
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="key in meteredKeys" :key="key" :value="key">
-                  {{ PLAN_FEATURES[key].label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div class="space-y-2">
-            <Label for="creditAmount">加購數量（{{ PLAN_FEATURES[creditKey].unit }}）</Label>
-            <Input id="creditAmount" v-model.number="creditAmount" type="number" min="1" />
-          </div>
-          <p class="text-sm text-muted-foreground">
-            這裡只記錄方案權益，不含付款資訊。
-          </p>
+        <div class="space-y-2">
+          <Label for="creditAmount">包數</Label>
+          <Input id="creditAmount" v-model.number="creditAmount" type="number" min="1" step="1" />
         </div>
-
         <DialogFooter>
           <Button variant="outline" @click="creditOpen = false">取消</Button>
-          <Button :disabled="!(creditAmount > 0)" @click="confirmCredit">確認加購</Button>
+          <Button :disabled="!validCreditAmount" @click="confirmCredit">確認補發</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

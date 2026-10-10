@@ -2,14 +2,12 @@ import { createRandom, daysAgo, intBetween, monthsAgo, weightedPick } from './he
 
 export type AdminUserRole = 'user' | 'landlord' | 'admin'
 export type AdminUserStatus = 'active' | 'suspended'
-export type AdminRole = 'super' | 'admin'
 
 export interface AdminUser {
   id: string
   email: string
   nickname: string | null
   role: AdminUserRole
-  adminRole: AdminRole | null
   status: AdminUserStatus
   emailVerified: boolean
   registeredAt: string
@@ -36,15 +34,15 @@ function lastLoginFor(random: () => number, status: AdminUserStatus): string | n
 
 function coreUsers(): AdminUser[] {
   return [
-    { id: 'u-admin-1', email: 'admin@rentmate.tw', nickname: '系統管理員', role: 'admin', adminRole: 'super', status: 'active', emailVerified: true, registeredAt: daysAgo(360), lastLoginAt: daysAgo(0) },
-    { id: 'u-admin-2', email: 'staff@rentmate.tw', nickname: '陳小管', role: 'admin', adminRole: 'admin', status: 'active', emailVerified: true, registeredAt: daysAgo(348), lastLoginAt: daysAgo(2) },
-    { id: 'u-landlord-1', email: 'chen.landlord@example.com', nickname: '陳房東', role: 'landlord', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(320), lastLoginAt: daysAgo(1) },
-    { id: 'u-landlord-2', email: 'lin.house@example.com', nickname: '林太太', role: 'landlord', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(295), lastLoginAt: daysAgo(9) },
-    { id: 'u-tenant-1', email: 'amy.wang@example.com', nickname: '小艾', role: 'user', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(280), lastLoginAt: daysAgo(3) },
-    { id: 'u-tenant-2', email: 'ben.liu@example.com', nickname: '阿賓', role: 'user', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(240), lastLoginAt: null },
-    { id: 'u-tenant-3', email: 'cindy.chang@example.com', nickname: null, role: 'user', adminRole: null, status: 'active', emailVerified: false, registeredAt: daysAgo(14), lastLoginAt: null },
-    { id: 'u-tenant-4', email: 'derek.wu@example.com', nickname: '小德', role: 'user', adminRole: null, status: 'suspended', emailVerified: true, registeredAt: daysAgo(210), lastLoginAt: null },
-    { id: 'u-tenant-5', email: 'elaine.ho@example.com', nickname: '伊蓮', role: 'user', adminRole: null, status: 'active', emailVerified: true, registeredAt: daysAgo(180), lastLoginAt: daysAgo(5) },
+    { id: 'u-admin-1', email: 'admin@rentmate.tw', nickname: '系統管理員', role: 'admin', status: 'active', emailVerified: true, registeredAt: daysAgo(360), lastLoginAt: daysAgo(0) },
+    { id: 'u-admin-2', email: 'staff@rentmate.tw', nickname: '陳小管', role: 'admin', status: 'active', emailVerified: true, registeredAt: daysAgo(348), lastLoginAt: daysAgo(2) },
+    { id: 'u-landlord-1', email: 'chen.landlord@example.com', nickname: '陳房東', role: 'landlord', status: 'active', emailVerified: true, registeredAt: daysAgo(320), lastLoginAt: daysAgo(1) },
+    { id: 'u-landlord-2', email: 'lin.house@example.com', nickname: '林太太', role: 'landlord', status: 'active', emailVerified: true, registeredAt: daysAgo(295), lastLoginAt: daysAgo(9) },
+    { id: 'u-tenant-1', email: 'amy.wang@example.com', nickname: '小艾', role: 'user', status: 'active', emailVerified: true, registeredAt: daysAgo(280), lastLoginAt: daysAgo(3) },
+    { id: 'u-tenant-2', email: 'ben.liu@example.com', nickname: '阿賓', role: 'user', status: 'active', emailVerified: true, registeredAt: daysAgo(240), lastLoginAt: null },
+    { id: 'u-tenant-3', email: 'cindy.chang@example.com', nickname: null, role: 'user', status: 'active', emailVerified: false, registeredAt: daysAgo(14), lastLoginAt: null },
+    { id: 'u-tenant-4', email: 'derek.wu@example.com', nickname: '小德', role: 'user', status: 'suspended', emailVerified: true, registeredAt: daysAgo(210), lastLoginAt: null },
+    { id: 'u-tenant-5', email: 'elaine.ho@example.com', nickname: '伊蓮', role: 'user', status: 'active', emailVerified: true, registeredAt: daysAgo(180), lastLoginAt: daysAgo(5) },
   ]
 }
 
@@ -93,7 +91,6 @@ export function seedAdminUsers(): AdminUser[] {
         email: `${stem}${index + 1}@example.com`,
         nickname,
         role,
-        adminRole: null,
         status,
         // 註冊未滿 3 天的帳號還沒驗證信箱，符合實際節奏
         emailVerified: registeredDaysAgo > 3 ? weightedPick(random, { yes: 92, no: 8 }) === 'yes' : false,

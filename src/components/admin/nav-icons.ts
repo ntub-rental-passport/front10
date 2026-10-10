@@ -1,7 +1,6 @@
 import {
   Activity,
   FileText,
-  HandCoins,
   Megaphone,
   Inbox,
   LayoutDashboard,
@@ -18,8 +17,8 @@ import {
  *
  * ## 為什麼不放在 admin-rbac.ts 裡
  *
- * 那個檔案是純權限邏輯，有自己的單元測試。把 Vue 元件塞進去會讓一份
- * 「誰能看到什麼」的規則檔變成同時管外觀的檔案，之後很難只改一邊。
+ * 那個檔案是純導覽資料，有自己的單元測試。把 Vue 元件塞進去會讓一份
+ * 導覽項目的資料檔變成同時管外觀的檔案，之後很難只改一邊。
  *
  * ## 挑圖示的兩個判斷
  *
@@ -35,14 +34,12 @@ import {
  * 側欄永遠是展開的、標籤一直看得見，所以圖示是掃視的錨點而不是唯一的
  * 辨識依據。認不出來的路徑退回一個中性圖示，不要讓側欄破一個洞。
  *
- * ⚠️ 這是唯一一份圖示對照表。useAdminRbac.ts 曾經有第二份（且有 4 個路徑
- * 跟這裡不一樣），已經移除 —— 兩份對照表遲早會漂移成兩套圖示。
+ * 這是唯一一份圖示對照表，避免不同導覽入口漂移成兩套圖示。
  */
 const ICONS: Record<string, LucideIcon> = {
   '/admin': LayoutDashboard,
   '/admin/users': Users,
   '/admin/maintenance-tickets': Wrench,
-  '/admin/subsidy': HandCoins,
   '/admin/content': Megaphone,
   '/admin/notifications': Send,
   '/admin/notification-center': Inbox,

@@ -9,13 +9,11 @@
  * 綠燈——一個永遠正常的健康指示器比沒有指示器更危險。tone 仍區分 danger／idle：
  * danger 是「量過但失敗」，idle 是「這項還沒接後端」，顏色不同但文字故意一樣誠實。
  *
- * 第三項原本是「LLM Provider」的佔位（當時後端沒有這項檢查）。2026-09 後端的
- * 背景迴圈開始每 60 秒探測桌機的 AI 模型，這裡改接真實狀態，判定與系統監控頁
- * 共用 serviceMonitor —— 兩頁不會一邊說在線、一邊說連不上。
+ * 第三項在 2026-10 改為 RAG 檢索服務；判定與系統監控頁共用 serviceMonitor。
  */
 
 import {
-  LLM_DESKTOP_SERVICE,
+  RAG_SERVICE,
   MONITOR_STATE_TONE,
   databaseMonitor,
   errorRateMonitor,
@@ -62,6 +60,6 @@ export function buildHealthBarItems(
   return [
     databaseMonitor(dbPool, services, now),
     errorRateMonitor(requests),
-    serviceMonitor(services, LLM_DESKTOP_SERVICE, now),
+    serviceMonitor(services, RAG_SERVICE, now),
   ].map(toHealthBarItem)
 }

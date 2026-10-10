@@ -147,6 +147,52 @@ class BannerAudienceTests(ContentTestCase):
             content.create_banner(banner(audience='everyone'), actor='a@example.com')
 
 
+class BannerImageNameTests(unittest.TestCase):
+    def test_extracts_uploaded_image_names(self):
+        for url, name in (
+            ('/api/content/banner-images/spring.webp', 'spring.webp'),
+            ('https://host/api/content/banner-images/spring.webp', 'spring.webp'),
+            ('http://host:8000/api/content/banner-images/spring.webp', 'spring.webp'),
+            ('/api/content/banner-images/%E6%98%A5%E5%A4%A9%20banner.webp', '春天 banner.webp'),
+            ('/api/content/banner-images/spring.webp?v=1#preview', 'spring.webp'),
+            ('https://host/api/content/banner-images/%E6%98%A5%E5%A4%A9.webp?v=1#preview', '春天.webp'),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(content._banner_image_name(url), name)
+
+    def test_ignores_urls_outside_the_library_and_invalid_paths(self):
+        for url in (
+            '/banners/x.webp', 'https://external.example/x.webp',
+            'https://external.example/x.webp?url=/api/content/banner-images/spring.webp',
+            '/other/api/content/banner-images/x.webp', '/api/content/banner-images-other/x.webp',
+            '/api/content/banner-images/', '/api/content/banner-images/sub/x.webp',
+            '/api/content/banner-images/..%2Fx.webp', 'ftp://host/api/content/banner-images/x.webp',
+            'https://[invalid/api/content/banner-images/x.webp',
+        ):
+            with self.subTest(url=url):
+                self.assertIsNone(content._banner_image_name(url))
+
+
+class BannerImageUsageTests(ContentTestCase):
+    def test_usage_includes_all_banners_and_orders_by_sort_order_then_id(self):
+        with patch.object(content, '_new_id', side_effect=['ban-z', 'ban-a', 'ban-other', 'ban-external']):
+            first = content.create_banner(banner(title='草稿', published=False,
+                                                imageUrl='/api/content/banner-images/shared.webp'), actor='a@example.com')
+            second = content.create_banner(banner(title='排程', startAt=iso(NOW + timedelta(days=7)),
+                                                 imageUrl='https://host/api/content/banner-images/shared.webp?v=1#image'),
+                                           actor='a@example.com')
+            other = content.create_banner(banner(title='已結束', endAt=iso(NOW - timedelta(minutes=1)),
+                                                imageUrl='/api/content/banner-images/%E6%98%A5%E5%A4%A9.webp'),
+                                          actor='a@example.com')
+            content.create_banner(banner(imageUrl='https://external.example/shared.webp'), actor='a@example.com')
+        with content._open() as db:
+            db.execute('UPDATE banners SET sort_order = ? WHERE id IN (?, ?)', (3, first['id'], second['id']))
+        self.assertEqual(content.banner_image_usage(), {
+            'shared.webp': [{'id': second['id'], 'title': '排程'}, {'id': first['id'], 'title': '草稿'}],
+            '春天.webp': [{'id': other['id'], 'title': '已結束'}],
+        })
+
+
 class BannerTests(ContentTestCase):
     def test_new_banner_goes_last(self):
         created = content.create_banner(banner(), actor='a@example.com')

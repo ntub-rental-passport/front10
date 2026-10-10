@@ -15,14 +15,15 @@ import QuotaProgressCard, { type QuotaProgressItem } from '@/src/components/admi
 import StatTile from '@/src/components/admin/StatTile.vue'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
 import InlineStat from '@/src/components/admin/InlineStat.vue'
+import SubscriptionOverviewCard from '@/src/components/admin/SubscriptionOverviewCard.vue'
 import TrendAreaCard from '@/src/components/admin/TrendAreaCard.vue'
-import { useAdminAudit } from '@/src/composables/admin/useAdminAudit'
+import { useAuditLog } from '@/src/composables/admin/useAuditLog'
 import { loadAiUsage, useAdminAiUsage } from '@/src/composables/admin/useAdminAiUsage'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
-import { adminRoleLabels, useAdminUsers } from '@/src/composables/admin/useAdminUsers'
+import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
+import { adminSubscriptionCollection } from '@/src/composables/admin/useAdminSubscription'
 import { activeWindowDays, countActiveUsers } from '@/src/utils/admin-activity'
 import { useAdminSettings } from '@/src/composables/admin/useAdminSettings'
-import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { useAdminMaintenance } from '@/src/composables/admin/useAdminMaintenance'
 import { useAdminDeposits } from '@/src/composables/admin/useAdminDeposits'
 import { useSystemHealth } from '@/src/composables/admin/useSystemHealth'
@@ -42,20 +43,20 @@ import { recentLogins } from '@/src/utils/admin-recent-logins'
 import { chartColor } from '@/src/constants/admin-chart'
 import type { AdminUserRole } from '@/src/mocks/admin-seed'
 
-const { users } = useAdminUsers()
 const { usages, alerts, alertCount, loadState: aiUsageState } = useAdminAiUsage()
 // 每次打開首頁都重讀一次 AI 用量（見 useAdminAiUsage 的說明）
 void loadAiUsage()
-const { events } = useAdminAudit()
+const { rows: events, loading: auditLoading, serverFailed: auditFailed, reload: reloadAudit } = useAuditLog()
 const { settings } = useAdminSettings()
-const { canAccessPath } = useAdminRbac()
 const { tickets, ticketViews, stats: maintenanceStats } = useAdminMaintenance()
-const { records: depositRecords, stats: depositStats } = useAdminDeposits()
+const { records: depositRecords, stats: depositStats, loadState: depositsState, reload: reloadDeposits } = useAdminDeposits()
 
-// ── 真實資料：系統健康條、最近登入 ──────────────────────────────────
+// ── 真實來源：使用者目錄、系統健康條 ────────────────────────────────
 //
-// 這兩個是本頁唯一打真實後端的區塊（其餘都是展示資料，見下方個別區塊的註解）。
-const { realAccounts, realAccountsLoading, realAccountsError } = useAdminDirectory()
+// 使用者與押金在本地疊加展示資料，正式站只有後端資料；報修工單也已讀後端。
+const { rows: directoryRows, realAccounts, realAccountsLoading, realAccountsError, reloadRealAccounts } = useAdminDirectory()
+const users = computed(() => directoryRows.value.map((row) => row.user))
+const usersState = computed(() => realAccountsError.value ? 'error' : realAccountsLoading.value ? 'loading' : 'ready')
 const { dbPool, requests, services, serverNow } = useSystemHealth()
 
 // 開關打開不代表此刻生效，排程可能尚未開始或已結束
@@ -119,7 +120,7 @@ const suspendedNote = computed(() => {
 })
 
 const depositSegments = computed(() =>
-  depositMatchDistribution(depositRecords.value).map((entry) => ({
+  (depositStats.value === null ? [] : depositMatchDistribution(depositRecords.value)).map((entry) => ({
     label: depositMatchLabels[entry.match],
     value: entry.value,
     // 只有「不符」用警示色，其餘留在藍紫色系
@@ -170,7 +171,7 @@ const healthBarItems = computed(() =>
 // /api/admin/users）。展示資料沒有人真正登入過，不能混進這張卡片。
 const recentLoginEntries = computed(() => recentLogins(realAccounts.value))
 
-// ── KPI 卡的 sparkline／trend（展示資料，沿用既有的 userGrowth／ticketTrend）──
+// ── KPI 卡的 sparkline／trend（沿用目錄與後端工單的成長曲線）───────────
 const userGrowthSpark = computed(() => userGrowth.value.map((point) => point.value))
 const userGrowthTrendPercent = computed(() => latestChangePercent(userGrowth.value))
 const ticketTrendSpark = computed(() => ticketTrend.value.map((point) => point.value))
@@ -183,7 +184,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
     <!--
       ⚠️ 資料標記約定見 src/utils/admin-data-marking.md。
       一句話：標的是「真實」不是「展示」—— 真實區塊加 data-real="true"，
-      沒標的一律視為展示資料。
+      正式站只有真實來源的區塊標記 data-real，本地開發可疊加展示資料。
     -->
 
     <!--
@@ -193,9 +194,9 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       頁面標題已經移到頂部列（見 src/utils/admin-page-title.ts），所以這一列
       現在是內容區的第一個東西。
 
-      展示資料（無 data-real）：四個數字都是 src/mocks 種子資料算出來的。
+      押金不符正式站只計真實押金，本地開發才疊加展示押金。
       「今日待處理」與頂部列待辦抽屜的徽章同一個來源（useAdminQueue），
-      不會對不起來。押金不符沒有 trend —— 這批種子資料沒有歷史快照可以比，
+      不會對不起來。押金不符沒有 trend —— 押金資料沒有歷史快照可以比，
       寧可留白也不假造一個趨勢。
     -->
     <div>
@@ -204,12 +205,10 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           這一頁原本只能看、不能做任何事 —— 進來之後想做事得先找到導覽列、
           再點進對應的頁面。
 
-          兩顆都是真的導向存在的路由，而且都過 RBAC：canAccessPath 回 false
-          就整顆不渲染，而不是渲染一顆點了會被擋下來的按鈕。
+          兩顆按鈕直接導向通知管理與內容管理，讓管理員能從總覽開始操作。
         -->
         <div class="flex flex-wrap items-center gap-2">
           <Button
-            v-if="canAccessPath('/admin/notifications')"
             as-child
             size="sm"
             class="rounded-full"
@@ -220,7 +219,6 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
             </RouterLink>
           </Button>
           <Button
-            v-if="canAccessPath('/admin/content')"
             as-child
             size="sm"
             variant="outline"
@@ -242,9 +240,11 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           />
           <InlineStat
             :icon="Users"
+            data-real="true"
             label="使用者總數"
-            :value="users.length"
-            :trend="userGrowthTrendPercent"
+            :value="usersState === 'ready' ? users.length : usersState === 'error' ? '—' : '…'"
+            :note="usersState === 'ready' ? undefined : usersState === 'error' ? '讀不到' : '讀取中'"
+            :trend="usersState === 'ready' ? userGrowthTrendPercent : undefined"
             trend-period="month"
             to="/admin/users"
           />
@@ -258,8 +258,10 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
           />
           <InlineStat
             :icon="AlertTriangle"
+            data-real="true"
             label="押金不符"
-            :value="depositStats.mismatchedCount"
+            :value="depositStats?.mismatchedCount ?? (depositsState === 'error' ? '—' : '…')"
+            :note="depositStats ? undefined : depositsState === 'error' ? '讀不到' : '讀取中'"
             to="/admin/users?alert=deposit-mismatch"
           />
         </div>
@@ -284,11 +286,22 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       </CardContent>
     </Card>
 
+    <!--
+      人數沿用 useAdminDirectory（正式站真實、本地疊加展示帳號）。
+    -->
+    <SubscriptionOverviewCard
+      v-if="usersState === 'ready'"
+      :rows="directoryRows"
+      :subscriptions="adminSubscriptionCollection"
+    />
+
     <!-- 平台規模與組成 -->
     <section
       class="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
     >
       <TrendAreaCard
+        v-if="usersState === 'ready'"
+        data-real="true"
         title="使用者成長"
         description="近 12 個月累計人數"
         :points="userGrowth"
@@ -297,6 +310,8 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         :tension="0.25"
       />
       <DonutStatCard
+        v-if="usersState === 'ready'"
+        data-real="true"
         title="使用者組成"
         to="/admin/users"
         :center-value="users.length"
@@ -304,7 +319,18 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         :segments="roleSegments"
         :note="suspendedNote"
       />
+      <Card v-if="usersState !== 'ready'" data-real="true" class="rounded-3xl md:col-span-2">
+        <CardHeader class="p-5 pb-2">
+          <CardTitle class="text-sm font-medium">使用者成長與組成</CardTitle>
+        </CardHeader>
+        <CardContent class="px-5 pb-5">
+          <AdminLoadNotice :state="usersState" what="帳號資料" @retry="reloadRealAccounts" />
+        </CardContent>
+      </Card>
+      <!-- 押金對帳正式站只含真實來源；讀不到時不拿本地展示數字充當總計。 -->
       <DonutStatCard
+        v-if="depositStats"
+        data-real="true"
         title="押金對帳結果"
         to="/admin/users?alert=deposit-mismatch"
         :center-value="depositRecords.length"
@@ -312,6 +338,14 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
         :segments="depositSegments"
         :note="`房東聲明總額 NT$${depositStats.declaredTotal.toLocaleString('zh-TW')}`"
       />
+      <Card v-else data-real="true" class="rounded-3xl">
+        <CardHeader class="p-5 pb-2">
+          <CardTitle class="text-sm font-medium">押金對帳結果</CardTitle>
+        </CardHeader>
+        <CardContent class="px-5 pb-5">
+          <AdminLoadNotice :state="depositsState" what="真實押金資料" @retry="reloadDeposits" />
+        </CardContent>
+      </Card>
     </section>
 
     <!-- 報修案件流動 -->
@@ -370,8 +404,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
 
     <!--
       底部兩張清單卡：性質一樣（都是時間序的「最近發生什麼」），並排比
-      各自佔一整列緊湊。左邊是真實資料、右邊是展示資料，所以只有左邊有
-      data-real——約定見本頁最上方的說明。
+      各自佔一整列緊湊。正式站兩者皆為真實來源，本地稽核另疊加瀏覽器紀錄。
     -->
     <section class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
       <!--
@@ -424,16 +457,19 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
       </Card>
 
       <!--
-        展示資料（無 data-real）：事件來自 createAdminCollection('audit',
-        seedAuditEvents)，是本機種子資料加上這個瀏覽器自己產生的操作紀錄，
-        不是後端的稽核表。
+        與稽核頁共用 useAuditLog：後端稽核＋監控事件，本地開發才疊加本機紀錄。
       -->
-      <Card class="rounded-3xl">
+      <Card data-real="true" class="rounded-3xl">
         <CardHeader class="p-5">
           <CardTitle>最新稽核事件</CardTitle>
           <CardDescription>最近 5 筆，完整紀錄請到稽核紀錄查詢。</CardDescription>
         </CardHeader>
         <CardContent class="px-5 pb-5 space-y-2.5 text-sm">
+          <AdminLoadNotice
+            :state="auditLoading ? 'loading' : auditFailed ? 'error' : 'ready'"
+            what="稽核紀錄"
+            @retry="reloadAudit"
+          />
           <div
             v-for="event in events.slice(0, 5)"
             :key="event.id"
@@ -444,7 +480,7 @@ const weeklyTicketCount = computed(() => ticketTrend.value.at(-1)?.value ?? 0)
               {{ formatDateTime(event.at) }}｜{{ event.actor }}
             </p>
           </div>
-          <p v-if="events.length === 0" class="py-6 text-center text-muted-foreground">
+          <p v-if="!auditLoading && !auditFailed && events.length === 0" class="py-6 text-center text-muted-foreground">
             尚無稽核事件。
           </p>
         </CardContent>

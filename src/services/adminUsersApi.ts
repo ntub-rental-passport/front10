@@ -1,4 +1,5 @@
 import { getAuthSession } from '@/src/composables/useAuth'
+import type { AccountUsage } from '@/src/types/admin-usage'
 
 /** 後端 /api/admin/users 的一列。刻意不含密碼雜湊與第三方識別碼。 */
 export interface AdminAccount {
@@ -13,6 +14,8 @@ export interface AdminAccount {
   providers: string[]
   createdAt: string | null
   lastLoginAt: string | null
+  /** 舊後端可能省略，缺值代表讀不到，不能當作零用量。 */
+  usage?: AccountUsage | null
 }
 
 const CONFIGURED_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')

@@ -12,12 +12,13 @@ import {
   type AuditRow,
 } from '@/src/utils/admin-audit-sources'
 import type { MonitorEvent } from '@/src/utils/admin-monitoring-report'
+import { isAdminDemoEnabled } from '@/src/utils/admin-demo'
 
 /**
- * 稽核頁的資料：後端操作紀錄 ＋ 後端的斷線事件 ＋ 這台瀏覽器的紀錄
+ * 稽核頁與總覽的資料：後端操作紀錄 ＋ 後端的斷線事件，本地開發再疊加瀏覽器紀錄
  * （三個來源的差別見 admin-audit-sources.ts）。
  *
- * 後端讀不到時，本機那份照樣顯示，但 `serverFailed` 要讓畫面說出來 ——
+ * 後端讀不到時，開發環境的本機那份照樣顯示，但 `serverFailed` 要讓畫面說出來 ——
  * 只剩本機的紀錄又不講，看起來會像後端從來沒有任何紀錄。
  */
 export function useAuditLog() {
@@ -51,7 +52,7 @@ export function useAuditLog() {
           const row = fromMonitorEvent(event)
           return row ? [row] : []
         }),
-        localEvents.value.map(fromLocalEvent),
+        isAdminDemoEnabled() ? localEvents.value.map(fromLocalEvent) : [],
       ),
       retentionDays.value,
     ),

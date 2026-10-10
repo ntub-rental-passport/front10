@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { assessmentKey, evidenceKey, isDismissed, reconcileRecord, type ResolutionRecord } from '@/src/utils/contract-resolution'
-import { EVIDENCE_ACCEPT, formatEvidenceSize, validateEvidenceFiles, saveEvidenceFiles, removeEvidenceFiles, loadEvidenceFile, type EvidenceAttachment } from '@/src/utils/contract-evidence'
+import { EVIDENCE_ACCEPT, formatEvidenceSize, validateEvidenceFiles, loadEvidenceFile, type EvidenceAttachment } from '@/src/utils/contract-evidence'
+import { useContractReview } from '@/src/composables/useContractReview'
+import { uploadReport, deleteReviewFile, reviewFileUrl, type ReviewFile } from '@/src/services/contractReviewApi'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -134,6 +136,8 @@ const exportDialogOpen = ref(false)
 const exportPrivacyMode = ref(true)
 const exportingReport = ref(false)
 const exportError = ref('')
+const exportSuccess = ref('')
+const deletingReport = ref<number | null>(null)
 let chatHasBeenPositioned = false
 
 const pageCount = computed(() => pages.value.length)
@@ -248,12 +252,8 @@ function buildRisks(): RiskItem[] {
 }
 
 const risks = ref<RiskItem[]>(buildRisks())
-const historyKey = 'rentmate-review:' + ocrResult?.reviewSessionId
-const records = ref<ResolutionRecord[]>([])
-try {
-  const stored = JSON.parse(localStorage.getItem(historyKey) || sessionStorage.getItem(historyKey) || '[]')
-  if (Array.isArray(stored)) records.value = stored.filter(record => record && typeof record.rule === 'string' && typeof record.evidence === 'string')
-} catch { /* unavailable storage */ }
+const reviewId = ocrResult?.reviewSessionId || ''
+const { records, files: reviewFiles, reports: savedReports, offline, offlineMessage, pendingSync, syncError, loading: reviewLoading, loadReview, saveRecord } = useContractReview(reviewId)
 const severityFilter = ref<string | null>(null)
 const activeRisks = computed(() => reconcileAssessments(risks.value).filter(risk => !isDismissed(risk, records.value)))
 const filteredRisks = computed(() => activeRisks.value.filter(risk => activeRiskTab.value === 'risk'
@@ -292,7 +292,7 @@ function addEvidence(files: File[]) {
   if (evidenceError.value) return
   processAttachments.value.push(...files.map(file => ({
     id: crypto.randomUUID(), name: file.name, size: file.size, type: file.type, file,
-    preview: /^image\/(jpeg|png|webp|gif)$/.test(file.type) ? URL.createObjectURL(file) : '',
+    preview: /^image\/(jpeg|png|webp)$/.test(file.type) ? URL.createObjectURL(file) : '',
   })))
 }
 function selectEvidence(event: Event) {
@@ -312,6 +312,13 @@ function removeEvidence(id: string) {
 }
 async function downloadEvidence(attachment: EvidenceAttachment) {
   evidenceDownloadError.value = ''
+  if (attachment.fileId !== undefined) {
+    const link = document.createElement('a')
+    link.href = reviewFileUrl({ url: attachment.url || `/api/contract/reviews/${reviewId}/files/${attachment.fileId}` })
+    link.download = attachment.name
+    document.body.appendChild(link); link.click(); link.remove()
+    return
+  }
   try {
     const blob = await loadEvidenceFile(attachment.id)
     const url = URL.createObjectURL(blob)
@@ -336,20 +343,18 @@ async function saveProcess() {
   if (!processNote.value.trim()) { processError.value = '請填寫原因與核對依據，再儲存紀錄。'; return }
   processError.value = ''
   processSaving.value = true
-  const attachments = processAttachments.value.map(({ id, name, size, type }) => ({ id, name, size, type }))
   const record: ResolutionRecord = { id: crypto.randomUUID(), rule: assessmentKey(risk), title: risk.title,
-    action: processAction.value, note: processNote.value.trim(), at: new Date().toISOString(), evidence: evidenceKey(risk), attachments }
-  const next = [...records.value, record]
+    action: processAction.value, note: processNote.value.trim(), at: new Date().toISOString(), evidence: evidenceKey(risk) }
+  let synced: boolean
   try {
-    await saveEvidenceFiles(processAttachments.value)
-    localStorage.setItem(historyKey, JSON.stringify(next))
-  } catch {
-    await removeEvidenceFiles(attachments.map(item => item.id)).catch(() => {})
-    processError.value = '紀錄或附件儲存失敗，請確認瀏覽器允許儲存資料，或減少附件大小後重試。'
+    synced = await saveRecord(record, processAttachments.value.map(attachment => attachment.file))
+  } catch (error) {
+    processError.value = error instanceof Error ? error.message : '紀錄或附件儲存失敗，請稍後重試。'
     return
   } finally { processSaving.value = false }
-  records.value = next
-  processSuccess.value = '處理紀錄已儲存，可在「處理紀錄」查看與下載附件。'
+  processSuccess.value = synced
+    ? '處理紀錄已儲存，可在「處理紀錄」查看與下載附件。'
+    : '處理紀錄已暫存在這台裝置，將於下次儲存或重新載入時重試同步。'
   processDialog.value?.close()
   if (record.action === 'correct') openFieldEditor(risk)
 }
@@ -630,6 +635,7 @@ onBeforeUnmount(() => {
 })
 
 onMounted(() => {
+  if (reviewId) void loadReview()
   void loadBackendRagAndAiAnalysis()
 })
 
@@ -696,13 +702,15 @@ function copyMessage(message: ChatMessage): void {
 
 function openExportDialog(): void {
   exportError.value = ''
+  exportSuccess.value = ''
   exportDialogOpen.value = true
 }
 
-async function exportAnalysisReport(): Promise<void> {
+async function exportAnalysisReport(saveToSpace = false): Promise<void> {
   if (exportingReport.value) return
   exportingReport.value = true
   exportError.value = ''
+  exportSuccess.value = ''
 
   try {
     const fieldValues = Object.fromEntries(
@@ -716,15 +724,41 @@ async function exportAnalysisReport(): Promise<void> {
       risks: reconcileAssessments(risks.value).map(risk => isDismissed(risk, records.value) ? { ...risk, status: 'not_applicable' as const, severity: null, description: '使用者確認不適用；原規則證據保留供追溯。' } : risk),
       handlingRecords: records.value.map(record => ({ ...record, outcome: reconcileRecord(record, risks.value) })),
       fieldValues,
-      privacyMode: exportPrivacyMode.value,
+      privacyMode: saveToSpace ? false : exportPrivacyMode.value,
       analysisState: aiAnalysisState.value,
     })
-    downloadPdf(report.bytes, report.fileName)
-    exportDialogOpen.value = false
+    if (saveToSpace) {
+      await loadReview()
+      const saved = await uploadReport(reviewId, report.bytes, report.fileName, report.reportId)
+      reviewFiles.value.push(saved)
+      exportSuccess.value = '完整資料版報告已存到我的空間。'
+    } else {
+      downloadPdf(report.bytes, report.fileName)
+      exportDialogOpen.value = false
+    }
   } catch (error) {
     exportError.value = error instanceof Error ? error.message : '報告產生失敗，請稍後再試。'
   } finally {
     exportingReport.value = false
+  }
+}
+
+function reportCreatedAt(value: string): string {
+  return new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+}
+
+async function deleteSavedReport(report: ReviewFile): Promise<void> {
+  if (deletingReport.value !== null || !window.confirm(`確定刪除「${report.name}」？`)) return
+  deletingReport.value = report.id
+  exportError.value = ''
+  exportSuccess.value = ''
+  try {
+    await deleteReviewFile(reviewId, report.id)
+    reviewFiles.value = reviewFiles.value.filter(file => file.id !== report.id)
+  } catch (error) {
+    exportError.value = error instanceof Error ? error.message : '報告刪除失敗，請稍後重試。'
+  } finally {
+    deletingReport.value = null
   }
 }
 </script>
@@ -810,15 +844,32 @@ async function exportAnalysisReport(): Promise<void> {
           <span>PDF 會以點陣頁面輸出，不附個資對照表；去識別化仍可能遺漏，分享前請人工快速檢查。</span>
         </div>
         <p v-if="exportError" class="analysis-export-error" role="alert">{{ exportError }}</p>
+        <p v-if="exportSuccess" class="process-success" role="status">{{ exportSuccess }}</p>
         <div class="analysis-export-actions">
           <Button variant="outline" :disabled="exportingReport" @click="exportDialogOpen = false">
             取消
           </Button>
-          <Button :disabled="exportingReport" @click="exportAnalysisReport">
+          <Button variant="outline" :disabled="exportingReport || reviewLoading || deletingReport !== null || !reviewId" @click="exportAnalysisReport(true)">
+            存到我的空間
+          </Button>
+          <Button :disabled="exportingReport" @click="exportAnalysisReport()">
             <FileDown :size="17" />
             {{ exportingReport ? '正在產生 PDF…' : '下載 PDF 報告' }}
           </Button>
         </div>
+        <p class="process-field-hint">存到我的空間會保存完整資料版，不受隱私選項影響。</p>
+        <section class="saved-reports" aria-labelledby="saved-reports-title">
+          <h3 id="saved-reports-title">已存的報告</h3>
+          <p v-if="reviewLoading" class="process-field-hint">載入中…</p>
+          <p v-else-if="!savedReports.length" class="process-field-hint">目前沒有已存的報告。</p>
+          <ul v-else>
+            <li v-for="report in savedReports" :key="report.id">
+              <span><strong>{{ report.name }}</strong><small>{{ reportCreatedAt(report.createdAt) }}（臺北時間）</small></span>
+              <a :href="reviewFileUrl(report)" :download="report.name">下載</a>
+              <button type="button" :disabled="exportingReport || deletingReport !== null" @click="deleteSavedReport(report)">{{ deletingReport === report.id ? '刪除中…' : '刪除' }}</button>
+            </li>
+          </ul>
+        </section>
       </section>
     </div>
 
@@ -870,11 +921,12 @@ async function exportAnalysisReport(): Promise<void> {
           </div>
           <section class="process-evidence" aria-labelledby="process-evidence-title">
             <h3 id="process-evidence-title" class="process-section-label"><span class="process-step">03</span>佐證附件 <span class="process-optional">選填</span><span class="process-file-count">{{ processAttachments.length }} / 5</span></h3>
+            <p class="process-field-hint" role="note">請勿上傳完整租約，只收圖片。</p>
             <input ref="evidenceInput" type="file" multiple :accept="EVIDENCE_ACCEPT" class="process-file-input" tabindex="-1" aria-label="選擇佐證附件" :disabled="processSaving" @change="selectEvidence" />
             <button type="button" class="process-dropzone" :class="{ 'is-dragging': evidenceDragging }" :disabled="processSaving" aria-describedby="process-file-hint" @click="evidenceInput?.click()" @dragover.prevent="evidenceDragging = true" @dragleave.prevent="evidenceDragging = false" @drop.prevent="dropEvidence">
-              <span class="process-upload-icon"><UploadCloud :size="25" /></span><span><strong>點擊選擇檔案，或拖曳至此</strong><small>對話截圖、修訂契約、收據，都可以作為核對依據</small></span><span class="process-upload-label">選擇檔案</span>
+              <span class="process-upload-icon"><UploadCloud :size="25" /></span><span><strong>點擊選擇檔案，或拖曳至此</strong><small>對話截圖、修訂處截圖、收據照片，都可以作為核對依據</small></span><span class="process-upload-label">選擇檔案</span>
             </button>
-            <p id="process-file-hint" class="process-field-hint">圖片（JPG、PNG、WebP、GIF）、PDF、Word、Excel、TXT、CSV。單檔上限 10 MB，合計 25 MB。</p>
+            <p id="process-file-hint" class="process-field-hint">圖片（JPG、PNG、WebP）。單檔上限 10 MB，合計 25 MB。</p>
             <p v-if="evidenceError" class="process-error" role="alert"><CircleAlert :size="16" />{{ evidenceError }}</p>
             <ul v-if="processAttachments.length" class="process-attachment-list">
               <li v-for="attachment in processAttachments" :key="attachment.id">
@@ -887,7 +939,7 @@ async function exportAnalysisReport(): Promise<void> {
           <div class="process-info"><Info :size="18" /><p>溝通紀錄不代表風險解除。修正資料後會重新檢查；不適用判定只對目前證據有效。</p></div>
           <p v-if="processError" class="process-error" role="alert"><CircleAlert :size="18" />{{ processError }}</p>
         </div>
-        <footer class="process-footer"><p><ShieldCheck :size="16" />紀錄與附件保存在此瀏覽器，可於本次契約的處理紀錄查看。</p><div class="process-footer-actions"><button type="button" class="process-cancel" :disabled="processSaving" @click="processDialog?.close()">取消</button><button type="submit" class="process-save" :disabled="processSaving"><LoaderCircle v-if="processSaving" :size="19" class="process-spinner" /><CheckCircle2 v-else :size="19" />{{ processSaving ? '儲存中…' : '儲存紀錄' }}</button></div></footer>
+        <footer class="process-footer"><p><ShieldCheck :size="16" />紀錄與新附件保存在伺服器，可於本次契約的處理紀錄查看。</p><div class="process-footer-actions"><button type="button" class="process-cancel" :disabled="processSaving" @click="processDialog?.close()">取消</button><button type="submit" class="process-save" :disabled="processSaving || reviewLoading"><LoaderCircle v-if="processSaving" :size="19" class="process-spinner" /><CheckCircle2 v-else :size="19" />{{ processSaving ? '儲存中…' : '儲存紀錄' }}</button></div></footer>
       </form>
     </dialog>
 
@@ -1038,6 +1090,8 @@ async function exportAnalysisReport(): Promise<void> {
           </div>
 
           <div id="review-results" class="risk-list" role="tabpanel" :aria-labelledby="`review-tab-${activeRiskTab}`" tabindex="0">
+            <p v-if="offline" class="process-field-hint" role="status">{{ offlineMessage }}</p>
+            <p v-if="syncError" class="process-field-hint" role="status">{{ syncError }}<span v-if="pendingSync"> 將於下次儲存或重新載入時重試同步。</span></p>
             <p v-if="processSuccess" class="process-success" role="status"><CheckCircle2 :size="18" />{{ processSuccess }}<button v-if="activeRiskTab !== 'history'" type="button" @click="activeRiskTab = 'history'; severityFilter = null">查看紀錄</button></p>
             <p v-if="evidenceDownloadError" class="process-error" role="alert">{{ evidenceDownloadError }}</p>
             <button v-if="severityFilter && activeRiskTab === 'risk'" @click="severityFilter = null">清除風險等級篩選</button>
@@ -1220,6 +1274,7 @@ async function exportAnalysisReport(): Promise<void> {
 </template>
 
 <style scoped src="./analysis.css"></style>
+
 <style scoped>
 @reference "../../index.css";
 .analysis-reveal-enter-active, .analysis-reveal-leave-active { transition: opacity .25s ease, transform .25s ease; }
@@ -1228,4 +1283,16 @@ async function exportAnalysisReport(): Promise<void> {
 .analysis-wait-error p { @apply min-w-0 flex-1; }
 .analysis-wait-error small { @apply text-xs; }
 @media (prefers-reduced-motion: reduce) { .analysis-reveal-enter-active, .analysis-reveal-leave-active { transition: none; } }
+
+.analysis-export-dialog { max-height: 90vh; overflow-y: auto; }
+.analysis-export-actions { flex-wrap: wrap; }
+.saved-reports { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2ddef; }
+.saved-reports h3 { color: var(--ink); font-size: 0.9rem; }
+.saved-reports ul { display: grid; gap: 0.75rem; margin-top: 0.75rem; padding: 0; list-style: none; }
+.saved-reports li { display: flex; align-items: center; gap: 0.65rem; font-size: 0.8rem; }
+.saved-reports li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.saved-reports small { display: block; margin-top: 0.25rem; color: var(--ink-soft); }
+.saved-reports a, .saved-reports button { flex-shrink: 0; color: #74509f; }
+.saved-reports button:disabled { opacity: 0.5; }
+
 </style>

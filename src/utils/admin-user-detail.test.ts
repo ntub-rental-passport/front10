@@ -45,10 +45,20 @@ describe('狀態的輕重：沒事的安靜，要動手的才上色', () => {
 })
 
 describe('subscriptionFlags', () => {
-  const base = { active: true, expiringSoon: false, quotaExhausted: false }
+  const base = { planKey: 'plus' as const, role: 'tenant' as const, active: true, expiringSoon: false, quotaExhausted: false }
 
   it('沒事就沒有任何標記', () => {
     expect(subscriptionFlags(base)).toEqual([])
+  })
+
+  it('超出方案上限是 warn，Free 或已停用仍顯示', () => {
+    expect(subscriptionFlags({ ...base, planKey: 'free', overLimit: true })).toEqual([
+      { label: '超出方案上限', tone: 'warn' },
+    ])
+    expect(subscriptionFlags({ ...base, active: false, overLimit: true })).toEqual([
+      { label: '已停用', tone: 'idle' },
+      { label: '超出方案上限', tone: 'warn' },
+    ])
   })
 
   it('即將到期與額度已用滿都是 warn，可以同時出現', () => {
@@ -58,9 +68,14 @@ describe('subscriptionFlags', () => {
     ])
   })
 
+  it('Free 不顯示付費到期警示，房東不顯示租客額度警示', () => {
+    expect(subscriptionFlags({ ...base, planKey: 'free', expiringSoon: true })).toEqual([])
+    expect(subscriptionFlags({ ...base, role: 'landlord', quotaExhausted: true })).toEqual([])
+  })
+
   it('已停用是 idle，而且蓋掉其他標記 —— 停用了就不用再管到期或額度', () => {
     expect(
-      subscriptionFlags({ active: false, expiringSoon: true, quotaExhausted: true }),
+      subscriptionFlags({ ...base, active: false, expiringSoon: true, quotaExhausted: true }),
     ).toEqual([{ label: '已停用', tone: 'idle' }])
   })
 })

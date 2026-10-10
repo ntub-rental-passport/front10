@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  adminRoleCounts,
+  adminCount,
   emptyUserDirectoryFilter,
   filterUserDirectory,
   isFilterActive,
@@ -17,8 +17,8 @@ import {
 import type { AdminUser } from '@/src/mocks/admin/users'
 import type { MaintenanceTicket } from '@/src/types/admin-maintenance'
 import type { DepositRecord } from '@/src/mocks/admin/deposit'
-import type { Subscription, SubscriptionPlan } from '@/src/mocks/admin/subscription'
-import type { PlanFeatureRule, PlanFeatures } from './admin-entitlements'
+import type { TenantSubscription } from '@/src/mocks/admin/subscription'
+import { userPlan, usageMonth } from './admin-plans'
 
 function user(id: string, over: Partial<AdminUser> = {}): AdminUser {
   return {
@@ -26,7 +26,6 @@ function user(id: string, over: Partial<AdminUser> = {}): AdminUser {
     email: `${id}@example.com`,
     nickname: null,
     role: 'user',
-    adminRole: null,
     status: 'active',
     emailVerified: true,
     registeredAt: '2026-01-01T00:00:00.000Z',
@@ -69,41 +68,22 @@ function deposit(id: string, over: Partial<DepositRecord> = {}): DepositRecord {
   }
 }
 
-/** 測試只在意契約分析的額度，其餘功能一律開啟無上限 */
-function planFeatures(analysisLimit: number | null): PlanFeatures {
-  const open: PlanFeatureRule = { enabled: true, limit: null }
-  return {
-    'contract-analysis': { enabled: true, limit: analysisLimit },
-    handover: open,
-    subsidy: open,
-    garbage: open,
-    outage: open,
-    notes: open,
-  }
-}
-
-const plans: SubscriptionPlan[] = [
-  { id: 'free', name: '免費方案', priceLabel: 'NT$0', storageMb: 200, features: planFeatures(3) },
-  {
-    id: 'plus',
-    name: '進階方案',
-    priceLabel: 'NT$99／月',
-    storageMb: 2048,
-    features: planFeatures(20),
-  },
-]
-
-function subscription(over: Partial<Subscription> = {}): Subscription {
+function subscription(over: Partial<TenantSubscription> = {}): TenantSubscription {
   return {
     id: 'sub-1',
     userId: 'u-tenant',
-    planId: 'plus',
+    role: 'tenant',
+    planKey: 'plus',
+    billingCycle: 'monthly',
+    aiUsageMonth: usageMonth(),
+    freeAiUsed: 0,
+    startedAt: '2026-01-01T00:00:00.000Z',
     expiresAt: '2026-12-31T00:00:00.000Z',
     aiUsed: 1,
     storageUsedMb: 10,
     active: true,
     trialEndsAt: null,
-    extraCredits: {},
+    checkPacks: [],
     ...over,
   }
 }
@@ -114,7 +94,6 @@ function sources(over: Partial<UserDirectorySources> = {}): UserDirectorySources
     tickets: [],
     deposits: [],
     subscriptions: [],
-    plans,
     ...over,
   }
 }
@@ -188,16 +167,33 @@ describe('joinUserDirectory', () => {
     expect(tenantRow.deposits.find((item) => item.id === 'dr-2')!.match).toBe('pending')
   })
 
-  it('沒有訂閱記錄時 subscription 與 plan 都是 null', () => {
+  it('沒有訂閱記錄時仍適用租客 Free', () => {
     const rows = joinUserDirectory(sources(), EXPIRING_SOON_DAYS)
     expect(rows[0].subscription).toBeNull()
-    expect(rows[0].plan).toBeNull()
+    expect(userPlan(rows[0].user, rows[0].subscription)?.name).toBe('Free 租屋入門')
   })
 
   it('有訂閱時接上對應方案', () => {
     const rows = joinUserDirectory(sources({ subscriptions: [subscription()] }), EXPIRING_SOON_DAYS)
     const tenantRow = rows.find((row) => row.user.id === 'u-tenant')!
-    expect(tenantRow.plan?.name).toBe('進階方案')
+    expect(userPlan(tenantRow.user, tenantRow.subscription)?.name).toBe('Plus 安心租住')
+  })
+
+  it('固定展示計數保留，試用結束或降級後重新判斷超出', () => {
+    const landlord = user('u-landlord', { role: 'landlord', status: 'suspended' })
+    const usageByUserId = { [landlord.id]: { landlord: { properties: 5, rooms: 30, seats: 1 }, tenant: null } }
+    const data = sources({
+      users: [landlord], usageByUserId,
+      subscriptions: [{
+        id: 'sub-landlord', userId: landlord.id, role: 'landlord', planKey: 'free',
+        billingCycle: null, active: true, trialEndsAt: '2026-08-20T00:00:00.000Z', startedAt: '', expiresAt: '',
+      }],
+    })
+    const before = joinUserDirectory(data, 14, new Date('2026-08-14T00:00:00.000Z'))[0]
+    const after = joinUserDirectory(data, 14, new Date('2026-08-21T00:00:00.000Z'))[0]
+    expect(before.usage).toEqual(after.usage)
+    expect(before.overLimit).toBe(false)
+    expect(after.overLimit).toBe(true)
   })
 
   it('與自己無關的案件不會掛上來', () => {
@@ -256,9 +252,9 @@ describe('filterUserDirectory', () => {
     expect(run({ status: 'suspended' })[0].user.id).toBe('u-landlord')
   })
 
-  it('方案篩選支援「未訂閱」', () => {
-    expect(run({ plan: 'plus' })[0].user.id).toBe('u-tenant')
-    expect(run({ plan: 'none' })[0].user.id).toBe('u-landlord')
+  it('方案篩選依角色，沒有訂閱仍屬 Free', () => {
+    expect(run({ plan: 'tenant-plus' })[0].user.id).toBe('u-tenant')
+    expect(run({ plan: 'landlord-free' })[0].user.id).toBe('u-landlord')
   })
 
   it('案件警示分別篩出押金不符與工單逾期', () => {
@@ -283,7 +279,7 @@ describe('filterUserDirectory', () => {
         users: [user('u-expiring'), user('u-full'), user('u-fine')],
         subscriptions: [
           subscription({ id: 's1', userId: 'u-expiring', expiresAt: '2026-08-20T00:00:00.000Z' }),
-          subscription({ id: 's2', userId: 'u-full', aiUsed: 20 }),
+          subscription({ id: 's2', userId: 'u-full', aiUsed: 2, aiUsageMonth: usageMonth(NOW) }),
           subscription({ id: 's3', userId: 'u-fine' }),
         ],
       }),
@@ -301,7 +297,7 @@ describe('filterUserDirectory', () => {
 
 describe('isSubscriptionExpiring', () => {
   const now = new Date('2026-08-14T00:00:00.000Z')
-  const at = (iso: string, over: Partial<Subscription> = {}) =>
+  const at = (iso: string, over: Partial<TenantSubscription> = {}) =>
     subscription({ expiresAt: iso, ...over })
 
   it('14 天內到期算即將到期', () => {
@@ -335,71 +331,114 @@ describe('isSubscriptionExpiring', () => {
 })
 
 describe('isQuotaExhausted', () => {
-  const plusPlan = plans[1]
 
   it('AI 次數用滿即成立', () => {
-    expect(isQuotaExhausted(subscription({ aiUsed: 20 }), plusPlan)).toBe(true)
+    expect(isQuotaExhausted(subscription({ aiUsed: 2 }), true)).toBe(true)
   })
 
   it('儲存空間用滿也成立', () => {
-    expect(isQuotaExhausted(subscription({ storageUsedMb: 2048 }), plusPlan)).toBe(true)
+    expect(isQuotaExhausted(subscription({ storageUsedMb: 1024 }), true)).toBe(true)
   })
 
   it('超用同樣成立', () => {
-    expect(isQuotaExhausted(subscription({ aiUsed: 25 }), plusPlan)).toBe(true)
+    expect(isQuotaExhausted(subscription({ aiUsed: 3 }), true)).toBe(true)
   })
 
   it('快用完但沒用滿不算 —— 門檻是用滿，不是 90%', () => {
-    expect(isQuotaExhausted(subscription({ aiUsed: 19, storageUsedMb: 2047 }), plusPlan)).toBe(
+    expect(isQuotaExhausted(subscription({ aiUsed: 1, storageUsedMb: 1023 }), true)).toBe(
       false,
     )
   })
 
   it('已停用的訂閱不算，與到期判定一致', () => {
-    expect(isQuotaExhausted(subscription({ aiUsed: 20, active: false }), plusPlan)).toBe(false)
+    expect(isQuotaExhausted(subscription({ aiUsed: 2, active: false }), true)).toBe(false)
   })
 
-  it('沒有訂閱或方案時為 false', () => {
-    expect(isQuotaExhausted(null, plusPlan)).toBe(false)
-    expect(isQuotaExhausted(subscription({ aiUsed: 20 }), null)).toBe(false)
+  it('沒有訂閱或角色為房東時為 false', () => {
+    expect(isQuotaExhausted(null, true)).toBe(false)
+    expect(isQuotaExhausted({ id: 'l', userId: 'l', role: 'landlord', planKey: 'plus', active: true, billingCycle: 'monthly', startedAt: '', expiresAt: '', trialEndsAt: null }, true)).toBe(false)
   })
 })
 
 describe('planDistribution', () => {
-  it('依方案計數，並補上「尚未訂閱」一段', () => {
+  it('依角色方案計數，沒有訂閱的人計入 Free', () => {
     const rows = joinUserDirectory(
       sources({
         users: [user('a'), user('b'), user('c')],
         subscriptions: [
-          subscription({ id: 's1', userId: 'a', planId: 'plus' }),
-          subscription({ id: 's2', userId: 'b', planId: 'free' }),
+          subscription({ id: 's1', userId: 'a', planKey: 'plus' }),
+          subscription({ id: 's2', userId: 'b', planKey: 'free' }),
         ],
       }),
       EXPIRING_SOON_DAYS,
     )
 
-    expect(planDistribution(rows, plans)).toEqual([
-      { planId: 'free', label: '免費方案', value: 1 },
-      { planId: 'plus', label: '進階方案', value: 1 },
-      { planId: 'none', label: '尚未訂閱', value: 1 },
+    expect(planDistribution(rows, 'tenant')).toEqual([
+      { planKey: 'free', label: 'Free 租屋入門', value: 2, trialCount: 0 },
+      { planKey: 'plus', label: 'Plus 安心租住', value: 1, trialCount: 0 },
+      { planKey: 'pro', label: 'Pro 合租進階', value: 0, trialCount: 0 },
     ])
   })
 
-  it('沒有人訂閱時每個方案都是 0，不會少掉分段', () => {
+  it('沒有人付費時所有人計入 Free，保留三個分段', () => {
     const rows = joinUserDirectory(sources({ users: [user('a')] }), EXPIRING_SOON_DAYS)
-    const segments = planDistribution(rows, plans)
+    const segments = planDistribution(rows, 'tenant')
     expect(segments).toHaveLength(3)
-    expect(segments.find((s) => s.planId === 'none')?.value).toBe(1)
+    expect(segments.find((s) => s.planKey === 'free')?.value).toBe(1)
   })
 })
 
-describe('adminRoleCounts', () => {
+describe('角色方案分布與篩選', () => {
+  const now = new Date('2026-08-14T00:00:00.000Z')
+  const rows = joinUserDirectory(sources({
+    users: [user('trial'), user('inactive'), user('real'), user('landlord', { role: 'landlord' }), user('admin', { role: 'admin' })],
+    subscriptions: [
+      subscription({ userId: 'trial', planKey: 'free', trialEndsAt: '2026-08-20T00:00:00.000Z' }),
+      subscription({ userId: 'inactive', planKey: 'pro', active: false }),
+      { id: 'l', userId: 'landlord', role: 'landlord', planKey: 'free', billingCycle: null, active: true, trialEndsAt: '2026-08-20T00:00:00.000Z', startedAt: '', expiresAt: '' },
+    ],
+  }), 14, now)
+
+  it('試用算自己角色的 Plus，管理員不計入任一分布', () => {
+    expect(planDistribution(rows, 'tenant', now)).toEqual([
+      { planKey: 'free', label: 'Free 租屋入門', value: 2, trialCount: 0 },
+      { planKey: 'plus', label: 'Plus 安心租住', value: 1, trialCount: 1 },
+      { planKey: 'pro', label: 'Pro 合租進階', value: 0, trialCount: 0 },
+    ])
+    expect(planDistribution(rows, 'landlord', now).map((s) => [s.planKey, s.value, s.trialCount])).toEqual([
+      ['free', 0, 0], ['plus', 1, 1], ['pro', 0, 0],
+    ])
+    expect(planDistribution([], 'landlord', now).map((s) => s.value)).toEqual([0, 0, 0])
+  })
+  it('租客 Free 包含無紀錄與停用訂閱，試用可用 Plus 篩到', () => {
+    const pick = (plan: UserDirectoryFilter['plan']) => filterUserDirectory(rows, { ...emptyUserDirectoryFilter, plan }, now).map((r) => r.user.id)
+    expect(pick('tenant-free')).toEqual(['inactive', 'real'])
+    expect(pick('tenant-plus')).toEqual(['trial'])
+    expect(pick('landlord-plus')).toEqual(['landlord'])
+  })
+  it('Free 即使有到期日也沒有訂閱到期警示', () => {
+    expect(isSubscriptionExpiring(subscription({ planKey: 'free', expiresAt: '2026-08-20T00:00:00.000Z' }), 14, now)).toBe(false)
+  })
+  it('加購包算入 AI 警示，試用容量用 Plus，停用與房東不算', () => {
+    const sub = subscription({ planKey: 'plus', aiUsed: 2, aiUsageMonth: usageMonth(now) })
+    expect(isQuotaExhausted(sub, true, now)).toBe(true)
+    expect(isQuotaExhausted({ ...sub, checkPacks: [{ id: 'p', source: 'admin', quantity: 1, createdAt: now.toISOString(), usedAt: [] }] }, true, now)).toBe(false)
+    expect(isQuotaExhausted(subscription({ planKey: 'free', storageUsedMb: 300, trialEndsAt: '2026-08-20T00:00:00.000Z' }), true, now)).toBe(false)
+    expect(isQuotaExhausted(subscription({ planKey: 'free' }), false, now)).toBe(true)
+  })
+})
+
+describe('adminCount', () => {
+  it('空名冊回傳 0', () => {
+    expect(adminCount([])).toBe(0)
+  })
+
   it('只計管理員，租客與房東不算', () => {
     const rows = joinUserDirectory(
       sources({
         users: [
-          user('a', { role: 'admin', adminRole: 'super' }),
-          user('b', { role: 'admin', adminRole: 'admin' }),
+          user('a', { role: 'admin' }),
+          user('b', { role: 'admin' }),
           user('c', { role: 'landlord' }),
           user('d'),
         ],
@@ -407,20 +446,20 @@ describe('adminRoleCounts', () => {
       EXPIRING_SOON_DAYS,
     )
 
-    expect(adminRoleCounts(rows)).toEqual({ super: 1, admin: 1 })
+    expect(adminCount(rows)).toBe(2)
   })
 
-  it('adminRole 為 null 的管理員視為超級管理員', () => {
+  it('只有一位管理員時回傳 1', () => {
     const rows = joinUserDirectory(
-      sources({ users: [user('a', { role: 'admin', adminRole: null })] }),
+      sources({ users: [user('a', { role: 'admin' })] }),
       EXPIRING_SOON_DAYS,
     )
-    expect(adminRoleCounts(rows)).toEqual({ super: 1, admin: 0 })
+    expect(adminCount(rows)).toBe(1)
   })
 
-  it('沒有管理員時兩者皆為 0', () => {
+  it('沒有管理員時回傳 0', () => {
     const rows = joinUserDirectory(sources({ users: [user('a')] }), EXPIRING_SOON_DAYS)
-    expect(adminRoleCounts(rows)).toEqual({ super: 0, admin: 0 })
+    expect(adminCount(rows)).toBe(0)
   })
 })
 
@@ -435,7 +474,7 @@ describe('isFilterActive', () => {
 
   it('任一軸有值就為 true', () => {
     expect(isFilterActive({ ...emptyUserDirectoryFilter, alert: 'ticket-overdue' })).toBe(true)
-    expect(isFilterActive({ ...emptyUserDirectoryFilter, plan: 'none' })).toBe(true)
+    expect(isFilterActive({ ...emptyUserDirectoryFilter, plan: 'landlord-free' })).toBe(true)
   })
 })
 
@@ -451,18 +490,34 @@ describe('realAccountToRow', () => {
     lastLoginAt: '2026-09-13T00:00:00.000Z',
   }
 
-  it('帶 admin 角色的就是超級管理員', () => {
+  it('帶 admin 角色的就是管理員', () => {
     // 後台刻意不做「網頁上新增管理員」，資料庫裡帶 admin 的人
     // 都是由能登入伺服器的人用 manage_admin.py 授予的
     const row = realAccountToRow({ ...base, roles: ['tenant', 'admin'] })
     expect(row.user.role).toBe('admin')
-    expect(row.user.adminRole).toBe('super')
   })
 
   it('房東與租客不是管理員', () => {
     expect(realAccountToRow({ ...base, roles: ['landlord'] }).user.role).toBe('landlord')
-    expect(realAccountToRow({ ...base, roles: ['landlord'] }).user.adminRole).toBeNull()
     expect(realAccountToRow({ ...base, roles: ['tenant'] }).user.role).toBe('user')
+  })
+
+  it('API 用量原樣接入，以 Free 上限判斷，停用帳號照樣判斷', () => {
+    const usage = { landlord: { properties: 2, rooms: 5, seats: 1 }, tenant: null }
+    const row = realAccountToRow({ ...base, roles: ['landlord'], status: 'suspended', usage })
+    expect(row.usage).toEqual(usage)
+    expect(row.overLimit).toBe(true)
+    expect(realAccountToRow({ ...base, roles: ['admin', 'landlord'], usage }).overLimit).toBe(false)
+    expect(filterUserDirectory([row, realAccountToRow(base)], {
+      ...emptyUserDirectoryFilter, alert: 'over-limit',
+    })).toEqual([row])
+  })
+
+  it('舊後端缺 usage 與明確 null 都保留未知，不當作零用量', () => {
+    for (const row of [realAccountToRow(base), realAccountToRow({ ...base, usage: null })]) {
+      expect(row.usage).toBeNull()
+      expect(row.overLimit).toBe(false)
+    }
   })
 
   it('id 加前綴，不與展示資料相撞', () => {
@@ -480,7 +535,7 @@ describe('realAccountToRow', () => {
     // 給 0 或空陣列讓畫面顯示「—」，不要生一個看起來很合理的數字。
     const row = realAccountToRow(base)
     expect(row.subscription).toBeNull()
-    expect(row.plan).toBeNull()
+    expect(userPlan(row.user, row.subscription)?.key).toBe('free')
     expect(row.deposits).toEqual([])
     expect(row.tickets).toEqual([])
     expect(row.openTicketCount).toBe(0)

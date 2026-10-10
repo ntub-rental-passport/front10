@@ -4,8 +4,8 @@
  * - **後端操作紀錄**（backend/audit_service.py）：停用／啟用真實帳號、排程通知
  *   與它的結果、管理員登入。所有管理員看到同一份，後端不自動刪除。
  * - **後端監控事件**：斷線、恢復、後端停機。只留 30 天（monitoring_service.py）。
- * - **這台瀏覽器**（useAdminAudit）：其他模組的操作。那些模組目前是展示資料，
- *   紀錄只存在這台瀏覽器；其中 8 筆是種子，從來沒發生過，標成「展示資料」。
+ * - **這台瀏覽器**（useAdminAudit）：只在本地開發疊加展示模組的操作與種子紀錄，
+ *   正式站不納入；種子從來沒發生過，內部來源標為 demo。
  */
 
 import {
@@ -23,7 +23,7 @@ export type AuditSource = 'server' | 'local' | 'demo'
  * 匯出 CSV 的「來源」欄。
  *
  * 種子資料跟 logAction 寫的一樣存在瀏覽器裡，所以也標「本機」——
- * 畫面與匯出都不另外標示展示資料（網站目前不對外開放，2026-09-28 決定）。
+ * 本地開發的畫面與匯出都不另外標示展示資料；正式站只有後端來源。
  */
 export const AUDIT_SOURCE_LABELS: Record<AuditSource, string> = {
   server: '後端',

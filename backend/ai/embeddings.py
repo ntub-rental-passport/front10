@@ -1,16 +1,16 @@
-"""向量檢索用的 embedding：桌機在線時用組員的模型，不在線時退回 NVIDIA。
+"""向量檢索用的 embedding：正式環境使用 VM 上的 RAG 容器。
 
 ## 兩個來源
 
-    local   桌機上的 embedding 服務，跑組員建庫時用的
+    local   VM 上的 rag 容器，跑組員建庫時用的
             shibing624/text2vec-base-chinese（768 維）
     nvidia  雲端 API，nvidia/nemotron-3-embed-1b（2048 維）
 
-順序由 EMBEDDING_PROVIDER 決定，預設 "nvidia"（不必架桌機就能跑）。
-桌機架好後改成 "local,nvidia"。
+順序由 EMBEDDING_PROVIDER 決定，預設 "nvidia"（本機開發不必架 RAG 容器）。
+正式環境設為 "local"，只使用 RAG 容器；連不上時檢索退回全部 29 塊法規。
 
-為什麼要 local：組員花時間建的向量庫用的是那個模型。要讓那份成果
-真的被用到，查詢就得用同一個模型。但桌機會關機，所以不能只有它。
+正式環境使用 local：組員建置的向量庫使用 text2vec-base-chinese，查詢必須使用同一模型。
+本機開發預設仍使用 NVIDIA，方便沒有 RAG 容器時執行。
 
 ## ⚠️ 絕對不能混用向量空間
 
@@ -24,10 +24,10 @@ B 模型的語料向量，餘弦相似度是**沒有意義的亂數** —— 而
     2. 用哪個 provider 查詢，就比對哪一份
     3. 空間記下建立時的模型名稱，與查詢時的模型不符就停用該空間
        （law_corpus.py 在載入時就檢查，不等到查詢才發現）
-    4. 桌機回報的模型與設定不符時，這一次呼叫視為失敗
+    4. RAG 容器回報的模型與設定不符時，這一次呼叫視為失敗
 
 第 3、4 點是各自獨立的兩道 —— 一道防「改了設定忘記重建語料」，
-一道防「桌機上載入的其實是別的模型」。
+一道防「RAG 容器載入的其實是別的模型」。
 
 ## 模型選擇的實測依據
 
@@ -45,7 +45,7 @@ B 模型的語料向量，餘弦相似度是**沒有意義的亂數** —— 而
 
 NVIDIA 這類模型的慣例：查詢與被檢索文件使用不同的 input_type，
 向量空間帶有不同偏置，混用會讓相似度失準。
-text2vec-base-chinese 是對稱模型，兩者同樣處理（見 desktop/proxy.py）。
+text2vec-base-chinese 是對稱模型，兩者同樣處理（見 rag/service/app.py）。
 """
 
 import logging
@@ -79,7 +79,7 @@ def _env(name: str, default: str = "") -> str:
 
 
 def provider_order() -> list[str]:
-    """嘗試順序。預設只有 nvidia —— 桌機是加分項，不是必要條件。"""
+    """嘗試順序。預設只有 nvidia；正式環境設定為 local。"""
     raw = _env("EMBEDDING_PROVIDER", NVIDIA)
     names = [n.strip().lower() for n in raw.split(",") if n.strip()]
     order = [n for n in names if n in PROVIDERS]
@@ -125,16 +125,8 @@ def query_window_chars(provider: str) -> int:
 
 
 def _local_base() -> str:
-    """桌機 embedding 服務的網址。
-
-    預設沿用 LLM_TUNNEL_URL：生成與檢索走的是同一台桌機、同一個代理、
-    同一條隧道，分成兩個變數只會多一個打錯的機會。
-    真要分開時才設 LOCAL_EMBEDDING_URL。
-
-    最後才退到 OLLAMA_URL，那是本機開發用的（VM 上那個是 OCR 在用，
-    指向別的地方，見 llm_provider.ollama_base 的說明）。
-    """
-    return _env("LOCAL_EMBEDDING_URL") or _env("LLM_TUNNEL_URL") or _env("OLLAMA_URL")
+    """RAG 容器的網址。Ollama 只做生成，不能拿它的位址當 embedding 服務。"""
+    return _env("LOCAL_EMBEDDING_URL")
 
 
 def is_configured(provider: str) -> bool:
@@ -142,23 +134,6 @@ def is_configured(provider: str) -> bool:
     if provider == LOCAL:
         return bool(_local_base())
     return bool(_env("NVIDIA_API_KEY"))
-
-
-def _tunnel_headers() -> dict[str, str]:
-    """走隧道到桌機時的兩道憑證。
-
-    與 llm_provider.py 完全相同的一組 —— 同一個代理、同一把鑰匙。
-      CF-Access-*：Cloudflare 在邊緣就驗，沒帶的請求進不到家裡的網路
-      X-API-Key  ：桌機端代理的第二道，Access 設定被改壞時仍擋得住
-    """
-    headers: dict[str, str] = {}
-    if api_key := _env("LLM_TUNNEL_API_KEY"):
-        headers["X-API-Key"] = api_key
-    cf_id, cf_secret = _env("CF_ACCESS_CLIENT_ID"), _env("CF_ACCESS_CLIENT_SECRET")
-    if cf_id and cf_secret:
-        headers["CF-Access-Client-Id"] = cf_id
-        headers["CF-Access-Client-Secret"] = cf_secret
-    return headers
 
 
 def _parse_vectors(payload: dict) -> list[list[float]]:
@@ -173,17 +148,17 @@ def _parse_vectors(payload: dict) -> list[list[float]]:
 async def _embed_local(
     texts: list[str], *, input_type: str, timeout: float
 ) -> list[list[float]]:
-    """打桌機上的 embedding 服務。
+    """以 HTTP 呼叫私有 Docker 網路上的 RAG 容器。
 
-    **不重試**（attempts=1）：桌機關機的話，一秒內重試三次還是關機，
+    **不重試**（attempts=1）：容器連不上的話，一秒內重試三次還是連不上，
     只是把使用者的等待時間變三倍。連不上就記冷卻、換下一個 provider。
     """
     base = _local_base().rstrip("/")
     if not base:
-        raise EmbeddingUnavailable("未設定 LOCAL_EMBEDDING_URL / OLLAMA_URL")
+        raise EmbeddingUnavailable("未設定 LOCAL_EMBEDDING_URL")
     if upstream_state.is_cooling(_LOCAL_ENDPOINT):
         raise EmbeddingUnavailable(
-            f"桌機 embedding 冷卻中（還有 {upstream_state.remaining(_LOCAL_ENDPOINT):.0f} 秒）"
+            f"RAG 容器 embedding 冷卻中（還有 {upstream_state.remaining(_LOCAL_ENDPOINT):.0f} 秒）"
         )
 
     expected_model = model_for(LOCAL)
@@ -193,21 +168,16 @@ async def _embed_local(
             response = await client.post(
                 f"{base}/embed",
                 json={"input": texts, "input_type": input_type},
-                headers=_tunnel_headers(),
             )
-            if response.status_code in (401, 403):
-                # 設定問題，不是桌機關機。單獨標示，否則會被誤判。
-                logger.error("桌機 embedding 拒絕存取（%s）：檢查 Access service token 與 API key",
-                             response.status_code)
             response.raise_for_status()
             payload = response.json()
 
-            # 桌機上實際載入的模型必須與設定相符。
+            # RAG 容器實際載入的模型必須與設定相符。
             # 不符的話向量空間就不是語料那個空間 —— 算出來會是亂數。
             reported = str(payload.get("model") or "").strip()
             if reported and reported != expected_model:
                 raise EmbeddingUnavailable(
-                    f"桌機載入的是 {reported}，設定要求 {expected_model}"
+                    f"RAG 容器載入的是 {reported}，設定要求 {expected_model}"
                 )
             return _parse_vectors(payload)
 
@@ -215,7 +185,7 @@ async def _embed_local(
         vectors = await with_retry(send, label="Embedding(local)", attempts=1)
     except (httpx.ConnectError, httpx.ConnectTimeout) as error:
         upstream_state.mark_unreachable(_LOCAL_ENDPOINT)
-        raise EmbeddingUnavailable("桌機 embedding 連不上") from error
+        raise EmbeddingUnavailable("RAG 容器 embedding 連不上") from error
     upstream_state.mark_reachable(_LOCAL_ENDPOINT)
     return vectors
 

@@ -1,0 +1,5 @@
+test_*.py
+tests/
+__pycache__/
+*.py[cod]
+.venv/

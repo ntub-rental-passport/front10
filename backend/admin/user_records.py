@@ -26,6 +26,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy import func
+from sqlalchemy.engine import Row
 from sqlalchemy.orm import Session, joinedload
 
 from db.models import InspectionItem, LandlordLease, LandlordTenant, Rental, User
@@ -48,7 +49,7 @@ def _overlap_days(a_start: date, a_end: date, b_start: date, b_end: date) -> int
     return (end - start).days + 1 if start <= end else 0
 
 
-def _pair(lease: LandlordLease, rentals: list[Rental]) -> Rental | None:
+def _pair(lease: LandlordLease, rentals: list[Row]) -> Row | None:
     """rentals 要由新到舊排：重疊天數一樣時留下先看到的，也就是最新存的那份。"""
     best, best_days = None, 0
     for rental in rentals:
@@ -73,10 +74,17 @@ def _leases(db: Session, *conditions) -> list[LandlordLease]:
     )
 
 
-def _rentals_of(db: Session, user_ids: list[int]) -> dict[int, list[Rental]]:
-    grouped: dict[int, list[Rental]] = {}
+def _rentals_of(db: Session, user_ids: list[int]) -> dict[int, list[Row]]:
+    grouped: dict[int, list[Row]] = {}
     if user_ids:
-        for rental in db.query(Rental).filter(Rental.user_id.in_(user_ids)).order_by(Rental.id.desc()):
+        # 對帳與點交只需要明文；整列載入會先解密無關個資，讓一筆壞資料拖垮清單。
+        rentals = (
+            db.query(Rental.id, Rental.user_id, Rental.start_date, Rental.end_date,
+                     Rental.deposit_amount, Rental.address)
+            .filter(Rental.user_id.in_(user_ids))
+            .order_by(Rental.id.desc())
+        )
+        for rental in rentals:
             grouped.setdefault(rental.user_id, []).append(rental)
     return grouped
 
@@ -100,10 +108,10 @@ def _lease_address(lease: LandlordLease) -> str:
     return f'{base}（房號 {lease.room.number}）'
 
 
-def _deposit(lease: LandlordLease, rental: Rental | None, side: str, tenant_id: int | None) -> dict:
+def _deposit(lease: LandlordLease, rental: Row | None, side: str | None, tenant_id: int | None) -> dict:
     return {
         'id': f'lease-{lease.id}',
-        'side': side,
+        **({'side': side} if side is not None else {}),
         'address': _lease_address(lease),
         'startDate': lease.start_date.isoformat(),
         'endDate': lease.end_date.isoformat(),
@@ -113,6 +121,24 @@ def _deposit(lease: LandlordLease, rental: Rental | None, side: str, tenant_id: 
         'landlordId': lease.tenant.landlord_id,
         'tenantId': tenant_id,
     }
+
+
+def all_deposits(db: Session) -> list[dict]:
+    """全站沿用使用者詳情的配對規則，批次查詢避免租約越多 SQL 越多。"""
+    leases = _leases(db)
+    roster_emails = {_normalized(lease.tenant.email) for lease in leases} - {''}
+    tenants = {}
+    if roster_emails:
+        # 只需要帳號 id 與 email，避免載入 User 時連帶查詢角色。
+        for account in db.query(User.id, User.email).filter(func.lower(func.trim(User.email)).in_(roster_emails)):
+            tenants[_normalized(account.email)] = account.id
+    tenant_rentals = _rentals_of(db, list(tenants.values()))
+    deposits = []
+    for lease in leases:
+        tenant_id = tenants.get(_normalized(lease.tenant.email))
+        rental = _pair(lease, tenant_rentals.get(tenant_id, [])) if tenant_id is not None else None
+        deposits.append(_deposit(lease, rental, None, tenant_id))
+    return deposits
 
 
 def _item(item: InspectionItem) -> dict:
@@ -154,7 +180,7 @@ def _as_utc(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def _handover(rental: Rental, items: list[InspectionItem], side: str) -> dict:
+def _handover(rental: Row, items: list[InspectionItem], side: str) -> dict:
     return {
         'id': f'rental-{rental.id}-{side}',
         'side': side,
@@ -184,7 +210,7 @@ def user_records(db: Session, user: User) -> dict:
         for account in db.query(User).filter(func.lower(func.trim(User.email)).in_(roster_emails)):
             tenants[_normalized(account.email)] = account
     tenant_rentals = _rentals_of(db, [account.id for account in tenants.values()])
-    paired_rentals: list[Rental] = []
+    paired_rentals: list[Row] = []
     for lease in landlord_leases:
         account = tenants.get(_normalized(lease.tenant.email))
         rental = _pair(lease, tenant_rentals.get(account.id, [])) if account else None

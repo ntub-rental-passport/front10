@@ -37,23 +37,22 @@ import {
 } from '@/src/composables/admin/useAdminNotificationCenter'
 import { useAdminPageTitle } from '@/src/composables/admin/useAdminPageTitle'
 import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
-import { useAdminRbac } from '@/src/composables/admin/useAdminRbac'
 import { useAdminIdleLogout } from '@/src/composables/admin/useAdminIdleLogout'
 import { loadAdminSettings } from '@/src/composables/admin/useAdminSettings'
+import { clearLegacyAdminData } from '@/src/composables/admin/useAdminStore'
 import { ADMIN_IDLE_MINUTES } from '@/src/utils/admin-idle'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
-import { adminRoleLabels } from '@/src/utils/admin-rbac'
+import { adminNavGroups } from '@/src/utils/admin-rbac'
 import { initialOf } from '@/src/utils/admin-recent-logins'
 
 const route = useRoute()
 const { blocked: deviceBlocked } = useAdminDeviceGate()
 const router = useRouter()
 
-const { visibleNavGroups, currentAdminRole } = useAdminRbac()
-
 // 後台各頁直接讀 adminSettings（門檻、額度），進後台時向後端讀一次。
 // 通知中心的告警由後端自己產生，每 60 秒重讀，右上角的未讀數才會跟著變
 onMounted(() => {
+  clearLegacyAdminData()
   void loadAdminSettings()
   startAdminNotificationPolling()
 })
@@ -230,7 +229,7 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
                   <p
                     class="mt-1.5 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary"
                   >
-                    {{ adminRoleLabels[currentAdminRole] }}
+                    管理員
                   </p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -301,7 +300,7 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
       </div>
 
       <nav class="space-y-5 overflow-y-auto px-3 py-4">
-        <div v-for="group in visibleNavGroups" :key="group.label" class="space-y-1">
+        <div v-for="group in adminNavGroups" :key="group.label" class="space-y-1">
           <!-- 與側欄同一條規則：只剩一項時不畫分組標題 -->
           <p
             v-if="group.items.length > 1"

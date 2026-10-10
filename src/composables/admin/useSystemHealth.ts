@@ -1,7 +1,9 @@
 import { onScopeDispose, ref } from 'vue'
 import {
-  LLM_DESKTOP_SERVICE,
+  LLM_OLLAMA_SERVICE,
   OCR_SERVICE,
+  RAG_SERVICE,
+  backupMonitor,
   backendMonitor,
   databaseMonitor,
   errorRateMonitor,
@@ -57,7 +59,7 @@ const TIMEOUT_MS = 5_000
  * 兩個來源：
  *   1. `/api/health` —— 不需登入，量後端是否回應與往返時間
  *   2. `/api/admin/metrics` —— 僅限管理員，取連線池與錯誤率，以及後端背景迴圈
- *      記下的服務狀態、佇列、設定（前端只讀，不會叫後端當場去探測桌機或 OCR）
+ *      記下的服務狀態、佇列、設定（前端只讀，不會叫後端當場去探測外部服務）
  *
  * 為何分成兩支而不是合併：健康檢查必須在登入之前就能用
  * （後端掛掉時反而會因為登入不了而看不到監控結果），
@@ -143,7 +145,7 @@ export function useSystemHealth(options: { withEvents?: boolean } = {}) {
   const timer = window.setInterval(() => void check(), POLL_INTERVAL_MS)
   onScopeDispose(() => window.clearInterval(timer))
 
-  /** 已接上的監控項：前三項是後端本身，後兩項是它依賴的外部服務 */
+  /** 已接上的監控項：後端、資料庫、背景工作、外部服務與每日備份 */
   function liveMonitors(): MonitorReading[] {
     const now = serverNow()
     return [
@@ -155,8 +157,10 @@ export function useSystemHealth(options: { withEvents?: boolean } = {}) {
       ),
       databaseMonitor(dbPool.value, services.value, now),
       errorRateMonitor(requests.value),
-      serviceMonitor(services.value, LLM_DESKTOP_SERVICE, now),
+      serviceMonitor(services.value, LLM_OLLAMA_SERVICE, now),
+      serviceMonitor(services.value, RAG_SERVICE, now),
       serviceMonitor(services.value, OCR_SERVICE, now),
+      backupMonitor(services.value, now),
     ]
   }
 

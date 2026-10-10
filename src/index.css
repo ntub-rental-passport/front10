@@ -210,6 +210,11 @@
     --chart-danger: oklch(0.7 0.18 40);
     --chart-attention: oklch(0.8 0.15 80);
 
+    /* 方案色：三個方案要一眼分得出來，所以色相拉開（灰／青／品牌紫），不走同色深淺 */
+    --chart-plan-free: oklch(0.78 0.01 280);
+    --chart-plan-plus: oklch(0.62 0.12 200);
+    --chart-plan-pro: oklch(0.42 0.16 280);
+
     --radius: 0.75rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
@@ -309,6 +314,10 @@
 
     --chart-danger: oklch(0.72 0.18 40);
     --chart-attention: oklch(0.82 0.15 80);
+
+    --chart-plan-free: oklch(0.55 0.02 280);
+    --chart-plan-plus: oklch(0.72 0.12 200);
+    --chart-plan-pro: oklch(0.82 0.13 280);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);

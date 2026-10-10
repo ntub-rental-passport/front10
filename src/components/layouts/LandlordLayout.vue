@@ -5,26 +5,30 @@ import {
   FileText,
   Home,
   LogOut,
-  Menu,
   ReceiptText,
   Settings,
   Sparkles,
   Users,
   Wrench,
-  X,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
+import DesktopOnlyNotice from '@/src/components/DesktopOnlyNotice.vue'
 import LandlordNotificationBell from '@/src/components/landlord/LandlordNotificationBell.vue'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
+import { useLandlordDeviceGate } from '@/src/composables/useDeviceGate'
 import {
   activeWorkspaceOwnerId,
   setActiveWorkspaceOwnerId,
 } from '@/src/services/landlordApiClient'
 import { fetchWorkspaces, type WorkspaceOption } from '@/src/services/landlordWorkspaceApi'
+import { isMobileUnsupportedLandlordPath } from '@/src/utils/mobile-surface'
 
 const route = useRoute()
 const router = useRouter()
-const mobileOpen = ref(false)
+const { blocked: deviceBlocked } = useLandlordDeviceGate()
+const mobileUnsupported = computed(
+  () => deviceBlocked.value && isMobileUnsupportedLandlordPath(route.path),
+)
 const desktopCollapsed = ref(true)
 const navItems = [
   { label: '總覽', path: '/landlord', icon: Home },
@@ -34,6 +38,16 @@ const navItems = [
   { label: '修繕', path: '/landlord/maintenance', icon: Wrench },
   { label: '合約管理', path: '/landlord/contracts', icon: FileText },
   { label: '方案與訂閱', path: '/landlord/subscription', icon: Sparkles },
+  { label: '設定', path: '/landlord/settings', icon: Settings },
+]
+
+// 手機底部列只有 5 格：財務管理與合約管理手機不提供（寬表格），
+// 方案與訂閱走設定頁（settings.vue 已有 plan 入口）。
+const mobileNavItems = [
+  { label: '總覽', path: '/landlord', icon: Home },
+  { label: '房務', path: '/landlord/properties', icon: Building2 },
+  { label: '租客', path: '/landlord/tenants', icon: Users },
+  { label: '修繕', path: '/landlord/maintenance', icon: Wrench },
   { label: '設定', path: '/landlord/settings', icon: Settings },
 ]
 
@@ -84,22 +98,14 @@ async function handleSignOut(): Promise<void> {
           ><Home class="h-4 w-4" /></span
         >RentMate 房東</RouterLink
       >
-      <div class="flex items-center gap-4">
+      <div class="flex items-center">
         <LandlordNotificationBell />
-        <button
-          class="rounded-xl border border-[#ddd6c8] p-2 lg:hidden"
-          aria-label="開啟選單"
-          @click="mobileOpen = !mobileOpen"
-        >
-          <X v-if="mobileOpen" class="h-5 w-5" /><Menu v-else class="h-5 w-5" />
-        </button>
       </div>
     </header>
 
     <aside
       :class="[
-        'fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-[#e2ddcf] bg-[#f9f6ed] px-4 py-5 transition-[width,padding,transform] duration-300 lg:translate-x-0',
-        mobileOpen ? 'translate-x-0' : '-translate-x-full',
+        'fixed inset-y-0 left-0 z-40 hidden w-[248px] flex-col border-r border-[#e2ddcf] bg-[#f9f6ed] px-4 py-5 transition-[width,padding] duration-300 lg:flex',
         desktopCollapsed ? 'lg:w-20 lg:px-2' : 'lg:w-[248px] lg:px-4',
       ]"
       @mouseenter="desktopCollapsed = false"
@@ -113,7 +119,6 @@ async function handleSignOut(): Promise<void> {
             : '',
         ]"
         to="/landlord"
-        @click="mobileOpen = false"
       >
         <span
           class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#5c8163] text-white"
@@ -164,7 +169,6 @@ async function handleSignOut(): Promise<void> {
               ? 'bg-[#5b8263] text-white shadow-[0_12px_28px_rgba(76,112,83,.18)]'
               : 'text-[#526057] hover:bg-white/90',
           ]"
-          @click="mobileOpen = false"
         >
           <span
             :class="[
@@ -209,18 +213,38 @@ async function handleSignOut(): Promise<void> {
         <LogOut class="h-4 w-4" /><span :class="desktopCollapsed ? 'lg:hidden' : ''">登出</span>
       </button>
     </aside>
-    <div
-      v-if="mobileOpen"
-      class="fixed inset-0 z-30 bg-black/25 lg:hidden"
-      @click="mobileOpen = false"
-    />
     <main
       :class="[
-        'min-h-screen p-4 transition-[margin] duration-300 sm:p-6 lg:p-8 xl:p-10',
+        'min-h-screen p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-[margin] duration-300 sm:p-6 sm:pb-[calc(5rem+env(safe-area-inset-bottom))] lg:p-8 lg:pb-8 xl:p-10 xl:pb-10',
         desktopCollapsed ? 'lg:ml-20' : 'lg:ml-[248px]',
       ]"
     >
-      <RouterView />
+      <DesktopOnlyNotice
+        v-if="mobileUnsupported"
+        title="這一頁請用電腦開"
+        description=""
+        :show-sign-out="false"
+        :full-height="false"
+        home-path="/landlord"
+      />
+      <RouterView v-else />
     </main>
+    <nav
+      class="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4rem+env(safe-area-inset-bottom))] border-t border-[#e2ddcf] bg-[#fbf9f2] pb-[env(safe-area-inset-bottom)] lg:hidden"
+      aria-label="房東手機導覽"
+    >
+      <RouterLink
+        v-for="item in mobileNavItems"
+        :key="item.path"
+        :to="item.path"
+        :class="[
+          'flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors',
+          isActive(item.path) ? 'text-[#5b8263]' : 'text-[#526057]',
+        ]"
+      >
+        <component :is="item.icon" class="h-5 w-5" />
+        {{ item.label }}
+      </RouterLink>
+    </nav>
   </div>
 </template>

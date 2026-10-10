@@ -22,7 +22,6 @@ function row(id: string, over: Partial<AdminUser> = {}, realAccountId?: number):
       email: `${id}@example.com`,
       nickname: null,
       role: 'user',
-      adminRole: null,
       status: 'active',
       emailVerified: true,
       registeredAt: '2026-01-01T00:00:00.000Z',
@@ -30,7 +29,6 @@ function row(id: string, over: Partial<AdminUser> = {}, realAccountId?: number):
       ...over,
     },
     subscription: null,
-    plan: null,
     deposits: [],
     tickets: [],
     openTicketCount: 0,
@@ -70,14 +68,14 @@ describe('sortUserRows', () => {
     expect(ids(sortUserRows(rows, 'user', 'desc'))).toEqual(['c', 'b', 'a'])
   })
 
-  it('身分依權限大小：租客 < 房東 < 管理員 < 超級管理員', () => {
+  it('身分依權限大小：租客 < 房東 < 管理員', () => {
     const rows = [
-      row('super', { role: 'admin', adminRole: 'super' }),
       row('tenant', { role: 'user' }),
-      row('admin', { role: 'admin', adminRole: 'admin' }),
+      row('admin', { role: 'admin' }),
       row('landlord', { role: 'landlord' }),
     ]
-    expect(ids(sortUserRows(rows, 'role', 'asc'))).toEqual(['tenant', 'landlord', 'admin', 'super'])
+    expect(ids(sortUserRows(rows, 'role', 'asc'))).toEqual(['tenant', 'landlord', 'admin'])
+    expect(ids(sortUserRows(rows, 'role', 'desc'))).toEqual(['admin', 'landlord', 'tenant'])
   })
 
   it('最後登入：沒有紀錄的不管升冪降冪都排最後，不會被當成「最久以前」', () => {
@@ -186,7 +184,7 @@ describe('批次操作', () => {
   it('只有真實、非管理員的帳號可以勾選', () => {
     expect(isBulkSelectable(real('r'))).toBe(true)
     expect(isBulkSelectable(row('demo'))).toBe(false)
-    expect(isBulkSelectable(real('admin', { role: 'admin', adminRole: 'super' }))).toBe(false)
+    expect(isBulkSelectable(real('admin', { role: 'admin' }))).toBe(false)
   })
 
   it('停用只算正常的人、啟用只算停用的人，按鈕上的數字才對得上實際動到幾位', () => {

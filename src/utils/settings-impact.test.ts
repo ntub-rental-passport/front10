@@ -45,7 +45,12 @@ describe('overduePreview', () => {
 })
 
 describe('expiringPreview', () => {
-  const subscription = (expiresAt: string, active = true) => ({ active, expiresAt }) as Subscription
+  it('沒有訂閱資料與有訂閱但無人即將到期的文字不同', () => {
+    expect(expiringPreview([], 14, NOW)).toEqual({ count: 0, text: '目前沒有訂閱資料' })
+    expect(expiringPreview([subscription(daysLater(30))], 14, NOW).text).toBe('照這個值：目前沒有人會被標示')
+  })
+
+  const subscription = (expiresAt: string, active = true) => ({ active, expiresAt, planKey: 'plus' }) as Subscription
 
   it('只數還在期限內、而且沒停用的', () => {
     const subscriptions = [
@@ -53,6 +58,7 @@ describe('expiringPreview', () => {
       subscription(daysLater(20)),
       subscription(daysLater(3), false),
       subscription(daysAgo(1)),
+      { ...subscription(daysLater(3)), planKey: 'free' as const },
     ]
     expect(expiringPreview(subscriptions, 14, NOW)).toEqual({ count: 1, text: '照這個值：1 人會被標示「訂閱即將到期」' })
     expect(expiringPreview(subscriptions, 30, NOW).count).toBe(2)

@@ -1,3 +1,4 @@
+import type { PlanKey, PlanRole } from './subscription-plans'
 import type { StatusDotTone } from '@/src/components/admin/status-dot'
 import type { DepositMatch } from './admin-deposit'
 import { isHandoverDamage, type HandoverOutcome, type HandoverResult } from './admin-handover'
@@ -18,8 +19,7 @@ import { isHandoverDamage, type HandoverOutcome, type HandoverResult } from './a
  *
  * warn／danger 在這個後台的意思是「你必須動手」。「租客未聲明押金」
  * 「點交還沒比對」都是在等租客，管理員能做的只有等 —— 給它們琥珀色，
- * 管理員會以為有事要處理，點進去卻發現無事可做。租補頁的政府審核步驟
- * 也是同一個原則（見 governmentStepVisual）。
+ * 管理員會以為有事要處理，點進去卻發現無事可做。
  */
 
 export function accountStatusTone(status: 'active' | 'suspended'): StatusDotTone {
@@ -72,16 +72,21 @@ export interface SubscriptionFlag {
  */
 export function subscriptionFlags(input: {
   active: boolean
+  planKey: PlanKey
+  role: PlanRole
   expiringSoon: boolean
   quotaExhausted: boolean
+  overLimit?: boolean
 }): SubscriptionFlag[] {
   const flags: SubscriptionFlag[] = []
   if (!input.active) {
     flags.push({ label: '已停用', tone: 'idle' })
-    // 已經停用了，「即將到期」「額度用滿」都不再有意義
+    if (input.overLimit) flags.push({ label: '超出方案上限', tone: 'warn' })
+    // 停用後不追續約與 AI 額度，但資源仍在，超出方案上限仍須監控。
     return flags
   }
-  if (input.expiringSoon) flags.push({ label: '即將到期', tone: 'warn' })
-  if (input.quotaExhausted) flags.push({ label: '額度已用滿', tone: 'warn' })
+  if (input.planKey !== 'free' && input.expiringSoon) flags.push({ label: '即將到期', tone: 'warn' })
+  if (input.role === 'tenant' && input.quotaExhausted) flags.push({ label: '額度已用滿', tone: 'warn' })
+  if (input.overLimit) flags.push({ label: '超出方案上限', tone: 'warn' })
   return flags
 }

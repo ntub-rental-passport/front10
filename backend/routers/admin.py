@@ -12,13 +12,17 @@ from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from admin import audit_service
 from admin import monitoring_service
 from db.database import engine, get_db
 from admin.metrics import request_counter
-from db.models import PendingAdminLogin, User
+from db.models import (
+    Household, HouseholdMember, LandlordProperty, LandlordRoom, LandlordTeamMember,
+    PendingAdminLogin, User,
+)
 from auth.security import get_current_admin
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
@@ -81,6 +85,30 @@ def read_metrics(admin: User = Depends(get_current_admin)) -> dict[str, object]:
 # ==========================================
 
 
+class LandlordUsage(BaseModel):
+    properties: int
+    rooms: int
+    seats: int
+
+
+class SpaceUsage(BaseModel):
+    id: int
+    name: str
+    ownerId: int
+    ownerName: str | None
+    memberCount: int
+
+
+class TenantUsage(BaseModel):
+    ownedSpaces: list[SpaceUsage]
+    joinedSpaces: list[SpaceUsage]
+
+
+class AdminUserUsage(BaseModel):
+    landlord: LandlordUsage | None
+    tenant: TenantUsage | None
+
+
 class AdminUserRow(BaseModel):
     """後台使用者清單的一列。
 
@@ -100,6 +128,7 @@ class AdminUserRow(BaseModel):
     providers: list[str]
     createdAt: str | None
     lastLoginAt: str | None
+    usage: AdminUserUsage
 
 
 class UpdateStatusRequest(BaseModel):
@@ -127,7 +156,101 @@ def _iso(value) -> str | None:
     return value.isoformat()
 
 
-def _row(user: User) -> AdminUserRow:
+def _usage_by_user(db: Session, users: list[User]) -> dict[int, AdminUserUsage]:
+    """批次回報用量，避免逐帳號查詢讓後台清單變成 N+1。
+
+    清單與單筆更新共用這裡，確保兩種回傳都是真實用量。
+    額度歸擁有者，所以團隊席次只按 owner_id 計數，加入的空間另列。
+    """
+    if not users:
+        return {}
+    user_ids = [user.id for user in users]
+    properties = dict(
+        db.query(LandlordProperty.landlord_id, func.count(LandlordProperty.id))
+        .filter(LandlordProperty.landlord_id.in_(user_ids))
+        .group_by(LandlordProperty.landlord_id)
+        .all()
+    )
+    rooms = dict(
+        db.query(LandlordProperty.landlord_id, func.count(LandlordRoom.id))
+        .join(LandlordRoom, LandlordRoom.property_id == LandlordProperty.id)
+        .filter(LandlordProperty.landlord_id.in_(user_ids))
+        .group_by(LandlordProperty.landlord_id)
+        .all()
+    )
+    active_members = dict(
+        db.query(LandlordTeamMember.owner_id, func.count(LandlordTeamMember.id))
+        .filter(
+            LandlordTeamMember.owner_id.in_(user_ids),
+            LandlordTeamMember.status == "active",
+        )
+        .group_by(LandlordTeamMember.owner_id)
+        .all()
+    )
+    member_counts = (
+        db.query(
+            HouseholdMember.household_id,
+            func.count(HouseholdMember.id).label("member_count"),
+        )
+        .group_by(HouseholdMember.household_id)
+        .subquery()
+    )
+    joined_ids = (
+        db.query(HouseholdMember.household_id)
+        .filter(HouseholdMember.user_id.in_(user_ids))
+    )
+    spaces = (
+        db.query(
+            Household.id, Household.name, Household.created_by,
+            User.display_name, User.email, member_counts.c.member_count,
+        )
+        .outerjoin(User, User.id == Household.created_by)
+        .outerjoin(member_counts, member_counts.c.household_id == Household.id)
+        .filter(or_(Household.created_by.in_(user_ids), Household.id.in_(joined_ids)))
+        .order_by(Household.created_at, Household.id)
+        .all()
+    )
+    memberships = (
+        db.query(HouseholdMember.user_id, HouseholdMember.household_id)
+        .filter(HouseholdMember.user_id.in_(user_ids))
+        .all()
+    )
+    members_by_space = {}
+    for user_id, household_id in memberships:
+        members_by_space.setdefault(household_id, []).append(user_id)
+
+    owned_by_user = {}
+    joined_by_user = {}
+    for space in spaces:
+        usage = SpaceUsage(
+            id=space.id,
+            name=space.name,
+            ownerId=space.created_by,
+            ownerName=space.display_name or space.email,
+            memberCount=space.member_count or 0,
+        )
+        owned_by_user.setdefault(space.created_by, []).append(usage)
+        for user_id in members_by_space.get(space.id, []):
+            if user_id != space.created_by:
+                joined_by_user.setdefault(user_id, []).append(usage)
+
+    return {
+        user.id: AdminUserUsage(
+            landlord=LandlordUsage(
+                properties=properties.get(user.id, 0),
+                rooms=rooms.get(user.id, 0),
+                seats=1 + active_members.get(user.id, 0),
+            ) if user.has_role("landlord") else None,
+            tenant=TenantUsage(
+                ownedSpaces=owned_by_user.get(user.id, []),
+                joinedSpaces=joined_by_user.get(user.id, []),
+            ) if user.has_role("tenant") else None,
+        )
+        for user in users
+    }
+
+
+def _row(user: User, usage: AdminUserUsage) -> AdminUserRow:
     return AdminUserRow(
         id=user.id,
         email=user.email,
@@ -140,6 +263,7 @@ def _row(user: User) -> AdminUserRow:
         providers=sorted({i.provider for i in user.identities}),
         createdAt=_iso(user.created_at),
         lastLoginAt=_iso(user.last_login_at),
+        usage=usage,
     )
 
 
@@ -190,7 +314,8 @@ def list_users(
         .order_by(User.id)
         .all()
     )
-    return [_row(u) for u in users]
+    usage = _usage_by_user(db, users)
+    return [_row(u, usage[u.id]) for u in users]
 
 
 @router.patch("/users/{user_id}/status", response_model=AdminUserRow)
@@ -264,4 +389,4 @@ def update_user_status(
         audit_service.record(
             "使用者管理", user.email, detail, actor=admin.email, subject=f"user:{user.id}"
         )
-    return _row(user)
+    return _row(user, _usage_by_user(db, [user])[user.id])

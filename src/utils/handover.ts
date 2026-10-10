@@ -1,4 +1,43 @@
-import type { EvidencePhase, HandoverEvidence, HandoverItem } from '@/src/composables/useHandover'
+import type { EvidencePhase, HandoverDiff, HandoverEvidence, HandoverItem } from '@/src/composables/useHandover'
+
+export const diffLabels: Record<HandoverDiff['type'], { text: string; cls: string }> = {
+  uncertain: { text: '無法判定', cls: 'bg-gray-100 text-gray-800' },
+  unchanged: {
+    text: '狀態相同',
+    cls: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
+  },
+  new_damage: {
+    text: '新增瑕疵',
+    cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100',
+  },
+  missing: { text: '物品消失', cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
+  degraded: {
+    text: '使用痕跡',
+    cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
+  },
+}
+
+export interface CheckoutPairConclusion {
+  status: 'pending_photo' | 'pending_comparison' | 'error' | 'compared'
+  text: string
+  summary?: string
+}
+
+export function checkoutPairConclusion(
+  item: HandoverItem,
+  pair: NonNullable<HandoverItem['pairs']>[number],
+): CheckoutPairConclusion {
+  // 項目結論只代表最嚴重的一組；套用到其他組會把尚未比對誤印成已確認，影響押金舉證。
+  if (pair.checkoutId === null) return { status: 'pending_photo', text: '尚未拍攝退租存證' }
+  const comparison = item.evidences.find((e) => e.id === pair.checkoutId)?.comparison
+  if (!comparison) return { status: 'pending_comparison', text: '尚未比對' }
+  // 即使失敗回應仍帶有 type，也不能當成有效結論或計入已完成比對。
+  if (comparison.error) {
+    return { status: 'error', text: `比對失敗：${comparison.error}`, summary: comparison.summary }
+  }
+  if (!comparison.type) return { status: 'pending_comparison', text: '尚未比對' }
+  return { status: 'compared', text: diffLabels[comparison.type].text, summary: comparison.summary }
+}
 
 export interface GroupedHandoverItems {
   room: string

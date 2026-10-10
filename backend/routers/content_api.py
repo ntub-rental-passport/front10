@@ -25,6 +25,8 @@ NOT_FOUND = '找不到這筆資料，可能已經被其他管理員刪除，請�
 def _run(action):
     try:
         return action()
+    except banner_images.LibraryFullError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except LookupError as error:
@@ -96,12 +98,37 @@ async def upload_banner_image(
     admin: User = Depends(get_current_admin),
 ) -> dict:
     data = await file.read(banner_images.MAX_BYTES + 1)
-    return _run(lambda: banner_images.save(data, file.filename or ''))
+    item = _run(lambda: banner_images.save(data, file.filename or ''))
+    used_by = content_service.banner_image_usage().get(item['name'], [])
+    return {**item, 'usedBy': used_by, 'deletable': not used_by}
 
 
 @router.get('/api/admin/banner-images')
 def list_banner_images(admin: User = Depends(get_current_admin)) -> dict:
-    return {'items': banner_images.listing()}
+    usage = content_service.banner_image_usage()
+    items = [{**item, 'usedBy': usage.get(item['name'], []), 'deletable': not usage.get(item['name'])}
+             for item in banner_images.listing()]
+    return {'items': items, 'count': len(items), 'limit': banner_images.LIMIT}
+
+
+# 帶斜線的不合法名稱也交給 path_of，才能回同一個中文 404
+@router.delete('/api/admin/banner-images/{name:path}', status_code=204)
+def delete_banner_image(name: str, admin: User = Depends(get_current_admin)) -> None:
+    if banner_images.path_of(name) is None:
+        raise HTTPException(status_code=404, detail='找不到這張圖片。')
+    used_by = content_service.banner_image_usage().get(name, [])
+    if used_by:
+        titles = '、'.join(f'「{banner["title"]}」' for banner in used_by[:3])
+        if len(used_by) > 3:
+            titles += f'等 {len(used_by)} 則'
+        detail = f'這張圖片還有 {len(used_by)} 則輪播在用：{titles}。請先替那些輪播換圖再刪除。'
+        raise HTTPException(status_code=409, detail=detail)
+    try:
+        banner_images.delete(name)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail='找不到這張圖片。') from error
+    content_service._audit('內容管理', 'Banner 圖片', f'刪除輪播圖片「{name}」',
+                           actor=admin.email, subject=f'banner-image:{name}')
 
 
 @router.get('/api/content/banner-images/{name}')
