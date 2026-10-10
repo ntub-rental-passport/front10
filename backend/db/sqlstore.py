@@ -36,6 +36,17 @@ from db import database
 
 _PLACEHOLDER = re.compile(r'\?')
 
+# 表名與欄名會直接拼進 SQL（佔位符只能放值，不能放識別字），所以只放行一般識別字。
+# 現有呼叫端全是寫死的常數；這道檢查是給「日後有人把外部輸入當欄名傳進來」的保險。
+_IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
+
+
+def _check_identifiers(table: str, *names: str) -> None:
+    for name in (table, *names):
+        # 用 fullmatch：match 搭配 $ 會放行結尾帶換行的名稱（例如 'key\n'）。
+        if not isinstance(name, str) or not _IDENTIFIER.fullmatch(name):
+            raise ValueError(f'不允許的 SQL 識別字：{name!r}')
+
 
 def _translate(sql: str) -> str:
     """把 sqlite3 的 `?` 換成 SQLAlchemy 的具名參數 `:p0`、`:p1`…"""
@@ -141,6 +152,7 @@ class Store:
 
         `add=True` 時把 values 累加上去（AI 用量的每日累計用）。
         """
+        _check_identifiers(table, *keys, *values)
         assignment = ', '.join(f'`{k}` = `{k}` + ?' if add else f'`{k}` = ?' for k in values)
         where = ' AND '.join(f'`{k}` = ?' for k in keys)
         updated = self.execute(
@@ -162,6 +174,7 @@ class Store:
 
         呼叫端用這個回傳值判斷「是不是我搶到的」（例如額度告警每月只發一次）。
         """
+        _check_identifiers(table, *keys, *values)
         where = ' AND '.join(f'`{k}` = ?' for k in keys)
         existing = self.execute(f'SELECT 1 FROM {table} WHERE {where}', tuple(keys.values())).fetchone()  # nosec B608 # 現有呼叫端固定表名與字典鍵，條件值另綁定。
         if existing:
