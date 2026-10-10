@@ -4,12 +4,14 @@
 的帳號。臨時註冊會卡在 email 驗證碼，而且每個人手上的帳號不一樣，回報問題
 時對不上。固定兩個帳號、固定 email，誰都能用同一組重現。
 
-密碼不寫在這個檔案裡 —— 它會進版控。改從 .env 讀（.env 已被 gitignore）：
+密碼不寫在這個檔案裡 —— 它會進版控。優先讀取環境變數，再從 .env 讀
+（.env 已被 gitignore）：
 
     TEST_LANDLORD_PASSWORD=...
     TEST_TENANT_PASSWORD=...
 
-沒設的話這支會用 secrets 產生一組強密碼、寫回 .env，並在輸出裡告訴你去哪看。
+環境變數有值時直接使用，不讀寫 .env，讓容器內的自動化不用建立 /.env。
+兩處都沒設的話才用 secrets 產生一組強密碼、寫回 .env，並告訴你去哪看。
 
 這支會直接寫 DATABASE_URL 指到的資料庫。那通常不是本機 —— 跑之前先確認
 你連的是哪一台：
@@ -81,6 +83,9 @@ def write_env_value(key: str, value: str) -> None:
 
 def resolve_password(env_key: str, dry_run: bool) -> tuple[str, bool]:
     """回傳 (密碼, 是否為這次新產生的)。"""
+    environment = os.environ.get(env_key)
+    if environment:
+        return environment, False
     existing = read_env_value(env_key)
     if existing:
         return existing, False
@@ -145,7 +150,9 @@ def main() -> None:
 
             password, generated = resolve_password(spec["env_key"], args.dry_run)
             action = upsert(db, spec, password) if not args.dry_run else "將建立或更新"
-            if not generated:
+            if os.environ.get(spec["env_key"]):
+                source = f"沿用環境變數的 {spec['env_key']}"
+            elif not generated:
                 source = f"沿用 .env 的 {spec['env_key']}"
             else:
                 source = f"將新產生並寫入 .env 的 {spec['env_key']}" if args.dry_run \
@@ -158,7 +165,7 @@ def main() -> None:
             db.commit()
 
     if not args.dry_run and not args.remove:
-        print("\n密碼在 .env，不印在這裡；.env 已被 gitignore。")
+        print("\n密碼來自環境變數或 .env，不印在這裡；.env 已被 gitignore。")
         print("登入頁要選對身分：房東帳號只能用房東入口，租客帳號只能用租客入口。")
 
 
