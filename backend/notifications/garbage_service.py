@@ -181,13 +181,13 @@ def dispatch_due(now=None):
         column = channel + '_status'
         with connect() as db:
             # Do not deliver old notifications after downtime.
-            db.execute(f"UPDATE garbage_reminders SET {column}='missed' WHERE active=1 AND due<? AND {column}='pending'", (timestamp - 300,))
-            rows = db.execute(f"SELECT * FROM garbage_reminders WHERE active=1 AND due<=? AND {column}='pending' LIMIT 50", (timestamp,)).fetchall()
+            db.execute(f"UPDATE garbage_reminders SET {column}='missed' WHERE active=1 AND due<? AND {column}='pending'", (timestamp - 300,))  # nosec B608 # 欄名只取固定通道 email／push，時間另綁定。
+            rows = db.execute(f"SELECT * FROM garbage_reminders WHERE active=1 AND due<=? AND {column}='pending' LIMIT 50", (timestamp,)).fetchall()  # nosec B608 # 欄名只取固定通道 email／push，時間另綁定。
         for row in rows:
             # Atomic claim prevents duplicate sends across workers. An interrupted
             # SMTP transaction remains 'sending' rather than silently being retried.
             with connect() as db:
-                claimed = db.execute(f"UPDATE garbage_reminders SET {column}='sending' WHERE id=? AND active=1 AND {column}='pending'", (row['id'],)).rowcount
+                claimed = db.execute(f"UPDATE garbage_reminders SET {column}='sending' WHERE id=? AND active=1 AND {column}='pending'", (row['id'],)).rowcount  # nosec B608 # 欄名只取固定通道 email／push，資料列識別碼另綁定。
             if not claimed:
                 continue
             try:
@@ -200,4 +200,4 @@ def dispatch_due(now=None):
                 logger.warning('Garbage %s delivery failed for reminder %s', channel, row['id'])
                 state = 'failed'
             with connect() as db:
-                db.execute(f'UPDATE garbage_reminders SET {column}=? WHERE id=?', (state, row['id']))
+                db.execute(f'UPDATE garbage_reminders SET {column}=? WHERE id=?', (state, row['id']))  # nosec B608 # 欄名只取固定通道 email／push，狀態與識別碼另綁定。

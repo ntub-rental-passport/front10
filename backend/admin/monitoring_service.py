@@ -213,7 +213,7 @@ def list_events(limit: int = 200, kinds: list[str] | None = None) -> list[dict]:
         if kinds:
             marks = ', '.join('?' for _ in kinds)
             rows = db.execute(
-                f'SELECT * FROM monitor_events WHERE kind IN ({marks}) ORDER BY at DESC, id DESC LIMIT ?',
+                f'SELECT * FROM monitor_events WHERE kind IN ({marks}) ORDER BY at DESC, id DESC LIMIT ?',  # nosec B608 # 只插入問號佔位符，種類與筆數另綁定。
                 (*kinds, limit),
             ).fetchall()
         else:
@@ -540,19 +540,19 @@ def _garbage_queue(ts: float) -> dict:
     with garbage_service.connect() as db:
         count = lambda sql, *args: db.execute(sql, args).fetchone()[0]  # noqa: E731
         either = lambda status: f"(email_status = '{status}' OR push_status = '{status}')"  # noqa: E731
-        pending = count(f"SELECT count(*) FROM garbage_reminders WHERE active = 1 AND {either('pending')}")
+        pending = count(f"SELECT count(*) FROM garbage_reminders WHERE active = 1 AND {either('pending')}")  # nosec B608 # 狀態來自此處寫死的 pending。
         overdue = count(
-            f"SELECT count(*) FROM garbage_reminders WHERE active = 1 AND {either('pending')} AND due < ?",
+            f"SELECT count(*) FROM garbage_reminders WHERE active = 1 AND {either('pending')} AND due < ?",  # nosec B608 # 狀態寫死為 pending，時間另綁定。
             ts - OVERDUE_AFTER_SECONDS,
         )
-        stuck = count(f"SELECT count(*) FROM garbage_reminders WHERE {either('sending')} AND due < ?", ts - STUCK_AFTER_SECONDS)
-        failed = count(f"SELECT count(*) FROM garbage_reminders WHERE {either('failed')} AND due >= ?", ts - WEEK)
-        missed = count(f"SELECT count(*) FROM garbage_reminders WHERE {either('missed')} AND due >= ?", ts - WEEK)
+        stuck = count(f"SELECT count(*) FROM garbage_reminders WHERE {either('sending')} AND due < ?", ts - STUCK_AFTER_SECONDS)  # nosec B608 # 狀態寫死為 sending，時間另綁定。
+        failed = count(f"SELECT count(*) FROM garbage_reminders WHERE {either('failed')} AND due >= ?", ts - WEEK)  # nosec B608 # 狀態寫死為 failed，時間另綁定。
+        missed = count(f"SELECT count(*) FROM garbage_reminders WHERE {either('missed')} AND due >= ?", ts - WEEK)  # nosec B608 # 狀態寫死為 missed，時間另綁定。
         last_issue = db.execute(
-            f"SELECT max(due) FROM garbage_reminders WHERE {either('failed')} OR {either('missed')}"
+            f"SELECT max(due) FROM garbage_reminders WHERE {either('failed')} OR {either('missed')}"  # nosec B608 # 狀態只取此處寫死的 failed 與 missed。
         ).fetchone()[0]
         next_due = db.execute(
-            f"SELECT min(due) FROM garbage_reminders WHERE active = 1 AND {either('pending')} AND due > ?", (ts,)
+            f"SELECT min(due) FROM garbage_reminders WHERE active = 1 AND {either('pending')} AND due > ?", (ts,)  # nosec B608 # 狀態寫死為 pending，時間另綁定。
         ).fetchone()[0]
     return {
         'pending': pending, 'overdue': overdue, 'stuck': stuck,

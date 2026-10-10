@@ -65,7 +65,7 @@ def rows_of(path: Path, table: str) -> list[dict]:
         names = {row[1] for row in connection.execute(f'PRAGMA table_info({table})')}
         if not names:
             return []
-        return [dict(row) for row in connection.execute(f'SELECT * FROM {table}')]
+        return [dict(row) for row in connection.execute(f'SELECT * FROM {table}')]  # nosec B608 # 唯一呼叫端的表名來自 PLAN 常數。
     finally:
         connection.close()
 
@@ -102,7 +102,7 @@ def main() -> int:
                     row = {k: v for k, v in row.items() if not (target == 'monitor_events' and k == 'id')}
                     where = ' AND '.join(f'`{k}` = :{k}' for k in keys)
                     existing = connection.execute(
-                        text(f'SELECT 1 FROM `{target}` WHERE {where}'),
+                        text(f'SELECT 1 FROM `{target}` WHERE {where}'),  # nosec B608 # 表名與條件欄名來自 PLAN 常數，條件值另綁定。
                         {k: row[k] for k in keys},
                     ).first()
                     if existing:
@@ -110,7 +110,7 @@ def main() -> int:
                         continue
                     columns = ', '.join(f'`{c}`' for c in row)
                     values = ', '.join(f':{c}' for c in row)
-                    connection.execute(text(f'INSERT INTO `{target}` ({columns}) VALUES ({values})'), row)
+                    connection.execute(text(f'INSERT INTO `{target}` ({columns}) VALUES ({values})'), row)  # nosec B608 # 表名來自 PLAN，欄名來自維運 SQLite 結構，資料值另綁定。
                     new += 1
                 total_new += new
                 total_skipped += skipped
