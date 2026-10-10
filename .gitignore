@@ -74,6 +74,8 @@ client_secret*.json
 *credentials*.json
 *.pem
 *.p12
+deploy/test/certs/
+deploy/test/zap-out/
 .env
 .env.*
 !.env.example
