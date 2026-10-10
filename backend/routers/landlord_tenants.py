@@ -112,6 +112,53 @@ _lease_display = rules.display_status
 _is_effective = rules.is_effective
 
 
+ENDED_LEASE_DETAIL = "這位租客的租約已經退租結束，不能再修改房間或租期（舊帳款會跟著被改掉）。要再租給他，請用「建立新租約」。"
+
+
+def _lease_terms_changed(lease: LandlordLease, payload, room: LandlordRoom) -> bool:
+    return (lease.room_id != room.id or lease.start_date != payload.lease_start or lease.end_date != payload.lease_end
+            or lease.monthly_rent != payload.monthly_rent or lease.deposit_amount != payload.deposit_amount
+            or lease.payment_day != payload.payment_day or (lease.payment_frequency or "monthly") != payload.payment_frequency)
+
+
+def void_charges_after_move_out(db: Session, lease: LandlordLease, move_out: date, actor: User | None) -> int:
+    """退租日（含）之後才開始的帳款作廢：那些期間租客已經不住了。
+
+    已經有收款的不動，留給房東在退租結算裡處理（例如退還多收的租金）。
+    退租當期（期間跨過退租日）也不動：要收多少由退租結算的「最後租金」決定。
+    """
+    from datetime import datetime as _datetime
+    from db.models import LandlordCharge, LandlordChargeEvent
+
+    charges = db.query(LandlordCharge).filter(LandlordCharge.lease_id == lease.id, LandlordCharge.voided_at.is_(None),
+                                              LandlordCharge.period_start >= move_out).all()
+    voided = 0
+    for charge in charges:
+        if sum(payment.amount for payment in charge.payments) > 0:
+            continue
+        charge.voided_at = _datetime.utcnow()
+        charge.void_reason = f"租客於 {move_out.isoformat()} 退租"
+        db.add(LandlordChargeEvent(charge_id=charge.id, kind="voided", detail=f"退租作廢：租客於 {move_out.isoformat()} 退租",
+                                   actor_user_id=actor.id if actor else None))
+        voided += 1
+    return voided
+
+
+def _reconcile_after_change(db: Session, tenant: LandlordTenant, lease: LandlordLease, before: dict, actor: User | None) -> None:
+    """租約條件改了就讓已產生的租金帳款跟著對齊（見 landlord_finance.reconcile_rent_charges）。"""
+    from routers.contract_links import lease_snapshot
+    from routers.landlord_finance import reconcile_rent_charges
+
+    if lease_snapshot(lease) == before:
+        return
+    result = reconcile_rent_charges(db, lease, actor.id if actor else None)
+    parts = [f"作廢 {result['voided']} 期" if result["voided"] else "", f"調整 {result['adjusted']} 期日期" if result["adjusted"] else "",
+             f"{result['flagged']} 期已收款需人工確認" if result["flagged"] else ""]
+    summary = "、".join(part for part in parts if part)
+    if summary:
+        db.add(LandlordTenantActivity(tenant_id=tenant.id, kind="charges_reconciled", detail=f"租約條件變更，帳款已對齊：{summary}"))
+
+
 def _days_left(lease: LandlordLease | None, today: date) -> int | None:
     return (rules.occupied_until(lease) - today).days if lease else None
 
@@ -372,6 +419,9 @@ def update_tenant(tenant_id: int, payload: TenantPayload, db: Session = Depends(
     today = date.today()
     tenant = _owned_tenant(db, landlord.id, tenant_id); lease = _current_lease(tenant, today)
     property_item, room = _resolve_room(db, landlord.id, payload)
+    if lease and rules.moved_out(lease, today) and _lease_terms_changed(lease, payload, room):
+        # 已結束的租約是歷史紀錄：改它的房間或租期會把舊帳款搬到新地址。再出租要另開一份。
+        raise HTTPException(status_code=409, detail=ENDED_LEASE_DETAIL)
     _assert_no_overlap(db, room.id, payload.lease_start, payload.lease_end, lease.id if lease else None)
     email = _clean_email(payload.email)
     _assert_unique_contact(db, landlord.id, payload.phone, email, exclude_tenant_id=tenant.id)
@@ -381,6 +431,8 @@ def update_tenant(tenant_id: int, payload: TenantPayload, db: Session = Depends(
     tenant.email = email
     if payload.national_id:
         tenant.national_id = payload.national_id
+    from routers.contract_links import lease_snapshot, record_term_change
+    before = lease_snapshot(lease) if lease else None
     if not lease:
         lease = LandlordLease(tenant_id=tenant.id); db.add(lease)
     lease.property_id = property_item.id; lease.room_id = room.id; lease.start_date = payload.lease_start; lease.end_date = payload.lease_end
@@ -388,6 +440,10 @@ def update_tenant(tenant_id: int, payload: TenantPayload, db: Session = Depends(
     lease.payment_frequency = payload.payment_frequency; lease.contract_id = payload.contract_id
     if lease.status in rules.LIVE_STATUSES or lease.status is None:
         lease.status = "pending" if payload.lease_start > today else "active"
+    if before is not None:
+        db.flush()
+        record_term_change(db, lease, before, _actor(request, landlord))
+        _reconcile_after_change(db, tenant, lease, before, _actor(request, landlord))
     db.add(LandlordTenantActivity(tenant_id=tenant.id, kind="updated", detail="更新租客與租約資料"))
     record_audit(db, landlord, _actor(request, landlord), "租客", "更新租客資料", tenant.name)
     db.commit()
@@ -402,7 +458,11 @@ def update_tenant_lease(tenant_id: int, payload: LeaseUpdatePayload, db: Session
     lease = _current_lease(tenant, today)
     if not lease:
         raise HTTPException(status_code=404, detail="找不到可更新的租約。")
+    if rules.moved_out(lease, today):
+        raise HTTPException(status_code=409, detail=ENDED_LEASE_DETAIL)
     _assert_no_overlap(db, lease.room_id, payload.lease_start, payload.lease_end, lease.id)
+    from routers.contract_links import lease_snapshot, record_term_change
+    before = lease_snapshot(lease)
     lease.start_date = payload.lease_start
     lease.end_date = payload.lease_end
     lease.monthly_rent = payload.monthly_rent
@@ -412,6 +472,9 @@ def update_tenant_lease(tenant_id: int, payload: LeaseUpdatePayload, db: Session
     lease.contract_id = payload.contract_id
     if lease.status in rules.LIVE_STATUSES:
         lease.status = "pending" if payload.lease_start > today else "active"
+    db.flush()
+    record_term_change(db, lease, before, _actor(request, landlord))
+    _reconcile_after_change(db, tenant, lease, before, _actor(request, landlord))
     db.add(LandlordTenantActivity(tenant_id=tenant.id, kind="lease_updated", detail="由合約管理更新租約資料"))
     record_audit(db, landlord, _actor(request, landlord), "合約", "更新租約", f"{tenant.name}：{payload.lease_start} ～ {payload.lease_end}")
     db.commit()
@@ -435,6 +498,8 @@ def renew_lease(tenant_id: int, payload: RenewPayload, db: Session = Depends(get
             raise HTTPException(status_code=404, detail="找不到房東名下的房間。")
     if payload.lease_start <= previous.start_date:
         raise HTTPException(status_code=422, detail="續約的開始日必須晚於原租約的開始日。")
+    if rules.moved_out(previous, today) and payload.lease_start < previous.moved_out_at:
+        raise HTTPException(status_code=422, detail=f"新租約要從上一份退租日（{previous.moved_out_at.isoformat()}）之後開始。")
     _assert_no_overlap(db, room.id, payload.lease_start, payload.lease_end, previous.id if payload.lease_start > previous.end_date else None)
     if room.id == previous.room_id and payload.lease_start <= rules.occupied_until(previous):
         raise HTTPException(status_code=409, detail=f"續約要從原租約結束後開始（{(previous.end_date + timedelta(days=1)).isoformat()} 或之後）。")
@@ -478,6 +543,9 @@ def move_out(tenant_id: int, payload: MoveOutPayload, db: Session = Depends(get_
     if not scheduled:
         lease.room.status = "turnover"
     detail = f"{'排定' if scheduled else '完成'}退租，退租日 {payload.move_out_date.isoformat()}"
+    voided = void_charges_after_move_out(db, lease, payload.move_out_date, _actor(request, landlord))
+    if voided:
+        detail += f"，作廢退租後的 {voided} 筆帳款"
     db.add(LandlordTenantActivity(tenant_id=tenant.id, kind="moved_out", detail=detail))
     record_audit(db, landlord, _actor(request, landlord), "租客", "退租結算", f"{tenant.name}：{detail}")
     db.commit()

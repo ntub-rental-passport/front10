@@ -593,7 +593,9 @@ def list_targets(db: Session = Depends(get_db), user: models.User = Depends(get_
             "effective": lease_rules.is_effective(lease, today),
         })
     try:
-        rentals = db.query(models.Rental).filter(models.Rental.user_id == user.id).all()
+        # 已對應到房東平台租約的自存合約不列：報修要走房東那份，房東才收得到
+        rentals = db.query(models.Rental).filter(models.Rental.user_id == user.id,
+                                                 models.Rental.rental_status != "linked").all()
     except InvalidTag as error:
         raise HTTPException(500, "租約個資無法解密，加密金鑰可能已變更。") from error
     for rental in rentals:

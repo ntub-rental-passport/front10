@@ -493,6 +493,51 @@ class LandlordChargeEvent(Base):
 
     charge = relationship("LandlordCharge", back_populates="events")
 
+class UtilityEvidence(Base):
+    """電費佐證：房東附的電表照片、租客回報的讀數（可附照片）。
+
+    兩邊都用平台時，電費以房東的紀錄為準；租客對讀數有意見就在這裡回報，
+    房東決定採用（更正那筆電費）或維持原讀數並回覆。照片存在 UTILITY_PHOTO_DIR，
+    這裡只記伺服器產生的檔名。
+    """
+    __tablename__ = 'utility_evidence'
+    __table_args__ = (Index('idx_utility_evidence_charge', 'charge_id'),)
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    charge_id = Column(Integer, ForeignKey('landlord_charges.id', ondelete='CASCADE'), nullable=False)
+    kind = Column(Enum('meter_photo','tenant_reading','payment_proof','charge_dispute', validate_strings=True, create_constraint=True), nullable=False)
+    role = Column(Enum('landlord','tenant', validate_strings=True, create_constraint=True), nullable=False)
+    submitted_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    reading = Column(DECIMAL(12,2), nullable=True)
+    amount = Column(Integer, nullable=True)
+    stored_name = Column(String(64), nullable=True)
+    original_name = Column(String(255), nullable=True)
+    note = Column(Text, nullable=True)
+    status = Column(Enum('open','accepted','kept', validate_strings=True, create_constraint=True), nullable=False, default='open')
+    response = Column(Text, nullable=True)
+    resolved_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    resolved_at = Column(Timestamp, nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+
+class LeaseContractLink(Base):
+    """租客自己存的合約（rentals，掃描紙本、雙方簽名的那份）對應到房東平台上的租約。
+
+    兩份都保留、誰也不蓋掉誰：系統逐項比對條件，把差異同時攤給雙方。
+    differences 是最近一次比對的結果；term_history 記錄房東在對應之後改過哪些條件。
+    """
+    __tablename__ = 'lease_contract_links'
+    __table_args__ = (UniqueConstraint('lease_id', name='uq_lease_contract_links_lease'),
+                      Index('idx_lease_contract_links_rental', 'rental_id'),)
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    lease_id = Column(Integer, ForeignKey('landlord_leases.id', ondelete='CASCADE'), nullable=False)
+    rental_id = Column(Integer, ForeignKey('rentals.id', ondelete='CASCADE'), nullable=False)
+    tenant_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    differences = Column(JSON, nullable=True)
+    landlord_note = Column(Text, nullable=True)
+    landlord_noted_at = Column(Timestamp, nullable=True)
+    term_history = Column(JSON, nullable=True)
+    created_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow)
+    updated_at = Column(Timestamp, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
 class LandlordExpense(Base):
     __tablename__ = 'landlord_expenses'
     __table_args__ = (Index('idx_landlord_expenses_landlord_date', 'landlord_id', 'spent_on'),)

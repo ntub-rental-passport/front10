@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { landlordRequest } from '@/src/services/landlordApiClient'
 import ElectricityEntryEditor from '@/src/components/dashboard/ElectricityEntryEditor.vue'
+import ElectricityEvidencePanel from '@/src/components/landlord/ElectricityEvidencePanel.vue'
+import type { UtilityEvidence } from '@/src/services/utilityEvidenceApi'
 import { cleanUtilityEntry, utilityPreview, utilityReceivable, type UtilityEntry, type UtilityContext } from '@/src/utils/utility-billing'
 import { formatIso, startOfToday, formatCurrency } from '@/src/utils/rent-format'
-interface Row extends UtilityContext { lease_id: number; property_id: number; property: string; room: string; tenant: string; exists: boolean; saved: UtilityEntry | null; amount: number | null }
+interface Row extends UtilityContext { lease_id: number; property_id: number; property: string; room: string; tenant: string; exists: boolean; saved: UtilityEntry | null; amount: number | null; tenant_bound: boolean; tenant_id: number; charge_id: number | null; evidence: UtilityEvidence[] }
 const emit = defineEmits<{ saved: [] }>()
 const month = ref(formatIso(startOfToday()).slice(0, 7)), propertyId = ref(''), rows = ref<Row[]>([])
 const entries = ref<Record<number, UtilityEntry>>({}), selected = ref<Record<number, boolean>>({})
@@ -62,7 +65,7 @@ async function save() {
     <form v-if="adding" class="space-y-4" @submit.prevent="save">
       <label class="block text-sm">繳費期限<input v-model="dueDate" type="date" required :disabled="saving" class="mt-1 rounded-md border p-2"></label>
       <article v-for="row in visible" :key="row.lease_id" class="space-y-2">
-        <label class="flex items-center gap-2 font-semibold"><input v-model="selected[row.lease_id]" type="checkbox" :disabled="row.exists || saving">{{ row.room }} · {{ row.tenant }}<span class="text-xs text-slate-500">{{ row.exists ? '已記錄' : '待記錄' }}</span></label>
+        <label class="flex items-center gap-2 font-semibold"><input v-model="selected[row.lease_id]" type="checkbox" :disabled="row.exists || saving">{{ row.room }} · {{ row.tenant }}<span class="text-xs text-slate-500">{{ row.exists ? '已記錄' : '待記錄' }}</span><span v-if="!row.tenant_bound" class="text-xs font-normal text-amber-700">（租客未綁定，看不到這筆電費）</span></label>
         <ElectricityEntryEditor v-if="selected[row.lease_id] || row.exists" v-model="entries[row.lease_id]!" :context="row" landlord :disabled="row.exists || saving" @busy="ocrBusy[row.lease_id] = $event" />
       </article>
       <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm">
@@ -72,8 +75,11 @@ async function save() {
     </form>
     <div v-else class="space-y-3">
       <article v-for="row in visible" :key="row.lease_id" class="rounded-xl border p-3">
-        <p class="font-semibold">{{ row.room }} · {{ row.tenant }} <span class="text-sm text-slate-500">{{ row.exists ? `已記錄 · ${formatCurrency(row.amount || 0)}` : '待記錄' }}</span></p>
+        <p class="font-semibold">{{ row.room }} · {{ row.tenant }} <span class="text-sm text-slate-500">{{ row.exists ? `已記錄 · ${formatCurrency(row.amount || 0)}` : '待記錄' }}</span>
+          <span v-if="row.evidence.some(item => item.kind === 'tenant_reading' && item.status === 'open')" class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">租客回報讀數不同</span></p>
+        <p v-if="!row.tenant_bound" class="mt-1 text-xs text-amber-700">這位租客還沒接受邀請、綁定平台帳號，看不到這筆電費，也無法對帳。<RouterLink to="/landlord/tenants" class="underline">到租客管理發送邀請</RouterLink></p>
         <details v-if="row.saved" class="mt-2"><summary class="cursor-pointer text-sm text-blue-700">查看明細</summary><ElectricityEntryEditor :model-value="row.saved" :context="row" landlord disabled /></details>
+        <ElectricityEvidencePanel v-if="row.charge_id" :charge-id="row.charge_id" :evidence="row.evidence.filter(item => item.kind === 'meter_photo' || item.kind === 'tenant_reading')" :landlord-reading="row.saved?.current ?? null" @changed="load(); emit('saved')" />
       </article>
     </div>
   </section>

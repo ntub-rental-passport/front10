@@ -64,7 +64,7 @@ export function fetchUtilityContext(billId: string): Promise<import('@/src/utils
 /** 房東平台租約：回報已繳款（通知房東確認入帳，不會直接標成已繳）。 */
 export async function reportLandlordPayment(
   cycleId: string,
-  payload: { paid_at: string; payment_method: PaymentMethod; payment_note: string },
+  payload: { paid_at: string; payment_method: PaymentMethod; payment_note: string; proof?: { name: string; data: string } },
 ): Promise<RentalContract['cycles'][number]> {
   const token = getAuthSession()?.accessToken
   if (!token) throw new Error('請先登入後再回報繳款。')

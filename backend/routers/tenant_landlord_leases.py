@@ -28,12 +28,19 @@ PAYMENT_METHODS = ("bank-transfer", "cash", "line-pay", "other")
 METHOD_LABELS = {"bank-transfer": "銀行轉帳", "cash": "現金", "line-pay": "LINE Pay", "other": "其他方式"}
 
 
+class ProofFile(BaseModel):
+    name: str = Field(default="繳款證明", max_length=255)
+    data: str = Field(min_length=1, max_length=15_000_000)
+
+
 class PaymentReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     paid_at: datetime.date
     payment_method: str = Field(default="other")
     payment_note: str = Field(default="", max_length=500)
+    # 轉帳截圖或 PDF：存在伺服器，房東與後台都看得到（租客的權益證據）
+    proof: ProofFile | None = None
 
 
 def _paid(charge: LandlordCharge) -> int:
@@ -77,7 +84,8 @@ def _reported(charges: list[LandlordCharge]) -> dict | None:
     return {"at": latest.created_at.isoformat(), "detail": latest.detail}
 
 
-def _cycle_json(index: int, rent: LandlordCharge, extras: list[LandlordCharge]) -> dict:
+def _cycle_json(index: int, rent: LandlordCharge, extras: list[LandlordCharge], terms=None, expected=None) -> dict:
+    from routers.contract_links import charge_mismatches
     electricity = [charge for charge in extras if charge.kind == 'electricity']
     group = [rent, *extras]
     total = sum(charge.amount for charge in group)
@@ -105,7 +113,28 @@ def _cycle_json(index: int, rent: LandlordCharge, extras: list[LandlordCharge]) 
         "paidAmount": paid,
         "totalAmount": total,
         "tenantReport": None if settled else _reported(group),
+        # 電費對帳：這期的電費帳款 id，以及電表照片、租客回報讀數的紀錄
+        "electricityChargeId": electricity[0].id if len(electricity) == 1 else None,
+        "utilityEvidence": _evidence_for(electricity[0]) if len(electricity) == 1 else [],
+        # 跟租客自存合約對照：這期哪幾筆帳款與合約不符（沒對應合約就是空的）
+        "contractMismatch": [{**item, "chargeId": charge.id, "chargeTitle": charge.title}
+                             for charge in group for item in charge_mismatches(charge, terms, expected)],
+        "rentChargeId": rent.id,
+        "rentEvidence": _evidence_for(rent),
     }
+
+
+def _evidence_for(charge: LandlordCharge) -> list[dict]:
+    from sqlalchemy.orm import object_session
+    from routers.utility_evidence import charge_evidence
+
+    return charge_evidence(object_session(charge), charge.id)
+
+
+def _has_open_balance(db: Session, lease: LandlordLease) -> bool:
+    charges = db.query(LandlordCharge).options(selectinload(LandlordCharge.payments)).filter(
+        LandlordCharge.lease_id == lease.id, LandlordCharge.voided_at.is_(None)).all()
+    return any(charge.amount - _paid(charge) > 0 for charge in charges)
 
 
 def landlord_contracts_for(db: Session, user: User, accents: tuple[str, ...], offset: int) -> list[dict]:
@@ -115,18 +144,21 @@ def landlord_contracts_for(db: Session, user: User, accents: tuple[str, ...], of
     today = datetime.date.today()
     items = []
     for lease in sorted(tenant_visible_leases(db, user), key=lambda item: (item.start_date, item.id)):
-        if rules.moved_out(lease, today):
+        # 已退租的租約：還有沒收齊的帳款就照樣列出，租客要看得到房東記了什麼帳
+        if rules.moved_out(lease, today) and not _has_open_balance(db, lease):
             continue
         landlord = db.get(User, lease.tenant.landlord_id)
         address = lease.property.address or ""
-        cycles = [_cycle_json(index, rent, extras)
+        from routers.contract_links import link_context
+        terms, expected = link_context(db, lease)
+        cycles = [_cycle_json(index, rent, extras, terms, expected)
                   for index, (rent, extras) in enumerate(_group_by_period(_lease_charges(db, lease)), start=1)]
         from routers.dashboard import _city_of, _lease_months
 
         items.append({
             "id": f"lease:{lease.id}",
             "source": "landlord",
-            "title": f"{lease.property.name} {lease.room.number}",
+            "title": f"{lease.property.name} {lease.room.number}" + ("（已退租）" if rules.moved_out(lease, today) else ""),
             "city": _city_of(address),
             "address": address,
             "landlord": (landlord.display_name or "房東") if landlord else "房東",
@@ -177,6 +209,10 @@ def report_payment(charge_id: int, payload: PaymentReport, db: Session = Depends
     for charge in charges:
         if charge.amount - _paid(charge) > 0:
             db.add(LandlordChargeEvent(charge_id=charge.id, kind="tenant_reported", detail=detail, actor_user_id=user.id))
+    if payload.proof:
+        from routers.utility_evidence import PhotoPayload, store_payment_proof
+        store_payment_proof(db, group[0], user, PhotoPayload(name=payload.proof.name, data=payload.proof.data), note)
+        detail += "（附繳款證明）"
     landlord = db.get(User, lease.tenant.landlord_id)
     if landlord:
         from routers.landlord_workspace_api import settings_for
@@ -193,7 +229,9 @@ def report_payment(charge_id: int, payload: PaymentReport, db: Session = Depends
     db.expire_all()
     rent, extras = next((r, e) for r, e in _group_by_period(_lease_charges(db, lease)) if r.id == charge_id)
     index = [r.id for r, _ in _group_by_period(_lease_charges(db, lease))].index(charge_id) + 1
-    return _cycle_json(index, rent, extras)
+    from routers.contract_links import link_context
+    terms, expected = link_context(db, lease)
+    return _cycle_json(index, rent, extras, terms, expected)
 
 
 @router.get("/{lease_id}")

@@ -18,7 +18,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload, object_session, selectinload
 
 from auth.landlord_workspace import get_landlord_workspace, landlord_actor, record_audit
 from db.database import get_db
@@ -93,6 +93,9 @@ class ElectricityBatch(BaseModel):
     rows: list[ElectricityRow] = Field(min_length=1, max_length=200)
 
 
+from routers.utility_evidence import charge_evidence  # noqa: E402
+
+
 def _electricity_history(db, lease_id, before):
     rows = db.query(LandlordCharge).filter(LandlordCharge.lease_id == lease_id,
         LandlordCharge.kind == 'electricity', LandlordCharge.period_start < before,
@@ -116,7 +119,12 @@ def electricity_records(month: str, db: Session = Depends(get_db), landlord: Use
             'previous': previous.get('current', (saved.utility_details or {}).get('previous', '') if saved else ''),
             'rate': previous.get('rate'), 'initial': not bool(previous) and not (saved and (saved.utility_details or {}).get('previous') is not None),
             'saved': saved.utility_details if saved else None, 'exists': saved is not None,
-            'amount': saved.amount if saved else None})
+            'amount': saved.amount if saved else None,
+            # 租客沒接受邀請、沒綁定帳號時，看不到這筆電費，也無法對帳
+            'tenant_bound': bool(lease.tenant_user_id),
+            'tenant_id': lease.tenant_id,
+            'charge_id': saved.id if saved else None,
+            'evidence': charge_evidence(db, saved.id) if saved else []})
     return items
 
 
@@ -236,6 +244,47 @@ def _landlord_leases(db: Session, landlord_id: int) -> list[LandlordLease]:
     )
 
 
+def reconcile_rent_charges(db: Session, lease: LandlordLease, actor_id: int | None) -> dict:
+    """房東修改租約條件（起租日、租期、月租、繳租日、週期）之後，讓已產生的租金帳款跟新條件一致。
+
+    「金額建立時固定」是為了改租金時不回頭改「已經發生」的帳；但條件被修正、而那幾期還沒收錢時，
+    舊帳就是錯的（2026-10-09 實測：起租日從 10/9 改成 10/1，同一個月出現兩筆租金）。
+
+    - 沒收過錢、新條件下不存在的期數：作廢（原因：租約條件變更）
+    - 期數還在、只是期末或到期日不同、也沒收過錢：改日期；金額維持建立時的數字（中途調租不回頭改舊帳）
+    - 收過錢的：不動，加一筆事件提醒房東處理
+    缺的期數之後由 ensure_rent_charges 依新條件補上。呼叫端負責 commit。
+    """
+    from datetime import datetime as _datetime
+
+    periods = {start: (end, due, amount) for start, end, due, amount in rent_periods(lease, date.max)}
+    charges = db.query(LandlordCharge).options(selectinload(LandlordCharge.payments)).filter(
+        LandlordCharge.lease_id == lease.id, LandlordCharge.kind == "rent", LandlordCharge.voided_at.is_(None)).all()
+    result = {"voided": 0, "adjusted": 0, "flagged": 0}
+    for charge in charges:
+        paid = _paid(charge) > 0
+        expected = periods.get(charge.period_start)
+        if expected and (expected[0], expected[1]) == (charge.period_end, charge.due_date):
+            continue
+        if paid:
+            db.add(LandlordChargeEvent(charge_id=charge.id, kind="needs_review", actor_user_id=actor_id,
+                                       detail="租約條件已變更，但這期已有收款，系統沒有自動調整，請確認是否要沖銷或補收。"))
+            result["flagged"] += 1
+        elif expected:
+            end, due, _amount = expected
+            db.add(LandlordChargeEvent(charge_id=charge.id, kind="adjusted", actor_user_id=actor_id,
+                                       detail=f"租約條件變更：期間到 {charge.period_end} → {end}、到期日 {charge.due_date} → {due}"))
+            charge.period_end, charge.due_date = end, due
+            result["adjusted"] += 1
+        else:
+            charge.voided_at = _datetime.utcnow()
+            charge.void_reason = "租約條件變更，這一期已不在新的租期安排中"
+            db.add(LandlordChargeEvent(charge_id=charge.id, kind="voided", actor_user_id=actor_id,
+                                       detail="租約條件變更，作廢這一期（未收款）"))
+            result["voided"] += 1
+    return result
+
+
 def ensure_rent_charges(db: Session, landlord_id: int, until: date, lease_ids: set[int] | None = None) -> int:
     """補產生到 until 為止的租金期數。已存在的不動（金額固定）。回傳新增幾筆。
 
@@ -246,6 +295,8 @@ def ensure_rent_charges(db: Session, landlord_id: int, until: date, lease_ids: s
         leases = [lease for lease in leases if lease.id in lease_ids]
     if not leases:
         return 0
+    # 作廢的那期也算「已存在」：唯一鍵含 period_start，同一期不能再建一筆。
+    # 條件變更時同一個期起日的帳是「改金額」而不是作廢重建，所以不會卡住。
     existing = {
         (row.lease_id, row.period_start)
         for row in db.query(LandlordCharge.lease_id, LandlordCharge.period_start).filter(
@@ -285,6 +336,16 @@ def ensure_rent_charges(db: Session, landlord_id: int, until: date, lease_ids: s
 
 def _paid(charge: LandlordCharge) -> int:
     return sum(payment.amount for payment in charge.payments)
+
+
+def _mismatches(charge: LandlordCharge) -> list[dict]:
+    from routers.contract_links import charge_mismatches, link_context
+
+    db = object_session(charge)
+    if db is None:
+        return []
+    terms, expected = link_context(db, charge.lease)
+    return charge_mismatches(charge, terms, expected)
 
 
 def _charge_dict(charge: LandlordCharge, today: date, month_start: date | None = None) -> dict:
@@ -336,6 +397,10 @@ def _charge_dict(charge: LandlordCharge, today: date, month_start: date | None =
         "reminded_at": max((event.created_at for event in reminded), default=None),
         # 租客回報已繳、房東還沒確認收齊：畫面要提醒房東去對帳入帳
         "tenant_report": None if not latest_report else {"at": latest_report.created_at, "detail": latest_report.detail},
+        # 繳款證明、租客異議、電表照片（routers/utility_evidence.py）
+        "evidence": charge_evidence(object_session(charge), charge.id) if object_session(charge) else [],
+        # 跟租客簽約合約不符的地方（租客有對應合約才會檢查）
+        "contract_mismatch": _mismatches(charge),
         "payments": [
             {"id": payment.id, "amount": payment.amount, "paid_on": payment.paid_on, "method": payment.method,
              "note": payment.note, "created_at": payment.created_at}

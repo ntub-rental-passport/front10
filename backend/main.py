@@ -13,6 +13,7 @@ from routers import notes, households, scheduled_notifications, platform_setting
 from routers import content_api, dashboard, repairs, inbox_api, admin_notifications_api, ai_usage_api, admin_user_records_api
 from routers import admin_repairs_api, subsidy_reminders
 from routers import landlord_finance, landlord_contracts, landlord_workspace_api, lease_invitations, tenant_landlord_leases
+from routers import utility_evidence, contract_links
 from routers import password, contract_pdf
 from notifications.garbage_service import dispatch_due
 from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
@@ -132,6 +133,10 @@ app.include_router(landlord_workspace_api.router)
 app.include_router(lease_invitations.landlord_router)
 app.include_router(lease_invitations.public_router)
 app.include_router(tenant_landlord_leases.router)
+app.include_router(utility_evidence.landlord_router)
+app.include_router(utility_evidence.tenant_router)
+app.include_router(contract_links.tenant_router)
+app.include_router(contract_links.landlord_router)
 app.include_router(tenant_leases.router)
 app.include_router(admin.router)
 app.include_router(garbage.router)

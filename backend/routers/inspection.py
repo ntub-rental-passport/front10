@@ -428,7 +428,8 @@ def properties(db: Session = Depends(get_db), user: User = Depends(get_current_t
     from routers import landlord_lease_rules as rules
     from routers.tenant_leases import tenant_visible_leases
 
-    rentals = db.query(Rental).filter(Rental.user_id == user.id).order_by(Rental.created_at.desc()).all()
+    # 已對應到房東平台租約的自存合約不列：點交要記在房東那份，房東才看得到
+    rentals = db.query(Rental).filter(Rental.user_id == user.id, Rental.rental_status != 'linked').order_by(Rental.created_at.desc()).all()
     items = [{'id': str(r.id), 'alias': r.contract_tag or f'租約 #{r.id}', 'source': 'self',
               'address': r.address, 'createdAt': timestamp(r.created_at)} for r in rentals]
     for lease in tenant_visible_leases(db, user):

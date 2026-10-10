@@ -19,7 +19,8 @@ from db.models import (InboxMessage, LandlordCharge, LandlordLease, LandlordProp
                        LeaseInvitation, User, UserRole)
 from notifications import landlord_reminders
 from routers import (inspection, landlord_contracts, landlord_finance, landlord_properties, landlord_tenants,
-                     landlord_workspace_api, lease_invitations, repairs, tenant_landlord_leases, tenant_leases)
+                     landlord_workspace_api, lease_invitations, repairs, tenant_landlord_leases, tenant_leases,
+                     utility_evidence, contract_links)
 
 OWNER, TENANT, MEMBER, OUTSIDER, OTHER_TENANT = 1, 2, 3, 4, 5
 TODAY = datetime.date.today()
@@ -35,6 +36,7 @@ class LandlordWorkspaceTests(unittest.TestCase):
             'AUTH_TOKEN_SECRET': 'landlord-workspace-test',
             'PII_ENCRYPTION_KEY': base64.b64encode(b'w' * 32).decode(),
             'LEASE_FILE_DIR': self.upload_dir.name,
+            'UTILITY_PHOTO_DIR': self.upload_dir.name,
             'REPAIR_UPLOAD_DIR': self.upload_dir.name,
         })
         env.start()
@@ -74,7 +76,9 @@ class LandlordWorkspaceTests(unittest.TestCase):
         for router in (landlord_tenants.router, landlord_properties.router, landlord_finance.router,
                        landlord_contracts.router, landlord_workspace_api.router, lease_invitations.landlord_router,
                        lease_invitations.public_router, tenant_leases.router, repairs.router,
-                       tenant_landlord_leases.router, inspection.router):
+                       tenant_landlord_leases.router, inspection.router,
+                       utility_evidence.landlord_router, utility_evidence.tenant_router,
+                       contract_links.tenant_router, contract_links.landlord_router):
             app.include_router(router)
 
         def test_db():
@@ -120,6 +124,272 @@ class LandlordWorkspaceTests(unittest.TestCase):
         next_month = landlord_finance._add_months(TODAY.replace(day=1), 1).strftime('%Y-%m')
         rows = self.ok(self.call('GET', f'/api/landlord/finance/electricity?month={next_month}'))
         self.assertEqual(rows[0]['previous'], '120')
+
+    # ---------------- 電費對帳 ----------------
+
+    def record_meter(self, current=120):
+        month = TODAY.strftime('%Y-%m')
+        payload = {'property_id': 1, 'month': month, 'due_date': TODAY.isoformat(), 'rows': [
+            {'lease_id': 1, 'entry': {'method': 'meter', 'previous': 0, 'current': current, 'rate': 5, 'recorded_on': TODAY.isoformat()}}]}
+        self.ok(self.call('POST', '/api/landlord/finance/electricity', json=payload), 201)
+        return self.ok(self.call('GET', f'/api/landlord/finance/electricity?month={month}'))[0]
+
+    def photo_data(self):
+        import io
+        from PIL import Image
+        buffer = io.BytesIO()
+        Image.new('RGB', (40, 40), 'white').save(buffer, 'PNG')
+        return 'data:image/png;base64,' + base64.b64encode(buffer.getvalue()).decode()
+
+    def test_unbound_tenant_is_flagged_on_electricity_records(self):
+        row = self.record_meter()
+        self.assertFalse(row['tenant_bound'])
+        with self.Session() as db:
+            db.get(LandlordLease, 1).tenant_user_id = TENANT
+            db.commit()
+        month = TODAY.strftime('%Y-%m')
+        self.assertTrue(self.ok(self.call('GET', f'/api/landlord/finance/electricity?month={month}'))[0]['tenant_bound'])
+
+    def test_meter_photo_is_visible_to_bound_tenant_only(self):
+        with self.Session() as db:
+            db.get(LandlordLease, 1).tenant_user_id = TENANT
+            db.commit()
+        row = self.record_meter()
+        photo = self.ok(self.call('POST', f"/api/landlord/finance/charges/{row['charge_id']}/meter-photos",
+                                  json={'name': '電表.jpg', 'data': self.photo_data()}), 201)
+        self.assertEqual(photo['reading'], 120.0)
+        tenant_view = self.call('GET', f"/api/tenant/landlord-leases/evidence/{photo['id']}/photo", user=TENANT, role='tenant')
+        self.assertEqual(tenant_view.status_code, 200)
+        self.assertTrue(tenant_view.content.startswith(b'\xff\xd8'))
+        self.assertEqual(self.call('GET', f"/api/tenant/landlord-leases/evidence/{photo['id']}/photo",
+                                   user=OTHER_TENANT, role='tenant').status_code, 404)
+        with self.Session() as db:
+            cycles = tenant_landlord_leases.landlord_contracts_for(db, db.get(User, TENANT), ('sky',), 0)[0]['cycles']
+        cycle = next(c for c in cycles if c['electricityChargeId'] == row['charge_id'])
+        self.assertEqual([e['kind'] for e in cycle['utilityEvidence']], ['meter_photo'])
+
+    def test_tenant_reading_accepted_corrects_charge(self):
+        with self.Session() as db:
+            db.get(LandlordLease, 1).tenant_user_id = TENANT
+            db.commit()
+        row = self.record_meter(current=120)
+        reported = self.ok(self.call('POST', f"/api/tenant/landlord-leases/charges/{row['charge_id']}/reading",
+                                     user=TENANT, role='tenant',
+                                     json={'reading': 110, 'note': '我抄到 110', 'photo': {'name': 'm.jpg', 'data': self.photo_data()}}), 201)
+        self.assertTrue(reported['has_photo'])
+        # 還沒處理前不能重複回報
+        self.assertEqual(self.call('POST', f"/api/tenant/landlord-leases/charges/{row['charge_id']}/reading",
+                                   user=TENANT, role='tenant', json={'reading': 111}).status_code, 409)
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).filter_by(user_id=OWNER, category='帳務').count(), 1)
+        resolved = self.ok(self.call('POST', f"/api/landlord/finance/evidence/{reported['id']}/resolve",
+                                     json={'action': 'accept'}))
+        self.assertEqual(resolved['amount'], 550)
+        self.assertEqual(resolved['utility_details']['current'], '110.00')
+        with self.Session() as db:
+            charge = db.get(LandlordCharge, row['charge_id'])
+            self.assertEqual(charge.amount, 550)
+            self.assertTrue(any('120 → 110' in event.detail for event in charge.events))
+            self.assertEqual(db.query(InboxMessage).filter_by(user_id=TENANT, category='帳務').count(), 1)
+        self.assertEqual(self.call('POST', f"/api/landlord/finance/evidence/{reported['id']}/resolve",
+                                   json={'action': 'accept'}).status_code, 409)
+
+    def test_tenant_reading_kept_requires_reason_and_paid_charge_cannot_change(self):
+        with self.Session() as db:
+            db.get(LandlordLease, 1).tenant_user_id = TENANT
+            db.commit()
+        row = self.record_meter(current=120)
+        reported = self.ok(self.call('POST', f"/api/tenant/landlord-leases/charges/{row['charge_id']}/reading",
+                                     user=TENANT, role='tenant', json={'reading': 100}), 201)
+        self.ok(self.call('POST', f"/api/landlord/finance/charges/{row['charge_id']}/payments",
+                          json={'amount': 100, 'paid_on': TODAY.isoformat()}), 201)
+        self.assertEqual(self.call('POST', f"/api/landlord/finance/evidence/{reported['id']}/resolve",
+                                   json={'action': 'accept'}).status_code, 409)
+        self.assertEqual(self.call('POST', f"/api/landlord/finance/evidence/{reported['id']}/resolve",
+                                   json={'action': 'keep'}).status_code, 422)
+        kept = self.ok(self.call('POST', f"/api/landlord/finance/evidence/{reported['id']}/resolve",
+                                 json={'action': 'keep', 'response': '照片上是 120 度'}))
+        self.assertEqual(kept['evidence']['status'], 'kept')
+        self.assertEqual(kept['amount'], 600)
+        self.assertEqual(self.call('POST', f"/api/landlord/finance/evidence/{reported['id']}/resolve",
+                                   user=OUTSIDER, json={'action': 'keep', 'response': 'x'}).status_code, 404)
+
+    def add_own_rental(self, rent=15000, deposit=30000, rate='每度 5 元'):
+        from db.models import Rental
+        with self.Session() as db:
+            db.get(LandlordLease, 1).tenant_user_id = TENANT
+            lease = db.get(LandlordLease, 1)
+            db.add(Rental(id=7, user_id=TENANT, contract_tag='我自己存的', address='臺北市中山區松江路 88 號',
+                          start_date=lease.start_date, end_date=lease.end_date, rent_amount=rent, payment_day=5,
+                          total_periods=12, deposit_amount=deposit, tenant_name='王小明', electricity_fee_rate=rate))
+            db.add(Rental(id=8, user_id=TENANT, contract_tag='去年的', address='別處',
+                          start_date=TODAY - 800 * DAY, end_date=TODAY - 500 * DAY, rent_amount=1, payment_day=5,
+                          total_periods=12, deposit_amount=0, tenant_name='王小明'))
+            db.commit()
+
+    def test_linking_own_contract_compares_terms_and_hides_it_from_repairs(self):
+        self.add_own_rental(rent=14000)
+        link = self.ok(self.call('GET', '/api/tenant/landlord-leases/1/link', user=TENANT, role='tenant'))
+        self.assertFalse(link['linked'])
+        self.assertEqual([c['rental_id'] for c in link['candidates']], [7])
+        linked = self.ok(self.call('POST', '/api/tenant/landlord-leases/1/link', user=TENANT, role='tenant',
+                                   json={'rental_id': 7}), 201)
+        self.assertEqual([d['field'] for d in linked['differences']], ['rent'])
+        self.assertEqual(linked['differences'][0]['contract'], 14000)
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).filter_by(user_id=OWNER, category='租約').count(), 1)
+        targets = self.ok(self.call('GET', '/api/repairs/targets', user=TENANT, role='tenant'))['items']
+        self.assertNotIn('rental:7', [t['leaseId'] for t in targets])
+        self.assertIn('lease:1', [t['leaseId'] for t in targets])
+        props = self.ok(self.call('GET', '/api/inspection/properties', user=TENANT, role='tenant'))
+        self.assertNotIn('7', [p['id'] for p in props])
+        landlord_view = self.ok(self.call('GET', '/api/landlord/contracts/1/tenant-contract'))
+        self.assertEqual(len(landlord_view['differences']), 1)
+        self.ok(self.call('PUT', '/api/landlord/contracts/1/tenant-contract/note', json={'note': '續約時漲價，已口頭同意'}))
+        self.assertEqual(self.ok(self.call('GET', '/api/tenant/landlord-leases/1/link', user=TENANT, role='tenant'))['landlord_note'],
+                         '續約時漲價，已口頭同意')
+        self.ok(self.call('DELETE', '/api/tenant/landlord-leases/1/link', user=TENANT, role='tenant'))
+        from db.models import Rental
+        with self.Session() as db:
+            self.assertEqual(db.get(Rental, 7).rental_status, 'active')
+
+    def test_charges_are_checked_against_the_signed_contract(self):
+        self.add_own_rental(rent=14000, rate='每度 4 元')
+        self.ok(self.call('POST', '/api/tenant/landlord-leases/1/link', user=TENANT, role='tenant', json={'rental_id': 7}), 201)
+        self.record_meter()  # 房東記每度 5 元
+        with self.Session() as db:
+            cycles = tenant_landlord_leases.landlord_contracts_for(db, db.get(User, TENANT), ('sky',), 0)[0]['cycles']
+        labels = {m['label'] for c in cycles for m in c['contractMismatch']}
+        self.assertEqual(labels, {'租金', '電費每度單價'})
+        rent_cycle = next(c for c in cycles if any(m['label'] == '租金' for m in c['contractMismatch']))
+        charge_id = rent_cycle['rentChargeId']
+        finance = self.ok(self.call('GET', '/api/landlord/finance/charges'))['items']
+        self.assertTrue(next(i for i in finance if i['id'] == charge_id)['contract_mismatch'])
+        dispute = self.ok(self.call('POST', f'/api/tenant/landlord-leases/charges/{charge_id}/dispute', user=TENANT,
+                                    role='tenant', json={'amount': 14000, 'note': '合約月租 14000'}), 201)
+        self.assertEqual(self.call('POST', f'/api/tenant/landlord-leases/charges/{charge_id}/dispute', user=TENANT,
+                                   role='tenant', json={'amount': 1, 'note': 'x'}).status_code, 409)
+        resolved = self.ok(self.call('POST', f"/api/landlord/finance/evidence/{dispute['id']}/resolve", json={'action': 'accept'}))
+        self.assertEqual(resolved['amount'], 14000)
+        with self.Session() as db:
+            self.assertEqual(db.get(LandlordCharge, charge_id).amount, 14000)
+
+    def test_term_change_after_binding_is_recorded_and_notified(self):
+        self.add_own_rental()
+        self.ok(self.call('POST', '/api/tenant/landlord-leases/1/link', user=TENANT, role='tenant', json={'rental_id': 7}), 201)
+        tenant = self.ok(self.call('GET', '/api/landlord/tenants/1'))
+        self.ok(self.call('PATCH', '/api/landlord/tenants/1/lease', json={
+            'lease_start': tenant['lease_start'], 'lease_end': tenant['lease_end'], 'monthly_rent': 18000,
+            'deposit_amount': 30000, 'payment_day': 5}))
+        link = self.ok(self.call('GET', '/api/tenant/landlord-leases/1/link', user=TENANT, role='tenant'))
+        self.assertEqual(link['term_history'][-1]['changes'][0],
+                         {'field': 'monthly_rent', 'label': '月租', 'before': 15000, 'after': 18000})
+        self.assertIn('rent', [d['field'] for d in link['differences']])
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).filter_by(user_id=TENANT, category='租約').count(), 1)
+
+    def test_payment_report_can_carry_a_stored_proof(self):
+        self.bind_tenant()
+        with self.Session() as db:
+            cycle = tenant_landlord_leases.landlord_contracts_for(db, db.get(User, TENANT), ('sky',), 0)[0]['cycles'][0]
+        charge_id = cycle['rentChargeId']
+        pdf = 'data:application/pdf;base64,' + base64.b64encode(b'%PDF-1.4\n% receipt\n').decode()
+        result = self.ok(self.call('POST', f'/api/tenant/landlord-leases/charges/{charge_id}/report', user=TENANT, role='tenant',
+                                   json={'paid_at': TODAY.isoformat(), 'payment_method': 'bank-transfer',
+                                         'proof': {'name': '轉帳.pdf', 'data': pdf}}))
+        proof = next(e for e in result['rentEvidence'] if e['kind'] == 'payment_proof')
+        landlord_file = self.call('GET', f"/api/landlord/finance/evidence/{proof['id']}/photo")
+        self.assertTrue(landlord_file.content.startswith(b'%PDF-'))
+        self.assertEqual(self.call('GET', f"/api/landlord/finance/evidence/{proof['id']}/photo", user=OUTSIDER).status_code, 404)
+
+    # ---------------- 退租後再出租（2026-10-09 實測問題） ----------------
+
+    def test_move_out_voids_later_charges_but_keeps_unpaid_history(self):
+        self.bind_tenant()
+        self.ok(self.call('GET', '/api/landlord/finance/charges?month=' +
+                          landlord_finance._add_months(TODAY.replace(day=1), 6).strftime('%Y-%m')))
+        self.ok(self.call('POST', '/api/landlord/tenants/1/move-out', json={'move_out_date': TODAY.isoformat()}))
+        with self.Session() as db:
+            charges = db.query(LandlordCharge).filter_by(lease_id=1).all()
+            later = [c for c in charges if c.period_start >= TODAY]
+            earlier = [c for c in charges if c.period_start < TODAY]
+            self.assertTrue(later and all(c.voided_at for c in later))
+            self.assertTrue(earlier and not any(c.voided_at for c in earlier))
+            # 租客首頁照樣看得到退租前沒繳的帳
+            contracts = tenant_landlord_leases.landlord_contracts_for(db, db.get(User, TENANT), ('sky',), 0)
+        self.assertEqual(len(contracts), 1)
+        self.assertIn('已退租', contracts[0]['title'])
+
+    def test_ended_lease_cannot_be_edited_into_a_new_one(self):
+        self.ok(self.call('POST', '/api/landlord/tenants/1/move-out', json={'move_out_date': TODAY.isoformat()}))
+        tenant = self.ok(self.call('GET', '/api/landlord/tenants/1'))
+        payload = {'name': tenant['name'], 'phone': '0912000000', 'email': 'tenant@test.example', 'property_id': 1,
+                   'room_id': 2, 'lease_start': (TODAY + DAY).isoformat(), 'lease_end': (TODAY + 365 * DAY).isoformat(),
+                   'monthly_rent': 9000, 'deposit_amount': 18000, 'payment_day': 5}
+        self.assertEqual(self.call('PATCH', '/api/landlord/tenants/1', json=payload).status_code, 409)
+        # 只改聯絡資料可以
+        same_terms = {**payload, 'room_id': 1, 'lease_start': tenant['lease_start'], 'lease_end': tenant['lease_end'],
+                      'monthly_rent': 15000, 'deposit_amount': 30000, 'name': '王小明（新姓名）'}
+        self.ok(self.call('PATCH', '/api/landlord/tenants/1', json=same_terms))
+        self.assertEqual(self.call('PATCH', '/api/landlord/tenants/1/lease', json={
+            'lease_start': tenant['lease_start'], 'lease_end': tenant['lease_end'], 'monthly_rent': 1,
+            'deposit_amount': 1, 'payment_day': 5}).status_code, 409)
+
+    def test_moved_out_tenant_can_get_a_new_lease_in_another_room(self):
+        self.bind_tenant()
+        self.ok(self.call('GET', '/api/landlord/finance/charges'))
+        old_charges = {c['id']: c['room'] for c in self.ok(self.call('GET', '/api/landlord/finance/charges'))['items']}
+        self.ok(self.call('POST', '/api/landlord/tenants/1/move-out', json={'move_out_date': TODAY.isoformat()}))
+        too_early = self.call('POST', '/api/landlord/tenants/1/renew', json={
+            'lease_start': (TODAY - DAY).isoformat(), 'lease_end': (TODAY + 300 * DAY).isoformat(), 'monthly_rent': 9000,
+            'deposit_amount': 18000, 'payment_day': 5, 'room_id': 2})
+        self.assertEqual(too_early.status_code, 422)
+        created = self.ok(self.call('POST', '/api/landlord/tenants/1/renew', json={
+            'lease_start': TODAY.isoformat(), 'lease_end': (TODAY + 300 * DAY).isoformat(), 'monthly_rent': 9000,
+            'deposit_amount': 18000, 'payment_day': 5, 'room_id': 2}), 201)
+        tenant = created['tenant']
+        self.assertEqual((tenant['room_number'], tenant['lease_status'], tenant['account_bound']), ('102', 'occupied', True))
+        # 舊帳款還在舊房間，不會被搬到新地址
+        after = {c['id']: c['room'] for c in self.ok(self.call('GET', '/api/landlord/finance/charges'))['items'] if c['id'] in old_charges}
+        self.assertTrue(after)
+        self.assertTrue(all(room == '101' for room in after.values()))
+
+    def change_start(self, new_start, rent=15000):
+        tenant = self.ok(self.call('GET', '/api/landlord/tenants/1'))
+        return self.ok(self.call('PATCH', '/api/landlord/tenants/1/lease', json={
+            'lease_start': new_start.isoformat(), 'lease_end': tenant['lease_end'], 'monthly_rent': rent,
+            'deposit_amount': 30000, 'payment_day': 5}))
+
+    def open_rent_periods(self):
+        with self.Session() as db:
+            return sorted((c.period_start, c.amount) for c in db.query(LandlordCharge).filter_by(lease_id=1, kind='rent')
+                          if c.voided_at is None)
+
+    def test_changing_start_date_does_not_duplicate_rent(self):
+        # 2026-10-09 實測：起租日 10/9 改成 10/1，同一個月出現兩筆租金
+        month = TODAY.strftime('%Y-%m')
+        self.ok(self.call('GET', f'/api/landlord/finance/charges?month={month}'))
+        with self.Session() as db:
+            original_start = db.get(LandlordLease, 1).start_date
+        self.change_start(original_start + 8 * DAY)
+        self.ok(self.call('GET', f'/api/landlord/finance/charges?month={month}'))
+        periods = self.open_rent_periods()
+        starts = [start for start, _ in periods]
+        self.assertEqual(len(starts), len(set((s.year, s.month) for s in starts)), '每個月只能有一筆租金')
+        self.assertTrue(all(start.day == (original_start + 8 * DAY).day or start.day >= 28 for start in starts))
+
+    def test_start_change_never_touches_paid_periods(self):
+        charges = self.ok(self.call('GET', '/api/landlord/finance/charges'))['items']
+        paid = next(c for c in charges if c['kind'] == 'rent')
+        self.ok(self.call('POST', f"/api/landlord/finance/charges/{paid['id']}/payments",
+                          json={'amount': 15000, 'paid_on': TODAY.isoformat()}), 201)
+        with self.Session() as db:
+            start = db.get(LandlordLease, 1).start_date
+        self.change_start(start + 8 * DAY)
+        with self.Session() as db:
+            charge = db.get(LandlordCharge, paid['id'])
+            self.assertIsNone(charge.voided_at)  # 已收款的不動，留給房東確認
+            self.assertTrue(any(e.kind == 'needs_review' for e in charge.events))
 
     def test_landlord_absorbed_bill_creates_no_receivable(self):
         payload = {'property_id': 1, 'month': TODAY.strftime('%Y-%m'), 'due_date': TODAY.isoformat(), 'rows': [

@@ -41,6 +41,10 @@ export interface LandlordCharge {
   reminded_at: string | null
   /** 租客回報已繳、房東還沒確認收齊 */
   tenant_report: { at: string; detail: string } | null
+  /** 繳款證明、租客異議、電表照片 */
+  evidence?: import('@/src/services/utilityEvidenceApi').UtilityEvidence[]
+  /** 跟租客簽約合約不符的地方 */
+  contract_mismatch?: import('@/src/services/utilityEvidenceApi').ChargeMismatch[]
   payments: LandlordChargePayment[]
   events: Array<{ kind: string; detail: string; at: string }>
 }

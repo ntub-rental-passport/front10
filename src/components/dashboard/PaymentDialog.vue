@@ -23,24 +23,25 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
-  submit: [form: { paidAt: string; method: PaymentMethod; note: string; proofName: string }]
+  submit: [form: { paidAt: string; method: PaymentMethod; note: string; proofName: string; proofFile?: File | null }]
 }>()
 
 const proofInput = ref<HTMLInputElement | null>(null)
 // 房東平台的租約：只是回報給房東，由房東確認入帳；不收憑證檔（後端不存，說了會誤導）
 const isLandlordLease = computed(() => props.targetCycle?.cycle.source === 'landlord')
-const form = ref({
+const form = ref<{ paidAt: string; method: PaymentMethod; note: string; proofName: string; proofFile: File | null }>({
   paidAt: formatIso(startOfToday()),
-  method: 'bank-transfer' as PaymentMethod,
+  method: 'bank-transfer',
   note: '',
   proofName: '',
+  proofFile: null,
 })
 
 watch(
   () => props.targetCycle,
   (cycle) => {
     if (!cycle) return
-    form.value = { paidAt: formatIso(startOfToday()), method: 'bank-transfer', note: '', proofName: '' }
+    form.value = { paidAt: formatIso(startOfToday()), method: 'bank-transfer', note: '', proofName: '', proofFile: null }
     if (proofInput.value) proofInput.value.value = ''
   },
 )
@@ -48,6 +49,7 @@ watch(
 function handleProofChange(event: Event) {
   const input = event.target as HTMLInputElement
   form.value.proofName = input.files?.[0]?.name ?? ''
+  form.value.proofFile = input.files?.[0] ?? null
 }
 
 function statusBadgeClass(status: CycleStatus): string {
@@ -132,8 +134,8 @@ function statusLabel(status: CycleStatus): string {
           備註可以填轉帳末五碼，方便房東對帳。
         </p>
 
-        <div v-if="!isLandlordLease" class="space-y-2">
-          <Label for="payment-proof">轉帳截圖或憑證</Label>
+        <div class="space-y-2">
+          <Label for="payment-proof">轉帳截圖或憑證{{ isLandlordLease ? '（建議附上，房東與後台都看得到）' : '' }}</Label>
           <Input
             id="payment-proof"
             ref="proofInput"
@@ -143,7 +145,7 @@ function statusLabel(status: CycleStatus): string {
             @change="handleProofChange"
           />
           <p class="text-xs text-slate-500">
-            {{ form.proofName ? `已選擇：${form.proofName}` : '目前先記錄檔名，之後可再接正式上傳流程。' }}
+            {{ form.proofName ? `已選擇：${form.proofName}` : isLandlordLease ? '檔案會存在伺服器，作為你已繳款的證據。' : '目前先記錄檔名，之後可再接正式上傳流程。' }}
           </p>
         </div>
 

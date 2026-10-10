@@ -477,6 +477,46 @@ CREATE TABLE `landlord_charge_events` (
   INDEX `idx_landlord_charge_events_charge` (`charge_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `utility_evidence` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `charge_id` INT NOT NULL,
+  `kind` ENUM('meter_photo','tenant_reading','payment_proof','charge_dispute') NOT NULL COMMENT 'meter_photo=電表照片、tenant_reading=租客回報讀數、payment_proof=繳款證明、charge_dispute=租客對帳款金額的異議',
+  `role` ENUM('landlord','tenant') NOT NULL,
+  `submitted_by` INT DEFAULT NULL,
+  `reading` DECIMAL(12,2) DEFAULT NULL COMMENT '租客回報的本期讀數',
+  `amount` INT DEFAULT NULL COMMENT '異議：租客認為依合約應收的金額',
+  `stored_name` VARCHAR(64) DEFAULT NULL COMMENT '伺服器產生的照片檔名（UTILITY_PHOTO_DIR 下）',
+  `original_name` VARCHAR(255) DEFAULT NULL,
+  `note` TEXT DEFAULT NULL,
+  `status` ENUM('open','accepted','kept') NOT NULL DEFAULT 'open' COMMENT '租客讀數：待處理／房東採用／房東維持原讀數',
+  `response` TEXT DEFAULT NULL COMMENT '房東的回覆',
+  `resolved_by` INT DEFAULT NULL,
+  `resolved_at` DATETIME(6) DEFAULT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`charge_id`) REFERENCES `landlord_charges`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`submitted_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`resolved_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  INDEX `idx_utility_evidence_charge` (`charge_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `lease_contract_links` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `lease_id` INT NOT NULL COMMENT '房東平台上的租約',
+  `rental_id` INT NOT NULL COMMENT '租客自己存的合約（紙本簽約內容）',
+  `tenant_user_id` INT DEFAULT NULL,
+  `differences` JSON DEFAULT NULL COMMENT '最近一次逐項比對的差異',
+  `landlord_note` TEXT DEFAULT NULL COMMENT '房東對差異的說明',
+  `landlord_noted_at` DATETIME(6) DEFAULT NULL,
+  `term_history` JSON DEFAULT NULL COMMENT '對應之後房東修改租約條件的紀錄',
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  FOREIGN KEY (`lease_id`) REFERENCES `landlord_leases`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`tenant_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  UNIQUE KEY `uq_lease_contract_links_lease` (`lease_id`),
+  INDEX `idx_lease_contract_links_rental` (`rental_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `landlord_expenses` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `landlord_id` INT NOT NULL,

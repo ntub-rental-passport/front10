@@ -20,7 +20,9 @@ export function extractUtilityFields(raw, mode) {
 }
 
 export function registerUtilityOcr(app, { requireAuth, imageClient, usageReporter }) {
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 1, fieldSize: 32, parts: 2 } }).single('file')
+  // parts 要 3：一張照片 + 一個 mode 欄位剛好 2 個部分，multer 2.2 到達上限就判定超過（LIMIT_PART_COUNT），
+  // 設 2 會讓每一次上傳都被擋下。檔案與欄位數量另有 files: 1、fields: 1 把關。
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 1, fieldSize: 32, parts: 3 } }).single('file')
   const receive = (req, res, next) => upload(req, res, error => {
     if (error) return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 422).json({ error: '請上傳一張 10MB 以下的照片，並選擇辨識類型。' })
     next()

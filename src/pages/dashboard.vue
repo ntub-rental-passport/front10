@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
@@ -24,6 +24,9 @@ import {
 import ConfirmDialog from '@/src/components/dashboard/ConfirmDialog.vue'
 import PaymentDialog from '@/src/components/dashboard/PaymentDialog.vue'
 import UtilityDialog from '@/src/components/dashboard/UtilityDialog.vue'
+import LandlordUtilityDialog from '@/src/components/dashboard/LandlordUtilityDialog.vue'
+import ContractLinkCard from '@/src/components/dashboard/ContractLinkCard.vue'
+import ChargeDisputeDialog from '@/src/components/dashboard/ChargeDisputeDialog.vue'
 import { utilityPayerLabel } from '@/src/utils/utility-billing'
 import { useDashboard } from '@/src/composables/useDashboard'
 import { paymentMethodLabel } from '@/src/utils/dashboard-contract'
@@ -113,6 +116,31 @@ const {
   totalAmountLabel,
   confirmUndoCyclePaid,
 } = useDashboard()
+
+// ---------- 房東平台租約：電費對帳 ----------
+const landlordUtilityOpen = ref(false)
+const landlordUtilityCycleId = ref<string | null>(null)
+const landlordUtilityCycle = computed(() =>
+  contractViews.value.flatMap((contract) => contract.cycles).find((item) => item.cycle.id === landlordUtilityCycleId.value) ?? null,
+)
+function openLandlordUtility(cycleId: string) {
+  landlordUtilityCycleId.value = cycleId
+  landlordUtilityOpen.value = true
+}
+
+// ---------- 帳款與簽約合約不符：提出異議 ----------
+const disputeOpen = ref(false)
+const disputeCycleId = ref<string | null>(null)
+const disputeCycle = computed(() =>
+  contractViews.value.flatMap((contract) => contract.cycles).find((item) => item.cycle.id === disputeCycleId.value) ?? null,
+)
+function openDispute(cycleId: string) {
+  disputeCycleId.value = cycleId
+  disputeOpen.value = true
+}
+const activeLeaseId = computed(() =>
+  activeContractView.value?.source === 'landlord' ? Number(activeContractView.value.id.replace('lease:', '')) : null,
+)
 </script>
 
 <template>
@@ -326,6 +354,7 @@ const {
 
       <!-- 右側：選中租約詳情 row 2, col 2 -->
       <div v-if="activeContractView" class="min-w-0 space-y-3 lg:col-start-2 lg:row-start-2">
+        <ContractLinkCard v-if="activeLeaseId" :lease-id="activeLeaseId" @changed="loadContracts" />
         <!-- 租約資訊 Header Card -->
         <Card :class="['overflow-hidden rounded-2xl border shadow-sm', accentStyles[activeContractView.accent].selected]">
           <CardContent class="p-5">
@@ -566,6 +595,20 @@ const {
                         @click.stop="openUtilityDialog(cycleItem.cycle.id)"
                       >{{ cycleItem.cycle.paidAt ? '水電明細' : cycleItem.utilityReady ? '編輯水電' : '填寫水電' }}</Button>
                       <Button
+                        v-else-if="cycleItem.cycle.electricityChargeId"
+                        size="sm"
+                        variant="outline"
+                        class="m-1 h-7 rounded-lg px-2.5 text-[11px]"
+                        @click.stop="openLandlordUtility(cycleItem.cycle.id)"
+                      >電費對帳<template v-if="cycleItem.cycle.utilityEvidence?.some((item) => item.kind === 'tenant_reading' && item.status === 'open')">・處理中</template></Button>
+                      <Button
+                        v-if="activeContractView.source === 'landlord' && (cycleItem.cycle.contractMismatch?.length || cycleItem.cycle.rentEvidence?.some((item) => item.kind === 'charge_dispute'))"
+                        size="sm"
+                        variant="outline"
+                        class="m-1 h-7 rounded-lg border-amber-400 px-2.5 text-[11px] text-amber-700"
+                        @click.stop="openDispute(cycleItem.cycle.id)"
+                      >{{ cycleItem.cycle.contractMismatch?.length ? '與合約不符・異議' : '異議紀錄' }}</Button>
+                      <Button
                         v-if="!cycleItem.cycle.paidAt && cycleItem.status !== 'upcoming'"
                         size="sm"
                         class="h-7 rounded-lg bg-slate-900 px-2.5 text-[11px] font-semibold text-white hover:bg-slate-800"
@@ -801,6 +844,18 @@ const {
       :error="utilityError"
       @update:open="utilityDialogOpen = $event"
       @save="submitUtilities"
+    />
+    <ChargeDisputeDialog
+      :open="disputeOpen"
+      :target-cycle="disputeCycle"
+      @update:open="disputeOpen = $event"
+      @changed="loadContracts"
+    />
+    <LandlordUtilityDialog
+      :open="landlordUtilityOpen"
+      :target-cycle="landlordUtilityCycle"
+      @update:open="landlordUtilityOpen = $event"
+      @changed="loadContracts"
     />
     <PaymentDialog
       :open="paymentDialogOpen"
