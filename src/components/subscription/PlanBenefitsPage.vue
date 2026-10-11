@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Check, CreditCard, Gauge, Layers3, Sparkles } fr
 import { planFeatures, type PlanRole } from '@/src/utils/subscription-plans'
 import { usePlanOverview } from '@/src/composables/usePlanOverview'
 import PlanUsage from './PlanUsage.vue'
+import PlanBenefits from '@/src/components/PlanBenefits.vue'
 
 const props = defineProps<{ role: PlanRole }>()
 const { currentPlan, usage, loading, error, refresh } = usePlanOverview(props.role)
@@ -78,7 +79,8 @@ const freePlanned = new Set(['室友共享上限', '附件總容量'])
           <PlanUsage :items="usage" :loading="loading" />
           <p v-if="error" class="plan-notice" role="alert">資料暫時無法更新，請稍後重試。</p>
         </section>
-        <section class="plan-panel">
+        <PlanBenefits v-if="role === 'landlord'" :current-plan="currentPlan.key" />
+        <section v-else class="plan-panel">
           <header class="plan-panel-heading">
             <div>
               <h2><Sparkles :size="20" />功能權益</h2>
