@@ -483,6 +483,7 @@ def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depend
     item = owned_item(db, item_id, user, lock=True)
     claim_version(db, item, item.version)
     records = item_records(item, True)
+    photo_urls = [record.photo_url for record in records]
     db.delete(item)
     db.flush()
     for record in records:
@@ -562,6 +563,7 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
             if detail is None:
                 detail = InspectionPhotoDetail(record_id=old_record.id, item_id=item.id, angle='other', provenance={})
                 db.add(detail)
+            # 重拍的舊照片仍由歷程紀錄參照，保留照片檔。
             detail.superseded_by = record.id
         db.commit()
     except Exception:
@@ -569,7 +571,6 @@ def upload_photo(item_id: int, phase: Literal['baseline', 'checkout'], payload: 
         path.unlink(missing_ok=True)
         original_path.unlink(missing_ok=True)
         raise
-    delete_photo_files(db, photo_urls)
     return item_json(item)
 
 
@@ -585,6 +586,7 @@ def delete_photo(item_id: int, record_id: int, db: Session = Depends(get_db), us
     if detail is None:
         detail = InspectionPhotoDetail(record_id=record_id, item_id=item.id, angle='other', provenance={})
         db.add(detail)
+    # 只標記移除，歷程仍需讀取照片檔。
     detail.removed_at = datetime.utcnow()
     if getattr(item, phase + '_record_id') == record_id:
         setattr(item, phase, next((r for r in item_records(item) if r.id != record_id and r.type == record.type), None))
@@ -645,7 +647,6 @@ def update_photo_note(item_id: int, record_id: int, payload: NoteRequest,
     detail.provenance = info
     record.user_note = payload.note
     db.commit()
-    delete_photo_files(db, photo_urls)
     return item_json(item)
 
 
