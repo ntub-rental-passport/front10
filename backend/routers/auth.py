@@ -73,7 +73,40 @@ STATE_MAX_AGE_SECONDS = 10 * 60
 TICKET_MAX_AGE_SECONDS = 2 * 60
 ALLOWED_ROLES = {"tenant", "landlord"}
 REGISTRATION_TOKEN_MAX_AGE_SECONDS = 10 * 60
-password_hasher = PasswordHasher()
+# 密碼雜湊參數：RFC 9106 的第二組建議值（argon2id, t=2, m=19 MiB, p=1）。
+#
+# ## 為什麼不用 argon2-cffi 的預設值
+#
+# 預設是 t=3 / m=64 MiB / p=4。安全性更高，但成本是**每一次登入**都要付的，
+# 而登入在這個系統裡是會「一整班同時發生」的事 —— 學校的課堂上幾十個學生
+# 同一分鐘按下登入。實測（4 核機器，取 3 輪最佳值）：
+#
+#               預設 t=3/64MiB/p=4      這組 t=2/19MiB/p=1
+#   1 個並行            113 ms                   22 ms
+#  10 個並行            858 ms                  115 ms
+#  30 個並行           2120 ms                  246 ms
+#
+# 2 vCPU 的正式站大約再乘 2 倍，也就是一整班同時登入要等 4 秒以上 ——
+# 這不是「慢一點」，是使用者會重新整理、然後把同一波請求再打一次的程度。
+# 記憶體也從每筆 64 MiB 降到 19 MiB，30 個並行是 1.9 GiB → 570 MiB 的差別。
+#
+# ## 這是一個取捨，不是免費的優化
+#
+# 降低參數就是降低離線破解的成本：真的被拖走整張 users 表時，
+# 攻擊者每猜一次密碼便宜了大約 5 倍。接受這個代價的前提是
+# RFC 9106 把這組參數列為建議值（給記憶體受限環境的第二選擇），
+# 它仍遠高於 bcrypt/PBKDF2 等舊方案，而且我們另外靠
+# platform_settings 的密碼長度下限與管理員信箱二階段驗證補強。
+#
+# ## 既有密碼不會失效
+#
+# argon2 的 hash 字串本身就帶著當初用的參數
+# （`$argon2id$v=19$m=65536,t=3,p=4$...`），verify 讀的是字串裡的參數，
+# 不是這裡設定的參數 —— 舊 hash 照樣驗得過（已實測）。
+# 而 /login 成功後會呼叫 check_needs_rehash()，對舊的 64 MiB hash 回 True，
+# 於是用這組新參數重新 hash 寫回。使用者下次登入即自動完成遷移，
+# 不需要任何資料庫批次作業，也不需要叫任何人重設密碼。
+password_hasher = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
 
 _oauth_tickets: dict[str, dict[str, object]] = {}
 _ticket_lock = threading.Lock()
