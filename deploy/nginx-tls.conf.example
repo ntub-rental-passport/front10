@@ -125,8 +125,55 @@ server {
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gstatic.com https://cdn.jsdelivr.net https://api.qrserver.com https://placehold.co https://picsum.photos https://tiles.openfreemap.org https://*.googleusercontent.com; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; form-action 'self'; base-uri 'self'; frame-ancestors 'none'" always;
 
     # ===== 路由 + 分段限流（與 HTTP 版相同）=====
+
+    # 這兩個唯讀／無密碼的 auth 端點刻意從 login_limit 拆出來，改走寬鬆的 api_limit。
+    #
+    # 2026-10-13 診斷「學校網路登入要等很久」的根因就在這裡：下面的 location /api/auth/
+    # 是 prefix match，會一併蓋住 /api/auth/me —— 而 /me 是前端每次進站都會打的
+    # 登入狀態查詢（src/services/authApi.ts 的 fetchCurrentUser），不是使用者按下登入才發生的。
+    # 再加上 real_ip_header CF-Connecting-IP 取回的是使用者的公開 IP，校園網路全校走同一組
+    # NAT 出口，$binary_remote_addr 對校內所有人是同一個值 → 全校共用同一份配額。
+    # 一堂課 30 個學生同時開網站，光是 /me 就把 login_limit 的 2r/s 吃乾，
+    # 真正的登入請求反而撞牆拿到 429，使用者看到的就是「卡住」。
+    #
+    # 為什麼拆得掉而不算放寬防線：這兩個端點都不驗密碼 —— /me 只是拿 cookie 查自己是誰，
+    # /logout 只是清 session，都不是密碼暴力破解的標的，留在嚴格額度裡換不到安全性。
+    #
+    # 為什麼用 location =：精確比對在 nginx 的優先權最高，早於 ^~ 也早於 prefix match，
+    # 所以這兩條會穩定贏過 location /api/auth/ 與 location ^~ /api/，
+    # 且因為是精確比對，其他 /api/auth/* 端點（login、register…）完全不受影響。
+    location = /api/auth/me {
+        limit_req zone=api_limit burst=20 nodelay;
+        proxy_pass http://fastapi:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /api/auth/logout {
+        limit_req zone=api_limit burst=20 nodelay;
+        proxy_pass http://fastapi:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location /api/auth/ {
-        limit_req zone=login_limit burst=5 nodelay;
+        # burst=30 delay=10（原為 burst=5 nodelay），但 rate=2r/s 維持不動。
+        #
+        # 為什麼 rate 絕對不能調大：2026-10-13 查過 backend/routers/auth.py:345-388 的 /login，
+        # 後端完全沒有帳號層的登入失敗鎖定（auth.py 裡的 attempts_remaining 全是給
+        # 註冊驗證碼與管理員 2FA 用的，schema 裡也沒有 failed_login_count／locked_until 欄位）。
+        # 前端 src/utils/login-lockout.ts 的鎖定只存在 localStorage，攻擊者用 curl 直接繞過。
+        # 也就是說，這條 nginx 限流是密碼暴力破解「唯一」的真實防線，一放寬就等於沒有防護。
+        #
+        # 所以改的是「超量時怎麼處理」而不是速率：前 10 個請求立刻放行（delay=10），
+        # 第 11~30 個不回錯誤而是排隊、以 2r/s 慢慢放行，超過 30 才回 429。
+        # 持續速率仍然是 2r/s，暴力破解者一點好處都拿不到；
+        # 但一整班同時登入的尖峰變成「稍等幾秒」，而不是看到假的服務中斷錯誤。
+        limit_req zone=login_limit burst=30 delay=10;
         proxy_pass http://fastapi:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
