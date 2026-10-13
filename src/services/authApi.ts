@@ -55,11 +55,44 @@ const CONFIGURED_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').re
 const API_BASE_URL = import.meta.env.DEV ? '/api' : CONFIGURED_API_BASE_URL
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>
 
-async function authFetch(url: string, init: FetchInit): Promise<Response> {
+/**
+ * 帳號服務的逾時上限。
+ *
+ * 比 garbageApi 的 15 秒寬鬆 —— 登入要在伺服器上跑一次 argon2，
+ * 尖峰時本來就慢，不該在它正要回來的時候放棄。但一定要有上限：
+ * 沒有逾時的 fetch 在連線卡住時既不成功也不失敗，畫面只會無限期轉圈，
+ * 使用者得不到任何回饋，只能一直重按。
+ */
+const AUTH_TIMEOUT_MS = 20000
+
+/**
+ * 「回應過慢」和「連不上」必須分開講。
+ *
+ * 兩者該做的事完全不同：連不上通常是後端沒啟動（開發時最常見），
+ * 逾時代表後端活著、只是來不及回應，使用者該做的是等幾秒再試。
+ * 以前兩種都說「請確認後端已啟動」，在正式站上只是誤導。
+ *
+ * 訊息尾端帶錯誤碼，讓上層（useAuth）能分辨；直接顯示 message 的頁面
+ * 也還讀得懂前半句。
+ */
+const TIMEOUT_MESSAGE = '帳號服務回應過慢，請稍後再試。(request-timeout)'
+const OFFLINE_MESSAGE = '無法連線到帳號服務，請確認後端已啟動後再試。'
+
+/** nginx 的 limit_req 擋下來時的訊息；註冊、登入共用，所以不寫「登入」。 */
+const RATE_LIMITED_MESSAGE = '伺服器忙碌中，請稍候幾秒後再試。(rate-limited)'
+
+async function authFetch(url: string, init: FetchInit = {}): Promise<Response> {
+  const timeout = AbortSignal.timeout(AUTH_TIMEOUT_MS)
+  // 呼叫端可能已經帶了自己的 signal；直接塞 signal 會把它無聲蓋掉，
+  // 所以兩個併成「任一中止就中止」。
+  const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout
   try {
-    return await fetch(url, init)
-  } catch {
-    throw new Error('無法連線到帳號服務，請確認後端已啟動後再試。')
+    return await fetch(url, { ...init, signal })
+  } catch (error) {
+    // 呼叫端自己取消的要原樣往上丟 —— 那不是連線出問題，是呼叫端的決定，
+    // 包成「無法連線」只會讓它被當成錯誤顯示給使用者。
+    if (init.signal?.aborted) throw error
+    throw new Error(timeout.aborted ? TIMEOUT_MESSAGE : OFFLINE_MESSAGE)
   }
 }
 
@@ -110,6 +143,13 @@ async function postAuth<T>(path: string, payload: unknown): Promise<T> {
     credentials: 'include',
     body: JSON.stringify(payload),
   })
+  // 429 要在讀 body 之前單獨攔下來。nginx 的限流（limit_req_status 429）回的是
+  // HTML 錯誤頁，body?.detail 永遠讀不到，落到下面的通用分支就變成
+  // 「驗證服務暫時無法使用」—— 上層只能判成服務中斷，於是叫被限流的人重試，
+  // 而重試正是限流最怕的事。這裡丟出帶 rate-limited 的錯誤，讓上層說對話。
+  if (response.status === 429) {
+    throw new Error(RATE_LIMITED_MESSAGE)
+  }
   const body = (await response.json().catch(() => null)) as (T & { detail?: string }) | null
   if (!response.ok) {
     throw new Error(body?.detail || '驗證服務暫時無法使用，請稍後再試。')
@@ -120,9 +160,12 @@ async function postAuth<T>(path: string, payload: unknown): Promise<T> {
 
 /** 以 JWT cookie 向後端查詢目前登入者；未登入（401）回傳 null。 */
 export async function fetchCurrentUser(): Promise<EmailLoginResponse | null> {
-  const response = await fetch(`${API_BASE_URL}/auth/me`, {
+  const response = await authFetch(`${API_BASE_URL}/auth/me`, {
     credentials: 'include',
   })
+  // 被限流不等於沒登入。這裡回 null 的話 syncSessionWithServer 會清掉本機 session，
+  // 把「伺服器太忙」變成「被登出」—— 寧可丟錯誤讓呼叫端保留登入狀態。
+  if (response.status === 429) throw new Error(RATE_LIMITED_MESSAGE)
   if (!response.ok) return null
   return await response.json().catch(() => null)
 }

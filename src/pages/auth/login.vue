@@ -52,6 +52,7 @@ const rememberMe = ref(false)
 const showPassword = ref(false)
 const hasSubmitted = ref(false)
 const loginError = ref('')
+const submitting = ref(false)
 const googleLoginPending = ref(false)
 const router = useRouter()
 const route = useRoute()
@@ -121,37 +122,56 @@ const loginErrorMessages: Record<EmailSignInError, string> = {
   'invalid-password': '密碼不正確，請重新輸入。',
   'role-mismatch': '此帳號的租客／房東身分與目前選擇不符。',
   'email-not-verified': '此帳號尚未完成電子郵件驗證。',
+  // 這是「太多人同時登入」，不是連不上、也不是帳密錯誤。說成無法連線會讓人
+  // 一直重試，而重試只會讓限流更嚴重；所以明確要求等幾秒。
+  'rate-limited': '目前登入人數較多，請稍候約 10 秒後再按一次登入。',
+  'request-timeout': '登入服務回應過慢，請稍候幾秒後再試一次。',
   'service-unavailable': '目前無法連線登入服務，請稍後再試。',
 }
 
 async function handleLogin(): Promise<void> {
-  hasSubmitted.value = true
-  loginError.value = ''
-  if (emailState.value === 'error' || passwordState.value === 'error') return
+  // 擋重複送出。按鈕原本沒有任何 loading 回饋，使用者會以為沒點到而連點，
+  // 而每一次連點都是一個完整的登入請求 —— 伺服器各跑一次 argon2，
+  // 也各吃掉一份出口 IP 共用的限流額度，愈急就愈慢。
+  if (submitting.value) return
+  submitting.value = true
 
-  const policy = LOGIN_LOCKOUT_POLICY
-  const lockout = evaluateLockout(getAttemptRecord(email.value), policy)
-  if (lockout.locked) {
-    loginError.value = `登入失敗次數過多，請於 ${lockout.unlocksInMinutes} 分鐘後再試。`
-    return
-  }
+  // 中間有好幾個提早 return（驗證失敗、鎖定、各種錯誤分支），所以用 finally
+  // 統一還原，少還原任何一條路都會讓按鈕永久卡在停用狀態。
+  // 成功路徑導頁後元件會卸載，此時這個寫入只是對已停止的響應式作用域賦值，
+  // 不會有警告；而且 router.push 若被守衛取消（頁面還在），按鈕得以恢復可用。
+  try {
+    hasSubmitted.value = true
+    loginError.value = ''
+    if (emailState.value === 'error' || passwordState.value === 'error') return
 
-  const result = await signInWithEmail(email.value, password.value, selectedOption.value.authRole)
-  if ('error' in result) {
-    // 只有帳密錯誤才計次；服務中斷不是使用者的問題，不該因此把人鎖住
-    if (result.error === 'invalid-password' || result.error === 'account-not-found') {
-      const next = evaluateLockout(recordFailure(email.value), policy)
-      loginError.value = next.locked
-        ? `登入失敗次數過多，請於 ${next.unlocksInMinutes} 分鐘後再試。`
-        : `${loginErrorMessages[result.error]}（剩餘 ${next.remainingAttempts} 次機會）`
+    const policy = LOGIN_LOCKOUT_POLICY
+    const lockout = evaluateLockout(getAttemptRecord(email.value), policy)
+    if (lockout.locked) {
+      loginError.value = `登入失敗次數過多，請於 ${lockout.unlocksInMinutes} 分鐘後再試。`
       return
     }
-    loginError.value = loginErrorMessages[result.error]
-    return
-  }
 
-  clearAttempts(email.value)
-  await router.push(getPostLoginTarget())
+    const result = await signInWithEmail(email.value, password.value, selectedOption.value.authRole)
+    if ('error' in result) {
+      // 只有帳密錯誤才計次；服務中斷、被限流、逾時都不是使用者的問題，
+      // 不該因此把人鎖住 —— 被限流的人若還要被鎖 15 分鐘，等於懲罰他同學手快。
+      if (result.error === 'invalid-password' || result.error === 'account-not-found') {
+        const next = evaluateLockout(recordFailure(email.value), policy)
+        loginError.value = next.locked
+          ? `登入失敗次數過多，請於 ${next.unlocksInMinutes} 分鐘後再試。`
+          : `${loginErrorMessages[result.error]}（剩餘 ${next.remainingAttempts} 次機會）`
+        return
+      }
+      loginError.value = loginErrorMessages[result.error]
+      return
+    }
+
+    clearAttempts(email.value)
+    await router.push(getPostLoginTarget())
+  } finally {
+    submitting.value = false
+  }
 }
 
 const googleOAuthErrorMessages: Record<string, string> = {
@@ -160,6 +180,15 @@ const googleOAuthErrorMessages: Record<string, string> = {
   missing_config: '後端尚未設定 Google Client Secret。',
   verification_failed: 'Google 帳號驗證失敗，請稍後再試。',
 }
+
+/**
+ * Google 按鈕何時不該再被按。
+ *
+ * 本來只看 googleLoginPending（換票證中）。但帳密登入正在送出時也該擋：
+ * 這個連結一按就跳到 /auth/google/start，同樣吃限流額度，而且會把使用者
+ * 帶離頁面、讓剛剛送出的那次登入白做。
+ */
+const googleLoginBlocked = computed(() => googleLoginPending.value || submitting.value)
 
 async function clearGoogleOAuthQuery(): Promise<void> {
   const nextQuery = { ...route.query }
@@ -330,8 +359,14 @@ onMounted(handleGoogleOAuthReturn)
         </label>
 
         <div class="auth-login-actions">
-          <Button type="submit" size="lg" class="auth-primary-button">
-            登入
+          <Button
+            type="submit"
+            size="lg"
+            class="auth-primary-button"
+            :disabled="submitting"
+            :aria-busy="submitting"
+          >
+            {{ submitting ? '登入中…' : '登入' }}
           </Button>
 
           <div class="auth-divider" aria-hidden="true">
@@ -344,8 +379,8 @@ onMounted(handleGoogleOAuthReturn)
             :href="googleLoginUrl"
             class="auth-google-button"
             :aria-busy="googleLoginPending"
-            :aria-disabled="googleLoginPending"
-            @click="googleLoginPending && $event.preventDefault()"
+            :aria-disabled="googleLoginBlocked"
+            @click="googleLoginBlocked && $event.preventDefault()"
           >
             <img
               src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
