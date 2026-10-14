@@ -1,5 +1,7 @@
 # 點交資料與影像比對
 
+> 更新（2026-10-08）：目前 `routers/inspection.py` 也支援租客可見的房東租約，以 `lease:<id>` 區分，並保存拍攝來源與品質。既有環境須核對 `20261002_inspection_capture_provenance.sql`、`20261006_inspection_landlord_leases.sql`。下方「只使用 rentals」為舊階段描述；兩套租約不會自動互轉，但目前可以直接以授權的房東租約作為點交目標。整體說明見 [架構](technical/architecture.md)。
+
 資料結構以 `backend/db/database.sql` 為準，ORM 與 API 依照其中的欄位、型別及外鍵實作。
 本次沿用 `rentals`、`inspection_records`，並在同一份 SQL 中新增 `inspection_items` 儲存項目與比對結果。
 

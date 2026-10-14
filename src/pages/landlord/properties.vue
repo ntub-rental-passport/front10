@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   AlertCircle,
   Building2,
@@ -300,7 +301,13 @@ async function removeRoom() {
   }
 }
 
-onMounted(() => loadProperties())
+// 從合約對照的「修改棟別地址」連過來：?property=<id>&edit=1 直接打開那一棟的編輯視窗
+const route = useRoute()
+onMounted(async () => {
+  const wanted = Number(route.query.property) || undefined
+  await loadProperties(wanted)
+  if (wanted && route.query.edit === '1' && selectedId.value === wanted) openEditBuilding()
+})
 </script>
 
 <template>

@@ -37,6 +37,7 @@ interface PaymentRecordForm {
   method: PaymentMethod
   note: string
   proofName: string
+  proofFile?: File | null
 }
 
 function buildCycleView(contract: RentalContract, cycle: RentalContract['cycles'][number], index: number, firstUnpaidIndex: number): CycleView {
@@ -75,6 +76,16 @@ function findCycleLocation(contracts: RentalContract[], cycleId: string): [numbe
 function findCycleViewById(contracts: ContractView[], cycleId: string | null): CycleView | null {
   if (!cycleId) return null
   return contracts.flatMap((contract) => contract.cycles).find((cycle) => cycle.cycle.id === cycleId) ?? null
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  if (file.size > 10 * 1024 * 1024) return Promise.reject(new Error('繳款證明不可超過 10MB。'))
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('檔案讀取失敗'))
+    reader.onload = () => resolve(String(reader.result))
+    reader.readAsDataURL(file)
+  })
 }
 
 function scrollToCycle(cycleId: string) {
@@ -309,6 +320,7 @@ export function useDashboard() {
           paid_at: form.paidAt,
           payment_method: form.method,
           payment_note: form.note.trim(),
+          ...(form.proofFile ? { proof: { name: form.proofFile.name, data: await readAsDataUrl(form.proofFile) } } : {}),
         })
         : await recordBillPayment(cycle.id, {
           paid_at: form.paidAt,

@@ -85,6 +85,19 @@ def delete_photo_files(db, photo_urls):
             logging.getLogger(__name__).warning('點交照片刪檔失敗：%s', name, exc_info=True)
 
 
+def delete_original_files(names):
+    for name in names:
+        if not isinstance(name, str) or not re.fullmatch(r'[0-9a-f]{32}\.original', name):
+            continue
+        try:
+            directory = photo_directory().resolve()
+            path = directory / name
+            if path.resolve().is_relative_to(directory):
+                path.unlink(missing_ok=True)
+        except OSError:
+            logging.getLogger(__name__).warning('點交原始檔刪除失敗：%s', name, exc_info=True)
+
+
 def read_photo(record):
     # Only server-generated filenames may be read; never fetch arbitrary URLs.
     if not re.fullmatch(r'[0-9a-f]{32}\.jpg', record.photo_url):
@@ -447,7 +460,8 @@ def properties(db: Session = Depends(get_db), user: User = Depends(get_current_t
     from routers import landlord_lease_rules as rules
     from routers.tenant_leases import tenant_visible_leases
 
-    rentals = db.query(Rental).filter(Rental.user_id == user.id).order_by(Rental.created_at.desc()).all()
+    # 已對應到房東平台租約的自存合約不列：點交要記在房東那份，房東才看得到
+    rentals = db.query(Rental).filter(Rental.user_id == user.id, Rental.rental_status != 'linked').order_by(Rental.created_at.desc()).all()
     items = [{'id': str(r.id), 'alias': r.contract_tag or f'租約 #{r.id}', 'source': 'self',
               'address': r.address, 'createdAt': timestamp(r.created_at)} for r in rentals]
     for lease in tenant_visible_leases(db, user):
@@ -484,12 +498,15 @@ def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depend
     claim_version(db, item, item.version)
     records = item_records(item, True)
     photo_urls = [record.photo_url for record in records]
+    originals = [(db.get(InspectionPhotoDetail, record.id).provenance or {}).get('originalPath')
+                 for record in records if db.get(InspectionPhotoDetail, record.id)]
     db.delete(item)
     db.flush()
     for record in records:
         db.delete(record)
     db.commit()
     delete_photo_files(db, photo_urls)
+    delete_original_files(originals)
 
 
 @router.put('/items/{item_id}/photos/{phase}')
@@ -586,7 +603,7 @@ def delete_photo(item_id: int, record_id: int, db: Session = Depends(get_db), us
     if detail is None:
         detail = InspectionPhotoDetail(record_id=record_id, item_id=item.id, angle='other', provenance={})
         db.add(detail)
-    # 只標記移除，歷程仍需讀取照片檔。
+    # 單張刪除與重拍都只封存：照片留在歷史裡當存證，檔案要等整個項目刪掉才一起刪
     detail.removed_at = datetime.utcnow()
     if getattr(item, phase + '_record_id') == record_id:
         setattr(item, phase, next((r for r in item_records(item) if r.id != record_id and r.type == record.type), None))
