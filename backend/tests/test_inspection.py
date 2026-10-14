@@ -4,17 +4,20 @@ import io
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, PropertyMock, patch
 
+from cryptography.exceptions import InvalidTag
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import create_engine, event, inspect
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from db import database
+from db.encrypted_fields import EncryptedText
 from db.database import Base, get_db
 from db.models import User, UserRole, Rental, InspectionItem, InspectionRecord, InspectionPhotoDetail
 from routers import inspection
@@ -26,7 +29,8 @@ class InspectionTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.env = patch.dict(os.environ, {'AUTH_TOKEN_SECRET': 'inspection-test', 'INSPECTION_UPLOAD_DIR': directory.name})
+        self.env = patch.dict(os.environ, {'AUTH_TOKEN_SECRET': 'inspection-test', 'INSPECTION_UPLOAD_DIR': directory.name,
+            'PII_ENCRYPTION_KEY': base64.b64encode(b'i' * 32).decode()})
         self.env.start()
         self.addCleanup(self.env.stop)
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
@@ -80,6 +84,112 @@ class InspectionTests(unittest.TestCase):
         with self.Session() as db:
             return [inspection.photo_directory() / db.get(InspectionRecord, int(evidence['id'])).photo_url
                     for evidence in evidences]
+
+    def unreadable_rental(self, rental_id, invalid_format=False):
+        # 用不同金鑰寫入密文，才能驗證 ORM 載入列就失敗的情況，而不只是假造 address 讀取失敗。
+        with patch.dict(os.environ, {'PII_ENCRYPTION_KEY': base64.b64encode(b'o' * 32).decode()}):
+            ciphertext = EncryptedText(255).process_bind_param('Old landlord', self.engine.dialect)
+        with self.engine.begin() as conn:
+            conn.execute(text('UPDATE rentals SET landlord_name = :value WHERE id = :id'),
+                {'value': b'legacy plaintext' if invalid_format else ciphertext, 'id': rental_id})
+
+    def landlord_lease(self, lease_id, error=None, moved_out=False):
+        # 房東地址目前是文字欄位；模擬讀取時解密失敗，避免測試改動加密機制或資料表。
+        property_info = Mock()
+        property_info.name = 'Platform property'
+        type(property_info).address = PropertyMock(side_effect=error, return_value='Platform address')
+        return SimpleNamespace(id=lease_id, property=property_info, room=SimpleNamespace(number='101'),
+            status='ended' if moved_out else 'active', moved_out_at=None,
+            created_at=inspection.datetime(2026, 1, 1))
+
+    def test_properties_skips_unreadable_rental_and_logs_once(self):
+        with self.Session() as db:
+            db.get(Rental, 2).user_id = 1
+            db.get(Rental, 2).landlord_name = 'Readable landlord'
+            db.commit()
+        for invalid_format in (False, True):
+            with self.subTest(invalid_format=invalid_format):
+                self.unreadable_rental(1, invalid_format)
+                with self.assertLogs(inspection.__name__, level='ERROR') as logs:
+                    response = self.request('GET', '/properties')
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual([p['id'] for p in response.json()], ['2'])
+                self.assertEqual(response.json()[0]['address'], 'Test address')
+                self.assertEqual(logs.output, ['ERROR:routers.inspection:Inspection: rental 1 could not be decrypted; skipped'])
+
+    def test_properties_all_rentals_unreadable_reports_key_change(self):
+        for invalid_format in (False, True):
+            with self.subTest(invalid_format=invalid_format):
+                self.unreadable_rental(1, invalid_format)
+                with self.assertLogs(inspection.__name__, level='ERROR'):
+                    response = self.request('GET', '/properties')
+                self.assertEqual(response.status_code, 500, response.text)
+                self.assertIn('金鑰可能已變更', response.json()['detail'])
+                self.assertIn('管理員', response.json()['detail'])
+
+    def test_properties_skips_unreadable_landlord_address_and_logs_once(self):
+        with self.Session() as db:
+            db.get(Rental, 1).rental_status = 'linked'
+            db.commit()
+        for error in (InvalidTag(), ValueError('invalid personal data')):
+            with self.subTest(error=type(error).__name__):
+                leases = [self.landlord_lease(13, error), self.landlord_lease(14)]
+                with patch('routers.tenant_leases.tenant_visible_leases', return_value=leases):
+                    with self.assertLogs(inspection.__name__, level='ERROR') as logs:
+                        response = self.request('GET', '/properties')
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual([p['id'] for p in response.json()], ['lease:14'])
+                self.assertEqual(response.json()[0]['address'], 'Platform address')
+                self.assertEqual(logs.output, ['ERROR:routers.inspection:Inspection: lease 13 could not be decrypted; skipped'])
+
+    def test_properties_all_landlord_addresses_unreadable_reports_key_change(self):
+        with self.Session() as db:
+            db.get(Rental, 1).rental_status = 'linked'
+            db.commit()
+        with patch('routers.tenant_leases.tenant_visible_leases', return_value=[self.landlord_lease(13, InvalidTag())]):
+            with self.assertLogs(inspection.__name__, level='ERROR'):
+                response = self.request('GET', '/properties')
+        self.assertEqual(response.status_code, 500, response.text)
+        self.assertIn('金鑰可能已變更', response.json()['detail'])
+        self.assertIn('管理員', response.json()['detail'])
+
+    def test_properties_keeps_readable_lease_from_either_source(self):
+        for unreadable_source in ('self', 'landlord'):
+            with self.subTest(unreadable_source=unreadable_source):
+                if unreadable_source == 'self':
+                    self.unreadable_rental(1)
+                else:
+                    with self.engine.begin() as conn:
+                        conn.execute(text('UPDATE rentals SET landlord_name = NULL WHERE id = 1'))
+                lease = self.landlord_lease(13, InvalidTag() if unreadable_source == 'landlord' else None)
+                with patch('routers.tenant_leases.tenant_visible_leases', return_value=[lease]):
+                    with self.assertLogs(inspection.__name__, level='ERROR'):
+                        response = self.request('GET', '/properties')
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual([p['id'] for p in response.json()],
+                    ['lease:13'] if unreadable_source == 'self' else ['1'])
+
+    def test_properties_no_eligible_leases_returns_empty_list(self):
+        self.unreadable_rental(1)
+        with self.Session() as db:
+            db.query(Rental).filter(Rental.id == 1).update({'rental_status': 'linked'})
+            db.commit()
+        lease = self.landlord_lease(13, InvalidTag(), moved_out=True)
+        with patch('routers.tenant_leases.tenant_visible_leases', return_value=[lease]):
+            response = self.request('GET', '/properties')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), [])
+
+    def test_upload_photo_snapshot_survives_another_unreadable_rental(self):
+        item = self.item()
+        with self.Session() as db:
+            db.get(Rental, 2).user_id = 1
+            db.commit()
+        self.unreadable_rental(2)
+        with self.assertLogs(inspection.__name__, level='ERROR'):
+            uploaded = self.upload(item['id'])
+        self.assertEqual(uploaded['evidences'][0]['propertySnapshot']['id'], '1')
+        self.assertEqual(uploaded['evidences'][0]['propertySnapshot']['address'], 'Test address')
 
     def test_delete_item_removes_baseline_and_checkout_files(self):
         item = self.upload(self.item()['id'])
