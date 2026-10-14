@@ -1,4 +1,5 @@
 import type { CollectionKind, CollectionSchedule } from './garbage-countdown'
+import { NEW_TAIPEI_FIELDS, NEW_TAIPEI_POOLS, type CompactNewTaipeiData } from './new-taipei-codec'
 
 export const TAIPEI_DISTRICTS = [
   '中正區',
@@ -68,7 +69,7 @@ export interface GarbageStop extends Point {
   departure: string
   departureEstimated?: boolean
 }
-interface NewTaipeiRow {
+export interface NewTaipeiRow {
   city: string
   lineid: string
   linename: string
@@ -81,65 +82,129 @@ interface NewTaipeiRow {
   memo?: string
   [key: string]: string | undefined
 }
-const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-export function parseNewTaipeiStops(rows: unknown): GarbageStop[] {
-  if (!Array.isArray(rows)) throw new Error('新北市站點資料格式錯誤')
-  return rows.map((raw) => {
-    if (!raw || typeof raw !== 'object') throw new Error('新北市站點資料包含無效欄位')
-    const row = raw as NewTaipeiRow
-    const required = [
-      'city',
-      'lineid',
-      'linename',
-      'rank',
-      'name',
-      'village',
-      'latitude',
-      'longitude',
-      'time',
+export function parseNewTaipeiStops(data: unknown): GarbageStop[] {
+  if (!data || typeof data !== 'object' || Array.isArray(data))
+    throw new Error('新北市站點資料格式錯誤')
+  const compact = data as CompactNewTaipeiData
+  if (compact.version !== 1) throw new Error('新北市站點資料版本不符')
+  if (
+    !Array.isArray(compact.fields) ||
+    compact.fields.length !== NEW_TAIPEI_FIELDS.length ||
+    NEW_TAIPEI_FIELDS.some((field, index) => compact.fields[index] !== field) ||
+    !compact.pools ||
+    typeof compact.pools !== 'object' ||
+    Array.isArray(compact.pools) ||
+    !Array.isArray(compact.rows)
+  )
+    throw new Error('新北市站點資料格式錯誤')
+  for (const key of NEW_TAIPEI_POOLS) {
+    const pool = compact.pools[key]
+    if (!Array.isArray(pool) || pool.some((value) => typeof value !== 'string'))
+      throw new Error('新北市站點資料查表格式錯誤')
+  }
+  const lookup = (pool: string[], index: number) => {
+    if (!Number.isInteger(index) || index < 0 || index >= pool.length)
+      throw new Error('新北市站點資料查表索引越界')
+    return pool[index]!
+  }
+  const days = (mask: number) => {
+    if (!Number.isInteger(mask) || mask < 0 || mask > 127)
+      throw new Error('新北市每週清運欄位不完整')
+    const result: number[] = []
+    for (let day = 0; day < 7; day++) if (mask & (1 << day)) result.push(day)
+    return result
+  }
+  const identities = compact.pools.identity.map((identity) => {
+    const parts = identity.split('|')
+    const [rank, latitude, longitude] = parts.map(Number)
+    if (
+      parts.length !== 3 ||
+      !/^\d+$/.test(parts[0]!) ||
+      !Number.isSafeInteger(rank) ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude)
+    )
+      throw new Error('新北市站點資料包含無效識別欄位')
+    return [
+      rank!,
+      latitude!,
+      longitude!,
+      Number(latitude!.toFixed(6)),
+      Number(longitude!.toFixed(6)),
     ]
-    if (required.some((key) => typeof row[key] !== 'string') || !/^\d+$/.test(row.rank))
-      throw new Error('新北市站點資料缺少必要欄位')
-    for (const prefix of ['garbage', 'recycling', 'foodscraps']) {
-      if (
-        DAY_NAMES.some(
-          (day) =>
-            typeof row[prefix + day] !== 'string' ||
-            !['', 'Y', 'N'].includes(row[prefix + day]!.toUpperCase()),
-        )
-      )
-        throw new Error('新北市每週清運欄位不完整')
+  })
+  return compact.rows.map((row) => {
+    if (!Array.isArray(row) || row.length !== NEW_TAIPEI_FIELDS.length)
+      throw new Error('新北市站點資料欄位數量錯誤')
+    const [
+      cityIndex,
+      lineIndex,
+      routeIndex,
+      rank,
+      name,
+      villageIndex,
+      longitude,
+      latitude,
+      timeIndex,
+      garbage,
+      recycling,
+      foodscraps,
+      identityIndex,
+    ] = row
+    const district = lookup(compact.pools.city, cityIndex)
+    const lineid = lookup(compact.pools.lineid, lineIndex)
+    const route = lookup(compact.pools.linename, routeIndex) || lineid
+    const village = lookup(compact.pools.village, villageIndex)
+    const arrival = normalizeTime(lookup(compact.pools.time, timeIndex))
+    if (
+      !Number.isSafeInteger(rank) ||
+      rank < 0 ||
+      typeof name !== 'string' ||
+      !name ||
+      !NEW_TAIPEI_DISTRICTS.includes(district) ||
+      !lineid ||
+      !arrival ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      Number(latitude.toFixed(6)) !== latitude ||
+      Number(longitude.toFixed(6)) !== longitude
+    )
+      throw new Error('新北市站點資料包含無效欄位')
+    let identity = `${rank}|${latitude}|${longitude}`
+    let lat = latitude
+    let lng = longitude
+    if (identityIndex !== -1) {
+      identity = lookup(compact.pools.identity, identityIndex)
+      const original = identities[identityIndex]!
+      if (original[0] !== rank || original[3] !== latitude || original[4] !== longitude)
+        throw new Error('新北市站點資料識別欄位不一致')
+      lat = original[1]!
+      lng = original[2]!
     }
-    const arrival = normalizeTime(row.time || '')
     const endMinutes = +arrival.slice(0, 2) * 60 + +arrival.slice(3) + 10
     const departure = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
-    const days = (prefix: string) =>
-      DAY_NAMES.flatMap((day, index) => (row[prefix + day]?.toUpperCase() === 'Y' ? [index] : []))
-    if (!NEW_TAIPEI_DISTRICTS.includes(row.city) || !arrival || !row.name || !row.lineid)
-      throw new Error('新北市站點資料包含無效欄位')
-    const address = `新北市${row.city}${row.name.trim()}`
     return {
       city: '新北市',
-      id: `ntpc|${row.lineid}|${row.rank}|${row.latitude}|${row.longitude}`,
-      district: row.city,
-      village: row.village || '',
+      id: `ntpc|${lineid}|${identity}`,
+      district,
+      village,
       team: '新北市環保局',
       plate: '',
-      route: row.linename || row.lineid,
-      routeId: row.lineid,
-      rank: Number(row.rank),
+      route,
+      routeId: lineid,
+      rank,
       trip: '',
-      address,
-      road: row.name.match(/^.*?(?:路|街|大道)/)?.[0] || row.name,
+      address: `新北市${district}${name.trim()}`,
+      road: name.match(/^.*?(?:路|街|大道)/)?.[0] || name,
       arrival,
       departure,
       departureEstimated: true,
-      lat: +row.latitude,
-      lng: +row.longitude,
+      lat,
+      lng,
       collections: {
-        garbage: { arrival, departure, days: days('garbage') },
-        recycling: { arrival, departure, days: days('recycling') },
-        food: { arrival, departure, days: days('foodscraps') },
+        garbage: { arrival, departure, days: days(garbage) },
+        recycling: { arrival, departure, days: days(recycling) },
+        food: { arrival, departure, days: days(foodscraps) },
       },
     } satisfies GarbageStop
   })
