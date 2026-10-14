@@ -2,7 +2,15 @@ import { readFile, writeFile, rename } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
-import { parseNewTaipeiStops, NEW_TAIPEI_DISTRICTS, validPoint } from '../src/utils/garbage'
+import {
+  parseNewTaipeiStops,
+  NEW_TAIPEI_DISTRICTS,
+  validPoint,
+  type NewTaipeiRow,
+  type GarbageStop,
+} from '../src/utils/garbage'
+import { encodeNewTaipeiRows } from '../src/utils/new-taipei-codec'
+import { parseLegacyNewTaipeiStops } from './lib/new-taipei-legacy'
 
 export const API = 'https://data.ntpc.gov.tw/api/datasets/edc3ad26-8ae7-4916-a00b-bc6048d19bf8/json'
 export async function fetchNewTaipeiRows(fetcher: typeof fetch = fetch) {
@@ -22,13 +30,21 @@ export async function fetchNewTaipeiRows(fetcher: typeof fetch = fetch) {
 export function validateNewTaipeiRows(rows: unknown[], previousCount = 26655) {
   if (rows.length < previousCount * 0.8 || rows.length > previousCount * 1.2)
     throw new Error('New Taipei count changed over 20%; review required')
-  const stops = parseNewTaipeiStops(rows)
+  const stops = parseLegacyNewTaipeiStops(rows)
+  return validateStops(stops)
+}
+function validateLocalStops(stops: GarbageStop[], previousCount = 26655) {
+  if (stops.length < previousCount * 0.8 || stops.length > previousCount * 1.2)
+    throw new Error('New Taipei count changed over 20%; review required')
+  return validateStops(stops)
+}
+function validateStops(stops: GarbageStop[]) {
   if (new Set(stops.map((s) => s.id)).size !== stops.length)
     throw new Error('Duplicate New Taipei IDs')
   if (NEW_TAIPEI_DISTRICTS.some((d) => !stops.some((s) => s.district === d)))
     throw new Error('Missing New Taipei districts')
   const invalidCoordinates = stops.filter((s) => !validPoint(s)).length
-  if (invalidCoordinates > rows.length * 0.01)
+  if (invalidCoordinates > stops.length * 0.01)
     throw new Error('Over 1% invalid New Taipei coordinates')
   return { rows: stops.length, districts: NEW_TAIPEI_DISTRICTS.length, invalidCoordinates }
 }
@@ -39,15 +55,18 @@ async function main() {
   const previous = await readFile(metaPath, 'utf8')
     .then(JSON.parse)
     .catch(() => null)
-  const rows = process.argv.includes('--validate-local')
-    ? JSON.parse(await readFile(dataPath, 'utf8'))
-    : await fetchNewTaipeiRows()
-  const result = validateNewTaipeiRows(rows, previous?.rows)
+  const local = process.argv.includes('--validate-local')
+  const rows = local ? null : await fetchNewTaipeiRows()
+  // 本地快照已是緊湊格式；上游仍須先走原始驗證，才可編碼及寫入。
+  const data = local ? JSON.parse(await readFile(dataPath, 'utf8')) : null
+  const result = local
+    ? validateLocalStops(parseNewTaipeiStops(data), previous?.rows)
+    : validateNewTaipeiRows(rows!, previous?.rows)
   console.log(
     JSON.stringify({ ...result, mode: process.argv.includes('--write') ? 'write' : 'check' }),
   )
   if (!process.argv.includes('--write')) return
-  const json = JSON.stringify(rows)
+  const json = JSON.stringify(local ? data : encodeNewTaipeiRows(rows as NewTaipeiRow[]))
   const metadata = {
     ...result,
     apiUrl: API,
