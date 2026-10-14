@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Clock, MapPin, RefreshCw } from 'lucide-vue-next'
 
-import outageHeroIllustration from '@/src/assets/outage/outage-hero.png'
+import outageHeroIllustration from '@/src/assets/outage/outage-hero.webp'
 import { useOutageData } from './useOutageData'
 
 const route = useRoute()
