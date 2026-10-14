@@ -15,9 +15,10 @@ from auth.security import create_access_token, get_current_admin
 from db import database
 from db.database import Base, get_db
 from db.models import (
-    Household, HouseholdMember, LandlordProperty, LandlordRoom, LandlordTeamMember,
+    Household, HouseholdMember, InboxMessage, LandlordProperty, LandlordRoom, LandlordTeamMember,
     User, UserRole,
 )
+from notifications import user_notify
 from routers import admin
 
 
@@ -26,9 +27,12 @@ class AdminUserUsageTests(unittest.TestCase):
         env = patch.dict(os.environ, {
             'PII_ENCRYPTION_KEY': base64.b64encode(b'u' * 32).decode(),
             'AUTH_TOKEN_SECRET': 'admin-usage-test-secret',
+            'LANDLORD_EMAIL_ENABLED': 'false',
         })
         env.start()
         self.addCleanup(env.stop)
+        self.delivery = self.enterContext(patch.object(user_notify, 'start_email_delivery'))
+        self.notify = self.enterContext(patch.object(admin, 'notify_user', wraps=user_notify.notify_user))
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
         self.addCleanup(self.engine.dispose)
         Base.metadata.create_all(self.engine)
@@ -233,6 +237,62 @@ class AdminUserUsageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'suspended')
         self.assertEqual(response.json()['usage'], expected)
+
+    def test_suspending_an_account_notifies_without_an_action_link(self):
+        owner = self.user('owner@example.com', 'tenant')
+        self.db.commit()
+        with patch.object(admin.audit_service, 'record'):
+            response = self.client.patch(f'/api/admin/users/{owner.id}/status', json={'status': 'suspended'})
+        self.assertEqual(response.status_code, 200)
+        message = self.db.query(InboxMessage).one()
+        self.assertEqual(message.user_id, owner.id)
+        self.assertEqual(message.category, '系統')
+        self.assertEqual(message.source_label, '帳號狀態')
+        self.assertEqual(message.created_by, 'admin:9999')
+        self.assertEqual(message.title, '帳號已停用')
+        self.assertIn('如果不是你本人操作，請立刻重設密碼', message.body)
+        self.assertIsNone(message.action_url)
+        self.assertIsNone(message.action_label)
+        self.assertEqual(message.channels, '["inapp"]')
+        self.assertIsNone(message.email_state)
+        self.notify.assert_called_once()
+        self.assertIs(self.notify.call_args.kwargs['email'], True)
+        self.delivery.assert_not_called()
+
+    def test_reactivating_an_account_notifies_with_an_action_link(self):
+        owner = self.user('owner@example.com', 'tenant')
+        owner.status = 'suspended'
+        self.db.commit()
+        with patch.object(admin.audit_service, 'record'):
+            response = self.client.patch(f'/api/admin/users/{owner.id}/status', json={'status': 'active'})
+        self.assertEqual(response.status_code, 200)
+        message = self.db.query(InboxMessage).one()
+        self.assertEqual(message.user_id, owner.id)
+        self.assertEqual(message.category, '系統')
+        self.assertEqual(message.source_label, '帳號狀態')
+        self.assertEqual(message.created_by, 'admin:9999')
+        self.assertEqual(message.title, '帳號已啟用')
+        self.assertIn('如果不是你本人操作，請立刻重設密碼', message.body)
+        self.assertEqual(message.action_url, '/app')
+        self.assertEqual(message.action_label, '前往首頁')
+        self.assertEqual(message.channels, '["inapp"]')
+        self.assertIsNone(message.email_state)
+        self.notify.assert_called_once()
+        self.assertIs(self.notify.call_args.kwargs['email'], True)
+        self.delivery.assert_not_called()
+
+    def test_repeating_the_same_status_does_not_notify(self):
+        for state in ('active', 'suspended'):
+            with self.subTest(status=state):
+                owner = self.user(f'{state}@example.com', 'tenant')
+                owner.status = state
+                self.db.commit()
+                with patch.object(admin.audit_service, 'record'):
+                    response = self.client.patch(f'/api/admin/users/{owner.id}/status', json={'status': state})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(self.db.query(InboxMessage).count(), 0)
+                self.notify.assert_not_called()
+                self.delivery.assert_not_called()
 
     def test_non_admin_tokens_are_forbidden_by_the_existing_guard(self):
         user = self.user('tenant@example.com', 'tenant')

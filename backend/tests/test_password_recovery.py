@@ -13,8 +13,9 @@ from sqlalchemy.pool import StaticPool
 from auth.security import create_access_token, create_cookie_token, get_current_landlord, get_current_tenant
 from db import database
 from db.database import Base, get_db
-from db.models import PasswordResetChallenge, User, UserRole
+from db.models import InboxMessage, PasswordResetChallenge, User, UserRole
 from migrations.create_password_reset_challenges import upgrade
+from notifications import user_notify
 from routers import auth, password
 
 
@@ -25,7 +26,12 @@ class PasswordRecoveryTests(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
         self.enterContext(patch.object(database, 'engine', self.engine))
-        self.enterContext(patch.dict(os.environ, {'VERIFICATION_CODE_SECRET': 'v' * 40, 'AUTH_TOKEN_SECRET': 'test-token-secret'}))
+        self.enterContext(patch.dict(os.environ, {
+            'VERIFICATION_CODE_SECRET': 'v' * 40, 'AUTH_TOKEN_SECRET': 'test-token-secret',
+            'LANDLORD_EMAIL_ENABLED': 'false',
+        }))
+        self.delivery = self.enterContext(patch.object(user_notify, 'start_email_delivery'))
+        self.notify = self.enterContext(patch.object(password, 'notify_user', wraps=user_notify.notify_user))
         self.enterContext(patch.object(password, '_smtp_config', return_value={}))
         self.mail = self.enterContext(patch.object(password, 'send_password_reset_code'))
         self.enterContext(patch.object(password, 'generate_verification_code', return_value='123456'))
@@ -77,6 +83,49 @@ class PasswordRecoveryTests(unittest.TestCase):
         for role in ['tenant', 'landlord']:
             self.assertEqual(self.login('Replacement-pass-2', role).status_code, 200)
 
+    def test_reset_notifies_the_account_with_security_email_requested(self):
+        cid = self.start().json()['challengeId']
+        self.assertEqual(self.complete(cid).status_code, 200)
+        with self.Session() as db:
+            message = db.query(InboxMessage).one()
+            self.assertEqual(message.user_id, self.user_id)
+            self.assertEqual(message.category, '系統')
+            self.assertEqual(message.source_label, '帳號安全')
+            self.assertEqual(message.created_by, 'system')
+            self.assertEqual(message.title, '密碼已重設')
+            self.assertIn('忘記密碼', message.body)
+            self.assertIn('驗證碼', message.body)
+            self.assertIn('如果不是你本人操作，請立刻重設密碼', message.body)
+            self.assertEqual(message.action_url, '/app/account')
+            self.assertEqual(message.action_label, '帳戶設定')
+            self.assertEqual(message.channels, '["inapp"]')
+            self.assertIsNone(message.email_state)
+        self.notify.assert_called_once()
+        self.assertIs(self.notify.call_args.kwargs['email'], True)
+        self.delivery.assert_not_called()
+
+    def test_change_notifies_the_account_with_security_email_requested(self):
+        self.assertEqual(self.login().status_code, 200)
+        response = self.client.post('/api/auth/password/change', json={
+            'currentPassword': 'Original-pass-1', 'newPassword': 'Changed-pass-2'})
+        self.assertEqual(response.status_code, 200)
+        with self.Session() as db:
+            message = db.query(InboxMessage).one()
+            self.assertEqual(message.user_id, self.user_id)
+            self.assertEqual(message.category, '系統')
+            self.assertEqual(message.source_label, '帳號安全')
+            self.assertEqual(message.created_by, 'system')
+            self.assertEqual(message.title, '密碼已變更')
+            self.assertIn('登入後', message.body)
+            self.assertIn('如果不是你本人操作，請立刻重設密碼', message.body)
+            self.assertEqual(message.action_url, '/app/account')
+            self.assertEqual(message.action_label, '帳戶設定')
+            self.assertEqual(message.channels, '["inapp"]')
+            self.assertIsNone(message.email_state)
+        self.notify.assert_called_once()
+        self.assertIs(self.notify.call_args.kwargs['email'], True)
+        self.delivery.assert_not_called()
+
     def test_unknown_and_google_accounts_have_same_public_response(self):
         known = self.start().json()
         unknown = self.start('missing@example.com').json()
@@ -125,6 +174,9 @@ class PasswordRecoveryTests(unittest.TestCase):
         self.assertEqual(self.complete(cid).status_code, 400)
         with self.Session() as db:
             self.assertEqual(db.get(PasswordResetChallenge, cid).attempt_count, 5)
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+        self.notify.assert_not_called()
+        self.delivery.assert_not_called()
 
     def test_expired_challenge_is_rejected(self):
         cid = self.start().json()['challengeId']
@@ -178,6 +230,10 @@ class PasswordRecoveryTests(unittest.TestCase):
         def change(old):
             return self.client.post('/api/auth/password/change', json={'currentPassword': old, 'newPassword': 'Changed-pass-2'})
         self.assertEqual(change('wrong').status_code, 400)
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+        self.notify.assert_not_called()
+        self.delivery.assert_not_called()
         self.assertEqual(change('Original-pass-1').status_code, 200)
         self.assertEqual(self.complete(cid).status_code, 400)
         self.assertEqual(self.client.get('/api/auth/me').status_code, 401)

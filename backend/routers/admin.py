@@ -24,6 +24,7 @@ from db.models import (
     PendingAdminLogin, User,
 )
 from auth.security import get_current_admin
+from notifications.user_notify import notify_user
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -376,6 +377,23 @@ def update_user_status(
 
     previous = user.status
     user.status = payload.status
+    # 重複設定相同狀態不通知，避免重複操作洗頻。
+    # 停用的人登不進來看站內訊息，所以不附連結（email=True 才是這則真正送得到的管道）。
+    if previous != payload.status:
+        suspended = payload.status == "suspended"
+        notify_user(
+            db, user,
+            title="帳號已停用" if suspended else "帳號已啟用",
+            body=(
+                "你的帳號已由管理員停用，目前無法登入。請聯絡管理員確認停用原因並協助恢復帳號；"
+                "恢復後，如果不是你本人操作，請立刻重設密碼。"
+                if suspended else
+                "你的帳號已由管理員重新啟用，現在可以登入。如果不是你本人操作，請立刻重設密碼。"
+            ),
+            category="系統", source_label="帳號狀態", created_by=f"admin:{admin.id}",
+            action_url=None if suspended else "/app", action_label=None if suspended else "前往首頁",
+            email=True,
+        )
     db.commit()
     db.refresh(user)
 
