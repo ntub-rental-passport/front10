@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal
 from datetime import datetime, timezone
 import logging
+from cryptography.exceptions import InvalidTag
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import Response
@@ -26,6 +27,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/inspection", tags=["Inspection"])
 
@@ -461,15 +464,31 @@ def properties(db: Session = Depends(get_db), user: User = Depends(get_current_t
     from routers.tenant_leases import tenant_visible_leases
 
     # 已對應到房東平台租約的自存合約不列：點交要記在房東那份，房東才看得到
-    rentals = db.query(Rental).filter(Rental.user_id == user.id, Rental.rental_status != 'linked').order_by(Rental.created_at.desc()).all()
-    items = [{'id': str(r.id), 'alias': r.contract_tag or f'租約 #{r.id}', 'source': 'self',
-              'address': r.address, 'createdAt': timestamp(r.created_at)} for r in rentals]
+    # 解密在載入列時就發生；先查明文 id 再逐筆載入，避免一份舊金鑰租約讓整份清單失敗。
+    rental_ids = [row.id for row in db.query(Rental.id).filter(
+        Rental.user_id == user.id, Rental.rental_status != 'linked').order_by(Rental.created_at.desc()).all()]
+    items = []
+    for rental_id in rental_ids:
+        try:
+            rental = db.query(Rental).filter(Rental.id == rental_id).one()
+            items.append({'id': str(rental.id), 'alias': rental.contract_tag or f'租約 #{rental.id}', 'source': 'self',
+                          'address': rental.address, 'createdAt': timestamp(rental.created_at)})
+        except (InvalidTag, ValueError):
+            logger.error('Inspection: rental %s could not be decrypted; skipped', rental_id)
+    eligible_count = len(rental_ids)
     for lease in tenant_visible_leases(db, user):
         if rules.moved_out(lease, date.today()):
             continue
-        items.append({'id': f'lease:{lease.id}', 'alias': f'{lease.property.name} {lease.room.number}（房東平台）',
-                      'source': 'landlord', 'address': lease.property.address or '',
-                      'createdAt': timestamp(lease.created_at)})
+        eligible_count += 1
+        try:
+            items.append({'id': f'lease:{lease.id}', 'alias': f'{lease.property.name} {lease.room.number}（房東平台）',
+                          'source': 'landlord', 'address': lease.property.address or '',
+                          'createdAt': timestamp(lease.created_at)})
+        except (InvalidTag, ValueError):
+            logger.error('Inspection: lease %s could not be decrypted; skipped', lease.id)
+    if eligible_count and not items:
+        # 全部可點交租約都解不開才報錯，避免把金鑰問題誤顯示成「沒有租約」。
+        raise HTTPException(500, '租約個資無法解密，加密金鑰可能已變更。請聯絡系統管理員核對金鑰。')
     return items
 
 
