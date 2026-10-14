@@ -668,6 +668,44 @@ def _notify_landlord_of_new_ticket(db: Session, ticket: models.RepairTicket) -> 
     )
 
 
+def _notify_tenant_of_ticket_update(db: Session, ticket: models.RepairTicket, user: models.User,
+                                    role: str, previous_status: str, payload: UpdatePayload) -> None:
+    """讓租客知道房東的處理進度，但不因內部欄位調整或租客自己的動作洗頻。
+
+    收件帳號不存在或已停用就靜默跳過，避免通知阻擋房東處理報修；
+    同一次更新只取優先序最高的一則，狀態與照片一起送出時也不重複通知。
+    """
+    from notifications.user_notify import notify_user
+
+    if role != "landlord":
+        return
+    tenant = db.get(models.User, ticket.tenant_user_id) if ticket.tenant_user_id else None
+    if not tenant or tenant.status != "active":
+        return
+
+    equipment = ticket.equipment or ticket.location or '設備'
+    status_messages = {
+        "processing": ("房東已受理你的報修", f"你的{equipment}報修已由房東受理，請查看報修進度。"),
+        "inspection": ("維修已完成，請確認驗收", f"你的{equipment}報修已完成維修，請查看並確認驗收。"),
+        "canceled": ("房東取消了這筆報修", f"你的{equipment}報修已由房東取消，請查看報修紀錄。"),
+    }
+    if ticket.status != previous_status and ticket.status in status_messages:
+        title, body = status_messages[ticket.status]
+    elif payload.updates.get("supplementRequested"):
+        title = "房東請你補充報修資料"
+        body = f"你的{equipment}報修需要補充資料：{(ticket.supplement_request_note or '')[:120]}"
+    elif payload.photos:
+        title = "房東上傳了維修照片"
+        body = f"房東已上傳你的{equipment}報修維修照片，請查看報修紀錄。"
+    else:
+        return
+    notify_user(
+        db, tenant, title=title, body=body,
+        category="系統", source_label="報修通知", created_by=f"landlord:{user.id}",
+        action_url="/app/repairs", action_label="查看報修",
+    )
+
+
 @router.post("", status_code=201)
 def create_ticket(payload: CreatePayload, db: Session = Depends(get_db),
                   user: models.User = Depends(get_current_tenant)):
@@ -730,6 +768,8 @@ def update_ticket(ticket_id: int, payload: UpdatePayload, db: Session = Depends(
 
     written: list[Path] = []
     try:
+        # 先保留原狀態，避免重送相同狀態也被當成有進展。
+        previous_status = ticket.status
         _apply_updates(ticket, payload.updates, role)
         if role == "landlord" and not ticket.landlord_read_at:
             ticket.landlord_read_at = datetime.datetime.utcnow()
@@ -738,6 +778,7 @@ def update_ticket(ticket_id: int, payload: UpdatePayload, db: Session = Depends(
         event = _add_event(db, ticket, acting, role, payload.event.title, payload.event.detail, kind=kind)
         if payload.photos:
             _add_photos(db, ticket, acting, payload.photos, payload.photoStage, event.id, written)
+        _notify_tenant_of_ticket_update(db, ticket, user, role, previous_status, payload)
         db.commit()
     except Exception:
         db.rollback()
