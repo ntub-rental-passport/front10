@@ -174,6 +174,7 @@ def dispatch_expiry(now=None):
                 # 通知裡唯一會主動把使用者推向被擋頁面的一則，不先講清楚會讓人以為連結壞了。
                 notify_user(
                     db, db.get(User, user_id), category='補貼', source_label='補助文件', created_by='system',
+                    audience_role='tenant',
                     title='補助文件將於 14 天後刪除',
                     body=f'你有 {len(files)} 份補助文件（{types}）即將到期，'
                          f'最早將於 {deletion_date.date().isoformat()} 刪除。請在到期前於電腦上登入下載以保留副本。',

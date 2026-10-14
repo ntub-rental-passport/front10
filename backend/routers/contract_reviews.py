@@ -291,6 +291,7 @@ def dispatch_expiry(now=None):
                     reports = sum(file.kind == 'report' for file in files)
                     notify_user(
                         db, user, category='租約', source_label='合約審閱', created_by='system',
+                        audience_role='tenant',
                         title='合約審閱紀錄將於 14 天後刪除',
                         action_url='/app/contract-analysis', action_label='查看審閱',
                         body=f'這筆合約審閱最後更新於 {review.activity_at.date().isoformat()}，'

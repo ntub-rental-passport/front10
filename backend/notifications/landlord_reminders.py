@@ -61,6 +61,7 @@ def _rent_reminders(db, landlord: User, today: date, email: bool = False) -> int
             continue
         notify_user(
             db, tenant_user,
+            audience_role="tenant",
             title=f"{charge.title}{stage[2]}：NT${balance:,}",
             body=f"{lease.property.name} {lease.room.number} 的{charge.title}到期日為 {charge.due_date.isoformat()}，"
                  f"尚有 NT${balance:,} 未繳。已繳費請告知房東確認入帳。",
@@ -93,6 +94,7 @@ def _contract_reminders(db, landlord: User, today: date, reminder_days: int, ema
             continue
         notify_user(
             db, landlord,
+            audience_role="landlord",
             title=f"{lease.tenant.name} 的租約 {days_left} 天後到期",
             body=f"{lease.property.name} {lease.room.number} 的租約將於 {lease.end_date.isoformat()} 到期，請確認是否續約。",
             category="租約", source_label="合約到期提醒", created_by="system",

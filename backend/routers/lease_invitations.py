@@ -283,6 +283,7 @@ def _accept(db: Session, invitation: LeaseInvitation, user: User) -> dict:
         record_audit(db, landlord, user, "租客", "租客接受邀請", f"{lease_tenant.name if lease_tenant else ''} 以 {user.email} 加入租約")
         notify_user(
             db, landlord,
+            audience_role="landlord",
             title="租客已接受邀請",
             body=f"{lease_tenant.name if lease_tenant else '租客'} 已用 {user.email} 加入租約，之後的帳務與報修會連到這個帳號。",
             category="租約", source_label="租約邀請", created_by="system",

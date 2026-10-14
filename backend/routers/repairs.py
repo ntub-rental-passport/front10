@@ -660,6 +660,7 @@ def _notify_landlord_of_new_ticket(db: Session, ticket: models.RepairTicket) -> 
     urgency = {"emergency": "緊急", "soon": "盡快", "normal": "一般"}.get(ticket.urgency, "")
     notify_user(
         db, landlord,
+        audience_role="landlord",
         title=f"新報修（{urgency}）：{ticket.equipment or ticket.location or '設備'}",
         body=f"{lease.property.name} {lease.room.number} 的 {lease.tenant.name} 提出報修：{ticket.description[:120]}",
         category="系統", source_label="報修通知", created_by="system",
@@ -701,6 +702,7 @@ def _notify_tenant_of_ticket_update(db: Session, ticket: models.RepairTicket, us
         return
     notify_user(
         db, tenant, title=title, body=body,
+        audience_role="tenant",
         category="系統", source_label="報修通知", created_by=f"landlord:{user.id}",
         action_url="/app/repairs", action_label="查看報修",
     )

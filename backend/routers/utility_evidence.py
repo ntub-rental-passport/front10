@@ -244,6 +244,7 @@ def landlord_resolve_reading(evidence_id: int, payload: ResolvePayload, request:
         from routers.landlord_workspace_api import settings_for
 
         notify_user(db, tenant_user, title=title, body=body, category="帳務", source_label="電費對帳",
+                    audience_role="tenant",
                     created_by=f"landlord:{landlord.id}", action_url="/app", action_label="查看帳單",
                     email=settings_for(db, landlord).email_notifications)
     db.commit()
@@ -295,6 +296,7 @@ def tenant_report_reading(charge_id: int, payload: ReadingPayload, db: Session =
 
         record_audit(db, landlord, user, "帳務", "租客回報電表讀數", f"{lease.tenant.name}：{detail}")
         notify_user(db, landlord, title=f"{lease.tenant.name} 回報的電表讀數與你不同",
+                    audience_role="landlord",
                     body=f"{lease.property.name} {lease.room.number} 的{charge.title}：{detail}。"
                          + (f"備註：{payload.note.strip()}。" if payload.note.strip() else "") + "請到財務管理的電費紀錄確認。",
                     category="帳務", source_label="電費對帳", created_by=f"tenant:{user.id}",

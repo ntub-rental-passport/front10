@@ -219,6 +219,7 @@ def report_payment(charge_id: int, payload: PaymentReport, db: Session = Depends
 
         notify_user(
             db, landlord,
+            audience_role="landlord",
             title=f"{lease.tenant.name} 回報已繳款",
             body=f"{lease.property.name} {lease.room.number} 的{group[0].title}（未收 NT${balance:,}）：{detail}。請到財務管理確認入帳。",
             category="帳務", source_label="租客回報繳款", created_by=f"tenant:{user.id}",

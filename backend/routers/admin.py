@@ -383,6 +383,7 @@ def update_user_status(
         suspended = payload.status == "suspended"
         notify_user(
             db, user,
+            audience_role=None,
             title="帳號已停用" if suspended else "帳號已啟用",
             body=(
                 "你的帳號已由管理員停用，目前無法登入。請聯絡管理員確認停用原因並協助恢復帳號；"

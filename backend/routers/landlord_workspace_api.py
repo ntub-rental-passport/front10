@@ -231,6 +231,7 @@ def invite_member(payload: TeamInvitePayload, request: Request, db: Session = De
     delivered = False
     if existing and existing.status == "active" and existing.has_role("landlord"):
         notify_user(db, existing, title="你被邀請加入房東工作區",
+                    audience_role="landlord",
                     body=f"{_default_name(landlord)} 邀請你以「{ROLE_LABELS[payload.role]}」身分加入工作區，7 天內有效。",
                     category="系統", source_label="團隊邀請", created_by=f"landlord:{landlord.id}",
                     action_url=path, action_label="查看邀請", email=settings_for(db, landlord).email_notifications)
@@ -313,6 +314,7 @@ def accept_team_invitation(token: str, db: Session = Depends(get_db), user: User
     owner = db.get(User, member.owner_id)
     record_audit(db, owner, user, "團隊", "成員加入工作區", f"{member.email} 以{ROLE_LABELS[member.role]}身分加入")
     notify_user(db, owner, title="團隊成員已加入", body=f"{member.email} 已接受邀請，以「{ROLE_LABELS[member.role]}」身分加入你的工作區。",
+                audience_role="landlord",
                 category="系統", source_label="團隊邀請", created_by="system",
                 action_url="/landlord/settings/team", action_label="查看成員",
                 email=settings_for(db, owner).email_notifications)

@@ -44,7 +44,7 @@ def admin_messages(admin: User = Depends(get_current_admin)) -> list[dict]:
 
 @router.get('/api/notifications')
 def my_inbox(user: CurrentUser = Depends(get_current_user)) -> dict:
-    return {'messages': inbox_service.user_inbox(user.id), **inbox_service.announcement_state(user.id)}
+    return {'messages': inbox_service.user_inbox(user.id, user.role), **inbox_service.announcement_state(user.id)}
 
 
 @router.post('/api/notifications/{message_id}/read', status_code=204)
