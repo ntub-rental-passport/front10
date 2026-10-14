@@ -466,6 +466,106 @@ class LandlordWorkspaceTests(unittest.TestCase):
 
     # ---------------- 帳務 ----------------
 
+    def manual_charge(self, kind='other', title=' 管理費 '):
+        return self.ok(self.call('POST', '/api/landlord/finance/charges', json={
+            'lease_id': 1, 'kind': kind, 'title': title, 'amount': 1200,
+            'due_date': (TODAY + 3 * DAY).isoformat()}), 201)
+
+    def assert_charge_notices(self, count, title):
+        with self.Session() as db:
+            messages = db.query(InboxMessage).all()
+            self.assertEqual(len(messages), count)
+            for message in messages:
+                self.assertEqual((message.user_id, message.category, message.source_label, message.created_by),
+                                 (TENANT, '帳務', '帳款異動', f'landlord:{OWNER}'))
+                self.assertEqual((message.action_url, message.action_label), ('/app', '查看帳務'))
+            return next(message.body for message in messages if message.title == title)
+
+    def test_manual_charges_notify_bound_tenant(self):
+        self.bind_tenant()
+        for count, (kind, label) in enumerate([('water', '水費'), ('electricity', '電費'), ('other', '其他費用')], 1):
+            with self.subTest(kind=kind):
+                self.manual_charge(kind=kind)
+                body = self.assert_charge_notices(count, f'新增{label}：管理費 NT$1,200')
+                self.assertEqual(body, f'松江路 101 的管理費 NT$1,200，請在 {(TODAY + 3 * DAY).isoformat()} 前繳款。')
+
+    def test_partial_payment_notifies_tenant_of_remaining_balance(self):
+        self.bind_tenant()
+        charge = self.manual_charge()
+        self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/payments',
+                          json={'amount': 400, 'paid_on': TODAY.isoformat()}), 201)
+        body = self.assert_charge_notices(2, '房東已確認收款 NT$400')
+        for text in ('101', '管理費', 'NT$400', '尚餘 NT$800 未繳'):
+            self.assertIn(text, body)
+
+    def test_full_payment_notifies_tenant_that_charge_is_paid(self):
+        self.bind_tenant()
+        charge = self.manual_charge()
+        for amount in (400, 800):
+            self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/payments',
+                              json={'amount': amount, 'paid_on': TODAY.isoformat()}), 201)
+        body = self.assert_charge_notices(3, '房東已確認收款 NT$800')
+        for text in ('101', '管理費', 'NT$800', '這筆帳款已收齊'):
+            self.assertIn(text, body)
+        self.assertNotIn('尚餘 NT$0', body)
+
+    def test_reversed_payment_notifies_tenant_of_reason(self):
+        self.bind_tenant()
+        charge = self.manual_charge()
+        paid = self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/payments',
+                                json={'amount': 400, 'paid_on': TODAY.isoformat()}), 201)
+        self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/payments/{paid["payments"][0]["id"]}/reverse',
+                          json={'reason': ' 記錯金額 '}))
+        body = self.assert_charge_notices(3, '房東沖銷了一筆收款 NT$400')
+        for text in ('管理費', 'NT$400', '記錯金額', '回到未繳'):
+            self.assertIn(text, body)
+        self.assertNotIn(' 記錯金額 ', body)
+
+    def test_voided_charge_notifies_tenant_of_reason(self):
+        self.bind_tenant()
+        charge = self.manual_charge()
+        self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/void',
+                          json={'reason': ' 重複計費 '}))
+        body = self.assert_charge_notices(2, '帳款已作廢：管理費')
+        for text in ('101', '管理費', 'NT$1,200', '重複計費', '不需要再繳'):
+            self.assertIn(text, body)
+        self.assertNotIn(' 重複計費 ', body)
+
+    def assert_finance_actions_without_notices(self):
+        charge = self.manual_charge()
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+        paid = self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/payments',
+                                json={'amount': 400, 'paid_on': TODAY.isoformat()}), 201)
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+        self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/payments/{paid["payments"][0]["id"]}/reverse',
+                          json={'reason': '記錯金額'}))
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+        self.ok(self.call('POST', f'/api/landlord/finance/charges/{charge["id"]}/void',
+                          json={'reason': '重複計費'}))
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+
+    def test_unbound_tenant_finance_actions_succeed_without_notices(self):
+        with self.Session() as db:
+            self.assertIsNone(db.get(LandlordLease, 1).tenant_user_id)
+        self.assert_finance_actions_without_notices()
+
+    def test_suspended_tenant_finance_actions_succeed_without_notices(self):
+        self.bind_tenant()
+        with self.Session() as db:
+            db.get(User, TENANT).status = 'suspended'
+            db.commit()
+        self.assert_finance_actions_without_notices()
+
+    def test_automatic_rent_charges_do_not_notify_bound_tenant(self):
+        self.bind_tenant()
+        self.assertTrue(self.ok(self.call('GET', '/api/landlord/finance/charges'))['items'])
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+
     def test_rent_charges_are_fixed_once_created(self):
         month = TODAY.strftime('%Y-%m')
         before = self.ok(self.call('GET', f'/api/landlord/finance/charges?month={month}'))
@@ -519,6 +619,8 @@ class LandlordWorkspaceTests(unittest.TestCase):
         self.assertIsNotNone(result['reminded_at'])
         with self.Session() as db:
             self.assertEqual(db.query(InboxMessage).filter_by(user_id=TENANT, category='帳務').count(), 1)
+            message = db.query(InboxMessage).filter_by(user_id=TENANT, source_label='房東催繳').one()
+            self.assertEqual((message.action_url, message.action_label), ('/app', '查看帳務'))
 
     def test_expenses_are_scoped_and_include_repairs(self):
         self.ok(self.call('POST', '/api/landlord/finance/expenses', json={
@@ -680,6 +782,10 @@ class LandlordWorkspaceTests(unittest.TestCase):
         landlord_reminders.dispatch_due(TODAY, self.Session)
         with self.Session() as db:
             titles = [message.title for message in db.query(InboxMessage).filter_by(user_id=TENANT)]
+            messages = db.query(InboxMessage).filter_by(user_id=TENANT, source_label='收租提醒').all()
+            self.assertTrue(messages)
+            for message in messages:
+                self.assertEqual((message.action_url, message.action_label), ('/app', '查看帳務'))
         self.assertEqual(sum('管理費' in title for title in titles), 1)
 
     def test_backup_includes_finance_and_history(self):

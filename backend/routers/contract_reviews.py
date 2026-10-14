@@ -282,12 +282,17 @@ def dispatch_expiry(now=None):
                     for name in names:
                         storage.delete('reviews', name)
                 elif not empty and review.expiry_notified_at is None:
+                    user = db.get(User, review.user_id)
+                    if not user or user.status != 'active':
+                        db.rollback()
+                        continue
                     deletion_date = max(review.activity_at + timedelta(days=180), now + timedelta(days=14))
                     evidence = sum(file.kind == 'evidence' for file in files)
                     reports = sum(file.kind == 'report' for file in files)
                     notify_user(
-                        db, db.get(User, review.user_id), category='租約', source_label='合約審閱', created_by='system',
+                        db, user, category='租約', source_label='合約審閱', created_by='system',
                         title='合約審閱紀錄將於 14 天後刪除',
+                        action_url='/app/contract-analysis', action_label='查看審閱',
                         body=f'這筆合約審閱最後更新於 {review.activity_at.date().isoformat()}，'
                              f'包含 {evidence} 張佐證圖片、{reports} 份報告，'
                              f'將於 {deletion_date.date().isoformat()} 刪除。'
