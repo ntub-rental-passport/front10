@@ -1075,6 +1075,8 @@ class InboxMessage(Base):
     recipient_label = Column(String(255), nullable=False)
     source_label = Column(String(255), nullable=False)
     source_type = Column(String(32), nullable=False)
+    audience_role = Column(Enum('tenant','landlord', validate_strings=True, create_constraint=True), nullable=True,
+                           comment='這則通知要給哪個身分看；NULL 表示未標註，兩邊都顯示')
     action_url = Column(String(512), nullable=True)
     action_label = Column(String(255), nullable=True)
     created_by = Column(String(255), nullable=False)

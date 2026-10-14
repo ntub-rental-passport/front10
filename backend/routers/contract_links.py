@@ -139,6 +139,7 @@ def record_term_change(db: Session, lease: LandlordLease, before: dict, actor: U
     if tenant_user:
         summary = "、".join(f"{c['label']} {c['before']} → {c['after']}" for c in changes)
         notify_user(db, tenant_user, title="房東修改了你的租約條件", category="租約", source_label="租約變更",
+                    audience_role="tenant",
                     body=f"{lease.property.name if lease.property else ''} {lease.room.number if lease.room else ''}：{summary}。"
                          + ("與你存的合約不同的地方會標示出來，有疑問請跟房東確認。" if link else ""),
                     created_by="system", action_url="/app", action_label="查看租約")
@@ -254,6 +255,7 @@ def tenant_create_link(lease_id: int, payload: LinkPayload, db: Session = Depend
                      f"{lease.tenant.name}：" + (f"{len(differences)} 項不一致（{detail}）" if differences else "條件一致"))
         if differences:
             notify_user(db, landlord, title=f"{lease.tenant.name} 的合約與你登記的租約有 {len(differences)} 處不同",
+                        audience_role="landlord",
                         body=f"{detail}。請到合約管理確認，修正租約或寫下說明。",
                         category="租約", source_label="合約對照", created_by=f"tenant:{user.id}",
                         action_url="/landlord/contracts", action_label="查看對照",
@@ -302,6 +304,7 @@ def tenant_dispute_charge(charge_id: int, payload: DisputePayload, db: Session =
 
         record_audit(db, landlord, user, "帳務", "租客對帳款提出異議", f"{lease.tenant.name}：{charge.title}，{detail}")
         notify_user(db, landlord, title=f"{lease.tenant.name} 對「{charge.title}」提出異議",
+                    audience_role="landlord",
                     body=f"{detail}。請到財務管理確認。", category="帳務", source_label="帳款異議",
                     created_by=f"tenant:{user.id}", action_url="/landlord/finance", action_label="處理異議",
                     email=settings_for(db, landlord).email_notifications)
@@ -340,6 +343,7 @@ def landlord_note(lease_id: int, payload: NotePayload, request: Request, db: Ses
     tenant_user = db.get(User, lease.tenant_user_id) if lease.tenant_user_id else None
     if tenant_user:
         notify_user(db, tenant_user, title="房東說明了合約與租約的差異", body=payload.note.strip(), category="租約",
+                    audience_role="tenant",
                     source_label="合約對照", created_by=f"landlord:{landlord.id}", action_url="/app", action_label="查看")
     db.commit()
     return link_json(db, link, lease)

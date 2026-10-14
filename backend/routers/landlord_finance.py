@@ -458,6 +458,7 @@ def _notify_tenant(db: Session, charge: LandlordCharge, *, title: str, body: str
         return
     notify_user(
         db, tenant_user, title=title, body=body,
+        audience_role="tenant",
         category="帳務", source_label="帳款異動", created_by=f"landlord:{charge.landlord_id}",
         action_url="/app", action_label="查看帳務",
     )
@@ -646,6 +647,7 @@ def remind_charge(charge_id: int, request: Request, db: Session = Depends(get_db
     timing = f"已逾期 {(today - charge.due_date).days} 天" if charge.due_date < today else f"到期日 {charge.due_date.isoformat()}"
     notify_user(
         db, tenant_user,
+        audience_role="tenant",
         title=f"{charge.title}待繳 {_money(balance)}",
         body=f"{lease.property.name} {lease.room.number} 的{charge.title}尚有 {_money(balance)} 未繳（{timing}）。已繳費請告知房東確認入帳。",
         category="帳務", source_label="房東催繳", created_by=f"landlord:{landlord.id}",

@@ -42,6 +42,7 @@ def notify_user(
     db,
     user: User,
     *,
+    audience_role: str | None,  # 必填才能讓漏標身分的呼叫端在測試時失敗，避免上線後通知跑錯邊。
     title: str,
     body: str,
     category: str,
@@ -53,6 +54,8 @@ def notify_user(
 ) -> InboxMessage:
     if category not in CATEGORIES:
         raise ValueError(f'不認得的通知分類：{category}')
+    if audience_role not in ('tenant', 'landlord', None):
+        raise ValueError(f'不認得的通知收件身分：{audience_role}')
     with_email = bool(email and user.email and email_available())
     message = InboxMessage(
         id=f'nm-{uuid.uuid4().hex[:12]}',
@@ -69,6 +72,7 @@ def notify_user(
         recipient_label=(user.display_name or user.email)[:60],
         source_label=source_label[:60],
         source_type='landlord',
+        audience_role=audience_role,
         action_url=action_url,
         action_label=(action_label or '')[:20] or None if action_url else None,
         created_by=created_by[:255],

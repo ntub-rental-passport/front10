@@ -13,8 +13,8 @@
 
 ## 管道
 
-- 站內：寫進收件匣，馬上看得到。收件匣 API 不分身分：房東端之後要做收件匣可以
-  直接接（2026-09-30 決定先假裝房東收得到，畫面上不註明）。
+- 站內：寫進收件匣，馬上看得到。同一帳號可能有兩種身分，收件匣依目前登入身分
+  過濾，未標註身分的舊通知仍在兩邊顯示。
 - Email：送出後在背景寄（routers/inbox_api.py 用 BackgroundTasks），每位收件人
   各自記寄出／失敗，發送詳情頁看得到。
 - 推播：沒有接（需要 VAPID 與每位使用者的裝置訂閱），維持 pending（待接通）。
@@ -176,7 +176,7 @@ def _clean_message(values: dict) -> dict:
 
 
 def _insert_messages(db, batch_id: str, fields: dict, recipients: list[dict], *, created_by: str,
-                     source_type: str, email_states: dict[str, str] | None = None) -> None:
+                     source_type: str, audience_role: str | None, email_states: dict[str, str] | None = None) -> None:
     created_at = _iso(_now())
     channels = fields['channels']
     for account in recipients:
@@ -185,13 +185,13 @@ def _insert_messages(db, batch_id: str, fields: dict, recipients: list[dict], *,
             email_state = (email_states or {}).get(account['email'].lower(), 'pending')
         db.execute(
             'INSERT INTO inbox_messages (id, batch_id, user_id, user_email, title, body, category, channels, '
-            'inapp_state, email_state, push_state, recipient_label, source_label, source_type, action_url, '
-            'action_label, created_by, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+            'inapp_state, email_state, push_state, recipient_label, source_label, source_type, audience_role, action_url, '
+            'action_label, created_by, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
             (
                 f'nm-{uuid.uuid4().hex[:12]}', batch_id, account['id'], account['email'], fields['title'],
                 fields['body'], fields['category'], json.dumps(channels),
                 'sent' if 'inapp' in channels else None, email_state, 'pending' if 'push' in channels else None,
-                fields['recipient_label'], fields['source_label'], source_type, fields['action_url'],
+                fields['recipient_label'], fields['source_label'], source_type, audience_role, fields['action_url'],
                 fields['action_label'], created_by, created_at,
             ),
         )
@@ -204,8 +204,11 @@ def create_batch(values: dict, recipient: dict, *, actor: str, source_type: str 
     if not recipients:
         raise ValueError('沒有符合條件的收件人。')
     batch_id = f'nb-{uuid.uuid4().hex[:12]}'
+    # 點名的是帳號，不是身分；另一個身分登入時也應該看得到。
+    audience_role = ROLE_CODES.get(recipient.get('role')) if recipient.get('kind') == 'role' else None
     with _open() as db:
-        _insert_messages(db, batch_id, fields, recipients, created_by=actor, source_type=source_type)
+        _insert_messages(db, batch_id, fields, recipients, created_by=actor, source_type=source_type,
+                         audience_role=audience_role)
 
     from admin import audit_service
 
@@ -276,9 +279,12 @@ def deliver_scheduled(emails: list[str], row, email_states: dict[str, str]) -> i
         'action_url': None,
         'action_label': None,
     }
+    recipient = json.loads(row['recipient'])
+    audience_role = ROLE_CODES.get(recipient.get('role')) if recipient.get('kind') == 'role' else None
     with _open() as db:
         _insert_messages(db, f'sched-{row["id"]}', fields, recipients, created_by=row['created_by'],
-                         source_type='admin', email_states={k.lower(): v for k, v in email_states.items()})
+                         source_type='admin', audience_role=audience_role,
+                         email_states={k.lower(): v for k, v in email_states.items()})
     return len(recipients)
 
 
@@ -337,7 +343,7 @@ def list_messages(limit: int = 5000) -> list[dict]:
     ]
 
 
-def user_inbox(user_id: int) -> list[dict]:
+def user_inbox(user_id: int, role: str) -> list[dict]:
     """這個人收件匣裡的站內通知，新到舊。只寄 Email 的不算。"""
     try:
         store = _open()
@@ -346,8 +352,9 @@ def user_inbox(user_id: int) -> list[dict]:
     with store as db:
         rows = db.execute(
             'SELECT * FROM inbox_messages WHERE user_id = ? AND inapp_state IS NOT NULL '
+            'AND (audience_role IS NULL OR audience_role = ?) '
             'ORDER BY created_at DESC, id DESC LIMIT 500',
-            (user_id,),
+            (user_id, role),
         ).fetchall()
     return [_user_view(row) for row in rows]
 

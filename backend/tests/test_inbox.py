@@ -143,24 +143,24 @@ class UserInboxTests(InboxTestCase):
     def test_users_only_see_their_own_messages_newest_first(self):
         self.send({'kind': 'users', 'emails': ['tenant@example.com']}, title='第一則')
         self.send({'kind': 'users', 'emails': ['tenant@example.com', 'landlord@example.com']}, title='第二則')
-        self.assertEqual([m['title'] for m in inbox.user_inbox(1)], ['第二則', '第一則'])
-        self.assertEqual([m['title'] for m in inbox.user_inbox(2)], ['第二則'])
-        self.assertNotIn('userEmail', inbox.user_inbox(1)[0])
+        self.assertEqual([m['title'] for m in inbox.user_inbox(1, 'tenant')], ['第二則', '第一則'])
+        self.assertEqual([m['title'] for m in inbox.user_inbox(2, 'landlord')], ['第二則'])
+        self.assertNotIn('userEmail', inbox.user_inbox(1, 'tenant')[0])
 
     def test_marking_read_only_touches_your_own_messages(self):
         self.send({'kind': 'users', 'emails': ['tenant@example.com', 'landlord@example.com']})
-        mine = inbox.user_inbox(1)[0]['id']
-        theirs = inbox.user_inbox(2)[0]['id']
+        mine = inbox.user_inbox(1, 'tenant')[0]['id']
+        theirs = inbox.user_inbox(2, 'landlord')[0]['id']
         with self.assertRaises(LookupError):
             inbox.mark_read(1, theirs)
         inbox.mark_read(1, mine)
-        self.assertTrue(inbox.user_inbox(1)[0]['read'])
-        self.assertFalse(inbox.user_inbox(2)[0]['read'])
+        self.assertTrue(inbox.user_inbox(1, 'tenant')[0]['read'])
+        self.assertFalse(inbox.user_inbox(2, 'landlord')[0]['read'])
 
     def test_mark_all_read_covers_messages_and_the_given_announcements(self):
         self.send({'kind': 'users', 'emails': ['tenant@example.com']})
         inbox.mark_all_read(1, ['an-1', 'an-2'])
-        self.assertTrue(all(m['read'] for m in inbox.user_inbox(1)))
+        self.assertTrue(all(m['read'] for m in inbox.user_inbox(1, 'tenant')))
         self.assertEqual(inbox.announcement_state(1)['readAnnouncementIds'], ['an-1', 'an-2'])
 
     def test_announcement_states_are_per_user_and_idempotent(self):
@@ -216,7 +216,7 @@ class ApiTests(InboxTestCase):
         from routers.inbox_api import read_message
 
         self.send({'kind': 'users', 'emails': ['landlord@example.com']})
-        theirs = inbox.user_inbox(2)[0]['id']
+        theirs = inbox.user_inbox(2, 'landlord')[0]['id']
         with self.assertRaises(HTTPException) as caught:
             read_message(theirs, user=self.tenant)
         self.assertEqual(caught.exception.status_code, 404)

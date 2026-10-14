@@ -169,6 +169,7 @@ def complete_reset(payload: ResetComplete, response: Response, db: Session = Dep
     notify_user(
         db, user,
         title='密碼已重設',
+        audience_role=None,
         body='你已透過忘記密碼驗證碼完成密碼重設。如果不是你本人操作，請立刻重設密碼。',
         category='系統', source_label='帳號安全', created_by='system',
         action_url='/app/account', action_label='帳戶設定', email=True,
@@ -202,6 +203,7 @@ def change_password(payload: PasswordChange, response: Response,
     notify_user(
         db, user,
         title='密碼已變更',
+        audience_role=None,
         body='你已在登入後變更帳號密碼。如果不是你本人操作，請立刻重設密碼。',
         category='系統', source_label='帳號安全', created_by='system',
         action_url='/app/account', action_label='帳戶設定', email=True,
