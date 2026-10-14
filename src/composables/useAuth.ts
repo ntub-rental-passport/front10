@@ -58,6 +58,11 @@ export type EmailSignInError =
   | 'invalid-password'
   | 'role-mismatch'
   | 'email-not-verified'
+  // 被 nginx 的 limit_req 擋下來。全校共用一個 NAT 出口 IP，整班同時登入時
+  // 很容易撞到；和「服務掛了」分開，才不會請被限流的人再試一次。
+  | 'rate-limited'
+  // 後端活著但沒在逾時內回應。同樣不是服務中斷，也不是帳密問題。
+  | 'request-timeout'
   | 'service-unavailable'
 
 export type EmailSignInResult =
@@ -221,6 +226,8 @@ export async function signInWithEmail(
       'invalid-password',
       'role-mismatch',
       'email-not-verified',
+      'rate-limited',
+      'request-timeout',
     ]
     const message = error instanceof Error ? error.message : ''
     const knownError = knownErrors.find((candidate) => message.includes(candidate))
@@ -319,7 +326,17 @@ export async function syncSessionWithServer(): Promise<AuthSession | null> {
   const local = getAuthSession()
   if (!local?.isAuthenticated) return null
 
-  const remote = await fetchCurrentUser()
+  // /me 現在有逾時，而且被限流（429）也會丟錯誤。這兩種情況都「不知道」
+  // cookie 還有沒有效，不能當成沒登入：這個函式跑在路由守衛裡，讓錯誤往上丟
+  // 會中斷整個導覽，清掉 session 又會把「伺服器太忙」誤判成「你被登出了」。
+  // 所以先維持本機狀態 —— 真的失效的話，下一個需要 cookie 的請求仍會回 401。
+  let remote: Awaited<ReturnType<typeof fetchCurrentUser>>
+  try {
+    remote = await fetchCurrentUser()
+  } catch {
+    return local
+  }
+
   if (!remote) {
     // 後端不認這個 cookie。本機狀態已經失真，清掉比留著更好 ——
     // 留著只會讓使用者在下一個需要 cookie 的操作上白忙一場。

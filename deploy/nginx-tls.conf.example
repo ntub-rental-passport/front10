@@ -91,6 +91,50 @@ server {
         return 405 "Method Not Allowed\n";
     }
 
+    # 註：以下兩段來自不同分支，彼此無關，合併時兩段都保留 ——
+    # 上段是請求層的方法閘門（ZAP 強化），下段是回應層的壓縮設定。
+
+    # ===== 回應壓縮（gzip）=====
+    # nginx 官方鏡像的 nginx.conf 雖然已經有 gzip on，但 gzip_types 預設「只有」text/html，
+    # 所以 JS／CSS／JSON 一直是以未壓縮原樣傳輸 —— 這個檔案先前完全沒提過 gzip，等於默認了這件事。
+    # 2026-10-13 實測未壓縮傳輸量：entry bundle 348 KB、CSS 172 KB，
+    # 而 public/data/new-taipei-garbage.json 高達 17.4 MB（由 /data/ 路徑提供給前端下載）。
+    # 這些都是純文字，壓縮比極高；校園／行動網路的「開站很久才有畫面」大半花在這上面。
+    #
+    # ⚠️ 為什麼這組指令放在 server 層，而不是跟 limit_req_zone 一起放檔案最上層（http 層）：
+    # 本檔是以 conf.d 片段的形式被 include 進官方鏡像「既有的」http 區塊
+    #（deploy/Dockerfile.web：COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf）。
+    # 那個 http 區塊本身可能已經有一行 gzip on —— Ubuntu 套件版的 /etc/nginx/nginx.conf
+    # 第 46 行就是未註解的 gzip on，而 nginx 原始碼附的那份是註解掉的，兩種都存在。
+    # 一旦撞上有 gzip on 的那種，同一個 context 出現兩次同名指令，nginx 會直接拒絕啟動：
+    #   [emerg] "gzip" directive is duplicate in .../conf.d/default.conf:1
+    # 2026-10-13 以本機 nginx 1.24 實測重現過這個 emerg（外層 http 放 gzip on + 本檔最上層也放）。
+    #
+    # 放在 server 層就兩種鏡像都能啟動：gzip 及其相關指令在 http／server／location 三種
+    # context 都合法，server 層與 http 層是不同 context 不會重複，且 server 層會覆寫 http 層。
+    # 所以不需要先確認鏡像裡到底是哪一種 —— 這比去賭鏡像內容可靠。
+    #
+    # 只放在 443 這個 server：listen 80 那個 server 只做 ACME 驗證與 301 轉址，
+    # 回應都是幾十 bytes 的轉址標頭，壓縮毫無意義。
+    gzip on;
+    # ⚠️ 這行不能漏：gzip_proxied 預設是 off，只要請求帶 Via 標頭（即來自代理）nginx 就跳過壓縮。
+    # 本站在 Cloudflare 橘雲後面，正式站的每一個請求都是代理轉發來的 ——
+    # 少了這行，上面的 gzip 設定在正式站等於沒生效，只有直連 VM IP 測試時才看得到壓縮，
+    # 於是會得出「設定沒問題」的錯誤結論。
+    gzip_proxied any;
+    # gzip_vary：讓 Cloudflare 與瀏覽器快取以 Accept-Encoding 區分壓縮／未壓縮兩個版本。
+    # 本站有 CDN 在前面，少了這行會出現「壓縮版被餵給不支援的客戶端」或
+    # 「快取到未壓縮版讓全體使用者白做工」—— 兩種都是只在 CDN 後面才會踩到的坑。
+    gzip_vary on;
+    # 刻意只列純文字型態。png/jpg/webp/woff2/zip 本身已經是壓縮格式，
+    # 再壓一次換不到幾個位元組卻要白燒 CPU，所以不放進來。
+    gzip_types application/javascript text/javascript application/json application/manifest+json text/css image/svg+xml text/plain text/xml;
+    # 小於 1 KB 的回應壓縮後往往反而變大（gzip 有固定標頭成本），多花的 CPU 也換不回頻寬。
+    gzip_min_length 1024;
+    # 等級取 5：對 JS／JSON 這類文字，5 已經拿到接近等級 9 的壓縮率，CPU 成本卻大約只有一半。
+    # VM 規格有限，壓那支 17 MB 的 JSON 時這個差距很有感，所以不往上加。
+    gzip_comp_level 5;
+
     # ===== 安全標頭 =====
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
@@ -138,8 +182,55 @@ server {
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'sha256-60LHlRjW/B3CtzIoE/Lf1/NEDvko9efWMFaGVhHu/cs='; img-src 'self' data: blob: https://www.gstatic.com https://cdn.jsdelivr.net https://api.qrserver.com https://placehold.co https://picsum.photos https://tiles.openfreemap.org https://*.googleusercontent.com; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://nominatim.openstreetmap.org; form-action 'self'; base-uri 'self'; frame-ancestors 'none'" always;
 
     # ===== 路由 + 分段限流（與 HTTP 版相同）=====
+
+    # 這兩個唯讀／無密碼的 auth 端點刻意從 login_limit 拆出來，改走寬鬆的 api_limit。
+    #
+    # 2026-10-13 診斷「學校網路登入要等很久」的根因就在這裡：下面的 location /api/auth/
+    # 是 prefix match，會一併蓋住 /api/auth/me —— 而 /me 是前端每次進站都會打的
+    # 登入狀態查詢（src/services/authApi.ts 的 fetchCurrentUser），不是使用者按下登入才發生的。
+    # 再加上 real_ip_header CF-Connecting-IP 取回的是使用者的公開 IP，校園網路全校走同一組
+    # NAT 出口，$binary_remote_addr 對校內所有人是同一個值 → 全校共用同一份配額。
+    # 一堂課 30 個學生同時開網站，光是 /me 就把 login_limit 的 2r/s 吃乾，
+    # 真正的登入請求反而撞牆拿到 429，使用者看到的就是「卡住」。
+    #
+    # 為什麼拆得掉而不算放寬防線：這兩個端點都不驗密碼 —— /me 只是拿 cookie 查自己是誰，
+    # /logout 只是清 session，都不是密碼暴力破解的標的，留在嚴格額度裡換不到安全性。
+    #
+    # 為什麼用 location =：精確比對在 nginx 的優先權最高，早於 ^~ 也早於 prefix match，
+    # 所以這兩條會穩定贏過 location /api/auth/ 與 location ^~ /api/，
+    # 且因為是精確比對，其他 /api/auth/* 端點（login、register…）完全不受影響。
+    location = /api/auth/me {
+        limit_req zone=api_limit burst=20 nodelay;
+        proxy_pass http://fastapi:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /api/auth/logout {
+        limit_req zone=api_limit burst=20 nodelay;
+        proxy_pass http://fastapi:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location /api/auth/ {
-        limit_req zone=login_limit burst=5 nodelay;
+        # burst=30 delay=10（原為 burst=5 nodelay），但 rate=2r/s 維持不動。
+        #
+        # 為什麼 rate 絕對不能調大：2026-10-13 查過 backend/routers/auth.py:345-388 的 /login，
+        # 後端完全沒有帳號層的登入失敗鎖定（auth.py 裡的 attempts_remaining 全是給
+        # 註冊驗證碼與管理員 2FA 用的，schema 裡也沒有 failed_login_count／locked_until 欄位）。
+        # 前端 src/utils/login-lockout.ts 的鎖定只存在 localStorage，攻擊者用 curl 直接繞過。
+        # 也就是說，這條 nginx 限流是密碼暴力破解「唯一」的真實防線，一放寬就等於沒有防護。
+        #
+        # 所以改的是「超量時怎麼處理」而不是速率：前 10 個請求立刻放行（delay=10），
+        # 第 11~30 個不回錯誤而是排隊、以 2r/s 慢慢放行，超過 30 才回 429。
+        # 持續速率仍然是 2r/s，暴力破解者一點好處都拿不到；
+        # 但一整班同時登入的尖峰變成「稍等幾秒」，而不是看到假的服務中斷錯誤。
+        limit_req zone=login_limit burst=30 delay=10;
         proxy_pass http://fastapi:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
