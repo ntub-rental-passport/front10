@@ -18,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 from auth.security import create_access_token
 from db import database
 from db.database import Base, get_db
-from db.models import (LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, RepairTicket,
+from db.models import (InboxMessage, LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant, RepairTicket,
                        RepairTicketEvent, RepairTicketPhoto, Rental, User, UserRole)
 from routers import repairs
 
@@ -112,6 +112,22 @@ class RepairTests(unittest.TestCase):
     def patch(self, ticket_id, user, role, updates, title='動作', **extra):
         return self.call('PATCH', f'/{ticket_id}', user, role,
                          json={'updates': updates, 'event': {'title': title}, **extra})
+
+    def tenant_messages(self):
+        with self.Session() as db:
+            return db.query(InboxMessage).filter_by(user_id=TENANT).order_by(InboxMessage.created_at).all()
+
+    def assert_tenant_notification(self, title, body, count=1):
+        messages = self.tenant_messages()
+        self.assertEqual(len(messages), count)
+        message = messages[-1]
+        self.assertEqual(message.title, title)
+        self.assertEqual(message.body, body)
+        self.assertEqual(message.category, '系統')
+        self.assertEqual(message.source_label, '報修通知')
+        self.assertEqual(message.action_url, '/app/repairs')
+        self.assertEqual(message.action_label, '查看報修')
+        self.assertEqual(message.created_by, f'landlord:{LANDLORD}')
 
     # ---- 建立與可見範圍 ----
 
@@ -262,6 +278,154 @@ class RepairTests(unittest.TestCase):
         closed = self.patch(ticket['id'], TENANT, 'tenant', {'status': 'completed'}, title='租客記錄已處理完成')
         self.assertEqual(closed.status_code, 200)
         self.assertEqual(closed.json()['status'], 'completed')
+
+    # ---- 房東更新通知 ----
+
+    def test_landlord_processing_notifies_tenant(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東已受理你的報修', '你的水電報修已由房東受理，請查看報修進度。')
+
+    def test_landlord_inspection_notifies_tenant(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'inspection'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('維修已完成，請確認驗收', '你的水電報修已完成維修，請查看並確認驗收。', count=2)
+
+    def test_landlord_canceled_notifies_tenant(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'canceled'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東取消了這筆報修', '你的水電報修已由房東取消，請查看報修紀錄。')
+
+    def test_landlord_supplement_request_notifies_tenant(self):
+        ticket_id = self.create().json()['id']
+        note = '請拍水管接頭' + '，並補充漏水位置' * 20
+        response = self.patch(ticket_id, LANDLORD, 'landlord',
+                              {'supplementRequested': True, 'supplementRequestNote': note})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東請你補充報修資料', f'你的水電報修需要補充資料：{note[:120]}')
+
+    def test_landlord_photos_without_status_change_notify_tenant(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {},
+                              photos=[{'name': '維修.jpg', 'data': image_data_url()}], photoStage='completion')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東上傳了維修照片', '房東已上傳你的水電報修維修照片，請查看報修紀錄。')
+
+    def test_landlord_metadata_changes_do_not_notify_tenant(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord',
+                              {'vendorPhone': '0912000000', 'estimatedCost': 1500})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.tenant_messages(), [])
+
+    def test_tenant_updates_do_not_notify_themselves(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, TENANT, 'tenant', {'status': 'canceled', 'supplementRequested': True},
+                              photos=[{'name': '接頭.jpg', 'data': image_data_url()}], photoStage='supplement')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.tenant_messages(), [])
+
+    def test_status_notification_takes_priority_over_supplement_and_photos(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord',
+                              {'status': 'processing', 'supplementRequested': True, 'supplementRequestNote': '請補照片'},
+                              photos=[{'name': '維修.jpg', 'data': image_data_url()}], photoStage='completion')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東已受理你的報修', '你的水電報修已由房東受理，請查看報修進度。')
+
+    def test_supplement_notification_takes_priority_over_photos(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord',
+                              {'supplementRequested': True, 'supplementRequestNote': '請補照片'},
+                              photos=[{'name': '維修.jpg', 'data': image_data_url()}], photoStage='completion')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東請你補充報修資料', '你的水電報修需要補充資料：請補照片')
+
+    def test_unchanged_status_does_not_notify_tenant(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東已受理你的報修', '你的水電報修已由房東受理，請查看報修進度。')
+
+    def test_unchanged_status_still_allows_photo_notification(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'},
+                              photos=[{'name': '維修.jpg', 'data': image_data_url()}], photoStage='completion')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東上傳了維修照片', '房東已上傳你的水電報修維修照片，請查看報修紀錄。', count=2)
+
+    def test_pending_status_does_not_notify_tenant(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'pending'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.tenant_messages(), [])
+
+    def test_existing_supplement_request_does_not_notify_for_metadata_change(self):
+        ticket_id = self.create().json()['id']
+        response = self.patch(ticket_id, LANDLORD, 'landlord',
+                              {'supplementRequested': True, 'supplementRequestNote': '請補照片'})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'vendorPhone': '0912000000'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assert_tenant_notification('房東請你補充報修資料', '你的水電報修需要補充資料：請補照片')
+
+    def test_inactive_tenant_is_silently_skipped(self):
+        ticket_id = self.create().json()['id']
+        with self.Session() as db:
+            db.get(User, TENANT).status = 'suspended'
+            db.commit()
+        response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['status'], 'processing')
+        self.assertEqual(self.tenant_messages(), [])
+
+    def test_missing_tenant_is_silently_skipped(self):
+        ticket_id = int(self.create().json()['id'])
+        with self.Session() as db:
+            ticket = db.get(RepairTicket, ticket_id)
+            landlord = db.get(User, LANDLORD)
+            payload = repairs.UpdatePayload(updates={'status': 'processing'}, event={'title': '受理'})
+            ticket.status = 'processing'
+            with patch.object(db, 'get', return_value=None):
+                repairs._notify_tenant_of_ticket_update(db, ticket, landlord, 'landlord', 'pending', payload)
+            db.commit()
+        self.assertEqual(self.tenant_messages(), [])
+
+    def test_notification_body_falls_back_to_location_or_equipment(self):
+        for location, label in [('浴室', '浴室'), (None, '設備')]:
+            with self.subTest(location=location):
+                ticket_id = int(self.create().json()['id'])
+                with self.Session() as db:
+                    ticket = db.get(RepairTicket, ticket_id)
+                    ticket.equipment = None
+                    ticket.location = location
+                    db.query(InboxMessage).filter_by(user_id=TENANT).delete()
+                    db.commit()
+                response = self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assert_tenant_notification('房東已受理你的報修', f'你的{label}報修已由房東受理，請查看報修進度。')
+
+    def test_failed_commit_rolls_back_notification_and_ticket_update(self):
+        ticket_id = int(self.create().json()['id'])
+        with patch.object(self.Session.class_, 'commit', side_effect=RuntimeError('commit failed')):
+            with self.assertRaisesRegex(RuntimeError, 'commit failed'):
+                self.patch(ticket_id, LANDLORD, 'landlord', {'status': 'processing'},
+                           photos=[{'name': '維修.jpg', 'data': image_data_url()}], photoStage='completion')
+        self.assertEqual(self.tenant_messages(), [])
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairTicket, ticket_id).status, 'pending')
+            self.assertEqual(db.query(RepairTicketEvent).filter_by(ticket_id=ticket_id).count(), 1)
+            self.assertEqual(db.query(RepairTicketPhoto).filter_by(ticket_id=ticket_id).count(), 1)
+        self.assertEqual(len(list(Path(self.upload_dir.name).iterdir())), 1)
 
     # ---- 存證 ----
 
