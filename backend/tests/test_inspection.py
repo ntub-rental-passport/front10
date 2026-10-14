@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from db import database
 from db.database import Base, get_db
-from db.models import User, UserRole, Rental, InspectionItem, InspectionRecord
+from db.models import User, UserRole, Rental, InspectionItem, InspectionRecord, InspectionPhotoDetail
 from routers import inspection
 from auth.security import create_access_token
 from migrations.create_inspection_items import upgrade
@@ -228,25 +228,39 @@ class InspectionTests(unittest.TestCase):
             with self.subTest(name=name):
                 item = self.upload(self.item()['id'])
                 with self.Session() as db:
-                    db.get(InspectionRecord, int(item['evidences'][0]['id'])).photo_url = name
+                    record_id = int(item['evidences'][0]['id'])
+                    db.get(InspectionRecord, record_id).photo_url = name
+                    detail = db.get(InspectionPhotoDetail, record_id)
+                    original_path = inspection.photo_directory().resolve() / detail.provenance['originalPath']
                     db.commit()
-                with patch.object(Path, 'unlink') as unlink:
+                self.assertTrue(original_path.is_file())
+                # 舊照片名稱不可信，但這次上傳產生的合法 .original 仍應清除，不能要求完全不 unlink。
+                # autospec 才會記錄 self 路徑；只准刪這個原始檔，連不存在的舊檔名也不能嘗試刪除，
+                # 避免只查檔案是否存在或呼叫次數，漏掉對錯誤路徑的刪除。
+                with patch.object(Path, 'unlink', autospec=True) as unlink:
                     response = self.request('DELETE', f"/items/{item['id']}")
                 self.assertEqual(response.status_code, 204, response.text)
-                unlink.assert_not_called()
+                unlink.assert_called_once_with(original_path, missing_ok=True)
 
     def test_delete_item_skips_photo_symlink_outside_upload_directory(self):
         item = self.upload(self.item()['id'])
         path = self.photo_paths(item)[0]
+        with self.Session() as db:
+            detail = db.get(InspectionPhotoDetail, int(item['evidences'][0]['id']))
+            original_path = inspection.photo_directory().resolve() / detail.provenance['originalPath']
+        self.assertTrue(original_path.is_file())
         with tempfile.TemporaryDirectory() as directory:
             outside = Path(directory) / path.name
             outside.write_bytes(path.read_bytes())
             path.unlink()
             path.symlink_to(outside)
-            with patch.object(Path, 'unlink') as unlink:
+            # 照片的 symlink 指向目錄外，不影響目錄內合法 .original 的清除責任。
+            # 一般 mock 不會收到 self，無法分辨刪了誰；用 autospec 精確限制只能刪原始檔，
+            # 否則 mock 擋住實際刪除後，單看外部檔案與 symlink 仍在會漏掉安全防護退化。
+            with patch.object(Path, 'unlink', autospec=True) as unlink:
                 response = self.request('DELETE', f"/items/{item['id']}")
             self.assertEqual(response.status_code, 204, response.text)
-            unlink.assert_not_called()
+            unlink.assert_called_once_with(original_path, missing_ok=True)
             self.assertTrue(outside.is_file())
             self.assertTrue(path.is_symlink())
 
