@@ -305,6 +305,28 @@ server {
         try_files $uri =404;
     }
 
+    # /data/ 的開放資料（垃圾清運站點、台電停電）必須自己宣告快取，否則完全不會被快取。
+    # 2026-10-14 實測：/data/new-taipei-garbage.json 的回應「沒有任何 Cache-Control 標頭」，
+    # 回頭 cf-cache-status 永遠是 DYNAMIC；而同為靜態檔的 /theme-boot.js 卻是 HIT。
+    # 差別在於下面那條通用規則沒有 expires，於是：
+    #   .js/.css/.png → 命中 Cloudflare 的「預設可快取副檔名清單」，仍會被邊緣快取
+    #   .json         → 不在那份清單裡，少了 Cache-Control 就兩邊都不快取
+    # 後果是每一位訪客、每一次進垃圾清運頁，都要把整包資料從台北的 origin 重新拉一次；
+    # 本站的 Cloudflare 邊緣節點在美國加州（colo=SJC，實測 RTT 136 ms，origin 本機只要 7 ms），
+    # 所以這一包是跨太平洋來回一趟才到使用者手上。
+    #
+    # 取 1 小時而不是更久：垃圾清運資料每月由 GitHub Action 更新、台電停電資料更新更頻繁，
+    # 這兩個檔名都沒有內容 hash（不像 /assets/ 的 bundle），所以不能比照 1y。
+    # 1 小時足以讓同一位使用者在一次使用期間內不再重抓，又不會讓資料過期太久。
+    #
+    # 用 expires 而不是 add_header Cache-Control —— 見下方 location / 的說明
+    #（add_header 一旦出現在 location 裡，server 層的 CSP／HSTS 等標頭會整組消失）。
+    location ^~ /data/ {
+        limit_req zone=static_limit burst=60 nodelay;
+        expires 1h;
+        try_files $uri =404;
+    }
+
     location ~ "\.[A-Za-z0-9]{1,8}$" {
         limit_req zone=static_limit burst=60 nodelay;
         try_files $uri =404;
