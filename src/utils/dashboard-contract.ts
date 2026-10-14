@@ -33,6 +33,15 @@ export interface BillingCycle {
   totalAmount?: number
   /** 租客回報已繳、房東還沒確認收齊 */
   tenantReport?: { at: string; detail: string } | null
+  /** 房東平台租約：這期電費帳款的 id（有開立才有），用來對帳 */
+  electricityChargeId?: number | null
+  /** 電表照片與租客回報的讀數 */
+  utilityEvidence?: import('@/src/services/utilityEvidenceApi').UtilityEvidence[]
+  /** 跟租客自存的簽約合約不符的地方（有對應合約才會檢查） */
+  contractMismatch?: import('@/src/services/utilityEvidenceApi').ChargeMismatch[]
+  /** 這期租金帳款的 id，以及繳款證明、異議紀錄 */
+  rentChargeId?: number
+  rentEvidence?: import('@/src/services/utilityEvidenceApi').UtilityEvidence[]
 }
 
 /** 對應 rentals 一列（加上該租約的每期帳單）。 */

@@ -724,14 +724,15 @@ async function exportAnalysisReport(saveToSpace = false): Promise<void> {
       risks: reconcileAssessments(risks.value).map(risk => isDismissed(risk, records.value) ? { ...risk, status: 'not_applicable' as const, severity: null, description: '使用者確認不適用；原規則證據保留供追溯。' } : risk),
       handlingRecords: records.value.map(record => ({ ...record, outcome: reconcileRecord(record, risks.value) })),
       fieldValues,
-      privacyMode: saveToSpace ? false : exportPrivacyMode.value,
+      // 存到伺服器的一律去識別化；完整資料版只供下載到使用者自己的裝置
+      privacyMode: saveToSpace ? true : exportPrivacyMode.value,
       analysisState: aiAnalysisState.value,
     })
     if (saveToSpace) {
       await loadReview()
       const saved = await uploadReport(reviewId, report.bytes, report.fileName, report.reportId)
       reviewFiles.value.push(saved)
-      exportSuccess.value = '完整資料版報告已存到我的空間。'
+      exportSuccess.value = '隱私保護版報告已存到我的空間。'
     } else {
       downloadPdf(report.bytes, report.fileName)
       exportDialogOpen.value = false
@@ -857,7 +858,7 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
             {{ exportingReport ? '正在產生 PDF…' : '下載 PDF 報告' }}
           </Button>
         </div>
-        <p class="process-field-hint">存到我的空間會保存完整資料版，不受隱私選項影響。</p>
+        <p class="process-field-hint">存到我的空間一律保存隱私保護版（去識別化），不受隱私選項影響；需要完整資料版請下載到自己的裝置。</p>
         <section class="saved-reports" aria-labelledby="saved-reports-title">
           <h3 id="saved-reports-title">已存的報告</h3>
           <p v-if="reviewLoading" class="process-field-hint">載入中…</p>

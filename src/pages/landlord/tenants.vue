@@ -898,6 +898,13 @@ onMounted(async () => {
             >
               辦理退租
             </button>
+            <RouterLink
+              v-else
+              to="/landlord/contracts"
+              class="col-span-2 rounded-full border border-[#c8ddcb] px-4 py-2.5 text-center text-sm font-bold text-[#55795d]"
+            >
+              再出租給這位租客：到合約管理「建立新租約」
+            </RouterLink>
           </div>
         </div>
         <div v-else class="grid min-h-80 place-items-center p-6 text-center text-sm text-[#7a827c]">

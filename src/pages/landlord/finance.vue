@@ -27,6 +27,7 @@ import {
 } from '@/src/composables/useLandlordFinance'
 import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import type { PaymentMethod } from '@/src/services/landlordWorkspaceApi'
+import ChargeEvidencePanel from '@/src/components/landlord/ChargeEvidencePanel.vue'
 import ElectricityRecords from '@/src/components/landlord/ElectricityRecords.vue'
 const financeSection = ref<'finance' | 'electricity'>('finance')
 
@@ -45,6 +46,7 @@ const {
   monthLabel,
   loading,
   error: loadError,
+  refresh: refreshFinance,
   recordPayment,
   reversePayment,
   markPaymentReminded,
@@ -57,7 +59,7 @@ const { activeTenants } = useLandlordWorkspace()
 const emptyPayment: LandlordPayment = {
   id: '', chargeId: 0, leaseId: 0, tenantId: null, tenantBound: false, group: '尚無收款資料', room: '—', tenant: '—', kind: 'rent',
   title: '尚無收款任務', period: '', amount: 0, paid: 0, due: '—', status: 'pending', partial: false, overdue: false,
-  carried: false, reminded: false, remindedAt: null, tenantReport: null, payments: [],
+  carried: false, reminded: false, remindedAt: null, tenantReport: null, evidence: [], contractMismatch: [], payments: [],
   activities: ['新增有效租約後，系統會依租約自動產生每期應收帳款。'],
 }
 
@@ -280,7 +282,7 @@ function exportReport(): void {
           <div class="mt-3 flex gap-2"><label class="search flex-1"><Search /><input v-model="keyword" class="w-full" placeholder="搜尋房號或租客" /></label><select v-model="statusFilter" class="select"><option value="all">全部狀態</option><option value="pending">待收</option><option value="overdue">逾期</option><option value="partial">部分收款</option><option value="paid">已確認</option></select></div>
         </div>
         <div class="max-h-[510px] overflow-auto"><table class="w-full min-w-[680px] text-left text-sm"><thead><tr><th>房號</th><th>租客</th><th>項目</th><th>應收金額</th><th>到期日</th><th>狀態</th><th>操作</th></tr></thead><tbody>
-          <tr v-for="item in filtered" :key="item.id" :class="{ selected: item.id === selectedId }" @click="selectedId = item.id"><td><b>{{ item.room }}</b></td><td><b>{{ item.tenant }}</b><small>{{ item.group }}</small></td><td><b>{{ item.title }}</b><small>{{ item.period }}</small></td><td><b>{{ money(item.amount - item.paid) }}</b><small v-if="item.paid">已收 {{ money(item.paid) }}</small></td><td>{{ item.due.replaceAll('-', '/') }}</td><td><span class="badge" :class="statusMeta[item.status].cls">{{ statusMeta[item.status].label }}</span><small v-if="item.overdue && item.partial">已部分收款</small><small v-if="item.tenantReport" class="reported">租客回報已繳</small></td><td><button class="mini" @click.stop="selectedId = item.id; item.status === 'paid' ? notify('此筆款項已完成') : openPayment()"><Check />{{ item.status === 'paid' ? '已完成' : '確認收款' }}</button></td></tr>
+          <tr v-for="item in filtered" :key="item.id" :class="{ selected: item.id === selectedId }" @click="selectedId = item.id"><td><b>{{ item.room }}</b></td><td><b>{{ item.tenant }}</b><small>{{ item.group }}</small></td><td><b>{{ item.title }}</b><small>{{ item.period }}</small></td><td><b>{{ money(item.amount - item.paid) }}</b><small v-if="item.paid">已收 {{ money(item.paid) }}</small></td><td>{{ item.due.replaceAll('-', '/') }}</td><td><span class="badge" :class="statusMeta[item.status].cls">{{ statusMeta[item.status].label }}</span><small v-if="item.overdue && item.partial">已部分收款</small><small v-if="item.tenantReport" class="reported">租客回報已繳</small><small v-if="item.contractMismatch.length" class="mismatch">與合約不符</small><small v-if="item.evidence.some((e) => e.kind === 'charge_dispute' && e.status === 'open')" class="mismatch">租客異議</small></td><td><button class="mini" @click.stop="selectedId = item.id; item.status === 'paid' ? notify('此筆款項已完成') : openPayment()"><Check />{{ item.status === 'paid' ? '已完成' : '確認收款' }}</button></td></tr>
           <tr v-if="!filtered.length"><td colspan="7" class="py-12 text-center text-[#778078]">{{ loading ? '正在讀取帳務資料…' : '沒有符合條件的帳款。' }}</td></tr>
         </tbody></table></div>
       </article>
@@ -291,6 +293,7 @@ function exportReport(): void {
           <div><h3 class="text-xl font-black">{{ selected.room }}／{{ selected.tenant === '—' ? '未填寫' : selected.tenant }}</h3><p class="mt-1 text-sm text-[#768078]">{{ selected.group }}</p></div>
           <div class="grid grid-cols-3 gap-2"><div class="money-box"><span>應收</span><b>{{ money(selected.amount) }}</b></div><div class="money-box"><span>已收</span><b>{{ money(selected.paid) }}</b></div><div class="money-box accent"><span>待收</span><b>{{ money(selected.amount - selected.paid) }}</b></div></div>
           <section v-if="selected.tenantReport" class="report-note"><h4>租客回報已繳款</h4><p>{{ selected.tenantReport.detail }}</p><small>{{ new Date(selected.tenantReport.at).toLocaleString('zh-TW') }}・對完帳後按「確認收款」入帳</small></section>
+          <ChargeEvidencePanel :evidence="selected.evidence" :mismatches="selected.contractMismatch" @changed="refreshFinance" />
           <section class="soft"><h4>項目明細</h4><p><span>{{ selected.title }}</span><b>{{ money(selected.amount) }}</b></p><small>{{ selected.period }}</small></section>
           <dl><div><dt>租客資料</dt><dd>{{ selected.tenant === '—' ? '未填寫' : `${selected.tenant}／${selected.tenantBound ? '已綁定帳號' : '未綁定帳號'}` }}</dd></div><div><dt>到期日</dt><dd>{{ selected.due.replaceAll('-', '/') }}</dd></div><div><dt>通知狀態</dt><dd>{{ selected.remindedAt ? `已提醒（${new Date(selected.remindedAt).toLocaleDateString('zh-TW')}）` : selected.tenantBound ? '尚未提醒' : '租客未綁定帳號，無法站內提醒' }}</dd></div></dl>
           <div class="grid gap-2"><button class="btn primary" :disabled="selected.status === 'paid' || !selected.chargeId || busy" @click="openPayment"><CheckCircle2 />確認收款</button><button class="btn secondary" :disabled="selected.status === 'paid' || !selected.chargeId || busy" :title="selected.tenantBound ? '' : '租客接受邀請、綁定帳號後才能收到站內提醒'" @click="sendReminder"><Bell />發送提醒</button><button class="btn secondary" @click="exportReport"><FileSpreadsheet />匯出此月報表</button></div>
@@ -332,4 +335,5 @@ function exportReport(): void {
 .toast.error { @apply bg-[#8f3b31]; }
 td small.reported { @apply font-bold text-[#3d788a]; }
 .report-note { @apply rounded-2xl border border-[#cbdfe7] bg-[#eef6f9] p-4 text-sm text-[#2f6577]; }.report-note h4 { @apply font-black; }.report-note p { @apply mt-1; }.report-note small { @apply mt-1 block text-xs text-[#5b8291]; }
+td small.mismatch { @apply font-bold text-[#a56c21]; }
 </style>
