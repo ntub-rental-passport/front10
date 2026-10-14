@@ -46,6 +46,13 @@ if engine is not None:
     from db.schema_check import require_current_schema
     require_current_schema(engine)
 
+
+def background_jobs_enabled() -> bool:
+    # 預設關閉，開發機即使不小心連到正式資料庫，也不會跑排程汙染監控與通知。
+    # 不要改成預設開啟：那會要求每台新開發機都記得關，漏一次就會汙染正式資料。
+    return (os.getenv("BACKGROUND_JOBS_ENABLED") or "").strip().lower() in ("1", "true", "yes")
+
+
 @asynccontextmanager
 async def lifespan(app):
     async def reminders_loop():
@@ -98,7 +105,12 @@ async def lifespan(app):
             tick += 1
             await asyncio.sleep(20)
 
-    tasks = [asyncio.create_task(reminders_loop()), asyncio.create_task(monitor_loop())]
+    tasks = []
+    if background_jobs_enabled():
+        logging.getLogger(__name__).info('背景排程已啟用（BACKGROUND_JOBS_ENABLED）')
+        tasks = [asyncio.create_task(reminders_loop()), asyncio.create_task(monitor_loop())]
+    else:
+        logging.getLogger(__name__).info('背景排程未啟用（BACKGROUND_JOBS_ENABLED 未設定或不為真值）')
     try:
         yield
     finally:
