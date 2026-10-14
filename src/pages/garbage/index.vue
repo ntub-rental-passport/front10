@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import {
   Bell,
   BookOpen,
@@ -71,7 +71,9 @@ const tabs = [
 ] as const
 type Tab = (typeof tabs)[number]['id']
 const tab = ref<Tab>('map'),
-  stops = ref<GarbageStop[]>([]),
+  // 只整包替換 stops.value、從不修改單一站點，故可省去深層響應式追蹤。
+  // 若日後新增就地編輯站點或陣列的功能，須改為整包替換，或重新評估此用法。
+  stops = shallowRef<GarbageStop[]>([]),
   loading = ref(true),
   dataError = ref('')
 const district = ref(''),
