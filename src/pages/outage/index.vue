@@ -13,8 +13,8 @@ import {
   Zap,
 } from 'lucide-vue-next'
 
-import outagePowerIllustration from '@/src/assets/outage/outage-power.png'
-import outageWaterIllustration from '@/src/assets/outage/outage-water.png'
+import outagePowerIllustration from '@/src/assets/outage/outage-power.webp'
+import outageWaterIllustration from '@/src/assets/outage/outage-water.webp'
 import { useOutageData } from './useOutageData'
 
 const {
@@ -33,6 +33,7 @@ const {
           <img
             :src="outagePowerIllustration"
             alt=""
+            loading="lazy"
             class="pointer-events-none absolute bottom-0 right-0 w-[72%] min-w-[260px] opacity-85"
           />
 
@@ -121,6 +122,7 @@ const {
           <img
             :src="outageWaterIllustration"
             alt=""
+            loading="lazy"
             class="pointer-events-none absolute bottom-0 right-0 w-[74%] min-w-[280px] opacity-85"
           />
 

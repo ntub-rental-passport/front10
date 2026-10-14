@@ -107,6 +107,10 @@ const {
                 <img
                   :src="item.image"
                   :alt="item.imageAlt"
+                  loading="lazy"
+                  decoding="async"
+                  width="384"
+                  height="384"
                   class="max-h-[128px] w-auto max-w-[188px] object-contain transition-transform duration-200 group-hover:scale-[1.03]"
                 />
               </div>
