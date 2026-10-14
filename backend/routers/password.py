@@ -20,6 +20,7 @@ from auth.verification import generate_verification_code, hash_verification_code
 from db.database import get_db
 from db.models import AdminSession, PasswordResetChallenge, PendingAdminLogin, PendingRegistration, User
 from notifications.email_service import EmailConfigurationError, _smtp_config, send_password_reset_code
+from notifications.user_notify import notify_user
 from routers.auth import password_hasher
 
 router = APIRouter(prefix='/api/auth/password', tags=['Authentication'])
@@ -164,6 +165,14 @@ def complete_reset(payload: ResetComplete, response: Response, db: Session = Dep
     if claimed != 1:
         raise HTTPException(400, INVALID_CODE)
     _replace_password(db, user, payload.newPassword)
+    # 安全性通知與密碼更新共用交易，避免更新失敗時誤報成功。
+    notify_user(
+        db, user,
+        title='密碼已重設',
+        body='你已透過忘記密碼驗證碼完成密碼重設。如果不是你本人操作，請立刻重設密碼。',
+        category='系統', source_label='帳號安全', created_by='system',
+        action_url='/app/account', action_label='帳戶設定', email=True,
+    )
     db.commit()
     clear_auth_cookie(response)
     return {'ok': True}
@@ -189,6 +198,14 @@ def change_password(payload: PasswordChange, response: Response,
     if not _matches(user, payload.currentPassword):
         raise HTTPException(400, '目前密碼不正確。')
     _replace_password(db, user, payload.newPassword)
+    # 使用者可能已無法登入，因此安全性通知也要求寄送 Email。
+    notify_user(
+        db, user,
+        title='密碼已變更',
+        body='你已在登入後變更帳號密碼。如果不是你本人操作，請立刻重設密碼。',
+        category='系統', source_label='帳號安全', created_by='system',
+        action_url='/app/account', action_label='帳戶設定', email=True,
+    )
     db.commit()
     with _change_lock:
         _change_attempts.pop(current.id, None)
