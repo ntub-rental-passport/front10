@@ -445,6 +445,24 @@ def _email_enabled(db: Session, landlord: User) -> bool:
     return settings_for(db, landlord).email_notifications
 
 
+def _notify_tenant(db: Session, charge: LandlordCharge, *, title: str, body: str) -> None:
+    """帳款變動時通知已綁定帳號的租客。
+
+    沒綁定帳號或帳號已停用就靜默跳過：房東的入帳、作廢是帳務動作，
+    不能因為租客還沒接受邀請就失敗（`remind_charge` 回 409 是另一回事 ——
+    那個端點的目的本來就是「送出提醒」，送不出去必須讓房東知道）。
+    """
+    lease = charge.lease
+    tenant_user = db.get(User, lease.tenant_user_id) if lease.tenant_user_id else None
+    if not tenant_user or tenant_user.status != "active":
+        return
+    notify_user(
+        db, tenant_user, title=title, body=body,
+        category="帳務", source_label="帳款異動", created_by=f"landlord:{charge.landlord_id}",
+        action_url="/app", action_label="查看帳務",
+    )
+
+
 def _money(value: int) -> str:
     return f"NT${value:,}"
 
@@ -510,13 +528,19 @@ def create_charge(payload: ChargePayload, request: Request, db: Session = Depend
     if db.query(LandlordCharge.id).filter(LandlordCharge.lease_id == lease.id, LandlordCharge.kind == payload.kind,
                                           LandlordCharge.period_start == period_start).first():
         raise HTTPException(status.HTTP_409_CONFLICT, f"這份租約在 {period_start.isoformat()} 起的{KIND_LABELS[payload.kind]}已經建立過。")
-    charge = LandlordCharge(landlord_id=landlord.id, lease_id=lease.id, kind=payload.kind, title=payload.title.strip(),
+    charge = LandlordCharge(landlord_id=landlord.id, lease=lease, kind=payload.kind, title=payload.title.strip(),
                             period_start=period_start, period_end=period_end, due_date=payload.due_date, amount=payload.amount)
     db.add(charge)
     actor = landlord_actor(request, landlord)
     db.add(LandlordChargeEvent(charge=charge, kind="created", detail=f"新增{KIND_LABELS[payload.kind]} {_money(payload.amount)}", actor_user_id=actor.id))
     record_audit(db, landlord, actor, "帳務", f"新增{KIND_LABELS[payload.kind]}",
                  f"{lease.tenant.name}（{lease.room.number}）{payload.title} {_money(payload.amount)}")
+    _notify_tenant(
+        db, charge,
+        title=f"新增{KIND_LABELS[payload.kind]}：{payload.title.strip()} {_money(payload.amount)}",
+        body=f"{lease.property.name} {lease.room.number} 的{payload.title.strip()} {_money(payload.amount)}，"
+             f"請在 {payload.due_date.isoformat()} 前繳款。",
+    )
     db.commit()
     return _charge_dict(_owned_charge(db, landlord.id, charge.id), date.today())
 
@@ -541,6 +565,13 @@ def record_payment(charge_id: int, payload: PaymentPayload, request: Request, db
                                detail=f"{payload.paid_on.isoformat()} 入帳 {_money(payload.amount)}"))
     record_audit(db, landlord, actor, "帳務", "確認收款",
                  f"{charge.lease.tenant.name}（{charge.lease.room.number}）{charge.title} {_money(payload.amount)}")
+    remaining = balance - payload.amount
+    payment_status = "這筆帳款已收齊" if remaining == 0 else f"尚餘 {_money(remaining)} 未繳"
+    _notify_tenant(
+        db, charge,
+        title=f"房東已確認收款 {_money(payload.amount)}",
+        body=f"{charge.lease.property.name} {charge.lease.room.number} 的{charge.title}已入帳 {_money(payload.amount)}，{payment_status}。",
+    )
     db.commit()
     db.expire_all()
     return _charge_dict(_owned_charge(db, landlord.id, charge.id), date.today())
@@ -562,6 +593,11 @@ def reverse_payment(charge_id: int, payment_id: int, payload: ReversePayload, re
     db.add(LandlordChargeEvent(charge_id=charge.id, kind="reversed", actor_user_id=actor.id,
                                detail=f"沖銷 {_money(original.amount)}：{payload.reason.strip()}"))
     record_audit(db, landlord, actor, "帳務", "沖銷收款", f"{charge.title} {_money(original.amount)}：{payload.reason.strip()}", "warning")
+    _notify_tenant(
+        db, charge,
+        title=f"房東沖銷了一筆收款 {_money(original.amount)}",
+        body=f"{charge.title}的一筆收款 {_money(original.amount)} 已沖銷，原因：{payload.reason.strip()}。這筆金額回到未繳。",
+    )
     db.commit()
     db.expire_all()
     return _charge_dict(_owned_charge(db, landlord.id, charge.id), date.today())
@@ -580,6 +616,12 @@ def void_charge(charge_id: int, payload: VoidPayload, request: Request, db: Sess
     charge.void_reason = payload.reason.strip()
     db.add(LandlordChargeEvent(charge_id=charge.id, kind="voided", actor_user_id=actor.id, detail=f"作廢：{payload.reason.strip()}"))
     record_audit(db, landlord, actor, "帳務", "作廢帳款", f"{charge.title}：{payload.reason.strip()}", "warning")
+    _notify_tenant(
+        db, charge,
+        title=f"帳款已作廢：{charge.title}",
+        body=f"{charge.lease.property.name} {charge.lease.room.number} 的{charge.title} {_money(charge.amount)} 已作廢，"
+             f"原因：{payload.reason.strip()}。這筆帳款不需要再繳。",
+    )
     db.commit()
     db.expire_all()
     return _charge_dict(_owned_charge(db, landlord.id, charge.id), date.today())
@@ -607,6 +649,7 @@ def remind_charge(charge_id: int, request: Request, db: Session = Depends(get_db
         title=f"{charge.title}待繳 {_money(balance)}",
         body=f"{lease.property.name} {lease.room.number} 的{charge.title}尚有 {_money(balance)} 未繳（{timing}）。已繳費請告知房東確認入帳。",
         category="帳務", source_label="房東催繳", created_by=f"landlord:{landlord.id}",
+        action_url="/app", action_label="查看帳務",
         email=_email_enabled(db, landlord),
     )
     actor = landlord_actor(request, landlord)

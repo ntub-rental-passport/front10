@@ -65,6 +65,7 @@ def _rent_reminders(db, landlord: User, today: date, email: bool = False) -> int
             body=f"{lease.property.name} {lease.room.number} 的{charge.title}到期日為 {charge.due_date.isoformat()}，"
                  f"尚有 NT${balance:,} 未繳。已繳費請告知房東確認入帳。",
             category="帳務", source_label="收租提醒", created_by="system",
+            action_url="/app", action_label="查看帳務",
             email=email,
         )
         db.add(LandlordChargeEvent(charge_id=charge.id, kind=stage[0], detail=f"系統自動提醒租客（{stage[2]}）"))

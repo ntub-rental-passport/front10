@@ -453,6 +453,7 @@ class ContractReviewExpiryTests(ReviewTestCase):
             notice = db.query(InboxMessage).one()
             self.assertEqual((notice.title, notice.category, notice.source_label, notice.created_by, notice.user_id),
                              ('合約審閱紀錄將於 14 天後刪除', '租約', '合約審閱', 'system', 1))
+            self.assertEqual((notice.action_url, notice.action_label), ('/app/contract-analysis', '查看審閱'))
             for text in ('2026-01-01', '1 張佐證圖片', '1 份報告', '2026-06-30', '儲存合約', '下載報告'):
                 self.assertIn(text, notice.body)
             review = db.get(ContractReview, self.review_id)
@@ -482,6 +483,16 @@ class ContractReviewExpiryTests(ReviewTestCase):
         with self.Session() as db:
             self.assertEqual(db.get(ContractReview, review_id).expiry_notified_at, now)
             self.assertIn('0 張佐證圖片、0 份報告', db.query(InboxMessage).one().body)
+
+    def test_suspended_user_does_not_get_expiry_notice(self):
+        review_id = self.add_review(records=[1])
+        with self.Session() as db:
+            db.get(User, 1).status = 'suspended'
+            db.commit()
+        contract_reviews.dispatch_expiry(self.activity + timedelta(days=166))
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+            self.assertIsNone(db.get(ContractReview, review_id).expiry_notified_at)
 
     def test_empty_review_deleted_at_180_days_without_notice(self):
         review_id = self.add_review()
