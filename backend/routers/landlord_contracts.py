@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from auth.landlord_workspace import get_landlord_workspace, landlord_actor, record_audit
 from db.database import get_db
 from db.models import LandlordLease, LandlordLeaseFile, LandlordTenant, LandlordTenantActivity, User
+from notifications.user_notify import notify_user
 from routers import landlord_lease_rules as rules
 
 router = APIRouter(prefix="/api/landlord/contracts", tags=["Landlord contracts"])
@@ -159,6 +160,16 @@ def upload_file(lease_id: int, payload: FilePayload, request: Request, db: Sessi
     db.add(LandlordTenantActivity(tenant_id=lease.tenant_id, kind="contract_file", detail=f"上傳合約附件 {record.original_name}"))
     record_audit(db, landlord, actor, "合約", "上傳合約附件", f"{lease.tenant.name}：{record.original_name}")
     try:
+        tenant_user = db.get(User, lease.tenant_user_id) if lease.tenant_user_id else None
+        if tenant_user and tenant_user.status == "active":
+            notify_user(
+                db, tenant_user,
+                audience_role="tenant",
+                title="房東上傳了合約附件",
+                body=f"房東已為{lease.property.name} {lease.room.number} 上傳「{record.original_name}」，請查看合約附件。",
+                category="租約", source_label="合約附件", created_by=f"landlord:{landlord.id}",
+                action_url="/app", action_label="查看租約",
+            )
         db.commit()
     except Exception:
         (directory / stored).unlink(missing_ok=True)

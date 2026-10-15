@@ -192,6 +192,19 @@ def _member_dict(db: Session, member: LandlordTeamMember) -> dict:
     }
 
 
+def _notify_team_member(db: Session, member: LandlordTeamMember, landlord: User, *, title: str, body: str) -> None:
+    # 尚未接受邀請的成員沒有綁定帳號，仍可用邀請信箱通知已有帳號的當事人。
+    user = db.get(User, member.member_user_id) if member.member_user_id else db.query(User).filter(User.email == member.email).first()
+    if not user or user.status != "active":
+        return
+    notify_user(
+        db, user, title=title, body=body,
+        audience_role="landlord",
+        category="系統", source_label="團隊通知", created_by=f"landlord:{landlord.id}",
+        action_url="/landlord/settings/team", action_label="查看工作區",
+    )
+
+
 @router.get("/team")
 def list_team(db: Session = Depends(get_db), landlord: User = Depends(get_landlord_workspace)):
     members = db.query(LandlordTeamMember).filter(
@@ -253,6 +266,9 @@ def change_role(member_id: int, payload: TeamRolePayload, request: Request, db: 
     member.role = payload.role
     record_audit(db, landlord, landlord_actor(request, landlord), "團隊", "變更成員權限",
                  f"{member.email} 改為{ROLE_LABELS[payload.role]}")
+    workspace_name = settings_for(db, landlord).workspace_name or f"{_default_name(landlord)}的房東工作區"
+    _notify_team_member(db, member, landlord, title="你的工作區角色已變更",
+                        body=f"你在{workspace_name}的角色已變更為「{ROLE_LABELS[payload.role]}」。")
     db.commit()
     return _member_dict(db, member)
 
@@ -264,6 +280,9 @@ def remove_member(member_id: int, request: Request, db: Session = Depends(get_db
                                                  LandlordTeamMember.status != "revoked").first()
     if not member:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "找不到這位成員。")
+    workspace_name = settings_for(db, landlord).workspace_name or f"{_default_name(landlord)}的房東工作區"
+    _notify_team_member(db, member, landlord, title="你已被移出房東工作區",
+                        body=f"你已被移出{workspace_name}，無法再存取該工作區的資料。")
     member.status = "revoked"
     member.revoked_at = datetime.utcnow()
     member.token_hash = None
