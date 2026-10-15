@@ -3,11 +3,12 @@
 import SmartCaptureCamera, {
   type CapturePayload,
 } from '@/src/components/handover/SmartCaptureCamera.vue'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import HandoverOverviewHeader from '@/src/components/handover/HandoverOverviewHeader.vue'
 import HandoverAddItemsDialog from '@/src/components/handover/HandoverAddItemsDialog.vue'
 import HandoverEvidenceDetail from '@/src/components/handover/HandoverEvidenceDetail.vue'
 import { useRouter } from 'vue-router'
+import { useRefreshTarget } from '@/src/composables/useRefreshTarget'
 import {
   Camera,
   CheckCircle2,
@@ -78,6 +79,9 @@ const {
   error,
   reload,
 } = useHandover()
+
+const { registerRefresh } = useRefreshTarget()
+onMounted(() => registerRefresh(reload))
 
 // ---------- 拍照與上傳存證---------- //
 

@@ -13,11 +13,12 @@
  */
 
 import { useMediaQuery } from '@vueuse/core'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import HandoverOverviewHeader from '@/src/components/handover/HandoverOverviewHeader.vue'
 import HandoverAddItemsDialog from '@/src/components/handover/HandoverAddItemsDialog.vue'
 import { Input } from '@/components/ui/input'
 import { useRouter } from 'vue-router'
+import { useRefreshTarget } from '@/src/composables/useRefreshTarget'
 import {
   Camera,
   CheckCircle2,
@@ -67,6 +68,9 @@ const {
   error,
   reload,
 } = useHandover()
+
+const { registerRefresh } = useRefreshTarget()
+onMounted(() => registerRefresh(reload))
 
 // ---------- 上傳退租存證---------- //
 

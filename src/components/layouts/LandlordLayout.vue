@@ -12,10 +12,11 @@ import {
   Wrench,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
+import PullToRefresh from '@/src/components/PullToRefresh.vue'
 import DesktopOnlyNotice from '@/src/components/DesktopOnlyNotice.vue'
 import LandlordNotificationBell from '@/src/components/landlord/LandlordNotificationBell.vue'
 import { getAuthSession, signOut } from '@/src/composables/useAuth'
-import { useLandlordDeviceGate } from '@/src/composables/useDeviceGate'
+import { useFieldCaptureSupport, useLandlordDeviceGate } from '@/src/composables/useDeviceGate'
 import {
   activeWorkspaceOwnerId,
   setActiveWorkspaceOwnerId,
@@ -26,6 +27,7 @@ import { isMobileUnsupportedLandlordPath } from '@/src/utils/mobile-surface'
 const route = useRoute()
 const router = useRouter()
 const { blocked: deviceBlocked } = useLandlordDeviceGate()
+const { coarsePointer } = useFieldCaptureSupport()
 const mobileUnsupported = computed(
   () => deviceBlocked.value && isMobileUnsupportedLandlordPath(route.path),
 )
@@ -227,7 +229,9 @@ async function handleSignOut(): Promise<void> {
         :full-height="false"
         home-path="/landlord"
       />
-      <RouterView v-else />
+      <PullToRefresh v-else :enabled="coarsePointer">
+        <RouterView />
+      </PullToRefresh>
     </main>
     <nav
       class="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4rem+env(safe-area-inset-bottom))] border-t border-[#e2ddcf] bg-[#fbf9f2] pb-[env(safe-area-inset-bottom)] lg:hidden"

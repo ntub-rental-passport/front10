@@ -28,6 +28,7 @@ const uploaded: HandoverItem = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  request.mockReset()
   vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: vi.fn() })
 })
 
@@ -42,13 +43,33 @@ async function loadedStore(items: HandoverItem[] = [item]) {
 }
 
 describe('database handover state', () => {
+  it.each([false, true])('reloads only the selected rental items after upload (analysis fails: %s)', async (fails) => {
+    const store = await loadedStore()
+    const refreshed = { ...uploaded, checkoutComplete: true }
+    request.mockClear()
+    request.mockResolvedValueOnce(structuredClone(uploaded))
+    if (fails) request.mockRejectedValueOnce(new Error('分析失敗'))
+    else request.mockResolvedValueOnce({ item: structuredClone(uploaded) })
+    request.mockResolvedValueOnce([refreshed])
+
+    await store.addEvidence('10', 'baseline', { url: 'photo', source: 'file', quality: null })
+
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      '/items/10/photos/baseline', '/analyze', '/items?rental_id=1',
+    ])
+    expect(store.itemsOfCurrentProperty.value).toEqual([refreshed])
+    expect(store.currentProperty.value?.id).toBe('1')
+    expect(store.error.value).toBe(fails ? '分析失敗' : '')
+    expect(store.busy.value).toBe(false)
+  })
+
   it('appends an angle and analyzes the new record even when the primary photo sorts first', async () => {
     const store = await loadedStore([uploaded])
     const multiple: HandoverItem = { ...uploaded, evidences: [
       { ...uploaded.evidences[0], id: '22', angle: 'front' },
       { ...uploaded.evidences[0], id: '21', angle: 'side' },
     ] }
-    request.mockResolvedValueOnce(multiple).mockResolvedValueOnce({ item: multiple })
+    request.mockResolvedValueOnce(multiple).mockResolvedValueOnce({ item: multiple }).mockResolvedValueOnce([multiple])
     await store.addEvidence('10', 'baseline', {url:'original-data', source:'file', quality:null, append:true, angle:'front', replacesId:'20', originalName:'photo.png'})
     expect(request).toHaveBeenCalledWith('/items/10/photos/baseline', 'PUT', expect.objectContaining({
       image_data:'original-data', append:true, angle:'front', replaces_id:20, original_name:'photo.png',
@@ -60,6 +81,7 @@ describe('database handover state', () => {
     const store = await loadedStore()
     request.mockResolvedValueOnce(structuredClone(uploaded))
     request.mockResolvedValueOnce({ item: structuredClone(uploaded) })
+    request.mockResolvedValueOnce([structuredClone(uploaded)])
     await store.addEvidence('10', 'baseline', {
       url: 'data:image/jpeg;base64,abc', source: 'camera',
       quality: { brightness: 140, sharpness: 88, isLevel: true },
@@ -76,6 +98,7 @@ describe('database handover state', () => {
     const store = await loadedStore()
     request.mockResolvedValueOnce(structuredClone(uploaded))
     request.mockResolvedValueOnce({ status: 'success', vlm_result: {}, item: structuredClone(uploaded) })
+    request.mockResolvedValueOnce([structuredClone(uploaded)])
     await store.addEvidence('10', 'baseline', {
       url: 'data:image/jpeg;base64,abc',
       source: 'camera',
@@ -93,6 +116,7 @@ describe('database handover state', () => {
     const store = await loadedStore()
     request.mockResolvedValueOnce(structuredClone(uploaded))
     request.mockResolvedValueOnce({ item: structuredClone(uploaded) })
+    request.mockResolvedValueOnce([structuredClone(uploaded)])
     await store.addEvidence('10', 'baseline', {
       url: 'data:image/jpeg;base64,abc', source: 'file', quality: null,
     })
@@ -116,6 +140,7 @@ describe('database handover state', () => {
     request
       .mockResolvedValueOnce(structuredClone(uploaded))
       .mockRejectedValueOnce(new Error('分析失敗'))
+      .mockResolvedValueOnce([structuredClone(uploaded)])
     await store.addEvidence('10', 'baseline', { url: 'data:image/jpeg;base64,abc', source: 'file', quality: null })
     expect(store.itemsOfCurrentProperty.value[0].evidences[0].id).toBe('20')
     expect(store.error.value).toBe('分析失敗')
