@@ -276,7 +276,12 @@ export function useHandover() {
       const record = item.evidences
         .filter((e) => e.phase === phase)
         .reduce((a, b) => (Number(a.id) > Number(b.id) ? a : b))
-      await analyze(itemId, record.id)
+      try {
+        await analyze(itemId, record.id)
+      } finally {
+        // 照片已儲存，辨識失敗也要同步張數與配對狀態，且保留目前選擇的租約。
+        await loadItems()
+      }
     })
   }
 

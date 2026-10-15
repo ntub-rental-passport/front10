@@ -13,8 +13,9 @@
  * 把它們做成不同頁面比塞在同一頁更貼近真實使用情境。
  */
 
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useRefreshTarget } from '@/src/composables/useRefreshTarget'
 import { Building2, ArrowRight, LogIn, LogOut } from 'lucide-vue-next'
 
 import {
@@ -40,6 +41,9 @@ import { countItemsWithEvidence } from '@/src/utils/handover'
 const router = useRouter()
 const { properties, currentProperty, selectProperty, busy, error, reload, itemsOfCurrentProperty } =
   useHandover()
+
+const { registerRefresh } = useRefreshTarget()
+onMounted(() => registerRefresh(reload))
 
 // ---------- 租屋處 ---------- //
 

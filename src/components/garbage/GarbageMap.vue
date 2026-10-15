@@ -465,7 +465,7 @@ onUnmounted(() => {
 })
 </script>
 <template>
-  <div class="garbage-map-shell" :data-ready="ready" :data-layer="aerial ? 'aerial' : 'street'">
+  <div data-no-pull-refresh class="garbage-map-shell" :data-ready="ready" :data-layer="aerial ? 'aerial' : 'street'">
     <div
       ref="container"
       class="garbage-map"

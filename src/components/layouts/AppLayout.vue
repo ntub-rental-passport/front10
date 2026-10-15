@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils'
 import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
 import { useNavigation } from '@/src/composables/useNavigation'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'
-import { useTenantDeviceGate } from '@/src/composables/useDeviceGate'
+import { useFieldCaptureSupport, useTenantDeviceGate } from '@/src/composables/useDeviceGate'
+import PullToRefresh from '@/src/components/PullToRefresh.vue'
 import { isMobileUnsupportedTenantPath } from '@/src/utils/mobile-surface'
 import DesktopOnlyNotice from '@/src/components/DesktopOnlyNotice.vue'
 import TenantNotificationBell from '@/src/components/TenantNotificationBell.vue'
@@ -17,6 +18,8 @@ const route = useRoute()
 const { navItems, accountItem, mobileNavItems } = useNavigation()
 const { blocked, outage, isPathUnderMaintenance } = useFeatureGate()
 const { blocked: deviceBlocked } = useTenantDeviceGate()
+const { coarsePointer } = useFieldCaptureSupport()
+const mainContent = ref<HTMLElement | null>(null)
 const mobileUnsupported = computed(
   () => deviceBlocked.value && isMobileUnsupportedTenantPath(route.path),
 )
@@ -129,7 +132,7 @@ watch(isSidebarPinned, (value) => {
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pt-0 sm:pb-0">
+    <main ref="mainContent" class="flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pt-0 sm:pb-0">
       <header class="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background px-4 sm:hidden">
         <RouterLink to="/app" class="flex items-center gap-2 font-bold text-primary">
           <img :src="brandLogoIcon" alt="RentMate Logo" class="h-6 w-6 shrink-0 object-contain" />
@@ -137,7 +140,11 @@ watch(isSidebarPinned, (value) => {
         </RouterLink>
         <TenantNotificationBell />
       </header>
-      <div :class="isWideContentRoute ? 'min-h-full w-full' : 'mx-auto min-h-full max-w-[1400px] p-4 md:p-6'">
+      <PullToRefresh
+        :enabled="coarsePointer && !mobileUnsupported"
+        :scroll-container="mainContent"
+        :class="isWideContentRoute ? 'min-h-full w-full' : 'mx-auto min-h-full max-w-[1400px] p-4 md:p-6'"
+      >
         <!--
           維護是後端控制的停用狀態，任何裝置都不該進入，所以優先於裝置擋板。
           兩種攔截都刻意不 redirect：保留書籤與分享連結，換到電腦仍能開同一網址。
@@ -155,7 +162,7 @@ watch(isSidebarPinned, (value) => {
           home-path="/app"
         />
         <RouterView v-else />
-      </div>
+      </PullToRefresh>
       <footer v-if="!mobileUnsupported" class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300">
         <div class="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 py-4 text-center">
           <p class="text-sm text-slate-300/90">臺北商業大學畢業專題｜AI 租屋資訊整合與契約輔助平台展示頁</p>
