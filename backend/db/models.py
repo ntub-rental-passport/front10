@@ -1,7 +1,7 @@
 """ORM mappings for database.sql (multi-role accounts)."""
 import datetime
 from sqlalchemy import Boolean, Column, Date, DateTime, Time, Enum, Float, Integer, BigInteger, String, Text, DECIMAL, JSON, ForeignKey, UniqueConstraint, CheckConstraint, Index, CHAR
-from sqlalchemy.dialects.mysql import DATETIME, DOUBLE, LONGTEXT, TINYINT
+from sqlalchemy.dialects.mysql import DATETIME, DOUBLE, TINYINT
 from sqlalchemy.orm import deferred, relationship
 from sqlalchemy.ext.hybrid import hybrid_method
 from db.database import Base
@@ -1045,6 +1045,25 @@ class AdminRepairNote(Base):
 # ---------------------------------------------------------------------------
 
 Seconds = Float().with_variant(DOUBLE, 'mysql')
+
+
+class PushSubscription(Base):
+    """帳號的瀏覽器推播訂閱；失效裝置保留紀錄，重新訂閱時可恢復。"""
+    __tablename__ = 'push_subscriptions'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'endpoint_hash', name='uq_push_subscriptions_user_endpoint'),
+        Index('ix_push_subscriptions_user_expired', 'user_id', 'expired_at'),
+    )
+    id = Column(Integer, nullable=False, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    endpoint = Column(Text, nullable=False)
+    endpoint_hash = Column(CHAR(64), nullable=False)
+    p256dh = Column(String(255), nullable=False)
+    auth = Column(String(255), nullable=False)
+    user_agent = Column(String(255), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    last_success_at = Column(DateTime, nullable=True)
+    expired_at = Column(DateTime, nullable=True)
 
 
 class InboxMessage(Base):

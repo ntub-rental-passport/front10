@@ -17,7 +17,7 @@
   過濾，未標註身分的舊通知仍在兩邊顯示。
 - Email：送出後在背景寄（routers/inbox_api.py 用 BackgroundTasks），每位收件人
   各自記寄出／失敗，發送詳情頁看得到。
-- 推播：沒有接（需要 VAPID 與每位使用者的裝置訂閱），維持 pending（待接通）。
+- 推播：在背景送到每位使用者訂閱的有效裝置，記錄送出／失敗；未訂閱則不顯示狀態。
 
 ## 存哪裡
 
@@ -29,12 +29,16 @@
 """
 
 import json
+import logging
 import re
 import time
 import uuid
 from datetime import datetime, timezone
 
 from db.sqlstore import StoreUnavailable, open_store
+from notifications import push_service
+
+logger = logging.getLogger(__name__)
 
 CATEGORIES = ('系統', '租約', '補貼', '帳務')
 CHANNELS = ('inapp', 'email', 'push')
@@ -198,7 +202,7 @@ def _insert_messages(db, batch_id: str, fields: dict, recipients: list[dict], *,
 
 
 def create_batch(values: dict, recipient: dict, *, actor: str, source_type: str = 'admin') -> dict:
-    """立即發送：每位收件人一筆，站內當下就送到；Email 由呼叫端交給背景寄（send_pending_emails）。"""
+    """立即發送：每位收件人一筆，站內當下就送到；Email 與推播由呼叫端交給背景送出。"""
     fields = _clean_message(values)
     recipients = resolve_recipients(recipient)
     if not recipients:
@@ -214,7 +218,8 @@ def create_batch(values: dict, recipient: dict, *, actor: str, source_type: str 
 
     audit_service.record('通知管理', fields['source_label'], f'發送給 {len(recipients)} 位使用者', actor=actor,
                          subject=f'batch:{batch_id}')
-    return {'batchId': batch_id, 'recipientCount': len(recipients), 'emailQueued': 'email' in fields['channels']}
+    return {'batchId': batch_id, 'recipientCount': len(recipients),
+            'emailQueued': 'email' in fields['channels'], 'pushQueued': 'push' in fields['channels']}
 
 
 def send_pending_emails(batch_id: str, send_email=None) -> dict:
@@ -256,11 +261,48 @@ def send_pending_emails(batch_id: str, send_email=None) -> dict:
     return {'sent': sent, 'failed': failed}
 
 
+def send_pending_push(batch_id: str) -> dict:
+    """送出這個批次待送的推播；逐筆原子認領，重跑或併發重入都不會重複送。"""
+    with _open() as db:
+        rows = db.execute(
+            "SELECT id, user_id, title, body, action_url, source_label FROM inbox_messages "
+            "WHERE batch_id = ? AND push_state = 'pending'", (batch_id,),
+        ).fetchall()
+
+    sent = failed = 0
+    for row in rows:
+        with _open() as db:
+            claimed = db.execute(
+                "UPDATE inbox_messages SET push_state = 'sending' WHERE id = ? AND push_state = 'pending'",
+                (row['id'],),
+            ).rowcount
+        if not claimed:
+            continue
+        try:
+            state = push_service.send_to_user(row['user_id'], title=row['title'], body=row['body'],
+                                              url=row['action_url'] or '/app', tag=row['id'])
+        except Exception:
+            # 例外可能包含裝置 endpoint 憑證，僅記帳號，且不讓單筆失敗中斷整批。
+            logger.warning('通知推播失敗：user_id=%s', row['user_id'])
+            state = 'failed'
+        sent += state == 'sent'
+        failed += state == 'failed'
+        with _open() as db:
+            db.execute('UPDATE inbox_messages SET push_state = ? WHERE id = ?', (state, row['id']))
+
+    if rows and (sent or failed):
+        from admin import audit_service
+
+        detail = f'推播：送出 {sent} 人' + (f'，{failed} 人失敗' if failed else '')
+        audit_service.record('通知管理', rows[0]['source_label'], detail, actor='system', subject=f'batch:{batch_id}')
+    return {'sent': sent, 'failed': failed}
+
+
 def deliver_scheduled(emails: list[str], row, email_states: dict[str, str]) -> int:
     """排程通知到期時的站內部分：只放得進有帳號的人的收件匣。回傳送到幾人。
 
     Email 由排程自己寄（scheduled_notification_service），這裡只把結果記下來，
-    發送紀錄才看得到同一批的站內與 Email 狀態。
+    發送紀錄才看得到同一批的站內與 Email 狀態。推播在收件匣交易提交後送出。
     """
     wanted = {email.strip().lower() for email in emails if isinstance(email, str)}
     recipients = [
@@ -285,6 +327,8 @@ def deliver_scheduled(emails: list[str], row, email_states: dict[str, str]) -> i
         _insert_messages(db, f'sched-{row["id"]}', fields, recipients, created_by=row['created_by'],
                          source_type='admin', audience_role=audience_role,
                          email_states={k.lower(): v for k, v in email_states.items()})
+    if 'push' in fields['channels']:
+        send_pending_push(f'sched-{row["id"]}')
     return len(recipients)
 
 
@@ -295,7 +339,7 @@ def deliver_scheduled(emails: list[str], row, email_states: dict[str, str]) -> i
 
 def _delivery(row) -> dict:
     states = {'inapp': row['inapp_state'], 'email': row['email_state'], 'push': row['push_state']}
-    # sending 是寄信當下的過渡狀態，畫面上還是「待送」
+    # sending 是 Email／推播送出當下的過渡狀態，畫面上還是「待送」
     return {channel: ('pending' if state == 'sending' else state) for channel, state in states.items() if state}
 
 

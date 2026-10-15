@@ -20,10 +20,9 @@ from db import database
 from db.database import Base, get_db
 from db.encrypted_fields import EncryptedText
 from db.models import UserRole
-from db.models import User, UserIdentity, PendingRegistration, LandlordTenant, Rental, Bill, InspectionRecord
+from db.models import User, PendingRegistration, LandlordTenant, Rental, Bill, InspectionRecord
 from routers import auth, admin
 from db.schema_check import schema_problems
-from auth.security import create_access_token
 from auth.verification import hash_verification_code
 
 
@@ -36,7 +35,7 @@ class SchemaContractTests(unittest.TestCase):
         audience_table, audience_column, audience_declaration = re.search(
             r'ALTER TABLE `([^`]+)`\s+ADD COLUMN `([^`]+)`\s+(.*?)\s+AFTER `source_type`;', migration, re.S,
         ).groups()
-        self.assertEqual(len(tables), 67)
+        self.assertEqual(len(tables), 68)
         self.assertEqual(set(tables), set(Base.metadata.tables))
         for name, body in tables.items():
             columns = dict(re.findall(r'^\s*`([^`]+)`\s+([^\n]+)', body, re.M))
@@ -183,7 +182,6 @@ class NewSchemaApiTests(unittest.TestCase):
                 'email': 'shared@example.com', 'password': 'tenant-password-123', 'role': role})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()['userId'], user_id)
-            other = 'landlord' if role == 'tenant' else 'tenant'
             response = self.client.post('/api/auth/login', json={
                 'email': 'shared@example.com', 'password': 'landlord-password-123', 'role': role})
             self.assertEqual(response.status_code, 401)

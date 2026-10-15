@@ -666,6 +666,7 @@ def _notify_landlord_of_new_ticket(db: Session, ticket: models.RepairTicket) -> 
         category="系統", source_label="報修通知", created_by="system",
         action_url="/landlord/maintenance", action_label="查看報修",
         email=settings.email_notifications,
+        push=True,
     )
 
 
@@ -705,6 +706,7 @@ def _notify_tenant_of_ticket_update(db: Session, ticket: models.RepairTicket, us
         audience_role="tenant",
         category="系統", source_label="報修通知", created_by=f"landlord:{user.id}",
         action_url="/app/repairs", action_label="查看報修",
+        push=True,
     )
 
 

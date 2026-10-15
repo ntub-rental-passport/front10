@@ -68,6 +68,7 @@ def _rent_reminders(db, landlord: User, today: date, email: bool = False) -> int
             category="帳務", source_label="收租提醒", created_by="system",
             action_url="/app", action_label="查看帳務",
             email=email,
+            push=True,
         )
         db.add(LandlordChargeEvent(charge_id=charge.id, kind=stage[0], detail=f"系統自動提醒租客（{stage[2]}）"))
         sent += 1
@@ -121,6 +122,7 @@ def _contract_reminders(db, landlord: User, today: date, reminder_days: int, ema
             body=f"{lease.property.name} {lease.room.number} 的租約將於 {lease.end_date.isoformat()} 到期，請與房東確認是否續約。",
             category="租約", source_label="合約到期提醒", created_by="system",
             action_url="/app", action_label="查看租約",
+            push=True,
         )
         db.add(LandlordTenantActivity(tenant_id=lease.tenant_id, kind=tenant_kind, detail=f"系統提醒租客：租約 {days_left} 天後到期"))
         sent += 1

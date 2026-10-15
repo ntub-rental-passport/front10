@@ -186,6 +186,7 @@ def revoke_invitation(lease_id: int, request: Request, db: Session = Depends(get
                 body=f"{lease.property.name} {lease.room.number} 的租約邀請已撤銷，原邀請連結與邀請碼已失效。如需加入，請向房東索取新的邀請。",
                 category="租約", source_label="租約邀請", created_by=f"landlord:{landlord.id}",
                 action_url="/app", action_label="查看租約",
+                push=True,
             )
     if revoked:
         record_audit(db, landlord, landlord_actor(request, landlord), "租客", "撤銷租約邀請", lease.tenant.name, "warning")
@@ -214,6 +215,7 @@ def unbind_tenant(lease_id: int, request: Request, db: Session = Depends(get_db)
             body=f"{lease.property.name} {lease.room.number} 的租約已與你的帳號解除綁定，你將無法再查看這份租約。如有疑問，請與房東確認。",
             category="租約", source_label="租約綁定", created_by=f"landlord:{landlord.id}",
             action_url="/app", action_label="查看租約",
+            push=True,
         )
     db.commit()
     return _landlord_view(db, lease)
@@ -308,6 +310,7 @@ def _accept(db: Session, invitation: LeaseInvitation, user: User) -> dict:
             category="租約", source_label="租約邀請", created_by="system",
             action_url="/landlord/tenants", action_label="查看租客",
             email=settings_for(db, landlord).email_notifications,
+            push=True,
         )
     db.commit()
     return {**_preview(db, invitation, user), "lease_id": invitation.lease_id}

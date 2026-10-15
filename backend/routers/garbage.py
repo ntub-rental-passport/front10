@@ -2,13 +2,13 @@ import math
 import os
 import time
 from datetime import date, datetime
-from urllib.parse import urlparse
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from auth.security import get_current_tenant
 from notifications.garbage_service import capabilities, connect, create_reminder, public_reminder, TZ
+from notifications.push_service import validate_subscription
 
 router = APIRouter(prefix='/api/garbage', tags=['Taipei garbage'])
 _cache = {'expires': 0, 'data': None}
@@ -25,24 +25,6 @@ class ReminderInput(BaseModel):
 
 class ActiveInput(BaseModel):
     active: bool
-
-
-def validate_subscription(subscription):
-    if not isinstance(subscription, dict):
-        raise ValueError('推播訂閱無效。')
-    raw_endpoint = subscription.get('endpoint', '')
-    if not isinstance(raw_endpoint, str) or len(raw_endpoint) > 2000:
-        raise ValueError('推播訂閱無效。')
-    endpoint = urlparse(raw_endpoint)
-    host = endpoint.hostname or ''
-    allowed = host == 'fcm.googleapis.com' or host == 'updates.push.services.mozilla.com' or host.endswith('.notify.windows.com') or host == 'web.push.apple.com'
-    if endpoint.scheme != 'https' or endpoint.port not in (None, 443) or not allowed or endpoint.username or endpoint.password:
-        raise ValueError('不支援此裝置的推播服務。')
-    keys = subscription.get('keys', {})
-    if not isinstance(keys, dict):
-        raise ValueError('推播金鑰無效。')
-    if not all(isinstance(keys.get(k), str) and 10 <= len(keys[k]) <= 200 for k in ('p256dh', 'auth')):
-        raise ValueError('推播金鑰無效。')
 
 
 @router.get('/capabilities')

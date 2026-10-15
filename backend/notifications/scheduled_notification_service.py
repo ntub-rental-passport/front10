@@ -11,14 +11,12 @@ services/notificationApi.ts）。那條路徑上沒有任何東西能在指定�
 踩過的坑（容器路徑、測試污染、重複寄送、停機後補送舊通知）都修好了，
 重寫一套只會把同樣的坑再踩一次。
 
-## 誠實邊界：排程送站內與 Email，不送推播
+## 支援管道：站內、Email 與推播
 
 - **Email**：真的寄。走 email_service 的 SMTP，跟驗證信同一條路。
 - **站內**：2026-09-30 起收件匣搬到後端（inbox_service.py），到期時直接寫進收件匣。
   在那之前收件匣存在瀏覽器的 localStorage，排程寫不進去，所以一直不提供這個選項。
-- **推播**：需要每個使用者的 web push subscription，目前只有垃圾車提醒
-  會蒐集，而且是綁在單筆提醒上。先不提供。
-畫面上必須把這件事寫出來，不能只是「剛好沒有那個勾選框」。
+- **推播**：透過 inbox_service 送到帳號訂閱的有效裝置，結果記在收件匣發送紀錄。
 """
 import json
 import logging
@@ -27,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from db.sqlstore import open_store
+from notifications import push_service
 
 TZ = timezone(timedelta(hours=8))
 logger = logging.getLogger(__name__)
@@ -41,8 +40,8 @@ MAX_PENDING = 100
 #: 半夜兩點的維護公告在早上九點才寄出去，比沒寄更糟。
 MISSED_AFTER = timedelta(minutes=30)
 
-#: 目前後端真的送得出去的管道。見檔頭的「誠實邊界」。
-SUPPORTED_CHANNELS = ('email', 'inapp')
+#: 後端支援的管道；是否設定金鑰由 capabilities 回報。
+SUPPORTED_CHANNELS = ('email', 'inapp', 'push')
 
 CATEGORIES = ('系統', '租約', '補貼', '帳務')
 
@@ -62,14 +61,12 @@ def email_configured() -> bool:
 
 def capabilities() -> dict:
     """畫面要知道哪些管道真的送得出去，才不會給出送不到的選項。"""
+    push = push_service.push_available()
     return {
         'email': email_configured(),
         'inapp': True,
-        # 送不出去的管道是 False，而且理由要一起給前端顯示，不能只是靜靜地少一個勾選框
-        'push': False,
-        'unsupportedReason': {
-            'push': '推播需要每位使用者的裝置訂閱，目前只有垃圾車提醒會蒐集。',
-        },
+        'push': push,
+        'unsupportedReason': {} if push else {'push': '伺服器尚未設定推播金鑰或未安裝推播套件。'},
     }
 
 
@@ -118,7 +115,7 @@ def create(created_by: str, values: dict) -> dict:
         raise ValueError('請至少選擇一種管道。')
     unsupported = [c for c in channels if c not in SUPPORTED_CHANNELS]
     if unsupported:
-        raise ValueError(f"排程目前只支援站內與 Email；{'、'.join(unsupported)} 無法在排程時間送出。")
+        raise ValueError(f"排程只支援站內、Email 與推播；{'、'.join(unsupported)} 無法在排程時間送出。")
     if 'email' in channels and not email_configured():
         raise ValueError('Gmail 寄信服務尚未設定，無法排程 Email。')
 
@@ -301,15 +298,32 @@ def dispatch_due(now=None, resolve=None, send_email=None, deliver_inapp=None) ->
                         logger.warning('Scheduled notification %s failed for a recipient', row['id'])
                         result['email']['failed'] += 1
                         email_states[address] = 'failed'
-            if 'inapp' in channels:
-                # 站內寫不進去不能連累已經寄出的 Email：分開接住，記成站內 0 人
+            if 'inapp' in channels or 'push' in channels:
+                # 收件匣交易同時建立推播紀錄；只選推播也必須走這條路。
                 try:
-                    result['inapp'] = {'sent': deliver_inapp(emails, row, email_states)}
+                    delivered = deliver_inapp(emails, row, email_states)
+                    if 'inapp' in channels:
+                        result['inapp'] = {'sent': delivered}
+                    if 'push' in channels:
+                        result['push'] = {'sent': 0, 'failed': 0}
+                        with connect() as db:
+                            states = db.execute(
+                                'SELECT push_state, count(*) AS total FROM inbox_messages WHERE batch_id = ? '
+                                'GROUP BY push_state', (f'sched-{row["id"]}',),
+                            ).fetchall()
+                        for state in states:
+                            if state['push_state'] in ('sent', 'failed'):
+                                result['push'][state['push_state']] = state['total']
                 except Exception:
                     logger.exception('Scheduled notification %s could not reach the inbox', row['id'])
-                    result['inapp'] = {'sent': 0}
+                    if 'inapp' in channels:
+                        result['inapp'] = {'sent': 0}
+                    if 'push' in channels:
+                        status = 'failed'
             inapp_sent = result.get('inapp', {}).get('sent', 0)
-            if result['email']['failed'] and not result['email']['sent'] and not inapp_sent:
+            push_sent = result.get('push', {}).get('sent', 0)
+            push_failed = result.get('push', {}).get('failed', 0)
+            if (result['email']['failed'] or push_failed) and not (result['email']['sent'] or inapp_sent or push_sent):
                 status = 'failed'
         except Exception:
             logger.exception('Scheduled notification %s could not be dispatched', row['id'])
@@ -327,7 +341,13 @@ def dispatch_due(now=None, resolve=None, send_email=None, deliver_inapp=None) ->
         sent = result['email']['sent']
         inapp_sent = result.get('inapp', {}).get('sent', 0)
         inapp_note = f'站內送到 {inapp_sent} 人；' if 'inapp' in channels else ''
-        if status == 'failed' and failed == 0:
+        if 'push' in channels:
+            push_result = result.get('push', {'sent': 0, 'failed': 0})
+            _record_audit(row, f"{inapp_note}Email：寄出 {sent} 人，{failed} 人失敗；"
+                          f"推播：送出 {push_result['sent']} 人，{push_result['failed']} 人失敗")
+            if status == 'failed' or failed or push_result['failed']:
+                _record_monitor_event('notification-failed', f"「{row['title']}」：部分或全部管道寄送失敗")
+        elif status == 'failed' and failed == 0:
             _record_monitor_event('notification-failed', f"「{row['title']}」：無法取得收件人")
             _record_audit(row, '無法取得收件人，沒有寄出')
         elif status == 'failed':

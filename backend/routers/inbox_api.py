@@ -1,7 +1,7 @@
 """站內通知的 API（見 notifications/inbox_service.py）。
 
 - 後台（Bearer，僅限管理員）：
-  - `POST /api/admin/notifications/send`：立即發送。站內當下送到，Email 回應之後在背景寄。
+  - `POST /api/admin/notifications/send`：立即發送。站內當下送到，Email 與推播在背景送出。
   - `GET /api/admin/notifications/messages`：發送紀錄（每位收件人一筆，前端依批次分組）。
 - 收件匣（cookie，任何登入的人，不分身分）：
   - `GET /api/notifications`：自己的站內通知，加上公告的已讀、關閉狀態。
@@ -34,6 +34,8 @@ def send_notification(
     if result['emailQueued']:
         # 群發幾十封信要好一陣子，不能讓管理員的畫面等到寄完
         background_tasks.add_task(inbox_service.send_pending_emails, result['batchId'])
+    if result['pushQueued']:
+        background_tasks.add_task(inbox_service.send_pending_push, result['batchId'])
     return {'batchId': result['batchId'], 'recipientCount': result['recipientCount']}
 
 
