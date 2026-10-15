@@ -77,7 +77,7 @@ API：`GET /capabilities`、`GET/POST /reminders`、`PATCH/DELETE /reminders/{id
 
 換金鑰後，保存提醒時會比對既有訂閱的公鑰，不同或無法取得時先取消再重新訂閱。推播服務回 404／410 時，本筆與同使用者、同端點的其他 pending 推播會標記 `expired` 並移除訂閱，避免逐筆重送失效端點；Email 狀態不受影響。
 
-推播需 HTTPS（localhost 可開發測試），由使用者按保存提醒時授權；service worker `/garbage-sw.js` 處理背景通知及導向清運頁。服務部署於網域根目錄；iOS 等裝置可能需安裝到主畫面。支援 Chrome/Firefox/Edge/Safari 常見推播端點，拒絕使用者提供任意主機。新瀏覽器供應者需經確認後更新端點允許清單。
+推播需 HTTPS（localhost 可開發測試），由使用者按保存提醒時授權；service worker `/rentmate-sw.js` 處理背景通知並依推播網址導向頁面。服務部署於網域根目錄；iOS 等裝置可能需安裝到主畫面。支援 Chrome/Firefox/Edge/Safari 常見推播端點，拒絕使用者提供任意主機。新瀏覽器供應者需經確認後更新端點允許清單。
 
 ## 驗證
 

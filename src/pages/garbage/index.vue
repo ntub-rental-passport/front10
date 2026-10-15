@@ -21,7 +21,7 @@ import GarbageFilters from '@/src/components/garbage/GarbageFilters.vue'
 import CollectionCountdown from '@/src/components/garbage/CollectionCountdown.vue'
 import WeeklySchedule from '@/src/components/garbage/WeeklySchedule.vue'
 import { matchesStatus, stopStatus, type StatusFilter } from '@/src/utils/garbage-status'
-import { base64UrlToBytes, isSameKey } from '@/src/utils/push-key'
+import { subscribeBrowserPush } from '@/src/utils/browser-push'
 import {
   operatesOn,
   collectionSchedules,
@@ -509,21 +509,11 @@ async function loadReminders() {
   }
 }
 async function subscribePush() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window))
-    throw new Error('此瀏覽器不支援系統推播，請選擇 Gmail。')
-  if ((await Notification.requestPermission()) !== 'granted')
-    throw new Error('請允許通知權限，或選擇 Gmail。')
-  const registration = await navigator.serviceWorker.register('/garbage-sw.js')
-  await navigator.serviceWorker.ready
-  const existing = await registration.pushManager.getSubscription()
-  const bytes = base64UrlToBytes(caps.value.publicKey)
-  if (existing) {
-    if (isSameKey(existing.options.applicationServerKey, bytes)) return existing.toJSON()
-    // 換 VAPID 金鑰後，舊訂閱無法接收新金鑰簽署的推播，必須重新訂閱。
-    await existing.unsubscribe()
-  }
   return (
-    await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes })
+    await subscribeBrowserPush(caps.value.publicKey, {
+      unsupported: '此瀏覽器不支援系統推播，請選擇 Gmail。',
+      permission: '請允許通知權限，或選擇 Gmail。',
+    })
   ).toJSON()
 }
 async function saveReminder() {

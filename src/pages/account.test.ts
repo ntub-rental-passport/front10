@@ -11,6 +11,30 @@ const mocks = vi.hoisted(() => ({
   signOut: vi.fn(),
 }))
 const unreadCount = ref(0)
+const pushState = ref('off')
+const pushDeviceCount = ref(0)
+const pushError = ref('')
+
+vi.mock('@/src/composables/usePushSubscription', async () => {
+  const { computed, ref } = await import('vue')
+  return {
+    usePushSubscription: () => ({
+      state: pushState,
+      loading: ref(false),
+      error: pushError,
+      deviceCount: pushDeviceCount,
+      statusText: computed(() => {
+        if (pushState.value === 'unsupported-server') return '伺服器尚未啟用推播'
+        if (pushState.value === 'on') return `已開啟；此帳號共 ${pushDeviceCount.value} 台裝置`
+        return '已關閉'
+      }),
+      canToggle: computed(() => ['on', 'off'].includes(pushState.value)),
+      refresh: vi.fn(),
+      enable: vi.fn(),
+      disable: vi.fn(),
+    }),
+  }
+})
 
 vi.mock('@/src/composables/useAuth', () => ({
   getAuthSession: () => ({ nickname: '測試租客', email: 'tenant@example.com', role: 'tenant' }),
@@ -70,6 +94,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.saveNickname.mockResolvedValue({ nickname: '新暱稱' })
   unreadCount.value = 0
+  pushState.value = 'off'
+  pushDeviceCount.value = 0
+  pushError.value = ''
   publicSettings.value.supportEmail = 'help@example.com'
 })
 
@@ -116,7 +143,6 @@ describe('我的帳戶的真實功能與未開放狀態', () => {
     '身分驗證',
     '兩步驟驗證',
     '登出其他裝置',
-    '推播通知',
     '電子郵件通知',
     '常見問題',
     '意見回饋',
@@ -140,7 +166,28 @@ describe('我的帳戶的真實功能與未開放狀態', () => {
     const { html } = await mount()
     expect(html).toContain('登入紀錄尚未開放')
     expect(html).not.toMatch(/Windows · Chrome|iPhone 15|目前裝置|2024\/11\/18|80%|中等/)
-    expect(html).not.toContain('role="switch"')
+    expect(html).not.toMatch(/role="switch"[^>]*aria-label="(?:兩步驟驗證|安全檢查)/)
+  })
+
+  it('伺服器未啟用時推播開關停用並說明原因', async () => {
+    pushState.value = 'unsupported-server'
+    const { html } = await mount()
+    expect(button(html, '推播通知')).toMatch(/\bdisabled(?:[\s=>])/)
+    expect(button(html, '推播通知')).toContain('伺服器尚未啟用推播')
+  })
+
+  it('推播已開啟時顯示帳號裝置數', async () => {
+    pushState.value = 'on'
+    pushDeviceCount.value = 3
+    const { html } = await mount()
+    expect(button(html, '推播通知')).toContain('已開啟；此帳號共 3 台裝置')
+    expect(button(html, '推播通知')).toContain('aria-checked="true"')
+  })
+
+  it('推播切換錯誤顯示在該列', async () => {
+    pushError.value = '訂閱保存失敗'
+    const { html } = await mount()
+    expect(button(html, '推播通知')).toContain('訂閱保存失敗')
   })
 
   it('語言顯示目前支援的繁體中文', async () => {

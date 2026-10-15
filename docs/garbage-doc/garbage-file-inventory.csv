@@ -23,7 +23,7 @@
 資料快照與來源,public/data/new-taipei-garbage.json,"新北原始班表快照，26,655 筆",前端／後端／資料庫,納入交接索引
 資料快照與來源,public/data/taipei-garbage-source.json,臺北來源與匯入摘要,前端／後端／資料庫,納入交接索引
 資料快照與來源,public/data/taipei-garbage.csv,"臺北原始班表快照，4,010 筆",前端／後端／資料庫,納入交接索引
-推播接收,public/garbage-sw.js,Web Push 接收與通知點擊入口,前端／後端／資料庫,納入交接索引
+推播接收,public/rentmate-sw.js,Web Push 接收與通知點擊入口,前端／後端／資料庫,納入交接索引
 資料更新與工具,scripts/build-garbage-report.py,重建 HTML 系統報告與 CSV 分類索引,前端／後端／資料庫,納入交接索引
 資料更新與工具,scripts/update-new-taipei-garbage.ts,新北分頁資料下載、品質檢查及快照更新,前端／後端／資料庫,納入交接索引
 資料更新與工具,scripts/update-taipei-garbage.ts,臺北資料下載、品質檢查及快照更新,前端／後端／資料庫,納入交接索引

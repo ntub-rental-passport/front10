@@ -87,7 +87,7 @@
 | 狀態／班表／路線 | `garbage-status.ts`、`garbage-countdown.ts`、`garbage-routes.ts` | 15 分鐘提示、下一班、週期、跨日、路線分组 |
 | 後端路由 | [routers/garbage.py](../backend/routers/garbage.py) | 公開能力與 GPS API、受保護的提醒 CRUD |
 | 後端服務 | [garbage_service.py](../backend/notifications/garbage_service.py) | 班表快取、SQLite、提醒驗證、通知派送與狀態 |
-| 推播接收 | [garbage-sw.js](../public/garbage-sw.js) | 背景通知、點擊後開啟清運頁 |
+| 推播接收 | [rentmate-sw.js](../public/rentmate-sw.js) | 背景通知、依推播網址開啟頁面 |
 | 問題回報範本 | [.github/ISSUE_TEMPLATE/garbage-data.yml](../.github/ISSUE_TEMPLATE/garbage-data.yml) | GitHub 清運資料問題表單 |
 | 靜態資料 | `public/data/` 下兩市快照與兩份 source JSON | 原始班次資料、來源與版本摘要 |
 | 更新腳本 | `scripts/update-taipei-garbage.ts`、`scripts/update-new-taipei-garbage.ts` | 下載、驗證、寫入快照 |
@@ -113,7 +113,7 @@
 提醒表單 → Bearer token → FastAPI → 帳號資料庫驗證租客
                                    └─ SQLite 提醒佇列
                                         └─ 每 20 秒排程 → SMTP／Web Push
-                                                             └─ garbage-sw.js → 通知
+                                                             └─ rentmate-sw.js → 通知
 
 已設定的臺北車輛資料服務 → FastAPI /vehicles → 前端新鮮度檢查 → 車輛標記
 ```
