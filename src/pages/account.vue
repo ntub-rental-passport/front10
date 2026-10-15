@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import {
   AlertTriangle,
@@ -13,7 +13,6 @@ import {
   Headphones,
   KeyRound,
   Languages,
-  Laptop,
   LockKeyhole,
   LogOut,
   Mail,
@@ -21,11 +20,11 @@ import {
   PencilLine,
   Phone,
   ShieldCheck,
-  Smartphone,
   Trash2,
   UserRound,
 } from 'lucide-vue-next'
-import { Switch } from '@/components/ui/switch/index'
+import { useNotifications } from '@/src/composables/useNotifications'
+import { publicSettings } from '@/src/composables/usePublicSettings'
 import {
   finishNicknameSetup,
   getAuthSession,
@@ -35,16 +34,13 @@ import {
 
 const router = useRouter()
 const session = getAuthSession()
+const { unreadCount } = useNotifications('tenant')
+const supportEmail = computed(() => publicSettings.value.supportEmail.trim())
 
 const displayName = ref(session?.nickname || '王小明')
 const draftName = ref(displayName.value)
 const email = ref(session?.email || 'user@example.com')
-const phone = ref('0912-345-678')
-const draftPhone = ref(phone.value)
 const isEditing = ref(false)
-const pushNotifications = ref(true)
-const emailNotifications = ref(true)
-const twoFactorEnabled = ref(true)
 const deleteConfirming = ref(false)
 const feedback = ref('')
 let feedbackTimer: ReturnType<typeof setTimeout> | undefined
@@ -69,16 +65,14 @@ function showFeedback(message: string): void {
 function toggleEdit(): void {
   if (isEditing.value) {
     draftName.value = displayName.value
-    draftPhone.value = phone.value
   }
   isEditing.value = !isEditing.value
 }
 
 async function saveProfile(): Promise<void> {
   const cleanName = draftName.value.trim()
-  const cleanPhone = draftPhone.value.trim()
-  if (!cleanName || !cleanPhone) {
-    showFeedback('請完整填寫暱稱與手機號碼')
+  if (!cleanName) {
+    showFeedback('請填寫暱稱')
     return
   }
 
@@ -90,9 +84,8 @@ async function saveProfile(): Promise<void> {
   }
 
   displayName.value = cleanName
-  phone.value = cleanPhone
   isEditing.value = false
-  showFeedback('個人資料已更新')
+  showFeedback('暱稱已更新')
 }
 
 function handleSignOut(): void {
@@ -109,17 +102,6 @@ function handleDeleteAccount(): void {
   showFeedback('帳戶刪除申請流程尚未啟用，請聯絡客服')
 }
 
-onMounted(() => {
-  const storedPush = window.localStorage.getItem('rentmate-push-notifications')
-  const storedEmail = window.localStorage.getItem('rentmate-email-notifications')
-  if (storedPush !== null) pushNotifications.value = storedPush === 'true'
-  if (storedEmail !== null) emailNotifications.value = storedEmail === 'true'
-})
-
-function persistNotification(type: 'push' | 'email', value: boolean): void {
-  window.localStorage.setItem(`rentmate-${type}-notifications`, String(value))
-  showFeedback(value ? '通知已開啟' : '通知已關閉')
-}
 </script>
 
 <template>
@@ -130,15 +112,14 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
         <p>管理您的個人資料、帳戶設定與隱私安全。</p>
       </div>
       <div class="header-user" aria-label="目前登入的使用者">
-        <button
+        <RouterLink
           class="notification-button"
-          type="button"
-          aria-label="查看通知"
-          @click="showFeedback('目前沒有新的通知')"
+          to="/app/notifications"
+          :aria-label="unreadCount > 0 ? `通知中心，${unreadCount} 則未讀` : '通知中心'"
         >
-          <Bell :size="21" />
-          <span class="notification-count">3</span>
-        </button>
+          <Bell :size="21" aria-hidden="true" />
+          <span v-if="unreadCount > 0" class="notification-count" aria-hidden="true">{{ unreadCount }}</span>
+        </RouterLink>
         <div class="mini-avatar">{{ initials }}</div>
         <strong>{{ displayName }}</strong>
         <ChevronRight :size="18" class="header-chevron" />
@@ -170,7 +151,7 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
             </div>
             <p>加入時間：2024/11/20</p>
             <p class="security-score">
-              安全性評分：<span><ShieldCheck :size="15" /> 中等</span>
+              安全性評分：尚未開放
             </p>
           </div>
           <button class="outline-button edit-button" type="button" @click="toggleEdit">
@@ -186,7 +167,7 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
           </label>
           <label>
             <span>手機號碼</span>
-            <input v-model="draftPhone" autocomplete="tel" inputmode="tel" />
+            <input disabled placeholder="手機號碼編輯尚未開放" />
           </label>
           <button class="primary-button" type="submit">儲存變更</button>
         </form>
@@ -199,12 +180,10 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
             <span class="row-value">{{ displayName }}</span>
             <ChevronRight :size="19" />
           </button>
-          <button class="info-row" type="button" @click="toggleEdit">
+          <button class="info-row" type="button" disabled>
             <Phone :size="19" />
             <span class="row-label">手機號碼</span>
-            <span class="row-value">{{ phone }}</span>
-            <span class="pill pill-green">已驗證</span>
-            <ChevronRight :size="19" />
+            <span class="row-value">尚未開放</span>
           </button>
           <button class="info-row" type="button" @click="showFeedback('電子郵件變更功能尚未開放')">
             <Mail :size="19" />
@@ -213,11 +192,10 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
             <span class="pill pill-green">已驗證</span>
             <ChevronRight :size="19" />
           </button>
-          <button class="info-row" type="button" @click="showFeedback('您的身分驗證已完成')">
+          <button class="info-row" type="button" disabled>
             <ShieldCheck :size="19" />
             <span class="row-label">身分驗證</span>
-            <span class="row-value">已完成</span>
-            <ChevronRight :size="19" />
+            <span class="row-value">尚未開放</span>
           </button>
         </div>
       </article>
@@ -235,37 +213,18 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
           <span><strong>修改密碼</strong><small>定期更新密碼以保護帳戶安全</small></span>
           <ChevronRight :size="20" />
         </button>
-        <div class="setting-row">
+        <!-- 租客端沒有對應的安全設定 API，避免可操作的開關讓人誤以為已有防護。 -->
+        <button class="setting-row" type="button" disabled>
           <ShieldCheck :size="20" />
-          <span><strong>兩步驟驗證</strong><small>加強帳戶登入安全性</small></span>
-          <Switch
-            v-model="twoFactorEnabled"
-            aria-label="兩步驟驗證"
-            @update:model-value="
-              showFeedback(twoFactorEnabled ? '兩步驟驗證已開啟' : '兩步驟驗證已關閉')
-            "
-          />
-        </div>
+          <span><strong>兩步驟驗證</strong><small>尚未開放</small></span>
+        </button>
         <div class="login-history">
           <div class="history-header">
             <strong>最近登入紀錄</strong>
-            <button type="button" @click="showFeedback('已顯示全部登入紀錄')">查看全部</button>
           </div>
-          <div class="device-row">
-            <Laptop :size="18" />
-            <span
-              ><strong>Windows · Chrome <em>目前裝置</em></strong
-              ><small>台灣 台北市</small></span
-            >
-            <time>2024/11/20 10:32</time>
-          </div>
-          <div class="device-row">
-            <Smartphone :size="18" />
-            <span><strong>iPhone 15 · Safari</strong><small>台灣 台中市</small></span>
-            <time>2024/11/18 21:15</time>
-          </div>
-          <button class="device-logout" type="button" @click="showFeedback('其他裝置已登出')">
-            <LogOut :size="17" /> 登出其他裝置
+          <p class="unavailable-note">登入紀錄尚未開放</p>
+          <button class="device-logout" type="button" disabled>
+            <LogOut :size="17" /> 登出其他裝置（尚未開放）
           </button>
         </div>
       </article>
@@ -279,24 +238,15 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
               <p>管理您接收的通知類型與方式</p>
             </div>
           </div>
-          <div class="setting-row compact-row">
+          <!-- 本機偏好沒有控制實際通知寄送，尚未串接前不提供開關。 -->
+          <button class="setting-row compact-row" type="button" disabled>
             <Bell :size="20" />
-            <span><strong>推播通知</strong><small>租金、停水停電、租補等提醒</small></span>
-            <Switch
-              v-model="pushNotifications"
-              aria-label="推播通知"
-              @update:model-value="persistNotification('push', pushNotifications)"
-            />
-          </div>
-          <div class="setting-row compact-row">
+            <span><strong>推播通知</strong><small>通知偏好設定尚未開放</small></span>
+          </button>
+          <button class="setting-row compact-row" type="button" disabled>
             <Mail :size="20" />
-            <span><strong>電子郵件通知</strong><small>接收帳戶重要通知</small></span>
-            <Switch
-              v-model="emailNotifications"
-              aria-label="電子郵件通知"
-              @update:model-value="persistNotification('email', emailNotifications)"
-            />
-          </div>
+            <span><strong>電子郵件通知</strong><small>通知偏好設定尚未開放</small></span>
+          </button>
         </article>
 
         <article class="account-card compact-card support-card">
@@ -307,24 +257,29 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
               <p>取得幫助與各項服務協助</p>
             </div>
           </div>
-          <button class="support-row" type="button" @click="showFeedback('正在為您連結客服中心')">
+          <a v-if="supportEmail" class="support-row" :href="`mailto:${supportEmail}`">
             <MessageSquareText :size="20" /><span
-              ><strong>客服中心</strong><small>聯繫客服人員取得協助</small></span
+              ><strong>客服中心</strong><small>{{ supportEmail }}</small></span
             ><ChevronRight :size="20" />
+          </a>
+          <button v-else class="support-row" type="button" disabled>
+            <MessageSquareText :size="20" /><span
+              ><strong>客服中心</strong><small>尚未開放</small></span
+            >
           </button>
-          <button class="support-row" type="button" @click="showFeedback('正在開啟常見問題')">
+          <button class="support-row" type="button" disabled>
             <MessageSquareText :size="20" /><span
-              ><strong>常見問題</strong><small>查看常見問題與解答</small></span
-            ><ChevronRight :size="20" />
+              ><strong>常見問題</strong><small>尚未開放</small></span
+            >
           </button>
           <button
             class="support-row"
             type="button"
-            @click="showFeedback('感謝您的意見，我們會持續改進')"
+            disabled
           >
             <PencilLine :size="20" /><span
-              ><strong>意見回饋</strong><small>告訴我們如何改進服務</small></span
-            ><ChevronRight :size="20" />
+              ><strong>意見回饋</strong><small>尚未開放，請透過客服信箱聯繫</small></span
+            >
           </button>
         </article>
       </div>
@@ -338,20 +293,20 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
           </div>
         </div>
         <div class="more-grid">
-          <button type="button" @click="showFeedback('目前語言：繁體中文')">
+          <button type="button" disabled>
             <Languages :size="21" /><span
-              ><strong>語言設定</strong><small>目前語言：繁體中文</small></span
-            ><ChevronRight :size="19" />
+              ><strong>語言設定</strong><small>目前語言：繁體中文；切換尚未開放</small></span
+            >
           </button>
-          <button type="button" @click="showFeedback('正在開啟隱私權政策')">
+          <button type="button" disabled>
             <FileLock2 :size="21" /><span
-              ><strong>隱私權政策</strong><small>查看我們的隱私權政策條款</small></span
-            ><ChevronRight :size="19" />
+              ><strong>隱私權政策</strong><small>尚未開放</small></span
+            >
           </button>
-          <button type="button" @click="showFeedback('帳戶資料匯出準備中')">
+          <button type="button" disabled>
             <Download :size="21" /><span
-              ><strong>資料匯出</strong><small>下載您的帳戶資料</small></span
-            ><ChevronRight :size="19" />
+              ><strong>資料匯出</strong><small>尚未開放</small></span
+            >
           </button>
         </div>
       </article>
@@ -380,10 +335,10 @@ function persistNotification(type: 'push' | 'email', value: boolean): void {
         <div class="banner-icon"><ShieldCheck :size="25" /></div>
         <div>
           <strong>提升帳戶安全，守護您的租屋生活</strong>
-          <p>建議您完成所有安全設定，確保帳戶及個人資料安全無虞。</p>
+          <p>安全檢查尚未開放；您可透過「修改密碼」更新密碼。</p>
         </div>
-        <button type="button" @click="showFeedback('您的安全設定完成度為 80%')">
-          前往安全檢查
+        <button type="button" disabled>
+          安全檢查尚未開放
         </button>
       </aside>
     </section>
@@ -1017,6 +972,7 @@ button.setting-row {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .support-row:last-child {
@@ -1191,6 +1147,16 @@ button.setting-row {
 
 button:hover {
   filter: brightness(0.98);
+}
+
+.account-page button:disabled {
+  cursor: not-allowed;
+  filter: none;
+}
+
+.unavailable-note {
+  color: var(--account-muted);
+  font-size: 13px;
 }
 
 button:focus-visible {
