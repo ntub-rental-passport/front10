@@ -16,7 +16,7 @@ from auth.security import create_access_token
 from db import database
 from db.database import Base, get_db
 from db.models import (InboxMessage, LandlordCharge, LandlordLease, LandlordProperty, LandlordRoom, LandlordTenant,
-                       LeaseInvitation, User, UserRole)
+                       LandlordTenantActivity, LeaseInvitation, User, UserRole)
 from notifications import landlord_reminders
 from routers import (inspection, landlord_contracts, landlord_finance, landlord_properties, landlord_tenants,
                      landlord_workspace_api, lease_invitations, repairs, tenant_landlord_leases, tenant_leases,
@@ -880,6 +880,206 @@ class LandlordWorkspaceTests(unittest.TestCase):
         self.assertTrue(items)
         self.assertTrue(all(item['kind'] in ('rent', 'utility', 'contract', 'maintenance') for item in items))
         self.assertTrue(any('王小明' in item['title'] for item in items))
+
+    # ---------------- P1 通知 ----------------
+
+    def assert_notification(self, user_id, title, body, category='租約', audience_role='tenant', action_url='/app'):
+        with self.Session() as db:
+            message = db.query(InboxMessage).filter_by(user_id=user_id, title=title).one()
+            self.assertEqual(message.body, body)
+            self.assertEqual((message.category, message.audience_role, message.action_url),
+                             (category, audience_role, action_url))
+            self.assertIsNotNone(message.action_label)
+
+    def contract_reminder_settings(self, enabled, reminder_days=45):
+        self.ok(self.call('PUT', '/api/landlord/settings/notifications', json={
+            'email_notifications': False, 'rent_reminders': False, 'contract_reminders': enabled,
+            'repair_notifications': True, 'reminder_days': reminder_days}))
+
+    def expiring_lease(self, days=45, bound=True):
+        with self.Session() as db:
+            lease = db.get(LandlordLease, 1)
+            lease.end_date = TODAY + days * DAY
+            lease.tenant_user_id = TENANT if bound else None
+            db.commit()
+
+    def test_contract_reminders_notify_both_roles_once_at_each_stage(self):
+        self.contract_reminder_settings(True)
+        self.expiring_lease()
+        for day, days_left in ((TODAY, 45), (TODAY + 38 * DAY, 7)):
+            with self.subTest(days_left=days_left):
+                self.assertEqual(landlord_reminders.dispatch_due(day, self.Session)['contract'], 2)
+                self.assertEqual(landlord_reminders.dispatch_due(day, self.Session)['contract'], 0)
+                self.assert_notification(TENANT, f'你的租約 {days_left} 天後到期',
+                                         f'松江路 101 的租約將於 {(TODAY + 45 * DAY).isoformat()} 到期，請與房東確認是否續約。')
+                self.assert_notification(OWNER, f'王小明 的租約 {days_left} 天後到期',
+                                         f'松江路 101 的租約將於 {(TODAY + 45 * DAY).isoformat()} 到期，請確認是否續約。',
+                                         audience_role='landlord', action_url='/landlord/contracts')
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 4)
+            self.assertEqual(db.query(LandlordTenantActivity).filter(
+                LandlordTenantActivity.kind.like('%contract_reminder:%')).count(), 4)
+
+    def test_tenant_contract_reminders_ignore_landlord_preference_and_deduplicate_independently(self):
+        self.contract_reminder_settings(False)
+        self.expiring_lease()
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY, self.Session)['contract'], 1)
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY, self.Session)['contract'], 0)
+        self.contract_reminder_settings(True)
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY, self.Session)['contract'], 1)
+        self.contract_reminder_settings(False)
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY + 38 * DAY, self.Session)['contract'], 1)
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY + 38 * DAY, self.Session)['contract'], 0)
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).filter_by(user_id=TENANT).count(), 2)
+            self.assertEqual(db.query(InboxMessage).filter_by(user_id=OWNER).count(), 1)
+
+    def test_existing_landlord_contract_activity_does_not_suppress_tenant_reminder(self):
+        self.contract_reminder_settings(True)
+        self.expiring_lease()
+        with self.Session() as db:
+            db.add(LandlordTenantActivity(tenant_id=1, kind='contract_reminder:1:45', detail='既有房東提醒'))
+            db.commit()
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY, self.Session)['contract'], 1)
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).one().user_id, TENANT)
+
+    def test_contract_reminder_at_seven_days_is_not_duplicated_when_reminder_days_is_seven(self):
+        self.contract_reminder_settings(True, reminder_days=7)
+        self.expiring_lease(days=7)
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY, self.Session)['contract'], 2)
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY, self.Session)['contract'], 0)
+
+    def assert_contract_reminders_skip_unavailable_tenant(self, suspended):
+        self.contract_reminder_settings(True)
+        self.expiring_lease(bound=suspended)
+        if suspended:
+            with self.Session() as db:
+                db.get(User, TENANT).status = 'suspended'
+                db.commit()
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY, self.Session)['contract'], 1)
+        self.assertEqual(landlord_reminders.dispatch_due(TODAY, self.Session)['contract'], 0)
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).one().user_id, OWNER)
+            self.assertEqual(db.query(LandlordTenantActivity).filter_by(kind='tenant_contract_reminder:1:45').count(), 0)
+
+    def test_contract_reminders_skip_unbound_tenant(self):
+        self.assert_contract_reminders_skip_unavailable_tenant(False)
+
+    def test_contract_reminders_skip_suspended_tenant(self):
+        self.assert_contract_reminders_skip_unavailable_tenant(True)
+
+    def test_move_out_notifies_bound_tenant(self):
+        self.bind_tenant()
+        day = (TODAY + 7 * DAY).isoformat()
+        self.ok(self.call('POST', '/api/landlord/tenants/1/move-out', json={'move_out_date': day}))
+        self.assert_notification(TENANT, '房東已登記退租',
+                                 f'房東已將松江路 101 的退租日登記為 {day}。如有疑問，請與房東確認。')
+
+    def test_unbind_notifies_previously_bound_tenant_once(self):
+        self.bind_tenant()
+        for _ in range(2):
+            result = self.ok(self.call('POST', '/api/landlord/invitations/leases/1/unbind'))
+            self.assertFalse(result['bound'])
+        self.assert_notification(TENANT, '房東已解除你的租約綁定',
+                                 '松江路 101 的租約已與你的帳號解除綁定，你將無法再查看這份租約。如有疑問，請與房東確認。')
+
+    def test_revoke_notifies_invited_account_not_contact_email_once(self):
+        created = self.invite('other@test.example')
+        for _ in range(2):
+            result = self.ok(self.call('POST', '/api/landlord/invitations/leases/1/revoke'))
+            self.assertEqual(result['invitation']['state'], 'revoked')
+        self.assert_notification(OTHER_TENANT, '房東已撤銷租約邀請',
+                                 '松江路 101 的租約邀請已撤銷，原邀請連結與邀請碼已失效。如需加入，請向房東索取新的邀請。')
+        self.assertEqual(self.call('POST', f'/api/invitations/{created["token"]}/accept',
+                                   user=OTHER_TENANT, role='tenant').status_code, 410)
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 1)
+
+    def test_contract_upload_notifies_bound_tenant(self):
+        self.bind_tenant()
+        self.ok(self.call('POST', '/api/landlord/contracts/1/files', json={'name': '租約.pdf', 'data': PDF}), 201)
+        self.assert_notification(TENANT, '房東上傳了合約附件',
+                                 '房東已為松江路 101 上傳「租約.pdf」，請查看合約附件。')
+
+    def assert_lease_actions_skip_unavailable_tenant(self, suspended):
+        if suspended:
+            self.bind_tenant()
+            with self.Session() as db:
+                db.get(User, TENANT).status = 'suspended'
+                db.commit()
+        self.ok(self.call('POST', '/api/landlord/contracts/1/files', json={'name': '租約.pdf', 'data': PDF}), 201)
+        result = self.ok(self.call('POST', '/api/landlord/invitations/leases/1/unbind'))
+        self.assertFalse(result['bound'])
+        self.invite('tenant@test.example' if suspended else 'no-account@test.example')
+        result = self.ok(self.call('POST', '/api/landlord/invitations/leases/1/revoke'))
+        self.assertEqual(result['invitation']['state'], 'revoked')
+        if suspended:
+            self.bind_tenant()
+        self.ok(self.call('POST', '/api/landlord/tenants/1/move-out', json={'move_out_date': TODAY.isoformat()}))
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), 0)
+            self.assertEqual(len(db.get(LandlordLease, 1).files), 1)
+            self.assertEqual(db.get(LandlordLease, 1).moved_out_at, TODAY)
+
+    def test_lease_actions_skip_missing_tenant_account(self):
+        self.assert_lease_actions_skip_unavailable_tenant(False)
+
+    def test_lease_actions_skip_suspended_tenant(self):
+        self.assert_lease_actions_skip_unavailable_tenant(True)
+
+    def team_member_id(self):
+        return self.ok(self.call('GET', '/api/landlord/team'))['items'][0]['id']
+
+    def test_team_role_change_notifies_member(self):
+        self.join('manager')
+        member_id = self.team_member_id()
+        result = self.ok(self.call('PATCH', f'/api/landlord/team/{member_id}', json={'role': 'viewer'}))
+        self.assertEqual(result['role'], 'viewer')
+        self.assert_notification(MEMBER, '你的工作區角色已變更', '你在林房東的房東工作區的角色已變更為「檢視者」。',
+                                 category='系統', audience_role='landlord', action_url='/landlord/settings/team')
+
+    def test_team_removal_notifies_member_before_access_is_lost(self):
+        self.join('manager')
+        member_id = self.team_member_id()
+        self.ok(self.call('DELETE', f'/api/landlord/team/{member_id}'))
+        self.assert_notification(MEMBER, '你已被移出房東工作區', '你已被移出林房東的房東工作區，無法再存取該工作區的資料。',
+                                 category='系統', audience_role='landlord', action_url='/landlord/settings/team')
+        self.assertEqual(self.call('GET', '/api/landlord/tenants', user=MEMBER, workspace=OWNER).status_code, 403)
+
+    def test_pending_team_member_with_account_receives_role_change_and_removal(self):
+        self.ok(self.call('POST', '/api/landlord/team', json={'email': 'member@test.example', 'role': 'viewer'}), 201)
+        member_id = self.team_member_id()
+        self.ok(self.call('PATCH', f'/api/landlord/team/{member_id}', json={'role': 'accounting'}))
+        self.assert_notification(MEMBER, '你的工作區角色已變更', '你在林房東的房東工作區的角色已變更為「帳務」。',
+                                 category='系統', audience_role='landlord', action_url='/landlord/settings/team')
+        self.ok(self.call('DELETE', f'/api/landlord/team/{member_id}'))
+        self.assert_notification(MEMBER, '你已被移出房東工作區', '你已被移出林房東的房東工作區，無法再存取該工作區的資料。',
+                                 category='系統', audience_role='landlord', action_url='/landlord/settings/team')
+
+    def assert_team_actions_skip_unavailable_member(self, suspended):
+        if suspended:
+            self.join('manager')
+            with self.Session() as db:
+                db.get(User, MEMBER).status = 'suspended'
+                db.commit()
+        else:
+            self.ok(self.call('POST', '/api/landlord/team', json={'email': 'no-account@test.example', 'role': 'manager'}), 201)
+        with self.Session() as db:
+            initial_count = db.query(InboxMessage).count()
+        member_id = self.team_member_id()
+        result = self.ok(self.call('PATCH', f'/api/landlord/team/{member_id}', json={'role': 'viewer'}))
+        self.assertEqual(result['role'], 'viewer')
+        self.ok(self.call('DELETE', f'/api/landlord/team/{member_id}'))
+        self.assertEqual(self.ok(self.call('GET', '/api/landlord/team'))['items'], [])
+        with self.Session() as db:
+            self.assertEqual(db.query(InboxMessage).count(), initial_count)
+
+    def test_team_actions_skip_missing_member_account(self):
+        self.assert_team_actions_skip_unavailable_member(False)
+
+    def test_team_actions_skip_suspended_member(self):
+        self.assert_team_actions_skip_unavailable_member(True)
 
 
 if __name__ == '__main__':

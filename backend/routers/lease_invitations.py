@@ -177,6 +177,16 @@ def revoke_invitation(lease_id: int, request: Request, db: Session = Depends(get
         invitation.status = "revoked"
         invitation.revoked_at = now
         revoked += 1
+        invited_user = db.query(User).filter(User.email == invitation.invited_email).first()
+        if invited_user and invited_user.status == "active":
+            notify_user(
+                db, invited_user,
+                audience_role="tenant",
+                title="房東已撤銷租約邀請",
+                body=f"{lease.property.name} {lease.room.number} 的租約邀請已撤銷，原邀請連結與邀請碼已失效。如需加入，請向房東索取新的邀請。",
+                category="租約", source_label="租約邀請", created_by=f"landlord:{landlord.id}",
+                action_url="/app", action_label="查看租約",
+            )
     if revoked:
         record_audit(db, landlord, landlord_actor(request, landlord), "租客", "撤銷租約邀請", lease.tenant.name, "warning")
     db.commit()
@@ -196,6 +206,15 @@ def unbind_tenant(lease_id: int, request: Request, db: Session = Depends(get_db)
     detail = f"解除租客帳號綁定（{bound.email if bound else '帳號已刪除'}）"
     db.add(LandlordTenantActivity(tenant_id=lease.tenant_id, kind="unbound", detail=detail))
     record_audit(db, landlord, landlord_actor(request, landlord), "租客", "解除租客帳號綁定", f"{lease.tenant.name}：{detail}", "warning")
+    if bound and bound.status == "active":
+        notify_user(
+            db, bound,
+            audience_role="tenant",
+            title="房東已解除你的租約綁定",
+            body=f"{lease.property.name} {lease.room.number} 的租約已與你的帳號解除綁定，你將無法再查看這份租約。如有疑問，請與房東確認。",
+            category="租約", source_label="租約綁定", created_by=f"landlord:{landlord.id}",
+            action_url="/app", action_label="查看租約",
+        )
     db.commit()
     return _landlord_view(db, lease)
 
