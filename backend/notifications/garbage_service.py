@@ -5,6 +5,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from math import isfinite
 from pathlib import Path
 from uuid import uuid4
 
@@ -33,6 +34,62 @@ def data_dir() -> Path:
     return Path(os.getenv('GARBAGE_DATA_DIR') or (_REPO_ROOT / 'public/data'))
 
 
+def _parse_new_taipei_stops(data):
+    fields = ['city', 'lineid', 'linename', 'rank', 'name', 'village', 'longitude',
+              'latitude', 'time', 'garbage', 'recycling', 'foodscraps', 'identity']
+    pool_names = ('city', 'lineid', 'linename', 'village', 'time', 'identity')
+    if not isinstance(data, dict):
+        raise ValueError('新北市站點資料格式錯誤：預期緊湊格式物件。')
+    if type(data.get('version')) is not int or data['version'] != 1:
+        raise ValueError('新北市站點資料版本不符：預期 version=1。')
+    if data.get('fields') != fields or not isinstance(data.get('rows'), list):
+        raise ValueError('新北市站點資料格式錯誤：fields 或 rows 不符預期。')
+    pools = data.get('pools')
+    if not isinstance(pools, dict) or any(
+        not isinstance(pools.get(name), list) or
+        any(not isinstance(value, str) for value in pools[name]) for name in pool_names
+    ):
+        raise ValueError('新北市站點資料查表格式錯誤：預期字串陣列。')
+
+    def lookup(name, index):
+        if type(index) is not int or not 0 <= index < len(pools[name]):
+            raise ValueError(f'新北市站點資料查表索引越界：{name}={index!r}。')
+        return pools[name][index]
+
+    result = {}
+    for values in data['rows']:
+        if not isinstance(values, list) or len(values) != len(fields):
+            raise ValueError('新北市站點資料欄位數量錯誤。')
+        row = dict(zip(fields, values))
+        for name in pool_names:
+            if name == 'identity' and type(row[name]) is int and row[name] == -1:
+                continue
+            row[name] = lookup(name, row[name])
+        if (type(row['rank']) is not int or row['rank'] < 0 or
+                not isinstance(row['name'], str) or any(
+                    type(row[name]) not in (int, float) or not isfinite(row[name])
+                    for name in ('latitude', 'longitude'))):
+            raise ValueError('新北市站點資料包含無效欄位：rank、name 或座標。')
+        masks = [row[name] for name in ('garbage', 'recycling', 'foodscraps')]
+        if any(type(mask) is not int or not 0 <= mask <= 127 for mask in masks):
+            raise ValueError('新北市每週清運欄位錯誤：預期 0..127 的 bitmask。')
+        identity = row['identity']
+        if identity == -1:
+            # JavaScript 的數字字串不保留 .0；ID 必須與前端一致才能沿用既有提醒。
+            coordinates = [format(row[name], '.6f').rstrip('0').rstrip('.') if row[name] else '0'
+                           for name in ('latitude', 'longitude')]
+            identity = '|'.join([str(row['rank']), *coordinates])
+        key = f"ntpc|{row['lineid']}|{identity}"
+        mask = masks[0] | masks[1] | masks[2]
+        result[key] = {
+            'address': '新北市' + row['city'] + row['name'].strip(),
+            'arrival': row['time'],
+            # 資料以週日為第 0 位，但提醒日期用 Python 的週一為第 0 天。
+            'days': [day for day in range(7) if mask & (1 << ((day + 1) % 7))],
+        }
+    return result
+
+
 @lru_cache(maxsize=1)
 def stops():
     with (data_dir() / 'taipei-garbage.csv').open(encoding='utf-8-sig', newline='') as file:
@@ -43,16 +100,7 @@ def stops():
             result[key] = {'address': row['地點'], 'arrival': f'{raw[:2]}:{raw[2:]}'}
     new_taipei = data_dir() / 'new-taipei-garbage.json'
     if new_taipei.exists():
-        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-        for row in json.loads(new_taipei.read_text(encoding='utf-8')):
-            key = '|'.join(['ntpc', row['lineid'], row['rank'], row['latitude'], row['longitude']])
-            result[key] = {
-                'address': '新北市' + row['city'] + row['name'].strip(),
-                'arrival': row['time'],
-                'days': [i for i, day in enumerate(days) if any(
-                    row.get(prefix + day, '').upper() == 'Y'
-                    for prefix in ('garbage', 'recycling', 'foodscraps'))],
-            }
+        result.update(_parse_new_taipei_stops(json.loads(new_taipei.read_text(encoding='utf-8'))))
     return result
 
 
