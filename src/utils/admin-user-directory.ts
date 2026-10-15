@@ -93,6 +93,8 @@ export interface UserTicketView extends MaintenanceTicket {
 
 export interface UserDirectoryRow {
   user: AdminUser
+  /** 完整身分供顯示與篩選；user.role 保留主要角色，避免改動既有方案與操作規則。 */
+  roles: AdminUserRole[]
   /**
    * 資料庫裡的帳號 id。只有真實帳號有值，展示資料為 undefined。
    *
@@ -147,10 +149,16 @@ export function realAccountToRow(account: RealAccountInput): UserDirectoryRow {
     : account.roles.includes('landlord')
       ? 'landlord'
       : 'user'
+  const roles: AdminUserRole[] = []
+  if (isAdmin) roles.push('admin')
+  if (account.roles.includes('landlord')) roles.push('landlord')
+  if (account.roles.includes('tenant') || account.roles.includes('user')) roles.push('user')
+  if (roles.length === 0) roles.push(role)
   const usage = account.usage ?? null
 
   return {
     realAccountId: account.id,
+    roles,
     user: {
       // 加前綴避免與展示資料的 id（u-001 之類）相撞
       id: `real-${account.id}`,
@@ -255,6 +263,7 @@ export function joinUserDirectory(
 
     return joinUserCases({
       user,
+      roles: user.roles ?? [user.role],
       subscription,
       usage,
       overLimit: accountUsageLimits(userPlan(user, subscription, now), usage)?.overLimit ?? false,
@@ -377,6 +386,11 @@ export function adminCount(rows: UserDirectoryRow[]): number {
   return rows.filter((row) => row.user.role === 'admin').length
 }
 
+/** 管理身分獨立呈現，避免管理員被當作一般房東或租客。 */
+export function userDirectoryRoles(row: UserDirectoryRow): AdminUserRole[] {
+  return row.user.role === 'admin' ? ['admin'] : row.roles
+}
+
 /** 五軸皆為 AND 疊加 */
 export function filterUserDirectory(
   rows: UserDirectoryRow[],
@@ -386,7 +400,7 @@ export function filterUserDirectory(
   return rows.filter(
     (row) =>
       matchesKeyword(row, filter.keyword) &&
-      (filter.role === 'all' || row.user.role === filter.role) &&
+      (filter.role === 'all' || userDirectoryRoles(row).includes(filter.role)) &&
       (filter.status === 'all' || row.user.status === filter.status) &&
       matchesPlan(row, filter.plan, now) &&
       matchesAlert(row, filter.alert),

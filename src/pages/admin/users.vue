@@ -58,7 +58,7 @@ import AdminRowActions from '@/src/components/admin/AdminRowActions.vue'
 import PlanDistributionCard from '@/src/components/admin/PlanDistributionCard.vue'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
 import { adminRoleLabels } from '@/src/composables/admin/useAdminUsers'
-import { userAlertLabels, type UserAlert } from '@/src/utils/admin-user-directory'
+import { userAlertLabels, userDirectoryRoles, type UserAlert } from '@/src/utils/admin-user-directory'
 import { userPlan } from '@/src/utils/admin-plans'
 import { subscriptionPlans } from '@/src/utils/subscription-plans'
 import { realAccountStats, registrationSources } from '@/src/utils/admin-real-accounts'
@@ -171,10 +171,6 @@ const accountStats = computed(() => realAccountStats(realAccounts.value))
 const sourceSegments = computed(() =>
   registrationSources(realAccounts.value).map((s) => ({ label: s.label, value: s.count })),
 )
-
-function roleLabel(row: UserDirectoryRow): string {
-  return adminRoleLabels[row.user.role]
-}
 
 // ── 停用／啟用真實帳號 ──────────────────────────────────────────
 //
@@ -672,7 +668,11 @@ function displayName(row: UserDirectoryRow): string {
                   </div>
                 </TableCell>
 
-                <TableCell class="whitespace-nowrap">{{ roleLabel(row) }}</TableCell>
+                <TableCell class="whitespace-nowrap">
+                  <div class="flex flex-wrap gap-2">
+                    <span v-for="role in userDirectoryRoles(row)" :key="role">{{ adminRoleLabels[role] }}</span>
+                  </div>
+                </TableCell>
 
                 <!-- 相對時間給掃視用，完整時間放 title，滑過去看；沒有紀錄的滑過去看原因 -->
                 <TableCell

@@ -53,6 +53,7 @@ export function useAdminUsers() {
     if (!user || user.role === role) return
     const previous = adminRoleLabels[user.role]
     user.role = role
+    user.roles = [role]
     logAction('使用者管理', user.email, `角色由「${previous}」變更為「${adminRoleLabels[role]}」`)
   }
 

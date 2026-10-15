@@ -8,6 +8,8 @@ export interface AdminUser {
   email: string
   nickname: string | null
   role: AdminUserRole
+  /** 舊版瀏覽器快取只有 role，目錄接入時仍需相容。 */
+  roles?: AdminUserRole[]
   status: AdminUserStatus
   emailVerified: boolean
   registeredAt: string
@@ -101,7 +103,7 @@ export function seedAdminUsers(): AdminUser[] {
     }
   })
 
-  return users
+  return users.map((user) => ({ ...user, roles: [user.role] }))
 }
 
 /** 供其他 seed 使用：所有房東與租客的 id */

@@ -5,9 +5,10 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import Users from './users.vue'
 import { userPlan } from '@/src/utils/admin-plans'
 import { useAdminDirectory } from '@/src/composables/admin/useAdminDirectory'
+import { fetchAdminAccounts, type AdminAccount } from '@/src/services/adminUsersApi'
 
 vi.mock('@/src/services/adminUsersApi', () => ({
-  fetchAdminAccounts: async () => [],
+  fetchAdminAccounts: vi.fn(async () => []),
   updateAccountStatus: vi.fn(),
 }))
 vi.mock('@/components/ui/select/index', () => {
@@ -43,7 +44,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-async function render(query: Record<string, string | string[]>) {
+async function render(query: Record<string, string | string[]>, accounts: AdminAccount[] = []) {
+  vi.mocked(fetchAdminAccounts).mockResolvedValue(accounts)
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/admin/users', component: Users }],
@@ -52,9 +54,10 @@ async function render(query: Record<string, string | string[]>) {
   let directory!: ReturnType<typeof useAdminDirectory>
   const app = createSSRApp(
     defineComponent({
-      setup() {
+      async setup() {
         directory = useAdminDirectory()
         directory.clearFilter()
+        await directory.reloadRealAccounts()
         return () => h(Users)
       },
     }),
@@ -63,6 +66,29 @@ async function render(query: Record<string, string | string[]>) {
   const html = await renderToString(app)
   return { html, directory }
 }
+
+describe('使用者列表多重身分', () => {
+  const account: AdminAccount = {
+    id: 7, email: 'dual@example.com', displayName: '雙重身分', roles: ['tenant', 'landlord'],
+    status: 'active', emailVerified: true, createdAt: null, lastLoginAt: null,
+    providers: [], hasPassword: true, avatarUrl: null,
+  }
+
+  it.each(['user', 'landlord'])('篩選 %s 仍列出雙重身分並顯示兩個標籤', async (role) => {
+    const { html, directory } = await render({ role }, [account])
+    expect(directory.filteredRows.value.some((row) => row.realAccountId === account.id)).toBe(true)
+    const cells = html.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)?.find((row) => row.includes(account.email))
+    expect(cells).toMatch(/<span[^>]*>房東<\/span>/)
+    expect(cells).toMatch(/<span[^>]*>租客<\/span>/)
+  })
+
+  it('管理員只顯示管理身分', async () => {
+    const { html } = await render({ role: 'admin' }, [{ ...account, roles: ['tenant', 'landlord', 'admin'] }])
+    const cells = html.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)?.find((row) => row.includes(account.email))
+    expect(cells).toMatch(/<span[^>]*>管理員<\/span>/)
+    expect(cells).not.toMatch(/<span[^>]*>(房東|租客)<\/span>/)
+  })
+})
 
 describe('使用者列表 query 預選', () => {
   it('over-limit query 預選且僅列出超出帳號，列表亮出警示', async () => {

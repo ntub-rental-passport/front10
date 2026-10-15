@@ -11,12 +11,13 @@ import {
   sortUserRows,
   summarizeBulk,
 } from './admin-user-list'
-import type { UserDirectoryRow } from './admin-user-directory'
+import { realAccountToRow, type UserDirectoryRow } from './admin-user-directory'
 import type { AdminUser } from '@/src/mocks/admin/users'
 
 function row(id: string, over: Partial<AdminUser> = {}, realAccountId?: number): UserDirectoryRow {
   return {
     realAccountId,
+    roles: over.roles ?? [over.role ?? 'user'],
     user: {
       id,
       email: `${id}@example.com`,
@@ -76,6 +77,23 @@ describe('sortUserRows', () => {
     ]
     expect(ids(sortUserRows(rows, 'role', 'asc'))).toEqual(['tenant', 'landlord', 'admin'])
     expect(ids(sortUserRows(rows, 'role', 'desc'))).toEqual(['admin', 'landlord', 'tenant'])
+  })
+
+  it('多重身分沿用主要角色排序，同角色維持來源順序且不受角色陣列順序影響', () => {
+    const account = {
+      id: 1, email: 'dual@example.com', displayName: null, roles: ['tenant', 'landlord'],
+      status: 'active', emailVerified: true, createdAt: null, lastLoginAt: null,
+    }
+    for (const roles of [['tenant', 'landlord'], ['landlord', 'tenant']]) {
+      const rows = [
+        realAccountToRow({ ...account, roles }),
+        row('tenant', { role: 'user' }),
+        row('landlord', { role: 'landlord' }),
+        row('admin', { role: 'admin' }),
+      ]
+      expect(ids(sortUserRows(rows, 'role', 'asc'))).toEqual(['tenant', 'real-1', 'landlord', 'admin'])
+      expect(ids(sortUserRows(rows, 'role', 'desc'))).toEqual(['admin', 'real-1', 'landlord', 'tenant'])
+    }
   })
 
   it('最後登入：沒有紀錄的不管升冪降冪都排最後，不會被當成「最久以前」', () => {
