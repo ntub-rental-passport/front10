@@ -2,6 +2,8 @@ import json
 import os
 import unittest
 from datetime import datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -13,7 +15,88 @@ from notifications import garbage_service as service
 from routers.garbage import ActiveInput, list_reminders, toggle_reminder, delete_reminder, validate_subscription
 
 
-class GarbageReminderTests(AdminStoreTestCase):
+class GarbageDataTestCase(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.data_dir = Path(directory.name)
+        self.compact = json.loads((Path(__file__).parent / 'fixtures/new-taipei-garbage.json').read_text(encoding='utf-8'))
+        self.write_compact(self.compact)
+        (self.data_dir / 'taipei-garbage.csv').write_text(
+            '行政區,里別,路線,車次,地點,抵達時間\n'
+            '中正區,測試里,一路線,1,測試路1號,1830\n'
+            '中正區,測試里,一路線,2,測試路2號,24:11\n', encoding='utf-8')
+        data_patch = patch.object(service, 'data_dir', return_value=self.data_dir)
+        data_patch.start()
+        self.addCleanup(data_patch.stop)
+        service.stops.cache_clear()
+        self.addCleanup(service.stops.cache_clear)
+
+    def write_compact(self, data):
+        (self.data_dir / 'new-taipei-garbage.json').write_text(json.dumps(data), encoding='utf-8')
+
+
+class GarbageStopsTests(GarbageDataTestCase):
+    def test_compact_ids_match_frontend_and_preserve_original_precision(self):
+        stations = service.stops()
+        self.assertEqual(stations['ntpc|207001|1|25.17950406|121.6945286'], {
+            'address': '新北市金山區獅頭路15-1號(海巡)', 'arrival': '12:40', 'days': [0, 1, 3, 4, 5],
+        })
+        self.assertEqual(stations['ntpc|207001|2|25.1|121']['days'], [0, 2, 6])
+        self.assertEqual(stations['中正區|測試里|一路線|1|測試路1號|1830'], {
+            'address': '測試路1號', 'arrival': '18:30',
+        })
+
+    def test_real_snapshot_first_row_preserves_id_and_converts_weekdays(self):
+        data = json.loads((service._REPO_ROOT / 'public/data/new-taipei-garbage.json').read_text(encoding='utf-8'))
+        data['rows'] = data['rows'][:1]
+        self.assertEqual(data['rows'][0][9], 118)
+        self.write_compact(data)
+        station = service.stops()['ntpc|207001|1|25.17950406|121.6945286']
+        self.assertEqual(set(station['days']), {0, 1, 3, 4, 5})
+
+    def test_rejects_invalid_compact_format_with_clear_errors(self):
+        cases = [
+            ([], '格式'),
+            (self.compact | {'version': 2}, '版本'),
+            (self.compact | {'version': True}, '版本'),
+            (self.compact | {'fields': self.compact['fields'][::-1]}, '格式'),
+            (self.compact | {'rows': {}}, '格式'),
+            (self.compact | {'pools': None}, '查表'),
+            (self.compact | {'rows': [None]}, '欄位'),
+            (self.compact | {'rows': [[0]]}, '欄位'),
+        ]
+        for data, message in cases:
+            with self.subTest(data=data):
+                self.write_compact(data)
+                with self.assertRaisesRegex(ValueError, message):
+                    service.stops()
+
+    def test_rejects_invalid_pool_indexes_including_negative_indexes(self):
+        for column in (0, 1, 2, 5, 8, 12):
+            for index in (-2, -1, 1, 0.5, '0', None, True):
+                if column == 12 and index == -1:
+                    continue
+                with self.subTest(column=column, index=index):
+                    row = self.compact['rows'][0].copy()
+                    row[column] = index
+                    self.write_compact(self.compact | {'rows': [row]})
+                    with self.assertRaisesRegex(ValueError, '索引'):
+                        service.stops()
+
+    def test_rejects_invalid_weekly_masks(self):
+        for column in (9, 10, 11):
+            for mask in (-1, 128, 1.5, '1', None, True):
+                with self.subTest(column=column, mask=mask):
+                    row = self.compact['rows'][0].copy()
+                    row[column] = mask
+                    self.write_compact(self.compact | {'rows': [row]})
+                    with self.assertRaisesRegex(ValueError, '每週'):
+                        service.stops()
+
+
+class GarbageReminderTests(GarbageDataTestCase, AdminStoreTestCase):
     """提醒佇列 2026-10-02 起在專案的資料庫裡，所以要換掉 database.engine。"""
 
     def setUp(self):
@@ -32,6 +115,17 @@ class GarbageReminderTests(AdminStoreTestCase):
 
     def create(self):
         return service.create_reminder(self.user.id, self.user.email, self.values)
+
+    def test_create_reminder_succeeds_for_both_cities_with_compact_data(self):
+        taipei = self.create()
+        day = datetime.now(service.TZ).date() + timedelta(days=1)
+        while day.weekday() != 0:
+            day += timedelta(days=1)
+        self.values.update(stationId='ntpc|207001|1|25.17950406|121.6945286', date=day.isoformat())
+        new_taipei = self.create()
+        self.assertEqual(taipei['stationName'], '測試路1號')
+        self.assertEqual(new_taipei['stationName'], '新北市金山區獅頭路15-1號(海巡)')
+        self.assertEqual(len(list_reminders(self.user)), 2)
 
     def test_reminder_is_owned_and_does_not_expose_email_or_subscription(self):
         reminder = self.create()

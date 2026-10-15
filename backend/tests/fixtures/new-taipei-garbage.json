@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "fields": ["city", "lineid", "linename", "rank", "name", "village", "longitude", "latitude", "time", "garbage", "recycling", "foodscraps", "identity"],
+  "pools": {
+    "city": ["金山區"],
+    "lineid": ["207001"],
+    "linename": ["測試路線"],
+    "village": ["測試里"],
+    "time": ["12:40"],
+    "identity": ["1|25.17950406|121.6945286"]
+  },
+  "rows": [
+    [0, 0, 0, 1, " 獅頭路15-1號(海巡) ", 0, 121.694529, 25.179504, 0, 118, 18, 118, 0],
+    [0, 0, 0, 2, "測試路2號", 0, 121, 25.1, 0, 8, 1, 2, -1]
+  ]
+}

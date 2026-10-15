@@ -42,10 +42,19 @@ export async function garbageRequest<T>(path: string, init: RequestInit = {}): P
     },
   })
   const body = await response.json().catch(() => null)
-  if (!response.ok)
-    throw new Error(
-      typeof body?.detail === 'string' ? body.detail : '清運服務暫時無法連線，請稍後再試。',
-    )
+  if (!response.ok) {
+    if (typeof body?.detail === 'string') throw new Error(body.detail)
+    if (Array.isArray(body?.detail)) {
+      const messages = body.detail.flatMap((error: unknown) => {
+        if (!error || typeof error !== 'object') return []
+        const { loc, msg } = error as { loc?: unknown; msg?: unknown }
+        if (!Array.isArray(loc) || !loc.length || typeof msg !== 'string') return []
+        return [`${loc[loc.length - 1]}：${msg}`]
+      })
+      if (messages.length) throw new Error(`${messages.join('；')}（HTTP ${response.status}）`)
+    }
+    throw new Error(`清運服務暫時無法連線（HTTP ${response.status}），請稍後再試。`)
+  }
   return body as T
 }
 export async function loadGarbageStops(city: GarbageCity = '臺北市') {
