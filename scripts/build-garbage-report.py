@@ -47,7 +47,7 @@ descriptions = {
     'garbage-routes.ts': '路線分組、官方站序／時間排序及斷線示意',
     'garbage.py': '能力／車輛 API 與受保護提醒 CRUD',
     'garbage_service.py': '班表快取、SQLite schema、提醒驗證與通知派送',
-    'garbage-sw.js': 'Web Push 接收與通知點擊入口',
+    'rentmate-sw.js': 'Web Push 接收與通知點擊入口',
     'taipei-garbage.csv': '臺北原始班表快照，4,010 筆',
     'new-taipei-garbage.json': '新北原始班表快照，26,655 筆',
     'taipei-garbage-source.json': '臺北來源與匯入摘要',

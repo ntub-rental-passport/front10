@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import {
   AlertTriangle,
@@ -23,6 +23,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-vue-next'
+import { usePushSubscription } from '@/src/composables/usePushSubscription'
 import { useNotifications } from '@/src/composables/useNotifications'
 import { publicSettings } from '@/src/composables/usePublicSettings'
 import {
@@ -35,6 +36,16 @@ import {
 const router = useRouter()
 const session = getAuthSession()
 const { unreadCount } = useNotifications('tenant')
+const {
+  state: pushState,
+  error: pushError,
+  statusText: pushStatusText,
+  canToggle: canTogglePush,
+  refresh: refreshPush,
+  enable: enablePush,
+  disable: disablePush,
+} = usePushSubscription()
+onMounted(refreshPush)
 const supportEmail = computed(() => publicSettings.value.supportEmail.trim())
 
 const displayName = ref(session?.nickname || '王小明')
@@ -238,10 +249,18 @@ function handleDeleteAccount(): void {
               <p>管理您接收的通知類型與方式</p>
             </div>
           </div>
-          <!-- 本機偏好沒有控制實際通知寄送，尚未串接前不提供開關。 -->
-          <button class="setting-row compact-row" type="button" disabled>
+          <button
+            class="setting-row compact-row"
+            type="button"
+            role="switch"
+            aria-label="推播通知"
+            :aria-checked="pushState === 'on'"
+            :disabled="!canTogglePush"
+            @click="pushState === 'on' ? disablePush() : enablePush()"
+          >
             <Bell :size="20" />
-            <span><strong>推播通知</strong><small>通知偏好設定尚未開放</small></span>
+            <span><strong>推播通知</strong><small>{{ pushStatusText }}</small><small v-if="pushError" class="push-error" role="alert">{{ pushError }}</small></span>
+            <i class="push-toggle" :class="{ active: pushState === 'on' }" aria-hidden="true" />
           </button>
           <button class="setting-row compact-row" type="button" disabled>
             <Mail :size="20" />
@@ -869,6 +888,35 @@ button.setting-row {
   color: var(--account-muted);
   font-size: 13px;
   line-height: 1.35;
+}
+
+.push-toggle {
+  width: 36px;
+  height: 22px;
+  border-radius: 99px;
+  background: var(--account-line);
+  padding: 3px;
+}
+
+.push-toggle::before {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  content: '';
+}
+
+.push-toggle.active {
+  background: var(--account-primary);
+}
+
+.push-toggle.active::before {
+  transform: translateX(14px);
+}
+
+.setting-row .push-error {
+  color: #dc2626;
 }
 
 .login-history {

@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   Copy,
 } from 'lucide-vue-next'
+import { usePushSubscription } from '@/src/composables/usePushSubscription'
 import { signOut } from '@/src/composables/useAuth'
 import { useLandlordWorkspace } from '@/src/composables/useLandlordWorkspace'
 import {
@@ -52,6 +53,18 @@ const {
 } = useLandlordSettings()
 
 const section = computed(() => String(route.params.section || 'account'))
+const {
+  state: pushState,
+  error: pushError,
+  statusText: pushStatusText,
+  canToggle: canTogglePush,
+  refresh: refreshPush,
+  enable: enablePush,
+  disable: disablePush,
+} = usePushSubscription()
+watch(section, (value) => {
+  if (value === 'notifications') void refreshPush()
+}, { immediate: true })
 const message = ref('')
 const errorMessage = ref('')
 const saving = ref(false)
@@ -265,6 +278,15 @@ const roleLabels: Record<LandlordMemberRole, string> = {
 
     <template v-else-if="section === 'notifications'">
       <section class="line-card"><span><Bell /></span><div class="flex-1"><small>通知管道</small><h2>站內通知{{ state.emailNotifications ? '＋Email' : '' }}</h2><p>提醒會送到右上角的通知鈴鐺{{ state.emailNotifications ? '，並同時寄 Email' : '' }}。租金提醒只會送給已接受邀請、綁定帳號的租客。</p></div></section>
+      <!-- 推播是自己的帳號與裝置設定，立即生效且不受工作區擁有權限制；與按儲存才生效的提醒偏好分開，避免誤以為還需要儲存。 -->
+      <section class="panel">
+        <div class="preference-list">
+          <label>
+            <span><b>推播通知</b><small>{{ pushStatusText }}</small><small v-if="pushError" class="form-error" role="alert">{{ pushError }}</small></span>
+            <input type="checkbox" role="switch" aria-label="推播通知" :checked="pushState === 'on'" :disabled="!canTogglePush" @click.prevent="pushState === 'on' ? disablePush() : enablePush()" />
+          </label>
+        </div>
+      </section>
       <form class="panel" @submit.prevent="submitNotifications"><div class="panel-title"><span><Bell /></span><div><h2>提醒偏好</h2><p>設定系統應主動提醒的房務事件。</p></div></div><div class="preference-list"><label><span><b>Email 通知</b><small>下列提醒除了站內通知，也同時寄 Email：催繳與收租提醒寄給租客，其他寄到 {{ state.email || session?.email }}。</small></span><input v-model="notificationForm.emailNotifications" type="checkbox" /></label><label><span><b>租金提醒</b><small>到期前 3 天、到期當天與逾期隔天，自動提醒已綁定帳號的租客。</small></span><input v-model="notificationForm.rentReminders" type="checkbox" /></label><label><span><b>合約到期提醒</b><small>租約剩下設定天數與 7 天時通知你；已建立續約的不提醒。</small></span><input v-model="notificationForm.contractReminders" type="checkbox" /></label><label><span><b>報修通知</b><small>租客提出新報修時通知你。</small></span><input v-model="notificationForm.repairNotifications" type="checkbox" /></label></div><label class="days-field">合約到期前<select v-model="notificationForm.reminderDays"><option :value="7">7 天</option><option :value="14">14 天</option><option :value="30">30 天</option><option :value="60">60 天</option><option :value="90">90 天</option></select>開始提醒</label><div class="panel-actions"><button class="primary-button" type="submit" :disabled="saving || state.ownerOnly"><Save />{{ saving ? '儲存中…' : '儲存通知設定' }}</button></div></form>
     </template>
 
