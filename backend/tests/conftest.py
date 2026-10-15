@@ -11,3 +11,14 @@ def _never_send_real_email(monkeypatch):
     """
     from notifications import user_notify
     monkeypatch.setattr(user_notify, "start_email_delivery", lambda batch_ids: None)
+
+
+@pytest.fixture(autouse=True)
+def _never_send_real_push(monkeypatch):
+    """測試可能讀到 .env 的 VAPID 設定，禁止啟動背景推播或真的連外送給裝置。
+
+    同時攔住業務通知與後台／排程的送出入口；推播測試自行換回函式並替換 pywebpush。
+    """
+    from notifications import push_service, user_notify
+    monkeypatch.setattr(user_notify, "start_push_delivery", lambda message_ids: None)
+    monkeypatch.setattr(push_service, "send_to_user", lambda *args, **kwargs: None)

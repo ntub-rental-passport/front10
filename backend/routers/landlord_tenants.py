@@ -558,6 +558,7 @@ def move_out(tenant_id: int, payload: MoveOutPayload, db: Session = Depends(get_
             body=f"房東已將{lease.property.name} {lease.room.number} 的退租日登記為 {payload.move_out_date.isoformat()}。如有疑問，請與房東確認。",
             category="租約", source_label="退租通知", created_by=f"landlord:{landlord.id}",
             action_url="/app", action_label="查看租約",
+            push=True,
         )
     db.commit()
     return _tenant_dict(_owned_tenant(db, landlord.id, tenant.id), today, detailed=True, db=db)

@@ -998,6 +998,24 @@ CREATE TABLE `repair_notes` (
 -- 時間欄位有兩種型別，是刻意的：收件匣存 ISO 字串（前端直接吃），排程、監控、
 -- 垃圾車存 Unix 秒數的浮點數（它們都在算時間差）。
 
+-- 帳號的多裝置推播訂閱；以端點雜湊建立唯一鍵，避免長網址超過索引限制。
+CREATE TABLE `push_subscriptions` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `endpoint` TEXT NOT NULL,
+  `endpoint_hash` CHAR(64) NOT NULL,
+  `p256dh` VARCHAR(255) NOT NULL,
+  `auth` VARCHAR(255) NOT NULL,
+  `user_agent` VARCHAR(255) DEFAULT NULL,
+  `created_at` DATETIME NOT NULL,
+  `last_success_at` DATETIME DEFAULT NULL,
+  `expired_at` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_push_subscriptions_user_endpoint` (`user_id`, `endpoint_hash`),
+  INDEX `ix_push_subscriptions_user_expired` (`user_id`, `expired_at`),
+  CONSTRAINT `fk_push_subscriptions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 站內通知收件匣（inbox_service.py）：後台寄出的每一封，一個收件人一列。
 -- 表名是 inbox_messages 而不是 messages —— 已經有 notifications 與 message_boards 了。
 -- 不對 user_id 設外鍵：帳號刪掉時寄送紀錄要留著當稽核痕跡。

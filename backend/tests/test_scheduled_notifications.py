@@ -84,11 +84,11 @@ class ScheduledNotificationTests(AdminStoreTestCase):
             self.create(body='')
 
     def test_channels_the_backend_cannot_deliver_are_rejected(self):
-        # 推播後端送不出去。悄悄收下再不送，就是這個功能要避免的謊。
+        # 未實作的管道不可接受，避免收下排程卻無法送出。
         with self.assertRaises(ValueError):
-            self.create(channels=['push'])
+            self.create(channels=['sms'])
         with self.assertRaises(ValueError):
-            self.create(channels=['email', 'push'])
+            self.create(channels=['email', 'sms'])
         with self.assertRaises(ValueError):
             self.create(channels=[])
 
@@ -264,12 +264,13 @@ class ScheduledNotificationTests(AdminStoreTestCase):
     # -------------------- capabilities --------------------
 
     def test_capabilities_says_why_a_channel_is_unavailable(self):
-        caps = service.capabilities()
+        with patch.dict(os.environ, {'VAPID_PRIVATE_KEY': ''}):
+            caps = service.capabilities()
         self.assertTrue(caps['email'])
         # 收件匣搬到後端之後，站內排程也送得到了
         self.assertTrue(caps['inapp'])
         self.assertFalse(caps['push'])
-        self.assertIn('訂閱', caps['unsupportedReason']['push'])
+        self.assertIn('推播金鑰', caps['unsupportedReason']['push'])
 
 
     # -------------------- 監控事件 --------------------

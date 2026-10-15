@@ -7,7 +7,11 @@ Email：email=True 而且 SMTP 有設定時，同一則通知也寄一份 Email�
 寄信在交易 commit 之後才在背景執行緒進行 —— 動作 rollback 的話不會寄出，
 也不會讓使用者的請求等 SMTP。每封寄出／失敗記在 inbox_messages.email_state，
 後台的發送紀錄看得到（跟後台的「立即發送」同一套，見 inbox_service.send_pending_emails）。
+
+推播：push=True 且伺服器支援時，與 Email 一樣在 commit 後才於背景送出。
+推播按訊息 id 排隊，rollback 會一起丟棄，結果寫回 inbox_messages.push_state。
 """
+import json
 import logging
 import threading
 import uuid
@@ -17,11 +21,13 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from db.models import InboxMessage, User
+from notifications import push_service
 
 logger = logging.getLogger(__name__)
 
 CATEGORIES = ('系統', '租約', '補貼', '帳務')
 _PENDING_KEY = 'pending_email_batches'
+_PENDING_PUSH_KEY = 'pending_push_messages'
 
 
 def _iso_now() -> str:
@@ -51,12 +57,19 @@ def notify_user(
     action_url: str | None = None,
     action_label: str | None = None,
     email: bool = False,
+    push: bool = False,
 ) -> InboxMessage:
     if category not in CATEGORIES:
         raise ValueError(f'不認得的通知分類：{category}')
     if audience_role not in ('tenant', 'landlord', None):
         raise ValueError(f'不認得的通知收件身分：{audience_role}')
     with_email = bool(email and user.email and email_available())
+    with_push = bool(push and push_service.push_available())
+    channels = ['inapp']
+    if with_email:
+        channels.append('email')
+    if with_push:
+        channels.append('push')
     message = InboxMessage(
         id=f'nm-{uuid.uuid4().hex[:12]}',
         batch_id=f'nb-{uuid.uuid4().hex[:12]}',
@@ -65,10 +78,10 @@ def notify_user(
         title=title[:100],
         body=body[:2000],
         category=category,
-        channels='["inapp", "email"]' if with_email else '["inapp"]',
+        channels=json.dumps(channels),
         inapp_state='sent',
         email_state='pending' if with_email else None,
-        push_state=None,
+        push_state='pending' if with_push else None,
         recipient_label=(user.display_name or user.email)[:60],
         source_label=source_label[:60],
         source_type='landlord',
@@ -82,6 +95,8 @@ def notify_user(
     db.add(message)
     if with_email:
         db.info.setdefault(_PENDING_KEY, []).append(message.batch_id)
+    if with_push:
+        db.info.setdefault(_PENDING_PUSH_KEY, []).append(message.id)
     return message
 
 
@@ -100,14 +115,23 @@ def start_email_delivery(batch_ids: list[str]) -> None:
     threading.Thread(target=_send_batches, args=(list(batch_ids),), daemon=True).start()
 
 
+def start_push_delivery(message_ids: list[str]) -> None:
+    """測試會換掉這個函式，避免啟動真的推播背景工作。"""
+    threading.Thread(target=push_service.deliver_messages, args=(list(message_ids),), daemon=True).start()
+
+
 @event.listens_for(Session, 'after_commit')
 def _deliver_after_commit(session) -> None:
     batch_ids = session.info.pop(_PENDING_KEY, None)
     if batch_ids:
         start_email_delivery(batch_ids)
+    message_ids = session.info.pop(_PENDING_PUSH_KEY, None)
+    if message_ids:
+        start_push_delivery(message_ids)
 
 
 @event.listens_for(Session, 'after_rollback')
 def _drop_after_rollback(session) -> None:
-    # 動作沒成功，通知也一起消失，信就不該寄
+    # 動作沒成功，通知也一起消失，Email 與推播都不該送出
     session.info.pop(_PENDING_KEY, None)
+    session.info.pop(_PENDING_PUSH_KEY, None)
