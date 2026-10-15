@@ -46,6 +46,7 @@ import {
 } from '@/src/composables/admin/useAdminMaintenance'
 import {
   caseSideLabels,
+  userDirectoryRoles,
   type UserDepositView,
 } from '@/src/utils/admin-user-directory'
 import { depositMatchLabels } from '@/src/utils/admin-deposit'
@@ -462,7 +463,7 @@ function openSendDialog(): void {
             </dd>
 
             <dt class="text-foreground/70">身分</dt>
-            <dd>
+            <dd class="flex flex-wrap items-center gap-2">
               <Select
                 v-if="!isReal"
                 :model-value="row.user.role"
@@ -475,7 +476,9 @@ function openSendDialog(): void {
                   <SelectItem value="admin">管理員</SelectItem>
                 </SelectContent>
               </Select>
-              <span v-else class="font-medium">{{ adminRoleLabels[row.user.role] }}</span>
+              <template v-for="role in userDirectoryRoles(row)" :key="role">
+                <span v-if="isReal || role !== row.user.role" class="font-medium">{{ adminRoleLabels[role] }}</span>
+              </template>
             </dd>
 
             <dt class="text-foreground/70">註冊於</dt>

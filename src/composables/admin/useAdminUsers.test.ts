@@ -15,6 +15,7 @@ describe('useAdminUsers', () => {
     expect(adminRoleLabels.admin).toBe('管理員')
     expect(users.value.find((user) => user.email === 'staff@rentmate.tw')?.role).toBe('admin')
     expect(users.value.find((user) => user.email === 'admin@rentmate.tw')?.role).toBe('admin')
+    expect(users.value.every((user) => user.roles?.includes(user.role))).toBe(true)
   })
 
   it('展示帳號可以變更身分並記錄稽核', async () => {
@@ -23,6 +24,7 @@ describe('useAdminUsers', () => {
     const user = users.value.find((item) => item.id === 'u-tenant-1')!
     setRole(user.id, 'landlord')
     expect(user.role).toBe('landlord')
+    expect(user.roles).toEqual(['landlord'])
     expect(logAction).toHaveBeenCalledWith('使用者管理', user.email, '角色由「租客」變更為「房東」')
   })
 

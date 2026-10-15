@@ -502,6 +502,34 @@ describe('realAccountToRow', () => {
     expect(realAccountToRow({ ...base, roles: ['tenant'] }).user.role).toBe('user')
   })
 
+  it('保留房東與租客身分，兩種角色篩選都找得到同一帳號', () => {
+    const row = realAccountToRow({ ...base, roles: ['tenant', 'landlord'] })
+    expect(row.user.role).toBe('landlord')
+    expect(row.roles).toEqual(['landlord', 'user'])
+    for (const role of ['user', 'landlord'] as const) {
+      expect(filterUserDirectory([row], { ...emptyUserDirectoryFilter, role })).toEqual([row])
+    }
+  })
+
+  it('管理員保留角色資料，但只參與管理員身分篩選', () => {
+    const row = realAccountToRow({ ...base, roles: ['tenant', 'landlord', 'admin'] })
+    expect(row.roles).toEqual(['admin', 'landlord', 'user'])
+    expect(row.user.role).toBe('admin')
+    expect(filterUserDirectory([row], { ...emptyUserDirectoryFilter, role: 'admin' })).toEqual([row])
+    for (const role of ['user', 'landlord'] as const) {
+      expect(filterUserDirectory([row], { ...emptyUserDirectoryFilter, role })).toEqual([])
+    }
+  })
+
+  it('展示帳號支援角色清單，舊的單角色資料仍能轉成同樣形狀', () => {
+    const rows = joinUserDirectory(sources({ users: [
+      user('dual', { role: 'landlord', roles: ['landlord', 'user'] }),
+      user('legacy'),
+    ] }), EXPIRING_SOON_DAYS)
+    expect(rows.map((row) => row.roles)).toEqual([['landlord', 'user'], ['user']])
+    expect(filterUserDirectory(rows, { ...emptyUserDirectoryFilter, role: 'user' })).toEqual(rows)
+  })
+
   it('API 用量原樣接入，以 Free 上限判斷，停用帳號照樣判斷', () => {
     const usage = { landlord: { properties: 2, rooms: 5, seats: 1 }, tenant: null }
     const row = realAccountToRow({ ...base, roles: ['landlord'], status: 'suspended', usage })

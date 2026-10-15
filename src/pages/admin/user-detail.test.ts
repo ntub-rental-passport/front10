@@ -134,6 +134,36 @@ async function renderCurrentRow() {
   return (await renderToString(createSSRApp(UserDetail))).replace(/<!--.*?-->/g, '')
 }
 
+describe('詳情頁多重身分', () => {
+  it('展示帳號的主要身分選單旁也顯示其他身分', async () => {
+    const user = seedAdminUsers().find((item) => item.role === 'landlord')!
+    state.row = joinUserDirectory({
+      users: [{ ...user, roles: ['landlord', 'user'] }], subscriptions: [], tickets: [], deposits: [],
+    }, 14)[0]
+    const html = await renderCurrentRow()
+    const identities = html.match(/>身分<\/dt>\s*<dd[^>]*>(.*?)<\/dd>/s)?.[1]
+    expect(identities).toContain('data-model-value="landlord"')
+    expect(identities).toMatch(/<span[^>]*>租客<\/span>/)
+  })
+
+  it('房東與租客同時顯示在身分欄', async () => {
+    state.row = realAccountToRow({ ...realAccount, roles: ['tenant', 'landlord'] })
+    const html = await renderCurrentRow()
+    const identities = html.match(/>身分<\/dt>\s*<dd[^>]*>(.*?)<\/dd>/s)?.[1]
+    expect(identities).toMatch(/<span[^>]*>房東<\/span>/)
+    expect(identities).toMatch(/<span[^>]*>租客<\/span>/)
+  })
+
+  it('同時帶房東與租客角色的管理員仍只顯示管理員', async () => {
+    state.row = realAccountToRow({ ...realAccount, roles: ['tenant', 'landlord', 'admin'] })
+    const html = await renderCurrentRow()
+    const identities = html.match(/>身分<\/dt>\s*<dd[^>]*>(.*?)<\/dd>/s)?.[1]
+    expect(identities).toMatch(/<span[^>]*>管理員<\/span>/)
+    expect(identities).not.toMatch(/<span[^>]*>(房東|租客)<\/span>/)
+    expect(html).toContain('管理員帳號不適用方案')
+  })
+})
+
 describe('帳號計數用量', () => {
   it.each([true, false])('DEV=%s 真實帳號維持 Free，並說明方案與加購無法調整', async (dev) => {
     vi.stubEnv('DEV', dev)

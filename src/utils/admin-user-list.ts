@@ -31,7 +31,7 @@ export function dropDemoDuplicates(
 export type UserSortKey = 'user' | 'role' | 'lastLogin' | 'status'
 export type SortDir = 'asc' | 'desc'
 
-/** 身分的排序依權限由小到大：租客、房東、管理員。 */
+/** 依主要身分由小到大：租客、房東、管理員；多重身分沿用同一規則。 */
 function roleRank(row: UserDirectoryRow): number {
   if (row.user.role === 'admin') return 2
   return row.user.role === 'landlord' ? 1 : 0
