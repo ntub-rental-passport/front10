@@ -37,6 +37,7 @@ class DefaultsTests(SiteSettingsTestCase):
         self.assertEqual(values['supportEmail'], 'rentmate.software@gmail.com')
         self.assertFalse(values['maintenanceMode'])
         self.assertEqual(values['platformVisionPageQuota'], 3000)
+        self.assertEqual(values['platformNvidiaCallQuota'], 3000)
         self.assertEqual(site.list_outages(), [])
         self.assertFalse(self.db_path.exists())
 
@@ -122,6 +123,14 @@ class UpdateTests(SiteSettingsTestCase):
     def test_whole_number_floats_are_accepted_as_integers(self):
         # 前端的數字欄位送過來可能是 10.0
         self.assertEqual(site.update_settings({'maintenanceOverdueDays': 10.0}, actor='a@example.com')['maintenanceOverdueDays'], 10)
+
+    def test_nvidia_quota_can_be_changed_and_zero_disables_it(self):
+        self.assertEqual(site.update_settings({'platformNvidiaCallQuota': 5000}, actor='a@example.com')['platformNvidiaCallQuota'], 5000)
+        self.assertIn(('系統設定', '平台設定', 'NVIDIA 每月呼叫次數上限：3,000 → 5,000 次'), self.audit())
+        self.assertEqual(site.update_settings({'platformNvidiaCallQuota': 0}, actor='a@example.com')['platformNvidiaCallQuota'], 0)
+        for value in (-1, 1.5, True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                site.update_settings({'platformNvidiaCallQuota': value}, actor='a@example.com')
 
 class PublicViewTests(SiteSettingsTestCase):
     def test_public_view_leaves_out_the_allowlist_and_the_thresholds(self):

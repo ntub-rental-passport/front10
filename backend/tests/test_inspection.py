@@ -11,6 +11,7 @@ from unittest.mock import Mock, PropertyMock, patch
 from cryptography.exceptions import InvalidTag
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+import httpx
 from PIL import Image
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker
@@ -673,10 +674,75 @@ class InspectionTests(unittest.TestCase):
 
     def test_invalid_vlm_response_is_rejected(self):
         with patch.dict(os.environ, {'NVIDIA_API_KEY': 'test'}), patch.object(inspection, 'OpenAI') as client:
-            client.return_value.__enter__.return_value.chat.completions.create.return_value.choices[0].message.content = '{"type":"imaginary","confidence":2,"summary":"wrong"}'
+            raw = client.return_value.__enter__.return_value.chat.completions.with_raw_response.create.return_value
+            raw.http_response = httpx.Response(200, json={})
+            raw.parse.return_value.choices[0].message.content = '{"type":"imaginary","confidence":2,"summary":"wrong"}'
             with self.assertRaises(HTTPException) as error:
                 inspection.vision_result('unused', 'prompt', inspection.ComparisonResult)
             self.assertEqual(error.exception.status_code, 502)
+
+
+class NvidiaVlmUsageTests(unittest.TestCase):
+    def raw(self, content):
+        raw = Mock()
+        raw.http_response = httpx.Response(200, json={
+            'choices': [{'message': {'content': content}}],
+            'usage': {'prompt_tokens': 20, 'completion_tokens': 5},
+        })
+        raw.parse.return_value = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+        return raw
+
+    def test_json_and_schema_retries_are_all_successful_requests(self):
+        good = '{"type":"unchanged","confidence":0.9,"summary":"沒有差異"}'
+        for function, invalid in [('vision_result', 'not json'), ('_vlm_text', 'not json'),
+                                  ('vision_result', '{"type":"imaginary","confidence":2,"summary":"wrong"}')]:
+            with self.subTest(function=function, invalid=invalid), patch.dict(os.environ, {'NVIDIA_API_KEY': 'test'}), \
+                    patch.object(inspection, 'OpenAI') as factory, \
+                    patch.object(inspection.ai_usage, 'record_call') as record:
+                create = factory.return_value.__enter__.return_value.chat.completions.with_raw_response.create
+                create.side_effect = [self.raw(invalid), self.raw(good)]
+                if function == 'vision_result':
+                    result = inspection.vision_result('unused', 'prompt', inspection.ComparisonResult)
+                else:
+                    result = inspection._vlm_text([], max_tokens=50, json_mode=True)
+                self.assertEqual(result['type'], 'unchanged')
+                self.assertEqual(create.call_count, 2)
+                self.assertEqual(record.call_args_list, [
+                    unittest.mock.call('nvidia', 'inspection', ok=True, prompt_tokens=20, completion_tokens=5),
+                    unittest.mock.call('nvidia', 'inspection', ok=True, prompt_tokens=20, completion_tokens=5),
+                ])
+                self.assertEqual(factory.call_args.kwargs['max_retries'], 0)
+
+    def test_http_failures_and_sdk_parse_failures(self):
+        for status in (None, 503, 200):
+            with self.subTest(status=status), patch.dict(os.environ, {'NVIDIA_API_KEY': 'test'}), \
+                    patch.object(inspection, 'OpenAI') as factory, \
+                    patch.object(inspection.ai_usage, 'record_call') as record:
+                create = factory.return_value.__enter__.return_value.chat.completions.with_raw_response.create
+                if status == 200:
+                    raw = self.raw('')
+                    raw.http_response = httpx.Response(200, text='{invalid')
+                    raw.parse.side_effect = ValueError('invalid response JSON')
+                    create.return_value = raw
+                else:
+                    failure = RuntimeError('HTTP failure')
+                    failure.response = httpx.Response(status) if status else None
+                    create.side_effect = failure
+                with self.assertRaises(HTTPException):
+                    inspection._vlm_text([], max_tokens=50, json_mode=True, attempts=1)
+                record.assert_called_once_with('nvidia', 'inspection', ok=status == 200, prompt_tokens=0, completion_tokens=0)
+
+    def test_missing_key_skips_both_calls(self):
+        with patch.dict(os.environ, {'NVIDIA_API_KEY': ''}), \
+                patch.object(inspection, 'NVIDIA_API_KEY', ''), \
+                patch.object(inspection.ai_usage, 'record_call') as record, \
+                patch.object(inspection, 'OpenAI') as factory:
+            with self.assertRaises(HTTPException):
+                inspection.vision_result('unused', 'prompt', inspection.ComparisonResult)
+            with self.assertRaises(HTTPException):
+                inspection._vlm_text([], max_tokens=50, json_mode=True)
+        record.assert_not_called()
+        factory.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -35,6 +35,9 @@ export function validateSettings(settings: SystemSettings): SettingsErrors {
   if (!Number.isFinite(settings.platformVisionPageQuota) || settings.platformVisionPageQuota < 0) {
     errors.platformVisionPageQuota = 'Vision 頁數額度不可為負數'
   }
+  if (!Number.isFinite(settings.platformNvidiaCallQuota) || settings.platformNvidiaCallQuota < 0) {
+    errors.platformNvidiaCallQuota = 'NVIDIA 呼叫次數額度不可為負數'
+  }
 
   if (
     !Number.isFinite(settings.quotaWarnPercent) ||

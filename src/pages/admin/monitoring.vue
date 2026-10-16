@@ -44,6 +44,7 @@ import { useSystemHealth } from '@/src/composables/admin/useSystemHealth'
 import { useTickingNow } from '@/src/composables/useTickingNow'
 import type { AiProviderId } from '@/src/mocks/admin-seed'
 import { chartColor } from '@/src/constants/admin-chart'
+import { aggregateDailyUsage } from '@/src/utils/admin-ai-usage'
 import { PLAN_FEATURES, PLAN_FEATURE_KEYS } from '@/src/utils/admin-entitlements'
 import { outageOf } from '@/src/utils/admin-feature-status'
 import { formatShortDateTime, formatTimeAgo, type MonitorReading } from '@/src/utils/admin-monitoring'
@@ -211,7 +212,7 @@ function selectEventFilter(value: string | number): void {
 }
 
 const { records, loadState: aiUsageState, usages, trendDates, seriesFor } = useAdminAiUsage()
-// 每次打開都重讀：用量是 OCR 服務一直在回報的，上次讀到的可能已經舊了
+// 每次打開都重讀：AI 服務持續累加用量，上次讀到的可能已經舊了
 void loadAiUsage()
 
 // 等監控數據與事件紀錄載入後再捲到 #ai-usage，避免上方內容長出來後推移位置。
@@ -227,7 +228,7 @@ watch(
 
 const showAllDays = ref(false)
 
-const unitLabels = { token: 'tokens', page: '頁' } as const
+const unitLabels = { token: 'tokens', page: '頁', call: '次' } as const
 
 const QUOTA_TONE: Record<ProviderUsage['level'], StatusDotTone> = {
   ok: 'ok',
@@ -236,8 +237,7 @@ const QUOTA_TONE: Record<ProviderUsage['level'], StatusDotTone> = {
 }
 
 /**
- * 畫「每日用量佔月額度的百分比」而不是原始頁數：之後加上以 token 計費的服務時，
- * 兩種單位差好幾個數量級，畫原始數字會讓其中一條線壓成貼著 x 軸的直線。
+ * 供應商單位與額度不同，以各自月額度的比例才能比較消耗速度。
  */
 function percentSeriesFor(providerId: AiProviderId): number[] {
   const usage = usages.value.find((item) => item.provider.id === providerId)
@@ -249,19 +249,24 @@ function percentSeriesFor(providerId: AiProviderId): number[] {
 
 const chartSeries = computed(() => [
   { label: 'Google Vision（% 月額度）', values: percentSeriesFor('vision'), color: chartColor('series-3') },
+  { label: 'NVIDIA（% 月額度）', values: percentSeriesFor('nvidia'), color: chartColor('series-4') },
 ])
 
 const chartLabels = computed(() => trendDates.value.map((date) => date.slice(5).replace('-', '/')))
 
 // 後端給 60 天（算本月累計要用），明細只列跟趨勢圖同一段的 30 天
 const visibleRecords = computed(() => {
-  const sorted = [...records.value].sort((a, b) => b.date.localeCompare(a.date))
+  const sorted = aggregateDailyUsage(records.value).sort((a, b) => b.date.localeCompare(a.date))
   const cutoff = new Set(showAllDays.value ? trendDates.value : trendDates.value.slice(-7))
   return sorted.filter((record) => cutoff.has(record.date))
 })
 
 const providerLabels = computed(() =>
   Object.fromEntries(usages.value.map((usage) => [usage.provider.id, usage.provider.label])),
+)
+
+const providerUnits = computed(() =>
+  Object.fromEntries(usages.value.map((usage) => [usage.provider.id, unitLabels[usage.provider.unit]])),
 )
 
 function formatNumber(value: number): string {
@@ -458,6 +463,138 @@ function daysLeftText(usage: ProviderUsage): string {
       </div>
     </section>
 
+    <!-- AI 用量讀取失敗時不可顯示為 0 或正常。 -->
+    <section
+      ref="aiUsageSection"
+      data-real="true"
+      class="min-w-0 scroll-mt-24 space-y-3"
+      aria-labelledby="monitor-ai-usage"
+    >
+      <div>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 id="monitor-ai-usage" class="inline-flex items-center gap-1.5 text-lg font-bold tracking-tight">
+            AI 額度用量
+            <InfoTip text="Google Vision 每辨識一頁就記一頁。NVIDIA 的合約分析、Law Chat、點交比對每打一次 API 就記一次，重試也算。上限與門檻在系統設定頁調整，本月用量到預警或告急門檻時會通知管理員。" />
+          </h2>
+        </div>
+      </div>
+
+      <AdminLoadNotice :state="aiUsageState" what="AI 用量" @retry="loadAiUsage" />
+
+      <template v-if="aiUsageState === 'ready'">
+        <div class="grid gap-4 md:grid-cols-2">
+          <Card v-for="usage in usages" :key="usage.provider.id" class="rounded-3xl">
+            <CardHeader class="flex flex-row items-center justify-between space-y-0 p-5 pb-2">
+              <CardTitle class="text-base">{{ usage.provider.label }}</CardTitle>
+              <StatusDot :tone="QUOTA_TONE[usage.level]" :label="quotaLevelLabels[usage.level]" emphasize />
+            </CardHeader>
+            <CardContent class="space-y-4 px-5 pb-5">
+              <p v-if="usage.unset" class="text-2xl font-black text-muted-foreground">未設定額度</p>
+              <p v-else class="text-2xl font-black">
+                {{ formatNumber(usage.used) }}
+                <span class="text-base font-medium text-muted-foreground">
+                  / {{ formatNumber(usage.quota) }} {{ unitLabels[usage.provider.unit] }}
+                </span>
+              </p>
+
+              <div v-if="!usage.unset" class="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <div
+                  class="h-full rounded-full transition-all"
+                  :class="STATUS_DOT_TONE_CLASS[QUOTA_TONE[usage.level]]"
+                  :style="{ width: `${usage.percent}%` }"
+                />
+              </div>
+
+              <div class="grid grid-cols-3 gap-2 text-sm">
+                <div>
+                  <p class="text-muted-foreground">剩餘</p>
+                  <p class="font-semibold">{{ usage.unset ? '—' : formatNumber(usage.remaining) }}</p>
+                </div>
+                <div>
+                  <p class="text-muted-foreground">近 7 日平均</p>
+                  <p class="font-semibold">{{ formatNumber(usage.dailyAvg) }} / 日</p>
+                </div>
+                <div>
+                  <p class="text-muted-foreground">預估可撐</p>
+                  <p class="font-semibold">{{ daysLeftText(usage) }}</p>
+                </div>
+              </div>
+              <div v-if="usage.provider.id === 'nvidia'" class="space-y-3 border-t pt-4 text-sm">
+                <dl class="grid grid-cols-2 gap-3">
+                  <div>
+                    <dt class="text-muted-foreground">失敗次數</dt>
+                    <dd class="font-semibold tabular-nums">
+                      {{ formatNumber(usage.failed) }} 次
+                      <span class="font-normal text-muted-foreground">（{{ usage.calls ? `${Math.round(usage.failed / usage.calls * 100)}%` : '—' }}）</span>
+                    </dd>
+                  </div>
+                  <div class="min-w-0 break-words">
+                    <dt class="text-muted-foreground">本月 token</dt>
+                    <dd class="font-semibold tabular-nums">{{ formatNumber(usage.promptTokens + usage.completionTokens) }}</dd>
+                    <dd class="text-xs text-muted-foreground">輸入 {{ formatNumber(usage.promptTokens) }}／輸出 {{ formatNumber(usage.completionTokens) }}</dd>
+                  </div>
+                </dl>
+                <dl class="space-y-1">
+                  <div v-for="feature in usage.features" :key="feature.id" class="flex justify-between gap-3">
+                    <dt class="text-muted-foreground">{{ feature.label }}</dt>
+                    <dd class="font-semibold tabular-nums">{{ formatNumber(feature.calls) }} 次</dd>
+                  </div>
+                </dl>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card class="rounded-3xl">
+          <CardHeader class="p-5">
+            <CardTitle class="inline-flex items-center gap-1.5 text-base">
+              近 30 天用量趨勢
+              <InfoTip text="每天用掉的用量佔各供應商月額度的百分比。" />
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="px-5 pb-5">
+            <UsageTrendChart :labels="chartLabels" :series="chartSeries" />
+          </CardContent>
+        </Card>
+
+        <Card class="min-w-0 rounded-3xl">
+          <CardHeader class="flex flex-row items-center justify-between space-y-0 p-5">
+            <CardTitle class="text-base">每日明細</CardTitle>
+            <Button variant="outline" size="sm" @click="showAllDays = !showAllDays">
+              {{ showAllDays ? '只顯示近 7 天' : '顯示全部 30 天' }}
+            </Button>
+          </CardHeader>
+          <CardContent class="min-w-0 px-5 pb-5">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead class="whitespace-nowrap">日期</TableHead>
+                  <TableHead class="whitespace-nowrap">供應商</TableHead>
+                  <TableHead class="whitespace-nowrap text-right">用量</TableHead>
+                  <TableHead class="whitespace-nowrap text-right">失敗</TableHead>
+                  <TableHead class="whitespace-nowrap text-right">token</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="record in visibleRecords" :key="`${record.date}-${record.provider}`">
+                  <TableCell class="whitespace-nowrap">{{ record.date }}</TableCell>
+                  <TableCell class="whitespace-nowrap">{{ providerLabels[record.provider] }}</TableCell>
+                  <TableCell class="whitespace-nowrap text-right">{{ formatNumber(record.units) }} {{ providerUnits[record.provider] }}</TableCell>
+                  <TableCell class="text-right">{{ formatNumber(record.failed) }}</TableCell>
+                  <TableCell class="text-right">{{ record.provider === 'vision' ? '—' : formatNumber(record.prompt_tokens + record.completion_tokens) }}</TableCell>
+                </TableRow>
+                <TableRow v-if="visibleRecords.length === 0">
+                  <TableCell colspan="5" class="py-6 text-center text-muted-foreground">
+                    {{ showAllDays ? '近 30 天' : '近 7 天' }}沒有用量
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </template>
+    </section>
+
     <section class="space-y-3" aria-labelledby="monitor-events">
       <div>
         <h2 id="monitor-events" class="inline-flex items-center gap-1.5 text-lg font-bold tracking-tight">
@@ -520,114 +657,6 @@ function daysLeftText(usage: ProviderUsage): string {
           </Button>
         </CardContent>
       </Card>
-    </section>
-
-    <!-- AI 用量讀取失敗時不可顯示為 0 頁或正常。 -->
-    <section
-      ref="aiUsageSection"
-      data-real="true"
-      class="scroll-mt-24 space-y-3"
-      aria-labelledby="monitor-ai-usage"
-    >
-      <div>
-        <div class="flex flex-wrap items-center gap-2">
-          <h2 id="monitor-ai-usage" class="inline-flex items-center gap-1.5 text-lg font-bold tracking-tight">
-            AI 額度用量
-            <InfoTip text="合約掃描每用 Google Vision 辨識一頁就記一頁。上限與門檻在系統設定頁調整， 本月用量到預警或告急門檻時會通知管理員。" />
-          </h2>
-        </div>
-      </div>
-
-      <AdminLoadNotice :state="aiUsageState" what="AI 用量" @retry="loadAiUsage" />
-
-      <template v-if="aiUsageState === 'ready'">
-        <div class="grid gap-4 md:grid-cols-2">
-          <Card v-for="usage in usages" :key="usage.provider.id" class="rounded-3xl">
-            <CardHeader class="flex flex-row items-center justify-between space-y-0 p-5 pb-2">
-              <CardTitle class="text-base">{{ usage.provider.label }}</CardTitle>
-              <StatusDot :tone="QUOTA_TONE[usage.level]" :label="quotaLevelLabels[usage.level]" emphasize />
-            </CardHeader>
-            <CardContent class="space-y-4 px-5 pb-5">
-              <p v-if="usage.unset" class="text-2xl font-black text-muted-foreground">未設定額度</p>
-              <p v-else class="text-2xl font-black">
-                {{ formatNumber(usage.used) }}
-                <span class="text-base font-medium text-muted-foreground">
-                  / {{ formatNumber(usage.quota) }} {{ unitLabels[usage.provider.unit] }}
-                </span>
-              </p>
-
-              <div v-if="!usage.unset" class="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                <div
-                  class="h-full rounded-full transition-all"
-                  :class="STATUS_DOT_TONE_CLASS[QUOTA_TONE[usage.level]]"
-                  :style="{ width: `${usage.percent}%` }"
-                />
-              </div>
-
-              <div class="grid grid-cols-3 gap-2 text-sm">
-                <div>
-                  <p class="text-muted-foreground">剩餘</p>
-                  <p class="font-semibold">{{ usage.unset ? '—' : formatNumber(usage.remaining) }}</p>
-                </div>
-                <div>
-                  <p class="text-muted-foreground">近 7 日平均</p>
-                  <p class="font-semibold">{{ formatNumber(usage.dailyAvg) }} / 日</p>
-                </div>
-                <div>
-                  <p class="text-muted-foreground">預估可撐</p>
-                  <p class="font-semibold">{{ daysLeftText(usage) }}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card class="rounded-3xl">
-          <CardHeader class="p-5">
-            <CardTitle class="inline-flex items-center gap-1.5 text-base">
-              近 30 天用量趨勢
-              <InfoTip text="每天用掉的頁數佔月額度的百分比。" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent class="px-5 pb-5">
-            <UsageTrendChart :labels="chartLabels" :series="chartSeries" />
-          </CardContent>
-        </Card>
-
-        <Card class="rounded-3xl">
-          <CardHeader class="flex flex-row items-center justify-between space-y-0 p-5">
-            <CardTitle class="text-base">每日明細</CardTitle>
-            <Button variant="outline" size="sm" @click="showAllDays = !showAllDays">
-              {{ showAllDays ? '只顯示近 7 天' : '顯示全部 30 天' }}
-            </Button>
-          </CardHeader>
-          <CardContent class="px-5 pb-5">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead class="whitespace-nowrap">日期</TableHead>
-                  <TableHead class="whitespace-nowrap">供應商</TableHead>
-                  <TableHead class="whitespace-nowrap text-right">用量</TableHead>
-                  <TableHead class="whitespace-nowrap text-right">呼叫次數</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow v-for="record in visibleRecords" :key="`${record.date}-${record.provider}`">
-                  <TableCell class="whitespace-nowrap">{{ record.date }}</TableCell>
-                  <TableCell class="whitespace-nowrap">{{ providerLabels[record.provider] }}</TableCell>
-                  <TableCell class="text-right">{{ formatNumber(record.units) }}</TableCell>
-                  <TableCell class="text-right">{{ formatNumber(record.calls) }}</TableCell>
-                </TableRow>
-                <TableRow v-if="visibleRecords.length === 0">
-                  <TableCell colspan="4" class="py-6 text-center text-muted-foreground">
-                    {{ showAllDays ? '近 30 天' : '近 7 天' }}沒有用量
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </template>
     </section>
   </div>
 </template>

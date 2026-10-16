@@ -12,14 +12,15 @@ import {
   dailyAverage,
   daysUntilExhausted,
   monthToDateUnits,
+  monthToDateBreakdown,
   quotaStatus,
   type QuotaLevel,
 } from '@/src/utils/admin-ai-usage'
 import { dateKey } from '@/src/utils/date-key'
 
 /**
- * 每日用量存在後端（backend/admin/ai_usage.py），由 OCR 服務每次呼叫 Google Vision
- * 時回報。這裡只負責讀：第一次用到時讀一次（頂部列的待辦徽章），監控頁與後台
+ * 每日用量存在後端（backend/admin/ai_usage.py），包含 Vision 頁數與 NVIDIA 呼叫。
+ * 這裡只負責讀：第一次用到時讀一次（頂部列的待辦徽章），監控頁與後台
  * 首頁每次打開再重讀，拿最新的。
  */
 const records = ref<AiUsageDaily[]>([])
@@ -52,7 +53,7 @@ export const quotaLevelLabels: Record<QuotaLevel, string> = {
   critical: '告急',
 }
 
-export interface ProviderUsage {
+export interface ProviderUsage extends ReturnType<typeof monthToDateBreakdown> {
   provider: AiProvider
   used: number
   quota: number
@@ -67,7 +68,7 @@ export interface ProviderUsage {
 
 type QuotaSettings = Pick<
   SystemSettings,
-  'platformVisionPageQuota' | 'quotaWarnPercent' | 'quotaCriticalPercent' | 'aiQuotaCriticalDays'
+  'platformVisionPageQuota' | 'platformNvidiaCallQuota' | 'quotaWarnPercent' | 'quotaCriticalPercent' | 'aiQuotaCriticalDays'
 >
 
 /**
@@ -77,8 +78,10 @@ type QuotaSettings = Pick<
 export function useAdminAiUsage(settingsSource: Ref<QuotaSettings> = adminSettings) {
   if (loadState.value === 'idle') void loadAiUsage()
 
-  function quotaFor(_provider: AiProviderId): number {
-    return settingsSource.value.platformVisionPageQuota
+  function quotaFor(provider: AiProviderId): number {
+    return provider === 'nvidia'
+      ? settingsSource.value.platformNvidiaCallQuota
+      : settingsSource.value.platformVisionPageQuota
   }
 
   const usages = computed<ProviderUsage[]>(() => {
@@ -91,6 +94,7 @@ export function useAdminAiUsage(settingsSource: Ref<QuotaSettings> = adminSettin
       const remaining = Math.max(0, quota - used)
 
       return {
+        ...monthToDateBreakdown(records.value, provider.id, today),
         provider,
         used,
         quota,
@@ -126,10 +130,9 @@ export function useAdminAiUsage(settingsSource: Ref<QuotaSettings> = adminSettin
 
   function seriesFor(provider: AiProviderId): number[] {
     return trendDates.value.map((date) => {
-      const found = records.value.find(
+      return records.value.filter(
         (record) => record.date === date && record.provider === provider,
-      )
-      return found?.units ?? 0
+      ).reduce((sum, record) => sum + record.units, 0)
     })
   }
 

@@ -103,6 +103,7 @@ const AUDIT_KEYS = ['auditRetentionDays'] as const
 const REMINDER_KEYS = ['maintenanceOverdueDays', 'subscriptionExpiringSoonDays'] as const
 const QUOTA_KEYS = [
   'platformVisionPageQuota',
+  'platformNvidiaCallQuota',
   'quotaWarnPercent',
   'quotaCriticalPercent',
   'aiQuotaCriticalDays',
@@ -554,6 +555,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   <Label for="platformVisionPageQuota">Vision 每月頁數上限（頁）</Label>
                   <Input id="platformVisionPageQuota" v-model.number="draft.platformVisionPageQuota" type="number" class="max-w-[9rem]" min="0" />
                   <p v-if="errors.platformVisionPageQuota" class="text-sm text-destructive">{{ errors.platformVisionPageQuota }}</p>
+                </div>
+                <div class="space-y-2">
+                  <Label for="platformNvidiaCallQuota">NVIDIA 每月呼叫次數上限（次）</Label>
+                  <Input id="platformNvidiaCallQuota" v-model.number="draft.platformNvidiaCallQuota" type="number" class="max-w-[9rem]" min="0" />
+                  <p v-if="errors.platformNvidiaCallQuota" class="text-sm text-destructive">{{ errors.platformNvidiaCallQuota }}</p>
                 </div>
                 <div class="space-y-2">
                   <Label for="aiQuotaCriticalDays">剩餘天數告急門檻（天）</Label>

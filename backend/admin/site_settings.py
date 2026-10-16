@@ -82,6 +82,9 @@ FIELDS: dict[str, Field] = {
     'platformVisionPageQuota': Field(
         'Vision 每月頁數上限', 'number', 3_000, unit='頁', minimum=0, range_message='Vision 頁數額度不可為負數',
     ),
+    'platformNvidiaCallQuota': Field(
+        'NVIDIA 每月呼叫次數上限', 'number', 3_000, unit='次', minimum=0, range_message='NVIDIA 呼叫次數額度不可為負數',
+    ),
     'quotaWarnPercent': Field(
         '額度預警門檻', 'number', 80, unit='%', minimum=1, maximum=100, range_message='預警門檻需介於 1 到 100',
     ),

@@ -28,6 +28,7 @@ export const SETTING_FIELDS: Record<keyof SystemSettings, FieldMeta> = {
   maintenanceOverdueDays: { label: '報修逾期提醒門檻', unit: '天', kind: 'number' },
   subscriptionExpiringSoonDays: { label: '訂閱到期提醒天數', unit: '天', kind: 'number' },
   platformVisionPageQuota: { label: 'Vision 每月頁數上限', unit: '頁', kind: 'number' },
+  platformNvidiaCallQuota: { label: 'NVIDIA 每月呼叫次數上限', unit: '次', kind: 'number' },
   quotaWarnPercent: { label: '額度預警門檻', unit: '%', kind: 'number' },
   quotaCriticalPercent: { label: '額度告急門檻', unit: '%', kind: 'number' },
   aiQuotaCriticalDays: { label: '剩餘天數告急門檻', unit: '天', kind: 'number' },

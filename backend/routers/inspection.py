@@ -19,6 +19,7 @@ from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload, object_session
+from admin import ai_usage
 from db.database import get_db
 from db.models import InspectionItem, InspectionRecord, InspectionPhotoDetail, Rental, User
 from auth.security import get_current_tenant
@@ -430,6 +431,20 @@ def _consistent(result: dict) -> dict:
     return result
 
 
+def _vlm_request(client, **kwargs):
+    """先記 HTTP 結果再解析，2xx 的不合格 JSON 仍會消耗 NVIDIA 額度。"""
+    response = None
+    try:
+        raw = client.chat.completions.with_raw_response.create(**kwargs)
+        response = raw.http_response
+    except Exception as error:
+        response = getattr(error, 'response', None)
+        raise
+    finally:
+        ai_usage.record_response('nvidia', 'inspection', response)
+    return raw.parse()
+
+
 def vision_result(image_b64, prompt, schema, attempts=2):
     key = os.getenv('NVIDIA_API_KEY') or NVIDIA_API_KEY
     if not key:
@@ -440,7 +455,7 @@ def vision_result(image_b64, prompt, schema, attempts=2):
         try:
             with OpenAI(base_url='https://integrate.api.nvidia.com/v1', api_key=key,
                         timeout=60.0, max_retries=0) as client:
-                response = client.chat.completions.create(
+                response = _vlm_request(client,
                     model=os.getenv('INSPECTION_VLM_MODEL', 'meta/llama-3.2-11b-vision-instruct'),
                     messages=[
                         {'role': 'system', 'content': SYSTEM_PROMPTS.get(schema.__name__, SYSTEM_PROMPTS['DefectResult'])
@@ -489,7 +504,7 @@ def _vlm_text(messages, max_tokens, json_mode, attempts=2):
         try:
             with OpenAI(base_url='https://integrate.api.nvidia.com/v1', api_key=key,
                         timeout=60.0, max_retries=0) as client:
-                response = client.chat.completions.create(
+                response = _vlm_request(client,
                     model=os.getenv('INSPECTION_VLM_MODEL', 'meta/llama-3.2-11b-vision-instruct'),
                     messages=messages, temperature=0.1, max_tokens=max_tokens,
                     **({'response_format': {'type': 'json_object'}} if json_mode else {}),
