@@ -25,6 +25,7 @@ KINDS = {
     'reviews': ('REVIEW_FILE_DIR', 'reviews'),
     'subsidy': ('SUBSIDY_FILE_DIR', 'subsidy'),
     'avatars': ('AVATAR_FILE_DIR', 'avatars'),
+    'payment_proofs': ('PAYMENT_PROOF_DIR', 'payment_proofs'),
 }
 _STORED_NAME = re.compile(r'[0-9a-f]{32}\.[a-z0-9]{2,5}')
 _MAX_IMAGE_PIXELS = 40_000_000

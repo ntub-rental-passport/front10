@@ -81,6 +81,7 @@ const {
   contractViews,
   cycleRowClass,
   defenseReminder,
+  downloadPaymentProof,
   featuredArticles,
   filterTab,
   filteredCycles,
@@ -553,6 +554,18 @@ const activeLeaseId = computed(() =>
                       <p v-else-if="cycleItem.cycle.paidAt" class="mt-0.5 text-[11px] text-slate-400">
                         {{ formatDate(cycleItem.cycle.paidAt) }} · {{ cycleItem.cycle.source === 'landlord' ? '房東已確認' : paymentMethodLabel(cycleItem.cycle.paymentMethod) }}
                       </p>
+                      <div v-if="cycleItem.cycle.paidAt && cycleItem.cycle.paymentProofName && activeContractView.source !== 'landlord'" class="mt-0.5 text-[11px]">
+                        <button
+                          v-if="cycleItem.cycle.paymentProofStored"
+                          type="button"
+                          class="text-sky-600 underline hover:text-sky-700"
+                          @click.stop="downloadPaymentProof(cycleItem.cycle.id)"
+                        >{{ cycleItem.cycle.paymentProofName }}</button>
+                        <template v-else>
+                          <span class="text-slate-500">{{ cycleItem.cycle.paymentProofName }}</span>
+                          <small class="block text-slate-400">舊紀錄僅保存檔名</small>
+                        </template>
+                      </div>
                       <p v-if="cycleItem.cycle.tenantReport" class="mt-0.5 text-[11px] font-medium text-sky-600">
                         已回報繳款，待房東確認
                       </p>

@@ -6,15 +6,18 @@
 
 沒有任何租約時回空陣列，由前端顯示空狀態；不得回填示範資料。
 """
+import base64
 import datetime
 import logging
 import re
+from urllib.parse import quote
 
 from cryptography.exceptions import InvalidTag
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session, selectinload
 
+import storage
 from auth.security import CurrentUser, get_current_user
 from db import models
 from db.database import get_db
@@ -33,9 +36,15 @@ router = APIRouter(
 ACCENTS = ("sky", "emerald", "amber")
 
 PAYMENT_METHODS = ("bank-transfer", "cash", "line-pay", "other")
+MAX_PROOF_BYTES = 10 * 1024 * 1024
 
 # 「臺北市」「新北市」「花蓮縣」——取地址開頭的縣市，找不到就留空，不猜。
 _CITY_PATTERN = re.compile(r"^\s*([一-鿿]{2,3}[市縣])")
+
+
+class PaymentProofPayload(BaseModel):
+    name: str = Field(max_length=255)
+    data: str = Field(max_length=15_000_000)
 
 
 class PaymentPayload(BaseModel):
@@ -45,6 +54,33 @@ class PaymentPayload(BaseModel):
     payment_method: str = Field(default="other")
     payment_note: str = Field(default="", max_length=2_000)
     payment_proof_name: str | None = Field(default=None, max_length=255)
+    proof: PaymentProofPayload | None = None
+
+
+def _proof_content(proof: PaymentProofPayload) -> tuple[bytes, str, str]:
+    """先檢查原檔大小；圖片重新壓成 JPEG，PDF 保留原始內容。"""
+    from routers.inspection import compress_image
+
+    header, separator, raw = proof.data.partition(",")
+    if not separator or not header.startswith("data:") or not header.endswith(";base64"):
+        raise HTTPException(status_code=400, detail="檔案內容無法解析，請重新選擇檔案。")
+    try:
+        content = base64.b64decode(raw, validate=True)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="檔案內容無法解析。") from error
+    if len(content) > MAX_PROOF_BYTES:
+        raise HTTPException(status_code=413, detail="繳款憑證不可超過 10MB。")
+    if content.startswith(b"%PDF-"):
+        return content, "pdf", "application/pdf"
+    if header == "data:application/pdf;base64":
+        raise HTTPException(status_code=400, detail="檔案不是有效的 PDF。")
+    try:
+        content = base64.b64decode(compress_image(proof.data))
+    except Exception as error:
+        raise HTTPException(status_code=400, detail="請選擇有效的圖片或 PDF 檔案。") from error
+    if len(content) > MAX_PROOF_BYTES:
+        raise HTTPException(status_code=413, detail="繳款憑證不可超過 10MB。")
+    return content, "jpg", "image/jpeg"
 
 
 def _city_of(address: str) -> str:
@@ -77,6 +113,7 @@ def _bill_json(bill: models.Bill) -> dict:
         "paymentMethod": bill.payment_method,
         "paymentNote": bill.payment_note or "",
         "paymentProofName": bill.payment_proof_url or None,
+        "paymentProofStored": bool(bill.payment_proof_stored_name),
     }
 
 
@@ -237,13 +274,47 @@ def record_payment(
     if payload.payment_method not in PAYMENT_METHODS:
         raise HTTPException(status_code=422, detail="不支援的付款方式。")
 
-    bill.paid_at = datetime.datetime.combine(payload.paid_at, datetime.time.min)
-    bill.payment_method = payload.payment_method
-    bill.payment_note = payload.payment_note.strip() or None
-    bill.payment_proof_url = payload.payment_proof_name
-    db.commit()
+    stored_name = None
+    try:
+        if payload.proof:
+            content, ext, content_type = _proof_content(payload.proof)
+            stored_name = storage.save('payment_proofs', content, ext, encrypt=True)
+            bill.payment_proof_stored_name = stored_name
+            bill.payment_proof_content_type = content_type
+        bill.paid_at = datetime.datetime.combine(payload.paid_at, datetime.time.min)
+        bill.payment_method = payload.payment_method
+        bill.payment_note = payload.payment_note.strip() or None
+        bill.payment_proof_url = payload.proof.name if payload.proof else payload.payment_proof_name
+        db.commit()
+    except Exception as error:
+        db.rollback()
+        if stored_name is not None:
+            storage.delete('payment_proofs', stored_name)
+        if isinstance(error, storage.EncryptionUnavailable):
+            raise HTTPException(status_code=503, detail="檔案加密金鑰尚未設定，暫時無法上傳憑證。") from error
+        raise
     db.refresh(bill)
     return _bill_json(bill)
+
+
+@router.get("/bills/{bill_id}/payment-proof")
+def download_payment_proof(
+    bill_id: int,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    bill = _owned_bill(db, bill_id, user)
+    if not bill.payment_proof_stored_name:
+        raise HTTPException(status_code=404, detail="這筆繳費沒有上傳憑證檔案。")
+    try:
+        content = storage.read('payment_proofs', bill.payment_proof_stored_name, encrypted=True)
+    except (OSError, ValueError, storage.EncryptionUnavailable) as error:
+        raise HTTPException(status_code=409, detail="憑證檔案暫時無法讀取，請稍後重試或聯絡系統管理員。") from error
+    return Response(content, media_type=bill.payment_proof_content_type, headers={
+        'Content-Disposition': "attachment; filename*=UTF-8''" + quote(bill.payment_proof_url or "憑證", safe=''),
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+    })
 
 
 @router.delete("/bills/{bill_id}/payment")
@@ -254,10 +325,15 @@ def undo_payment(
 ):
     """取消已繳標記，回到未繳狀態。"""
     bill = _owned_bill(db, bill_id, user)
+    stored_name = bill.payment_proof_stored_name
     bill.paid_at = None
     bill.payment_method = None
     bill.payment_note = None
     bill.payment_proof_url = None
+    bill.payment_proof_stored_name = None
+    bill.payment_proof_content_type = None
     db.commit()
+    if stored_name:
+        storage.delete('payment_proofs', stored_name)
     db.refresh(bill)
     return _bill_json(bill)

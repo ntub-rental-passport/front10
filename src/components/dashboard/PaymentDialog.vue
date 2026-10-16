@@ -145,7 +145,7 @@ function statusLabel(status: CycleStatus): string {
             @change="handleProofChange"
           />
           <p class="text-xs text-slate-500">
-            {{ form.proofName ? `已選擇：${form.proofName}` : isLandlordLease ? '檔案會存在伺服器，作為你已繳款的證據。' : '目前先記錄檔名，之後可再接正式上傳流程。' }}
+            {{ form.proofName ? `已選擇：${form.proofName}` : isLandlordLease ? '檔案會存在伺服器，作為你已繳款的證據。' : '檔案會加密存在伺服器，之後可以下載或匯出。' }}
           </p>
         </div>
 

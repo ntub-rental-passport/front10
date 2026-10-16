@@ -27,6 +27,8 @@ export interface BillingCycle {
   paymentMethod: PaymentMethod | null
   paymentNote: string
   paymentProofName: string | null
+  /** 自記帳單有實際上傳的憑證檔案；房東平台租約不提供此欄位。 */
+  paymentProofStored?: boolean
   /** landlord：房東平台上的租約，金額與收款以房東紀錄為準，租客只能回報已繳 */
   source?: 'self' | 'landlord'
   paidAmount?: number
