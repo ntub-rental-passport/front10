@@ -1124,8 +1124,14 @@ main > div:has(> .garbage-page--wide) {
 @media (max-width: 639px) {
   .garbage-page .garbage-tabs {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     overflow: visible;
+  }
+  .garbage-page .garbage-tabs button {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 2px;
+    font-size: 12px;
   }
   .garbage-page .station-detail {
     bottom: calc(64px + 16px + env(safe-area-inset-bottom));
