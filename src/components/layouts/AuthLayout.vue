@@ -25,7 +25,6 @@ withDefaults(
     <div
       class="grid min-h-dvh lg:h-dvh lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:overflow-hidden"
     >
-      <!-- 桌面版左側品牌區：固定於 viewport，不跟著右側表單滾動 -->
       <section
         class="hidden h-dvh flex-col justify-between overflow-hidden border-r border-white/10 p-7 text-white lg:flex xl:p-8 [background:var(--auth-panel-background)]"
       >
@@ -60,7 +59,6 @@ withDefaults(
         </div>
       </section>
 
-      <!-- 右側表單區：內容過長時只滾動此區 -->
       <main class="min-w-0 lg:h-dvh lg:overflow-y-auto lg:overscroll-contain">
         <div class="flex min-h-full justify-center px-5 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-3 xl:px-10">
           <div :class="['my-auto w-full py-1 sm:py-2', contentWidthClass]">

@@ -1,11 +1,5 @@
 <script setup lang="ts">
-/*
- * 後台整個 surface 都不提供手機操作，所以預設給登出；租客／房東只有部分頁面
- * 不提供手機操作，所以可以給返回首頁、不給登出，讓使用者繼續用其他頁面。
- * 這裡刻意不 redirect：使用者要找的東西就在這個網址底下，把他丟走只會讓他
- * 以為系統壞了。session 也刻意保留 —— 他在電腦上開同一個網址就能直接接上，
- * 「複製目前網址」那顆鈕就是為了這個情境。
- */
+/* 手機擋板保留目前網址與 session，讓使用者換到電腦後可繼續操作。 */
 import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { Monitor, Copy, Check, LogOut } from 'lucide-vue-next'

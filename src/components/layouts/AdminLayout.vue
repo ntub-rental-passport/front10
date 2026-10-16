@@ -49,8 +49,6 @@ const route = useRoute()
 const { blocked: deviceBlocked } = useAdminDeviceGate()
 const router = useRouter()
 
-// 後台各頁直接讀 adminSettings（門檻、額度），進後台時向後端讀一次。
-// 通知中心的告警由後端自己產生，每 60 秒重讀，右上角的未讀數才會跟著變
 onMounted(() => {
   clearLegacyAdminData()
   void loadAdminSettings()
@@ -60,35 +58,13 @@ onBeforeUnmount(stopAdminNotificationPolling)
 const { unreadCount: adminUnread } = useAdminNotificationCenter()
 const { count: queueCount } = useAdminQueue()
 
-// 標題改由 layout 畫：導覽在左側欄、標題在頂部列，頁面自己不再有 <h1>。
-// 對照表與詳情頁的處理見 src/utils/admin-page-title.ts。
 const currentPath = computed(() => route.path)
 const { crumbs, title } = useAdminPageTitle(currentPath)
 
 const mobileOpen = ref(false)
 const queueOpen = ref(false)
 
-/**
- * 圖示右上角的計數徽章。待辦與通知共用同一份，兩顆並排時大小位置才會一致。
- *
- * 文字色不用 text-destructive-foreground：那個 class 產不出任何 CSS——
- * src/index.css 的 @theme 區塊註冊了 --color-destructive 卻漏掉
- * --color-destructive-foreground（其他每一組顏色都有成對註冊）。驗證方式是
- * 在 build 出來的 CSS 裡找 `.text-destructive-foreground`，零筆。
- *
- * 用到它的元素會靜靜地繼承父層文字色。這裡的父層是 text-muted-foreground，
- * 於是變成灰字壓在橘紅底上：實測淺色 1.70、深色 1.07，等於看不見。
- *
- * ⚠️ 不要在 index.css 補那行註冊。補了確實會讓這個徽章變白字，但同時會影響
- * 全站每一顆 destructive 按鈕與徽章（components/ui/button、badge 都用這個
- * class），而 --destructive 是 oklch(0.7 0.18 40)，偏亮：白字對比只有 2.70，
- * 比它們現在意外繼承到的深色文字（6.35）差得多。那行「漏掉的註冊」目前
- * 有一半是在幫倒忙。要兩邊都對得起來得調暗 --destructive 本身，那是 token
- * 層級的決定。
- *
- * 所以這裡只修這顆徽章，改用深色文字，且兩個模式都明講：--destructive 在
- * 深淺色是同一個值，文字色不能跟著模式翻轉。實測兩個模式都是 6.35。
- */
+/** text-destructive-foreground 缺少主題註冊，單獨補註冊會降低全站 destructive 元件對比，須連同底色 token 一起調整。 */
 const COUNTER_BADGE_CLASS =
   'absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center ' +
   'rounded-full bg-destructive-surface px-1 text-[10px] font-bold ' +
@@ -112,7 +88,6 @@ function isActive(path: string): boolean {
 const session = computed(() => getAuthSession())
 const displayName = computed(() => session.value?.nickname ?? session.value?.email ?? '管理員')
 
-/** 頭像首字。規則與「最近登入」共用同一個 initialOf，不要在這裡另寫一份。 */
 const initials = computed(() =>
   initialOf(session.value?.nickname ?? null, session.value?.email ?? ''),
 )
@@ -122,11 +97,7 @@ async function handleSignOut(): Promise<void> {
   await router.push('/')
 }
 
-/*
- * 閒置 20 分鐘自動登出。伺服器那邊也會擋（backend/security.py），這裡負責：
- * 最後一分鐘先提醒、時間到自己登出，並帶回內部登入頁說明原因 ——
- * 不然管理員只會看到頁面上一堆「讀不到資料」，不知道是登入失效了。
- */
+// 閒置登出前須先提醒，登出後導回內部登入頁並說明原因，避免被誤認為資料載入失敗。
 const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAdminIdleLogout(
   async (reason) => {
     signOut()
@@ -136,11 +107,7 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
 </script>
 
 <template>
-  <!--
-    外層背景原本是寫死的淺色 hex 漸層，深色模式下沒有對應覆寫，會在
-    header／卡片之間露出一條淺色縫隙，把深色模式的白字標題蓋到看不見。
-    改用 --background、--muted 兩個既有 token 組出同方向的漸層。
-  -->
+  <!-- 背景漸層須使用主題 token，避免深色模式露出淺色背景而影響標題對比。 -->
   <DesktopOnlyNotice v-if="deviceBlocked" />
   <div v-else class="flex min-h-screen bg-[linear-gradient(180deg,_var(--background),_var(--muted))]">
     <AdminSidebar />
@@ -150,10 +117,7 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
         class="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70"
       >
         <div class="flex h-16 items-center gap-4 px-6 lg:px-10">
-          <!--
-            側欄從 xl 才出現，所以漢堡要撐到 xl 才收起來。原本是 lg:hidden，
-            那會讓 1024–1279 這一段兩邊都沒有導覽。
-          -->
+          <!-- 側欄從 xl 才出現，漢堡選單須保留到 xl，避免 1024–1279px 間沒有導覽。 -->
           <button
             type="button"
             class="rounded-xl border border-border/70 p-2 text-muted-foreground transition-colors hover:text-foreground xl:hidden"
@@ -164,10 +128,6 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
             <Menu class="h-5 w-5" />
           </button>
 
-          <!--
-            頁面標題。各頁不再自己畫 <h1>，所以這裡就是整頁唯一的 h1。
-            詳情頁多一行麵包屑——那是真的有兩層，不是為了填空間。
-          -->
           <div class="min-w-0">
             <p v-if="crumbs.length" class="truncate text-xs text-muted-foreground">
               {{ crumbs.join(' / ') }}
@@ -185,7 +145,6 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
 
             <div class="hidden h-5 w-px bg-border lg:block" aria-hidden="true" />
 
-            <!-- 待辦佇列：抽屜而非常駐側欄，理由見 QueueDrawer.vue -->
             <button
               type="button"
               class="relative rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -240,7 +199,6 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
                   <RouterLink to="/">返回首頁</RouterLink>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <!-- 登出只有這一個入口，側欄底部刻意沒有放第二個 -->
                 <DropdownMenuItem variant="destructive" @select="handleSignOut">
                   <LogOut class="h-4 w-4" />
                   登出後台
@@ -251,7 +209,6 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
         </div>
       </header>
 
-      <!-- 內容滿版：側欄已經提供了左邊界，不需要再置中一個 max-width -->
       <main class="flex-1 px-6 py-8 lg:px-10">
         <RouterView />
       </main>
@@ -301,7 +258,6 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
 
       <nav class="space-y-5 overflow-y-auto px-3 py-4">
         <div v-for="group in adminNavGroups" :key="group.label" class="space-y-1">
-          <!-- 與側欄同一條規則：只剩一項時不畫分組標題 -->
           <p
             v-if="group.items.length > 1"
             class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -323,7 +279,6 @@ const { warning: idleWarning, secondsLeft: idleSecondsLeft, stayActive } = useAd
             "
             @click="mobileOpen = false"
           >
-            <!-- 與側欄共用同一份圖示對照表，見 nav-icons.ts -->
             <component :is="navIcon(item.path)" class="h-4 w-4 shrink-0" />
             {{ item.label }}
           </RouterLink>

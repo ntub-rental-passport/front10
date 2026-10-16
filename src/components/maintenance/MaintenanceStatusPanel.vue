@@ -1,20 +1,5 @@
 <script setup lang="ts">
-/**
- * 通知中心置頂的「目前維護中功能」狀態區塊。
- *
- * 刻意不放進 useNotifications 的收件匣，也刻意不計入 unreadCount、
- * 不能點擊標成已讀：
- *
- * 1. 它顯示的是「現在的狀態」，不是「發生過的事件」。狀態沒有已讀的概念——
- *    你讀過了、功能還是關著，語意上「已讀」根本沒有改變什麼。
- * 2. 維護紀錄不落地成公告，沒有地方存「這個人讀過這筆維護紀錄」。如果硬把
- *    它算進未讀數，使用者點開讀了、重新整理又變回未讀（因為壓根沒有已讀
- *    狀態可以持久化），那顆紅點永遠消不掉，看起來像壞掉。
- *
- * 絕對不顯示 outage.internalReason：那是管理員在後台看的內部原因
- * （例如「XX API 金鑰過期」），對使用者曝露內部架構細節沒有意義，
- * 這點與 FeatureMaintenanceNotice.vue 的視覺語彙與規則一致。
- */
+/** 通知中心的維護狀態區塊，因無可持久化的已讀紀錄而不計入未讀數，且不得顯示 outage.internalReason。 */
 import { computed } from 'vue'
 import { Clock, Wrench } from 'lucide-vue-next'
 import { useFeatureOutages } from '@/src/composables/useFeatureOutages'
@@ -25,8 +10,7 @@ import { formatDateTime } from '@/src/utils/admin-format'
 
 const { outages, outageOf } = useFeatureOutages()
 
-// 預計恢復時間是否已過期會隨時間推移改變，需要一個會走動的 now 當依賴，
-// 用法沿用 FeatureMaintenanceNotice.vue，不在這裡重寫時間判斷。
+// 恢復時間的過期判定須依賴會持續更新的 now，避免頁面開著時判定凍結。
 const now = useTickingNow()
 
 const rows = computed(() =>

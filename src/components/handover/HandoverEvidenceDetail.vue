@@ -12,7 +12,7 @@ const props = defineProps<{
   property: HandoverProperty | null
   busy: boolean
 }>()
-// 不再分「正面／側面」：一個項目可以拍任意張。退租時每一張都要對應補拍一張，各自比對。
+// 每個項目可拍任意張，退租時須逐張對應補拍並比對。
 const emit = defineEmits<{
   capture: [replacesId?: string]
   upload: [replacesId?: string]

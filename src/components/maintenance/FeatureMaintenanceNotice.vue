@@ -1,13 +1,5 @@
 <script setup lang="ts">
-/**
- * 使用者停在維護中的功能路由時顯示的說明畫面。
- *
- * 刻意做成平靜的置中空狀態，不是嚇人的錯誤頁——這是暫時的、會恢復的狀態，
- * 使用者的網址沒有錯，資料也還在，用不到「發生錯誤」那種視覺語彙。
- *
- * 絕對不顯示 outage.internalReason：那是管理員在後台看的內部原因
- * （例如「XX API 金鑰過期」），對使用者曝露內部架構細節沒有意義。
- */
+/** 維護功能路由的說明畫面，不得顯示僅供管理員查看的 outage.internalReason。 */
 import { computed } from 'vue'
 import { PauseCircle } from 'lucide-vue-next'
 import { useTickingNow } from '@/src/composables/useTickingNow'

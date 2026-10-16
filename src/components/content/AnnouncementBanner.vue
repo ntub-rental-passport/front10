@@ -4,9 +4,7 @@ import { Info, TriangleAlert, Megaphone, X } from 'lucide-vue-next'
 import type { Announcement } from '@/src/mocks/admin/content'
 
 const props = defineProps<{ announcement: Announcement; dismissible?: boolean }>()
-// 關不關得掉、關閉狀態存哪裡是呼叫端（例如首頁）的決定——這個元件只負責
-// 顯示與發出「使用者按了關閉」這個事件，不直接碰 localStorage，才能同時給
-// 首頁（可關閉）與通知中心之類的地方（不可關閉）共用。
+// 關閉與持久化由呼叫端決定，元件只發出 dismiss 事件以供不同場景共用。
 const emit = defineEmits<{ dismiss: [] }>()
 
 const styleMap = {

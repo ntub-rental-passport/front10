@@ -21,7 +21,6 @@ const subscriptionPath = computed(() =>
   props.role === 'landlord' ? '/landlord/subscription' : '/app/subscription',
 )
 const backPath = computed(() => (props.role === 'landlord' ? '/landlord/settings' : '/app/account'))
-// The report marks whole rows with an asterisk even when the Free/basic capability already exists.
 const freePlanned = new Set(['室友共享上限', '附件總容量'])
 </script>
 
