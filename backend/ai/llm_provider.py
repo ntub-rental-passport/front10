@@ -48,11 +48,13 @@ Law Chat 是對話，等 90 秒沒有人受得了。
 沒有設定的 provider 會被自動跳過，不會變成一次失敗的嘗試。
 """
 
+import asyncio
 import logging
 import os
 
 import httpx
 
+from admin import ai_usage
 from common import upstream_state
 from common.http_retry import is_http_transient, with_retry
 
@@ -195,11 +197,17 @@ async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool, pu
 
     async def send() -> str:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{base}/chat/completions",
-                json=payload,
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
+            response = None
+            try:
+                response = await client.post(
+                    f"{base}/chat/completions",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            finally:
+                feature = "law-chat" if purpose == "chat" else "contract-analysis"
+                # 寫資料庫是同步的，丟到執行緒，免得卡住其他請求
+                await asyncio.to_thread(ai_usage.record_response, "nvidia", feature, response)
             if response.status_code in (401, 402, 429):
                 logger.error(
                     "NVIDIA API 回 %s —— 可能是額度用盡、超過每分鐘上限或金鑰失效",

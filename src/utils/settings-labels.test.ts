@@ -10,6 +10,9 @@ describe('describeSettingChange', () => {
     expect(describeSettingChange('platformVisionPageQuota', 3_000, 5_000)).toBe(
       'Vision 每月頁數上限：3,000 → 5,000 頁',
     )
+    expect(describeSettingChange('platformNvidiaCallQuota', 3_000, 5_000)).toBe(
+      'NVIDIA 每月呼叫次數上限：3,000 → 5,000 次',
+    )
   })
 
   it('文字欄位只說已更新，不把整段文案塞進紀錄', () => {

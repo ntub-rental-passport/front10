@@ -1,5 +1,5 @@
 import { dateKey } from './date-key'
-import type { AiProviderId, AiUsageDaily } from '@/src/mocks/admin/ai-usage'
+import { AI_FEATURES, type AiProviderId, type AiUsageDaily } from '@/src/mocks/admin/ai-usage'
 
 export type QuotaLevel = 'ok' | 'warn' | 'critical'
 
@@ -7,6 +7,42 @@ const DEFAULT_AVERAGE_WINDOW = 7
 
 function monthPrefix(date: Date): string {
   return dateKey(date).slice(0, 7) // YYYY-MM
+}
+
+/** 每日明細以供應商呈現，避免同一天的功能列重複佔行。 */
+export function aggregateDailyUsage(records: AiUsageDaily[]): AiUsageDaily[] {
+  const totals = new Map<string, AiUsageDaily>()
+  for (const record of records) {
+    const key = `${record.date}-${record.provider}`
+    const total = totals.get(key) ?? {
+      date: record.date, provider: record.provider, feature: '',
+      units: 0, calls: 0, failed: 0, prompt_tokens: 0, completion_tokens: 0,
+    }
+    total.units += record.units
+    total.calls += record.calls
+    total.failed += record.failed ?? 0
+    total.prompt_tokens += record.prompt_tokens ?? 0
+    total.completion_tokens += record.completion_tokens ?? 0
+    totals.set(key, total)
+  }
+  return [...totals.values()]
+}
+
+export function monthToDateBreakdown(records: AiUsageDaily[], provider: AiProviderId, today: Date) {
+  const monthly = records.filter(
+    (record) => record.provider === provider && record.date.startsWith(monthPrefix(today)),
+  )
+  return {
+    calls: monthly.reduce((sum, record) => sum + record.calls, 0),
+    failed: monthly.reduce((sum, record) => sum + (record.failed ?? 0), 0),
+    promptTokens: monthly.reduce((sum, record) => sum + (record.prompt_tokens ?? 0), 0),
+    completionTokens: monthly.reduce((sum, record) => sum + (record.completion_tokens ?? 0), 0),
+    features: AI_FEATURES.map((feature) => ({
+      ...feature,
+      calls: monthly.filter((record) => record.feature === feature.id)
+        .reduce((sum, record) => sum + record.calls, 0),
+    })),
+  }
 }
 
 export function monthToDateUnits(

@@ -81,3 +81,69 @@ class OllamaConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("missing-model", logs.output[0])
         self.assertIn("ollama list", logs.output[0])
         self.assertEqual(client.post.await_count, 1)
+
+
+class NvidiaUsageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retry_counts_each_request_and_tokens(self):
+        responses = [
+            httpx.Response(503, json={'error': 'busy'}),
+            httpx.Response(200, json={'choices': [{'message': {'content': 'ok'}}],
+                                      'usage': {'prompt_tokens': 100, 'completion_tokens': 12}}),
+        ]
+        transport = httpx.MockTransport(lambda request: responses.pop(0))
+        factory = httpx.AsyncClient
+        with patch.dict(os.environ, {'NVIDIA_API_KEY': 'test', 'LLM_MAX_ATTEMPTS': '2'}), \
+                patch.object(llm_provider.httpx, 'AsyncClient', side_effect=lambda **kw: factory(transport=transport, **kw)), \
+                patch.object(llm_provider.ai_usage, 'record_call') as record, \
+                patch('common.http_retry.asyncio.sleep', new_callable=AsyncMock):
+            result = await llm_provider._call_nvidia('test', read_timeout=30, force_json=False, purpose='chat')
+        self.assertEqual(result, 'ok')
+        self.assertEqual(record.call_args_list, [
+            unittest.mock.call('nvidia', 'law-chat', ok=False, prompt_tokens=0, completion_tokens=0),
+            unittest.mock.call('nvidia', 'law-chat', ok=True, prompt_tokens=100, completion_tokens=12),
+        ])
+
+    async def test_2xx_with_invalid_json_counts_as_success_and_other_purpose_is_analysis(self):
+        client = AsyncMock()
+        client.post.return_value = httpx.Response(200, text='{invalid', request=httpx.Request('POST', 'https://example.com'))
+        with patch.dict(os.environ, {'NVIDIA_API_KEY': 'test'}), \
+                patch.object(llm_provider.httpx, 'AsyncClient') as factory, \
+                patch.object(llm_provider.ai_usage, 'record_call') as record:
+            factory.return_value.__aenter__.return_value = client
+            with self.assertRaises(ValueError):
+                await llm_provider._call_nvidia('test', read_timeout=30, force_json=True, purpose='other')
+        record.assert_called_once_with('nvidia', 'contract-analysis', ok=True, prompt_tokens=0, completion_tokens=0)
+
+    async def test_http_exception_counts_as_failure(self):
+        client = AsyncMock()
+        client.post.side_effect = httpx.ReadTimeout('timeout')
+        with patch.dict(os.environ, {'NVIDIA_API_KEY': 'test'}), \
+                patch.object(llm_provider.httpx, 'AsyncClient') as factory, \
+                patch.object(llm_provider.ai_usage, 'record_call') as record:
+            factory.return_value.__aenter__.return_value = client
+            with self.assertRaises(httpx.ReadTimeout):
+                await llm_provider._call_nvidia('test', read_timeout=30, force_json=False, purpose='analyze')
+        record.assert_called_once_with('nvidia', 'contract-analysis', ok=False, prompt_tokens=0, completion_tokens=0)
+
+    async def test_missing_key_and_ollama_do_not_record(self):
+        with patch.dict(os.environ, {'NVIDIA_API_KEY': ''}), \
+                patch.object(llm_provider.ai_usage, 'record_call') as record:
+            with self.assertRaises(llm_provider.LlmUnavailable):
+                await llm_provider._call_nvidia('test', read_timeout=30, force_json=False, purpose='analyze')
+            client = AsyncMock()
+            client.post.return_value = httpx.Response(200, json={'response': 'ok'},
+                                                      request=httpx.Request('POST', 'http://ollama/api/generate'))
+            with patch.object(llm_provider.httpx, 'AsyncClient') as factory:
+                factory.return_value.__aenter__.return_value = client
+                await llm_provider._call_ollama('test', read_timeout=30, force_json=False, purpose='analyze')
+        record.assert_not_called()
+
+    async def test_database_failure_does_not_fail_generation(self):
+        client = AsyncMock()
+        client.post.return_value = httpx.Response(200, json={'choices': [{'message': {'content': 'ok'}}]},
+                                                  request=httpx.Request('POST', 'https://example.com'))
+        with patch.dict(os.environ, {'NVIDIA_API_KEY': 'test'}), \
+                patch.object(llm_provider.httpx, 'AsyncClient') as factory, \
+                patch.object(llm_provider.ai_usage, '_open', side_effect=RuntimeError('unavailable')):
+            factory.return_value.__aenter__.return_value = client
+            self.assertEqual(await llm_provider._call_nvidia('test', read_timeout=30, force_json=False, purpose='analyze'), 'ok')

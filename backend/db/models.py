@@ -1013,12 +1013,16 @@ class AdminNotificationRead(Base):
 
 
 class AiDailyUsage(Base):
-    """AI 用量：目前只記 OCR 服務用掉的 Google Vision 頁數（admin/ai_usage.py）。"""
+    """Vision 頁數與依功能分類的 NVIDIA 呼叫用量（admin/ai_usage.py）。"""
     __tablename__ = 'daily_usage'
     date = Column(String(10), nullable=False, primary_key=True)
     provider = Column(String(20), nullable=False, primary_key=True)
+    feature = Column(String(30), nullable=False, primary_key=True, server_default='')
     units = Column(Integer, nullable=False)
     calls = Column(Integer, nullable=False)
+    failed = Column(Integer, nullable=False, server_default='0')
+    prompt_tokens = Column(BigInteger, nullable=False, server_default='0')
+    completion_tokens = Column(BigInteger, nullable=False, server_default='0')
 
 
 class AiUsageMeta(Base):

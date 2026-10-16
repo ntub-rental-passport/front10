@@ -57,6 +57,15 @@ describe('validateSettings', () => {
 })
 
 describe('AI 平台額度驗證', () => {
+  it('NVIDIA 預設額度為 3,000，接受 0 並拒絕負數或非數字', () => {
+    expect(baseSettings().platformNvidiaCallQuota).toBe(3000)
+    expect(validateSettings({ ...baseSettings(), platformNvidiaCallQuota: 0 }).platformNvidiaCallQuota).toBeUndefined()
+    for (const quota of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(validateSettings({ ...baseSettings(), platformNvidiaCallQuota: quota }).platformNvidiaCallQuota)
+        .toBe('NVIDIA 呼叫次數額度不可為負數')
+    }
+  })
+
   it('合法設定沒有錯誤', () => {
     expect(validateSettings(baseSettings())).toEqual({})
   })

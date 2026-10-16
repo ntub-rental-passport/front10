@@ -17,6 +17,7 @@ export interface SystemSettings {
   // 以下為「平台向 AI 廠商購買的額度」，也就是成本側的總量。
   // 單一使用者能用幾次是方案權益，存在 subscription-plans.ts，不在這裡。
   platformVisionPageQuota: number
+  platformNvidiaCallQuota: number
   quotaWarnPercent: number
   quotaCriticalPercent: number
   // 依消耗速度推算的剩餘天數低於此值時，AI 使用量頁標示「告急」，不必等百分比達標。
@@ -41,6 +42,7 @@ export function seedSettings(): SystemSettings {
     maintenanceOverdueDays: 7,
     subscriptionExpiringSoonDays: 14,
     platformVisionPageQuota: 3_000,
+    platformNvidiaCallQuota: 3_000,
     quotaWarnPercent: 80,
     quotaCriticalPercent: 95,
     aiQuotaCriticalDays: 3,

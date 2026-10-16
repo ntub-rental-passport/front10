@@ -19,6 +19,8 @@ describe('正式站設定頁', () => {
     const html = (await renderToString(app)).replace(/<!--.*?-->/g, '')
     expect(html).toContain('訂閱到期提醒天數（天）')
     expect(html).toContain('id="subscriptionExpiringSoonDays"')
+    expect(html).toContain('NVIDIA 每月呼叫次數上限（次）')
+    expect(html).toContain('id="platformNvidiaCallQuota"')
     expect(html).toContain('目前沒有訂閱資料')
     expect(html).not.toContain('照這個值：目前沒有人會被標示')
     expect(html).not.toContain('維護與重置')

@@ -45,8 +45,10 @@ class RecordTests(UsageTestCase):
         self.assertEqual(
             ai_usage.daily(days=60, now=at('2026-10-01 12:00')),
             [
-                {'date': '2026-09-30', 'provider': 'vision', 'units': 5, 'calls': 2},
-                {'date': '2026-10-01', 'provider': 'vision', 'units': 1, 'calls': 1},
+                {'date': '2026-09-30', 'provider': 'vision', 'feature': '', 'units': 5, 'calls': 2,
+                 'failed': 0, 'prompt_tokens': 0, 'completion_tokens': 0},
+                {'date': '2026-10-01', 'provider': 'vision', 'feature': '', 'units': 1, 'calls': 1,
+                 'failed': 0, 'prompt_tokens': 0, 'completion_tokens': 0},
             ],
         )
 
@@ -59,6 +61,77 @@ class RecordTests(UsageTestCase):
             with self.subTest(args=args):
                 with self.assertRaises(ValueError):
                     ai_usage.record(*args)
+
+class NvidiaRecordTests(UsageTestCase):
+    def test_calls_failures_tokens_and_features_accumulate(self):
+        ts = at('2026-10-01 00:30')
+        ai_usage.record_call('nvidia', 'contract-analysis', ok=True, prompt_tokens=100, completion_tokens=20, now=ts)
+        ai_usage.record_call('nvidia', 'contract-analysis', ok=False, now=ts)
+        ai_usage.record_call('nvidia', 'law-chat', ok=True, prompt_tokens=30, completion_tokens=5, now=ts)
+        ai_usage.record_call('nvidia', 'inspection', ok=True, now=ts)
+        ai_usage.record_call('nvidia', 'inspection', ok=True, now=at('2026-09-30 23:30'))
+        ai_usage.record('vision', 8, 1, now=ts)
+        rows = [row for row in ai_usage.daily(days=1, now=ts) if row['provider'] == 'nvidia']
+        self.assertEqual(rows, [
+            {'date': '2026-10-01', 'provider': 'nvidia', 'feature': 'contract-analysis',
+             'units': 2, 'calls': 2, 'failed': 1, 'prompt_tokens': 100, 'completion_tokens': 20},
+            {'date': '2026-10-01', 'provider': 'nvidia', 'feature': 'inspection',
+             'units': 1, 'calls': 1, 'failed': 0, 'prompt_tokens': 0, 'completion_tokens': 0},
+            {'date': '2026-10-01', 'provider': 'nvidia', 'feature': 'law-chat',
+             'units': 1, 'calls': 1, 'failed': 0, 'prompt_tokens': 30, 'completion_tokens': 5},
+        ])
+        self.assertEqual(ai_usage.month_to_date('nvidia', now=ts), 4)
+        self.assertEqual(ai_usage.month_to_date('vision', now=ts), 8)
+        self.assertEqual(ai_usage.month_to_date('nvidia', now=at('2026-11-01 00:00')), 0)
+
+    def test_legacy_insert_and_update_can_omit_new_columns(self):
+        # 模擬部署前的舊版 upsert，預設值必須在資料庫端生效。
+        with ai_usage._open() as db:
+            for units in (3, 2):
+                db.upsert('daily_usage', {'date': '2026-10-01', 'provider': 'vision'},
+                          {'units': units, 'calls': 1}, add=True)
+        row = ai_usage.daily(days=1, now=at('2026-10-01 12:00'))[0]
+        self.assertEqual(row, {'date': '2026-10-01', 'provider': 'vision', 'feature': '',
+                              'units': 5, 'calls': 2, 'failed': 0, 'prompt_tokens': 0, 'completion_tokens': 0})
+
+    def test_database_and_quota_errors_are_logged_without_escaping(self):
+        for target in ('_open', '_check_quota'):
+            with self.subTest(target=target), patch.object(ai_usage, target, side_effect=RuntimeError('unavailable')):
+                with self.assertLogs(ai_usage.logger, level='WARNING') as logs:
+                    ai_usage.record_call('nvidia', 'law-chat', ok=True)
+                self.assertIn('AI 用量記錄失敗', logs.output[0])
+
+    def test_nvidia_quota_alerts_are_per_threshold_month_and_provider(self):
+        site_settings.update_settings({'platformNvidiaCallQuota': 20, 'platformVisionPageQuota': 20}, actor='a@example.com')
+        september = at('2026-09-10 10:00')
+        for _ in range(18):
+            ai_usage.record_call('nvidia', 'law-chat', ok=True, now=september)
+        self.assertEqual(self.alerts(), ['NVIDIA 本月額度已用 80%'])
+        notification = admin_notifications.list_for(None)[0]
+        self.assertEqual(notification['body'], '本月已用 16 次，額度 20 次，已超過預警門檻（80%）。額度與門檻可以在系統設定調整。')
+        self.assertEqual(notification['actionUrl'], '/admin/monitoring#ai-usage')
+        for _ in range(3):
+            ai_usage.record_call('nvidia', 'inspection', ok=False, now=september)
+        self.assertEqual(self.alerts(), ['NVIDIA 本月額度已用 80%', 'NVIDIA 本月額度已用 95%'])
+        self.assertIn('本月已用 19 次，額度 20 次，已超過告急門檻（95%）', admin_notifications.list_for(None)[0]['body'])
+        ai_usage.record('vision', 16, 1, now=september)
+        self.assertEqual(self.alerts()[-1], 'Google Vision 本月額度已用 80%')
+        for _ in range(16):
+            ai_usage.record_call('nvidia', 'law-chat', ok=True, now=at('2026-10-01 10:00'))
+        self.assertEqual(self.alerts()[-1], 'NVIDIA 本月額度已用 80%')
+        with ai_usage._open() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM usage_meta WHERE `key` LIKE 'alerted:nvidia:%'").fetchone()[0], 3)
+
+    def test_zero_quota_does_not_alert_and_direct_critical_skips_warn(self):
+        site_settings.update_settings({'platformNvidiaCallQuota': 0}, actor='a@example.com')
+        ts = at('2026-10-01 10:00')
+        ai_usage.record_call('nvidia', 'inspection', ok=True, now=ts)
+        self.assertEqual(self.alerts(), [])
+        site_settings.update_settings({'platformNvidiaCallQuota': 1}, actor='a@example.com')
+        ai_usage.record_call('nvidia', 'inspection', ok=True, now=ts)
+        ai_usage.record_call('nvidia', 'inspection', ok=True, now=ts)
+        self.assertEqual(self.alerts(), ['NVIDIA 本月額度已用 100%'])
+        self.assertIn('告急', admin_notifications.list_for(None)[0]['body'])
 
 class QuotaAlertTests(UsageTestCase):
     def test_warn_and_critical_alert_once_per_month(self):
@@ -128,7 +201,10 @@ class ApiTests(UsageTestCase):
 
         ai_usage.record('vision', 3, 1)
         body = read_usage(admin=self.admin)
-        self.assertEqual(body['providers'], [{'id': 'vision', 'label': 'Google Cloud Vision', 'unit': 'page'}])
+        self.assertEqual(body['providers'], [
+            {'id': 'vision', 'label': 'Google Cloud Vision', 'unit': 'page'},
+            {'id': 'nvidia', 'label': 'NVIDIA', 'unit': 'call'},
+        ])
         self.assertEqual(body['daily'][0]['units'], 3)
 
 if __name__ == '__main__':

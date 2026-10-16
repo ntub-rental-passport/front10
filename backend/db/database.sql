@@ -968,14 +968,18 @@ CREATE TABLE `admin_notification_reads` (
   PRIMARY KEY (`notification_id`, `admin_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- AI 用量（ai_usage.py）：目前只記 OCR 服務用掉的 Google Vision 頁數
+-- AI 用量（ai_usage.py）：Vision 頁數與依功能分類的 NVIDIA 呼叫次數
 
 CREATE TABLE `daily_usage` (
   `date` VARCHAR(10) NOT NULL,
   `provider` VARCHAR(20) NOT NULL,
+  `feature` VARCHAR(30) NOT NULL DEFAULT '',
   `units` INT NOT NULL,
   `calls` INT NOT NULL,
-  PRIMARY KEY (`date`, `provider`)
+  `failed` INT NOT NULL DEFAULT 0,
+  `prompt_tokens` BIGINT NOT NULL DEFAULT 0,
+  `completion_tokens` BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (`date`, `provider`, `feature`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 額度告警發過沒有（ai_usage.py）：每個門檻每月只通知一次

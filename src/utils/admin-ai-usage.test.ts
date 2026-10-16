@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   dailyAverage,
+  aggregateDailyUsage,
+  monthToDateBreakdown,
   daysLeftInMonth,
   daysUntilExhausted,
   monthToDateUnits,
@@ -12,7 +14,7 @@ import type { AiUsageDaily } from '@/src/mocks/admin/ai-usage'
 const TODAY = new Date(2026, 7, 10)
 
 function rec(date: string, units: number, provider: AiUsageDaily['provider'] = 'vision'): AiUsageDaily {
-  return { date, provider, units, calls: 1 }
+  return { date, provider, units, calls: 1, feature: '', failed: 0, prompt_tokens: 0, completion_tokens: 0 }
 }
 
 describe('monthToDateUnits', () => {
@@ -21,14 +23,51 @@ describe('monthToDateUnits', () => {
       rec('2026-08-01', 100),
       rec('2026-08-10', 50),
       rec('2026-07-31', 999), // 上月，不計
-      // 之後會有別的供應商（NVIDIA 等），不能算進 Vision
-      rec('2026-08-05', 777, 'nvidia' as AiUsageDaily['provider']),
+      rec('2026-08-05', 777, 'nvidia'),
     ]
     expect(monthToDateUnits(records, 'vision', TODAY)).toBe(150)
   })
 
   it('沒有資料時回 0', () => {
     expect(monthToDateUnits([], 'vision', TODAY)).toBe(0)
+  })
+})
+
+describe('NVIDIA 功能彙總', () => {
+  const records: AiUsageDaily[] = [
+    { ...rec('2026-08-10', 2, 'nvidia'), feature: 'contract-analysis', calls: 2, failed: 1, prompt_tokens: 100, completion_tokens: 20 },
+    { ...rec('2026-08-10', 3, 'nvidia'), feature: 'law-chat', calls: 3, prompt_tokens: 30, completion_tokens: 10 },
+    { ...rec('2026-08-09', 2, 'nvidia'), feature: 'inspection', calls: 2 },
+    rec('2026-08-10', 9),
+    rec('2026-07-31', 100, 'nvidia'),
+  ]
+
+  it('本月用量與日均包含同供應商的所有功能', () => {
+    expect(monthToDateUnits(records, 'nvidia', TODAY)).toBe(7)
+    expect(dailyAverage(records, 'nvidia', TODAY)).toBe(1)
+    expect(monthToDateBreakdown(records, 'nvidia', TODAY)).toEqual({
+      calls: 7, failed: 1, promptTokens: 130, completionTokens: 30,
+      features: [
+        { id: 'contract-analysis', label: '合約分析', calls: 2 },
+        { id: 'law-chat', label: 'Law Chat', calls: 3 },
+        { id: 'inspection', label: '點交比對', calls: 2 },
+      ],
+    })
+  })
+
+  it('每日明細同一天同供應商只留一列並加總所有計數，不修改來源', () => {
+    const before = structuredClone(records)
+    const totals = aggregateDailyUsage(records)
+    expect(totals).toHaveLength(4)
+    expect(totals[0]).toEqual({ date: '2026-08-10', provider: 'nvidia', feature: '',
+      units: 5, calls: 5, failed: 1, prompt_tokens: 130, completion_tokens: 30 })
+    expect(records).toEqual(before)
+  })
+
+  it('沒有用量也列出所有功能並補零', () => {
+    const empty = monthToDateBreakdown([], 'nvidia', TODAY)
+    expect(empty.features.map((feature) => feature.calls)).toEqual([0, 0, 0])
+    expect(empty.calls + empty.failed + empty.promptTokens + empty.completionTokens).toBe(0)
   })
 })
 
