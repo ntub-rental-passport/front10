@@ -327,6 +327,15 @@ server {
         try_files $uri =404;
     }
 
+    # 官方鏡像的 mime.types 沒有 .webmanifest，不設會被當成 application/octet-stream。
+    # 用 default_type 而不是 add_header Content-Type，避免 server 層的安全標頭在這裡消失。
+    location = /manifest.webmanifest {
+        limit_req zone=static_limit burst=60 nodelay;
+        types { }
+        default_type application/manifest+json;
+        try_files $uri =404;
+    }
+
     location ~ "\.[A-Za-z0-9]{1,8}$" {
         limit_req zone=static_limit burst=60 nodelay;
         try_files $uri =404;
