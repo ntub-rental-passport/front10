@@ -244,6 +244,8 @@ CREATE TABLE `bills` (
   `payment_method` ENUM('bank-transfer','cash','line-pay','other') DEFAULT NULL COMMENT '該期實際支付方式',
   `payment_note` TEXT DEFAULT NULL,
   `payment_proof_url` VARCHAR(512) DEFAULT NULL,
+  `payment_proof_stored_name` VARCHAR(64) DEFAULT NULL,
+  `payment_proof_content_type` VARCHAR(100) DEFAULT NULL,
   FOREIGN KEY (`rental_id`) REFERENCES `rentals`(`id`) ON DELETE CASCADE,
   UNIQUE KEY `uq_bills_rental_period` (`rental_id`, `period_index`),
   INDEX `idx_bills_due_unpaid` (`due_date`, `paid_at`)

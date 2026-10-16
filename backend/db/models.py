@@ -269,6 +269,8 @@ class Bill(Base):
     payment_method = Column(Enum('bank-transfer','cash','line-pay','other', validate_strings=True, create_constraint=True), nullable=True)
     payment_note = Column(Text, nullable=True)
     payment_proof_url = Column(String(512), nullable=True)
+    payment_proof_stored_name = Column(String(64), nullable=True)
+    payment_proof_content_type = Column(String(100), nullable=True)
 
     rental = relationship("Rental", back_populates="bills")
 

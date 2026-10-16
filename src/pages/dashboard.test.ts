@@ -3,9 +3,11 @@ import { createSSRApp } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Dashboard from './dashboard.vue'
+import type { CycleView } from '@/src/utils/dashboard-contract'
 
 const mocks = vi.hoisted(() => ({
   selected: true,
+  cycles: [] as CycleView[],
   contract: {
     id: 'rental-1',
     title: 'pp 1',
@@ -35,6 +37,7 @@ vi.mock('@/src/composables/useDashboard', async (importOriginal) => {
       ...actual.useDashboard(),
       activeContractView: ref(mocks.selected ? mocks.contract : null),
       globalStats: ref(mocks.stats),
+      filteredCycles: ref(mocks.cycles),
     }),
   }
 })
@@ -65,6 +68,7 @@ beforeEach(() => {
   mocks.contract.title = 'pp 1'
   mocks.contract.city = ''
   mocks.stats.overdueCount = 0
+  mocks.cycles = []
 })
 
 describe('租屋總覽手機文案', () => {
@@ -107,5 +111,27 @@ describe('租屋總覽手機文案', () => {
     const cards = (await render()).match(/<section\b[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? ''
     expect(cards).toContain('有 3 筆逾期帳單')
     expect(cards).not.toContain('待繳期限')
+  })
+
+  it.each([true, false])('已繳憑證依實際存檔狀態顯示下載或舊紀錄提示：%s', async (stored) => {
+    mocks.cycles = [{
+      contractId: 'rental-1', contractTitle: 'pp 1', status: 'paid',
+      totalAmount: 20000, partialAmount: 20000, daysLeft: 0, utilityReady: true,
+      cycle: {
+        id: '12', periodIndex: 1, periodStart: '2026-10-01', periodEnd: '2026-10-31',
+        dueDate: '2026-10-05', rentAmount: 20000, electricityAmount: 0, waterAmount: 0,
+        paidAt: '2026-10-03', paymentMethod: 'bank-transfer', paymentNote: '',
+        paymentProofName: '轉帳憑證.png', paymentProofStored: stored,
+      },
+    }]
+    const html = await render()
+    expect(html).toContain('轉帳憑證.png')
+    if (stored) {
+      expect(html).toMatch(/<button[^>]*>轉帳憑證.png<\/button>/)
+      expect(html).not.toContain('舊紀錄僅保存檔名')
+    } else {
+      expect(html).not.toMatch(/<button[^>]*>轉帳憑證.png<\/button>/)
+      expect(html).toContain('舊紀錄僅保存檔名')
+    }
   })
 })

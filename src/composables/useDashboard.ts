@@ -8,6 +8,7 @@ import {
 } from '@/src/utils/dashboard-contract'
 import {
   fetchDashboardContracts,
+  downloadBillPaymentProof,
   recordBillPayment,
   reportLandlordPayment,
   undoBillPayment,
@@ -327,6 +328,7 @@ export function useDashboard() {
           payment_method: form.method,
           payment_note: form.note.trim(),
           payment_proof_name: form.proofName || null,
+          ...(form.proofFile ? { proof: { name: form.proofFile.name, data: await readAsDataUrl(form.proofFile) } } : {}),
         })
       Object.assign(cycle, saved)
     } catch (error) {
@@ -345,6 +347,15 @@ export function useDashboard() {
 
     if (selectedCycleId.value) {
       nextTick(() => scrollToCycle(selectedCycleId.value!))
+    }
+  }
+
+  async function downloadPaymentProof(cycleId: string) {
+    actionError.value = ''
+    try {
+      await downloadBillPaymentProof(cycleId)
+    } catch (error) {
+      actionError.value = error instanceof Error ? error.message : '憑證下載失敗，請稍後重試。'
     }
   }
 
@@ -424,6 +435,7 @@ export function useDashboard() {
     contractViews,
     cycleRowClass,
     defenseReminder,
+    downloadPaymentProof,
     featuredArticles,
     filterTab,
     filteredCycles,

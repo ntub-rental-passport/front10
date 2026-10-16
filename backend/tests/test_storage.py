@@ -41,6 +41,7 @@ class StorageTests(unittest.TestCase):
             'repairs': 'REPAIR_UPLOAD_DIR', 'contracts': 'LEASE_FILE_DIR',
             'reviews': 'REVIEW_FILE_DIR', 'subsidy': 'SUBSIDY_FILE_DIR',
             'avatars': 'AVATAR_FILE_DIR',
+            'payment_proofs': 'PAYMENT_PROOF_DIR',
         }
         self.assertEqual(set(storage.KINDS), set(expected))
         for kind, env_var in expected.items():
@@ -66,7 +67,7 @@ class StorageTests(unittest.TestCase):
                 with self.subTest(kind=kind):
                     self.assertEqual(storage.directory(kind), original_directory())
             backend_dir = Path(__file__).resolve().parents[1]
-            for kind in ('reviews', 'subsidy', 'avatars'):
+            for kind in ('reviews', 'subsidy', 'avatars', 'payment_proofs'):
                 self.assertEqual(storage.directory(kind), backend_dir / 'uploads' / kind)
 
     def test_unknown_kind_raises_value_error(self):

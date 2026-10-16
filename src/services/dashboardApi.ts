@@ -10,6 +10,7 @@ export interface PaymentRecordPayload {
   payment_method: PaymentMethod
   payment_note: string
   payment_proof_name: string | null
+  proof?: { name: string; data: string }
 }
 
 async function dashboardRequest<T>(path: string, method = 'GET', data?: unknown): Promise<T> {
@@ -51,6 +52,27 @@ export function recordBillPayment(
 
 export function undoBillPayment(billId: string): Promise<RentalContract['cycles'][number]> {
   return dashboardRequest(`/bills/${billId}/payment`, 'DELETE')
+}
+
+export async function downloadBillPaymentProof(billId: string): Promise<void> {
+  const token = getAuthSession()?.accessToken
+  if (!token) throw new Error('請先登入後再下載憑證。')
+  const response = await fetch(`${API_BASE}/dashboard/bills/${billId}/payment-proof`, {
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(typeof body?.detail === 'string' ? body.detail : '憑證下載失敗，請稍後重試。')
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  const filename = response.headers.get('Content-Disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  link.download = filename ? decodeURIComponent(filename) : `繳費憑證-${billId}`
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
 
 export function saveBillUtilities(billId: string, payload: import('@/src/utils/utility-billing').UtilityDetails): Promise<RentalContract['cycles'][number]> {
