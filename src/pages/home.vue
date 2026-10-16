@@ -182,9 +182,9 @@ const featureCards = [
         <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div class="space-y-3">
             <p class="text-sm font-semibold uppercase tracking-[0.24em] text-primary/70">Get Started</p>
-            <h2 class="text-3xl font-bold tracking-tight">先從建立帳號開始，之後我們再把登入流程與權限串起來。</h2>
+            <h2 class="text-3xl font-bold tracking-tight">現在加入 RentMate，讓租屋的每一步都有憑有據。</h2>
             <p class="max-w-2xl text-muted-foreground">
-              目前先提供漂亮且完整的入口頁骨架，後續可以再接 Firebase、Supabase 或自建帳密登入。
+              從合約審閱、入住點交到每月帳務，房東與租客在同一個地方把事情說清楚。
             </p>
           </div>
           <div class="flex flex-wrap gap-3">
@@ -208,7 +208,7 @@ const featureCards = [
           臺北商業大學畢業專題｜AI 租屋資訊整合與契約輔助平台展示頁
         </p>
         <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80 sm:justify-end">
-          <span>聯絡資訊：rentmate.project@example.com</span>
+          <span>聯絡資訊：rentmate.software@gmail.com</span>
           <span class="hidden sm:inline">|</span>
           <span>展示版本 v0.0.0</span>
           <span class="hidden sm:inline">|</span>
