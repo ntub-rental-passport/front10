@@ -29,10 +29,7 @@ import {
   type ScheduleCapabilities,
 } from '@/src/services/scheduledNotificationApi'
 
-/**
- * 排程發送。這一頁是整個通知功能裡唯一真的靠後端的部分 ——
- * 後端每 20 秒醒來一次，到時間就真的寄出 Email，不需要有人開著後台。
- */
+/** 排程由後端每 20 秒檢查並寄出 Email，不依賴後台頁面保持開啟。 */
 
 const router = useRouter()
 const now = useNow()
@@ -40,10 +37,6 @@ const now = useNow()
 const items = ref<ScheduledNotif[]>([])
 const capabilities = ref<ScheduleCapabilities | null>(null)
 const loading = ref(true)
-/**
- * 連不上後端跟「沒有排程」必須是兩種畫面。
- * 後端掛掉時顯示「目前沒有排程」，等於告訴管理員「你排的東西不見了」。
- */
 const unavailable = ref(false)
 const actionError = ref('')
 
@@ -94,10 +87,6 @@ async function onCancel(item: ScheduledNotif): Promise<void> {
 
 <template>
   <div class="space-y-4">
-    <!--
-      這段說明不是裝飾。排程跟「立即發送」走的是完全不同的路徑（後端 vs 瀏覽器），
-      能送的管道也不一樣，不講清楚的話管理員會以為兩者一樣。
-    -->
     <div class="rounded-xl border border-border bg-muted/30 p-4">
       <div class="flex items-start gap-3">
         <Info class="mt-0.5 h-4 w-4 shrink-0 text-foreground/70" />
@@ -120,7 +109,6 @@ async function onCancel(item: ScheduledNotif): Promise<void> {
         <RefreshCw class="mr-2 h-4 w-4" />
         重新整理
       </Button>
-      <!-- 跟立即發送共用同一個編輯器，只是預設落在「排程」 -->
       <Button
         :disabled="unavailable"
         @click="router.push({ path: '/admin/notifications/compose', query: { when: 'schedule' } })"
@@ -130,7 +118,6 @@ async function onCancel(item: ScheduledNotif): Promise<void> {
       </Button>
     </div>
 
-    <!-- 連不上後端：明講是連線問題，不要偽裝成空清單 -->
     <div
       v-if="unavailable"
       class="rounded-xl border border-destructive/50 bg-destructive/10 p-6 text-sm"

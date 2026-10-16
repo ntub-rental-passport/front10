@@ -1,10 +1,5 @@
 <script setup lang="ts">
-/**
- * 趨勢面積圖卡。
- *
- * 單一序列、單一顏色、淡填充 —— 趨勢圖要說的是形狀，不是配色。
- * 顏色一律經由 CSS token 取得，主題或深色模式改動時自動跟上。
- */
+/** 單一序列的趨勢面積圖卡，顏色由 CSS token 取得以配合主題。 */
 import { computed, onMounted, ref } from 'vue'
 import {
   CategoryScale,

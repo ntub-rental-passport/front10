@@ -6,27 +6,7 @@ import { ArrowUpRight, X } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge/index'
 import { useAdminQueue } from '@/src/composables/admin/useAdminQueue'
 
-/**
- * 待辦佇列抽屜。
- *
- * ## 為什麼是抽屜而不是常駐側欄
- *
- * 後台好幾頁（使用者管理、工單、稽核）都是寬表格，常駐面板會固定吃掉
- * 280-320px，那些表格的欄位本來就已經擠。抽屜平常不佔版面，要看的時候
- * 才叫出來，而且每一頁都叫得出來——這是「跨頁面都看得到待辦」真正想要的
- * 效果，不需要為此犧牲每一頁的水平空間。
- *
- * ## 為什麼不用 components/ui/sheet
- *
- * 與 AdminLayout 的行動裝置抽屜同一個理由（那裡有完整說明）：sheet 的卸載
- * 與 body 捲動鎖都要等離場動畫的 animationend，動畫沒跑完（例如分頁被瀏覽器
- * 節流）抽屜就會留在畫面上且整頁捲不動。這裡的正確性不依賴動畫完成——
- * open 是 false 時面板就已經在畫面外且 aria-hidden，動畫純粹是裝飾。
- *
- * ## 資料來源
- *
- * 工單與額度告急都來自後端，與總覽共用 useAdminQueue 的聚合結果。
- */
+/** 待辦佇列抽屜不使用 sheet，避免分頁節流導致 animationend 未觸發時面板與 body 捲動鎖無法解除。 */
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -57,10 +37,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     aria-hidden="true"
     @click="emit('close')"
   />
-  <!--
-    位移用行內 transform 而非 Tailwind 的 translate 工具：v4 的 translate-x-*
-    走 CSS `translate` 屬性，切換時實測會卡住不更新（同 AdminLayout 的註解）。
-  -->
+  <!-- 使用行內 transform，因 Tailwind v4 的 translate 屬性在切換時會卡住不更新。 -->
   <aside
     class="fixed inset-y-0 right-0 z-50 flex w-[min(360px,88vw)] flex-col border-l border-border bg-background transition-transform duration-300 ease-out"
     :style="{ transform: open ? 'translateX(0)' : 'translateX(100%)' }"
@@ -73,17 +50,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <p class="mt-0.5 text-xs text-muted-foreground">只列後台做得了事的項目。</p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <!--
-          覆寫文字色：Badge 的 destructive variant 用的是 text-destructive-foreground，
-          而那個 class 產不出 CSS（src/index.css 的 @theme 漏註冊
-          --color-destructive-foreground，詳見 AdminLayout.vue 的說明）。它會改為
-          繼承父層文字色，淺色模式剛好是深字所以看起來沒事（6.35），深色模式繼承
-          到白字就只剩 2.70。--destructive 在深淺色是同一個值，所以文字色要明確
-          指定、不能跟著模式翻轉。實測兩個模式都是 6.35。
-
-          ⚠️ 這是就地覆寫，全站其他 Badge/Button 的 destructive variant 在深色模式
-          都還是 2.70。那要改 components/ui/badge 與 button，會動到租客端，另案處理。
-        -->
+        <!-- text-destructive-foreground 未產生 CSS，需明確覆寫文字色以免深色模式繼承白字而對比不足。 -->
         <Badge
           v-if="count > 0"
           variant="destructive"

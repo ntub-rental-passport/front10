@@ -4,16 +4,7 @@ import { Moon, Sun } from 'lucide-vue-next'
 
 import { useTheme } from '@/src/composables/useTheme'
 
-/**
- * 深淺色開關。
- *
- * 圖示畫的是**按下去會變成什麼**（目前淺色就顯示月亮），而不是目前是什麼 ——
- * 一顆按鈕上的圖示，使用者的直覺是「這是它要做的事」。aria-label 把兩件事
- * 都講清楚，因為螢幕閱讀器使用者看不到旁邊的顏色。
- *
- * 外觀（內距、hover、文字色）由呼叫端給：側欄是深紫底、行動抽屜是淺色底，
- * 兩邊的 hover 不可能共用同一組值。
- */
+/** 深淺色切換按鈕，圖示表示目標主題，aria-label 說明目前與目標主題，外觀由呼叫端設定。 */
 const { theme, toggle } = useTheme()
 
 const isDark = computed(() => theme.value === 'dark')

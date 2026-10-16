@@ -2,16 +2,7 @@
 import { computed } from 'vue'
 import { buildSparklinePoints } from './sparkline'
 
-/**
- * 卡內迷你圖：純 SVG 折線，不引入新的圖表套件——全後台只有這一種
- * 28px 高的裝飾線需求，犯不著為它多背一個 chart library。
- *
- * 資料點少於 2 個時不渲染：一個點連不成線，硬畫只會出現一個奇怪的點或空白，
- * 不如直接不顯示。判斷邏輯在同資料夾的 sparkline.ts。
- *
- * 顏色故意不在這裡指定，用 stroke="currentColor" 跟著外層文字色走，
- * 讓同一個元件在一般卡片（muted）跟主角卡（primary-foreground）上都對。
- */
+/** 卡內 SVG 迷你折線圖，少於兩個資料點時不渲染，線色繼承外層文字色。 */
 const props = withDefaults(
   defineProps<{
     points: number[]

@@ -1,19 +1,5 @@
 <script setup lang="ts">
-/**
- * 功能維護開關的狀態橫幅：讓管理員在監控頁以外的地方也看得到「現在有哪些
- * 功能對使用者關著」，防止關了忘記開回來。
- *
- * 兩種模式：
- * - 不給 featureKey：總覽模式，列出全部關閉中的功能，可就地恢復。用在
- *   後台總覽這種「路過就看得到」的位置。
- * - 給 featureKey：單一功能模式，只顯示該功能且唯讀。用在有專屬後台模組
- *   的功能頁（點交存證），提醒正在處理案件的管理員：這功能現在
- *   對使用者是關的。刻意不放恢復按鈕——模組頁是來處理案件的，一個誤觸
- *   就解除維護狀態風險太高，恢復動作留給監控頁做。
- *
- * 條件式渲染：沒有任何要顯示的內容時整個元件不渲染。常駐橫幅的話 99%
- * 時間顯示「一切正常」，那格就變成沒人看的空氣，真的出事時反而不顯眼。
- */
+/** 功能維護狀態橫幅：未指定 featureKey 時列出全部關閉中的功能並可恢復，指定時僅顯示該功能且唯讀。 */
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
@@ -51,7 +37,6 @@ async function reopen(key: PlanFeatureKey): Promise<void> {
   }
 }
 
-// 時長與過期判定都跟現在幾點有關，見 useTickingNow 註解
 const now = useTickingNow()
 
 interface RowView {
@@ -75,7 +60,6 @@ function toRowView(outage: FeatureOutage): RowView {
   }
 }
 
-// 總覽模式：依 closedFeatureKeys 的穩定順序列出全部關閉中的功能
 const overviewRows = computed<RowView[]>(() => {
   if (props.featureKey) return []
   return closedFeatureKeys(outages.value)
@@ -84,7 +68,6 @@ const overviewRows = computed<RowView[]>(() => {
     .map(toRowView)
 })
 
-// 單一功能模式：該功能沒被關閉時不渲染
 const singleRow = computed<RowView | null>(() => {
   if (!props.featureKey) return null
   const outage = outageOf(outages.value, props.featureKey)
@@ -99,7 +82,6 @@ const visible = computed(() => overviewRows.value.length > 0 || singleRow.value 
     v-if="visible"
     class="space-y-3 rounded-2xl border border-destructive/40 bg-destructive/5 p-4"
   >
-    <!-- 總覽模式 -->
     <template v-if="!featureKey">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex min-w-0 items-center gap-2 text-sm font-medium text-destructive">
@@ -136,7 +118,6 @@ const visible = computed(() => overviewRows.value.length > 0 || singleRow.value 
       </div>
     </template>
 
-    <!-- 單一功能模式：唯讀，不放恢復按鈕 -->
     <template v-else-if="singleRow">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="flex min-w-0 items-start gap-2">

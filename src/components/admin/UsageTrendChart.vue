@@ -43,8 +43,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
     tooltip: {
       enabled: true,
       callbacks: {
-        // 數值已改成佔月額度的百分比，保留一位小數 —— 這裡的數字通常落在
-        // 0–5% 之間，取整數會全部變成同一個值，失去可比較的解析度。
+        // 月額度百分比通常介於 0–5%，需保留一位小數以免取整數後失去比較精度。
         label: (context) => {
           const value = typeof context.parsed.y === 'number' ? context.parsed.y : 0
           return `${context.dataset.label ?? ''}: ${value.toFixed(1)}%`

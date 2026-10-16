@@ -1,11 +1,5 @@
 <script setup lang="ts">
-/**
- * 系統設定頁的維護頁預覽：編輯文案時，旁邊直接看到使用者會看到的樣子。
- *
- * 內容與排版跟 src/pages/maintenance.vue 一致（圖示、標題、說明、恢復時間、客服信箱）；
- * 那一頁是固定的淺色底，這裡改用主題色，深色模式下才看得清楚 —— 預覽要看的是
- * 「寫了什麼、排起來怎樣」，不是逐色還原。
- */
+/** 系統設定頁的維護頁預覽，內容與排版對應維護頁，配色使用後台主題。 */
 import { computed } from 'vue'
 import { Wrench } from 'lucide-vue-next'
 
@@ -16,7 +10,6 @@ const props = defineProps<{
   endsAt: string
 }>()
 
-// 跟維護頁同一種格式：只顯示結束時間，使用者關心的是什麼時候能用
 const resumesAt = computed(() => {
   if (props.endsAt.trim() === '') return ''
   const parsed = new Date(props.endsAt)

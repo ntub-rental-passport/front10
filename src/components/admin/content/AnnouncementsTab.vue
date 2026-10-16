@@ -55,10 +55,6 @@ const audienceLabels: Record<AnnouncementAudience, string> = {
   landlord: '房東',
 }
 
-/* ---------------------------------------------------------------------- *
- * 左欄：依狀態分組的清單
- * ---------------------------------------------------------------------- */
-
 const SECTIONS: { phase: AnnouncementPhase; label: string }[] = [
   { phase: 'active', label: '生效中' },
   { phase: 'scheduled', label: '排程中' },
@@ -67,7 +63,6 @@ const SECTIONS: { phase: AnnouncementPhase; label: string }[] = [
 ]
 
 function endAtAscending(a: Announcement, b: Announcement): number {
-  // 生效中依結束時間由近到遠排，長期（endAt 為 null）視為無限遠，排最後
   const av = a.endAt === null ? Number.POSITIVE_INFINITY : new Date(a.endAt).getTime()
   const bv = b.endAt === null ? Number.POSITIVE_INFINITY : new Date(b.endAt).getTime()
   return av - bv
@@ -107,7 +102,6 @@ const grouped = computed<Record<AnnouncementPhase, Announcement[]>>(() => {
   return buckets
 })
 
-// 已過期預設收合——這段通常最長，但已經沒有人在看，展開只是為了偶爾回頭查
 const expiredCollapsed = ref(true)
 
 function placementOf(item: Announcement): AnnouncementPlacement {
@@ -126,7 +120,6 @@ function daysBetween(from: Date, to: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000)
 }
 
-/** 列表右側的時間提示；未發布沒有時間可講，回傳空字串讓 template 不顯示。 */
 function rowTiming(item: Announcement, phase: AnnouncementPhase): string {
   const current = now.value
   if (phase === 'active') {
@@ -140,10 +133,6 @@ function rowTiming(item: Announcement, phase: AnnouncementPhase): string {
   }
   return ''
 }
-
-/* ---------------------------------------------------------------------- *
- * 右欄：選取狀態與草稿
- * ---------------------------------------------------------------------- */
 
 type PanelMode = 'empty' | 'edit' | 'create'
 
@@ -204,7 +193,6 @@ function draftFromItem(item: Announcement): DraftState {
 }
 
 const draft = ref<DraftState>(emptyDraft())
-// 切換列或按新增前用來比對「有沒有還沒存的變更」的快照，見 isDirty。
 const originalDraft = ref<DraftState>(emptyDraft())
 
 const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(originalDraft.value))
@@ -212,8 +200,6 @@ const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(or
 function isSelected(item: Announcement): boolean {
   return panelMode.value === 'edit' && selectedId.value === item.id
 }
-
-/* ---- 有未儲存變更時，切列或新增要先確認是否放棄 ---- */
 
 const discardConfirmOpen = ref(false)
 const pendingNavigation = ref<(() => void) | null>(null)
@@ -271,7 +257,6 @@ function canSubmit(): boolean {
   )
 }
 
-/** 存檔的錯誤顯示在編輯面板；刪除的錯誤顯示在清單上方 */
 const saving = ref(false)
 const saveError = ref('')
 const listError = ref('')
@@ -305,15 +290,12 @@ async function save(): Promise<void> {
   }
 
   if (creating) {
-    // 新增完切到編輯模式，id 是後端給的，清單裡才能正確反白選中它
     selectedId.value = saved.id
     panelMode.value = 'edit'
     draft.value = { ...draft.value, id: saved.id }
   }
   originalDraft.value = { ...draft.value }
 }
-
-/* ---- 刪除：面板底部觸發，沿用既有的確認對話框 ---- */
 
 const deleteTarget = ref<Announcement | null>(null)
 
@@ -339,18 +321,11 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
-/* ---------------------------------------------------------------------- *
- * 右欄上半部：即時預覽——一定要吃「草稿」而不是已存檔的內容，
- * 這樣改等級、改受眾的當下上面就會跟著變，這正是把編輯與預覽放在一起的理由。
- * ---------------------------------------------------------------------- */
-
 const draftPlacementInput = computed(() => ({
   audience: draft.value.audience,
   published: draft.value.published,
   level: draft.value.level,
-  // 草稿的日期是 <input type="date"> 字串，可能暫時是空的（例如使用者正在
-  // 清空重填）；退回「現在」避免 new Date('') 產生 Invalid Date 讓預覽算出
-  // 詭異的結果，這只影響預覽判斷，不影響實際存檔內容。
+  // 草稿日期可能為空，預覽需退回現在以避免 new Date('') 產生 Invalid Date。
   startAt: draft.value.startAt ? fromDateInput(draft.value.startAt) : new Date().toISOString(),
   endAt: draft.value.endAt ? fromDateInput(draft.value.endAt) : null,
 }))
@@ -403,7 +378,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
 <template>
   <div class="space-y-4">
     <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <!-- ============ 左：依狀態分組的清單 ============ -->
       <div class="space-y-6">
         <div class="flex justify-end">
           <Button @click="startCreate">新增公告</Button>
@@ -423,7 +397,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
         <template v-else>
           <div v-for="section in SECTIONS" :key="section.phase">
             <template v-if="grouped[section.phase].length > 0">
-              <!-- 已過期預設收合，其餘三段一律展開——狀態本身已經排序過重要性 -->
               <button
                 v-if="section.phase === 'expired'"
                 type="button"
@@ -441,15 +414,7 @@ const previewAnnouncement = computed<Announcement>(() => ({
               </h3>
 
               <div v-if="section.phase !== 'expired' || !expiredCollapsed" class="space-y-2 pb-2">
-                <!--
-                  已過期的不再整列淡化。舊版要淡化，是因為已過期的混在清單裡、需要一個方法
-                  讓眼睛跳過；現在它自成一段、預設收合、段落標題就寫著「已過期」，淡化變成
-                  重複訊號。代價卻很實在：opacity 會讓字和底一起變淡，深色下這一列的等級
-                  膠囊掉到 2.42、說明行 3.59。
-
-                  列本身用 bg-card＋shadow-sm，跟專案的 <Card> 元件同一組：只有細框、
-                  沒有底色的話，卡片是透明的、直接貼在頁面底上，看起來像沒有卡片。
-                -->
+                <!-- 避免整列使用 opacity，否則深色模式的等級膠囊與說明文字對比不足。 -->
                 <button
                   v-for="item in grouped[section.phase]"
                   :key="item.id"
@@ -479,7 +444,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
         </template>
       </div>
 
-      <!-- ============ 右：詳情面板（預覽＋編輯同一處，釘住） ============ -->
       <div class="lg:sticky lg:top-4 lg:self-start">
         <div
           v-if="panelMode === 'empty'"
@@ -489,7 +453,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
         </div>
 
         <div v-else class="space-y-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
-          <!-- 上半部：使用者會看到的樣子，即時反映下方還沒存檔的編輯內容 -->
           <section class="space-y-3">
             <h2 class="text-sm font-semibold">
               {{ draft.audience === 'landlord' ? '房東' : '使用者' }}會看到的樣子
@@ -514,7 +477,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
             </div>
           </section>
 
-          <!-- 下半部：編輯表單 -->
           <section class="space-y-4 border-t border-border pt-5">
             <h2 class="text-sm font-semibold">
               {{ panelMode === 'create' ? '新增公告' : '編輯公告' }}
@@ -576,7 +538,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
             </div>
           </section>
 
-          <!-- 刪除：只有編輯既有公告時才看得到，新增中還沒有東西可以刪 -->
           <section v-if="panelMode === 'edit'" class="border-t border-border pt-4">
             <Button variant="outline" class="text-destructive" @click="requestDelete"
               >刪除公告</Button
@@ -586,7 +547,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
       </div>
     </div>
 
-    <!-- 放棄未儲存變更的確認 -->
     <Dialog
       :open="discardConfirmOpen"
       @update:open="
@@ -607,7 +567,6 @@ const previewAnnouncement = computed<Announcement>(() => ({
       </DialogContent>
     </Dialog>
 
-    <!-- 刪除確認：沿用既有的做法 -->
     <Dialog
       :open="deleteTarget !== null"
       @update:open="

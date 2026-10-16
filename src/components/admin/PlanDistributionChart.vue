@@ -1,10 +1,5 @@
 <script setup lang="ts">
-/**
- * 列表與總覽共用甜甜圈繪圖與命中判定，避免兩邊的方案互動不一致。
- *
- * 標籤直接畫在圖上，不另外列圖例 —— 但因此弧段本身必須可點，
- * 否則「點方案可篩選」會跟著圖例一起消失。
- */
+/** 列表與總覽共用的方案分布甜甜圈圖，弧段可點擊以篩選方案。 */
 import { computed, ref } from 'vue'
 import {
   ArcElement,
@@ -51,7 +46,6 @@ const chartData = computed<ChartData<'doughnut'>>(() => ({
       backgroundColor: hasData.value ? visible.value.map((segment) => segment.color) : ['#E2E8F0'],
       borderColor: '#ffffff',
       borderWidth: 2,
-      // 被選中的那一段推出來，取代原本圖例上的反白
       offset: hasData.value
         ? visible.value.map((segment) =>
             `${props.role}-${segment.planKey}` === props.activePlan ? 8 : 0,
@@ -61,12 +55,7 @@ const chartData = computed<ChartData<'doughnut'>>(() => ({
   ],
 }))
 
-/**
- * 把「方案名 數量」畫在各段外側，並用短引線連回弧段。
- *
- * 不畫在環內是因為環很細（cutout 62% 之下只有十幾像素），文字塞不進去；
- * 畫在外側才讀得到，代價是要留白給標籤，所以 layout.padding 開得比較大。
- */
+/** 環內空間不足以容納文字，標籤需畫在弧段外側並由 layout.padding 預留空間。 */
 const labelPlugin = computed<Plugin<'doughnut'>>(() => ({
   id: 'planArcLabels',
   afterDatasetsDraw(chart) {
@@ -134,13 +123,7 @@ const chartOptions = computed<ChartOptions<'doughnut'>>(() => ({
   },
 }))
 
-/**
- * 點擊與游標自己處理，不走 options.onClick。
- *
- * 實測 options 上的 onClick／onHover 在這個組合下完全不會被呼叫（事件確實有到
- * canvas，但處理器沒觸發），與其追框架層的原因，不如直接拿 chart 實例做命中判定 ——
- * 結果確定，而且少一層黑箱。
- */
+/** 此組合不會觸發 options.onClick／onHover，需從外層事件取得 chart 實例做命中判定。 */
 const chartRef = ref<{ chart?: ChartJS<'doughnut'> } | null>(null)
 
 function segmentAt(event: MouseEvent): PlanDistributionSegment | null {
@@ -164,7 +147,6 @@ function handleChartMove(event: MouseEvent): void {
 <template>
   <div class="relative h-48" @click="handleChartClick" @mousemove="handleChartMove">
     <Doughnut ref="chartRef" :data="chartData" :options="chartOptions" :plugins="[labelPlugin]" />
-    <!-- 環變小後中心的洞也小了，數字跟著降一級才不會貼著環 -->
     <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
       <span class="text-2xl font-black leading-none">{{ total }}</span>
       <span class="mt-0.5 text-[11px] text-muted-foreground">位使用者</span>

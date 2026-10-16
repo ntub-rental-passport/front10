@@ -2,15 +2,7 @@
 import { computed } from 'vue'
 import { resolveQuotaRingVisual } from './ai-quota-ring'
 
-/**
- * 單一供應商的用量額度進度環：SVG 半圓，用 pathLength="100" 把路徑長度正規化，
- * 靠 stroke-dashoffset 畫出百分比（見規格一、設計語彙「進度環」，幾何計算在
- * 同資料夾的 ai-quota-ring.ts）。
- *
- * 進度弧顏色固定用 var(--primary)，不依額度等級（ok/warn/critical）換色——
- * 等級已經在旁邊的 QuotaProgressCard 用色塊表達過一次，這裡只負責「一眼看出
- * 還剩多少」，兩個地方都做語意變色反而互相搶戲。
- */
+/** 單一供應商的 SVG 半圓額度進度環，以 pathLength="100" 與 stroke-dashoffset 表示百分比。 */
 const props = defineProps<{
   label: string
   percent: number
