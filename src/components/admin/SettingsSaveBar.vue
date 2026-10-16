@@ -1,10 +1,5 @@
 <script setup lang="ts">
-/**
- * 系統設定每個頁籤底部的儲存列。
- *
- * 固定在畫面下緣（sticky）：以前整頁只有一顆「儲存變更」，排在危險區後面的最底下，
- * 改了最上面的欄位要捲過整個危險區才按得到。
- */
+/** 系統設定各頁籤底部固定於畫面下緣的儲存列。 */
 import { Button } from '@/components/ui/button/index'
 
 defineProps<{

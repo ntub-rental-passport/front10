@@ -1,10 +1,5 @@
 <script setup lang="ts">
-/**
- * 分類橫條卡。
- *
- * 刻意不用 canvas 圖表：分類少、標籤是中文，橫條配上對齊的數字比甜甜圈好讀，
- * 也讓整頁不是清一色的 Chart.js 畫布。條的顏色用同色相明度階梯表達排序。
- */
+/** 分類橫條卡，以同色相明度階梯表達排序。 */
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/index'

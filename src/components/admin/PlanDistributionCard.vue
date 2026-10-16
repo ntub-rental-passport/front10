@@ -33,7 +33,6 @@ const trialCount = computed(() => props.segments.reduce((sum, segment) => sum + 
       <p v-if="trialCount > 0" class="text-xs text-muted-foreground">其中 {{ trialCount }} 位試用中</p>
     </CardHeader>
     <CardContent class="px-5 pb-5">
-      <!-- 高度壓到與旁邊的管理員人數卡接近，避免一高一矮看起來沒對齊 -->
       <PlanDistributionChart
         :role="role"
         :segments="segments"

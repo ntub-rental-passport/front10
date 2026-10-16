@@ -38,12 +38,10 @@ import { formatDateTime } from '@/src/utils/admin-format'
 
 const { outages, loadState, closeFeature, reopenFeature } = useAdminFeatureOutages()
 
-// 「已關閉多久」與「預計時間過了沒」都跟現在幾點有關，見 useTickingNow 註解
 const now = useTickingNow()
 
 const dialogOpen = ref(false)
 const dialogKey = ref<PlanFeatureKey | null>(null)
-/** 對已經關閉的功能再開對話框是「更新」而不是「關閉」，標題與按鈕都要跟著換 */
 const dialogIsUpdate = ref(false)
 
 interface DraftState {
@@ -66,7 +64,6 @@ function openDialog(key: PlanFeatureKey): void {
   const existing = outageOf(outages.value, key)
   dialogKey.value = key
   dialogIsUpdate.value = existing !== null
-  // 更新時帶入原本填過的內容，否則管理員只想改個時間卻要把原因重打一次
   draft.internalReason = existing?.internalReason ?? ''
   draft.publicNote = existing?.publicNote ?? ''
   draft.etaAtLocal = toLocalInput(existing?.etaAt ?? null)
@@ -74,7 +71,6 @@ function openDialog(key: PlanFeatureKey): void {
   dialogOpen.value = true
 }
 
-/** 對話框裡的錯誤（關閉、更新）留在對話框；恢復的錯誤顯示在卡片頂端 */
 const closing = ref(false)
 const dialogError = ref('')
 const actionError = ref('')
@@ -120,7 +116,6 @@ interface RowView {
   etaExpired: boolean
 }
 
-/** 每列要顯示的資料算成一個 view model，避免模板裡對同一筆 outage 重複查找、重複算時長。 */
 const rows = computed<RowView[]>(() =>
   PLAN_FEATURE_KEYS.map((key) => {
     const outage = outageOf(outages.value, key)
@@ -162,7 +157,6 @@ const rows = computed<RowView[]>(() =>
     </CardHeader>
 
     <CardContent class="grid gap-3 px-5 pb-5 md:grid-cols-2">
-      <!-- 讀不到的時候六項看起來都是「正常」，會讓人以為沒有功能被停用 -->
       <AdminLoadNotice
         v-if="loadState !== 'ready'"
         class="md:col-span-2"
@@ -184,10 +178,6 @@ const rows = computed<RowView[]>(() =>
         <div class="min-w-0 space-y-1">
           <div class="flex flex-wrap items-center gap-2">
             <p class="font-medium">{{ row.label }}</p>
-            <!--
-              維護中是 warn 不是 danger：這是管理員自己關的，功能沒有壞得更嚴重，
-              要做的事是「記得打開」。原本的實心紅色 Badge 讓它看起來像事故本身。
-            -->
             <StatusDot :tone="row.closed ? 'warn' : 'ok'" :label="row.closed ? '維護中' : '正常'" emphasize />
           </div>
 

@@ -30,11 +30,7 @@ const visual = computed(() => resolveStatTileVisual(props.hero, props.to))
 </script>
 
 <template>
-  <!--
-    圓角用 rounded-3xl 對齊相鄰的 Card：rounded-2xl 實測 21.6px、Card 是 26.4px，
-    並排時大小對不上。註解寫在這裡而不是 :class 裡面——template 綁定是會被編譯器
-    攤平的表達式，行註解放進去會把後面的內容一起吃掉。
-  -->
+  <!-- template 綁定會被編譯器攤平，表達式內的行註解可能吞掉後續內容。 -->
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"

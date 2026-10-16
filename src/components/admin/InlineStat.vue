@@ -6,25 +6,7 @@ import TrendChip from './TrendChip.vue'
 import type { TrendPeriod } from './trend-chip'
 import { formatStatValue, resolveInlineStatVisual } from './inline-stat'
 
-/**
- * 標題旁的一行式 KPI。
- *
- * ## 為什麼不用 StatTile
- *
- * StatTile 是 p-5 的方塊，一列四張實測高 156px。總覽頁的首屏原本有 43% 被
- * 標題區吃掉（第一個數字出現在 329px / 768px），那 156px 是主因之一。
- * 這個版本把 icon、標題、數字、趨勢擠進一行，高度約 56px。
- *
- * ## 為什麼一定要有 icon
- *
- * 四張並排的卡如果只有文字，掃視時長得一模一樣 —— 必須停下來讀字才知道
- * 哪張是哪張。一個圖形讓眼睛可以直接跳到要找的那張。
- *
- * ## 只保留簡短狀態、沒有 sparkline
- *
- * 這個高度塞不下詳細組成，應該留在下方的圖表卡裡。
- * 讀取狀態則用小字補充，避免把說明塞進大數字的位置而擠壞版面。
- */
+/** 標題旁的一行式 KPI，顯示圖示、標題、數值與趨勢。 */
 const props = defineProps<{
   icon: Component
   label: string
@@ -33,17 +15,11 @@ const props = defineProps<{
   note?: string
   /** 沒有可比較的歷史資料時不要傳，TrendChip 會自己不渲染 */
   trend?: number
-  /**
-   * 這個趨勢在比什麼期間。有 trend 就應該有 period —— 兩個不同基準的
-   * 百分比並排而不說明期間，讀的人只能假設它們可比。
-   */
+  /** 趨勢的比較期間；提供 trend 時應一併提供。 */
   trendPeriod?: TrendPeriod
   /** 有值才變成連結並顯示 hover 效果 */
   to?: string
-  /**
-   * 主角卡：整塊填滿品牌色。一排只能有一張——兩張以上就等於沒有主角。
-   * 樣式與理由見 inline-stat.ts 的 resolveInlineStatVisual。
-   */
+  /** 主角卡使用品牌色填滿，一排只應有一張。 */
   hero?: boolean
 }>()
 
@@ -70,12 +46,7 @@ const visual = computed(() => resolveInlineStatVisual(props.hero))
     </span>
 
     <span class="min-w-0">
-      <!--
-        標籤用 foreground/70 而不是 muted-foreground：這排 KPI 沒有卡片底，
-        直接坐在頁面底色上。muted-foreground 在淺色頁面底上實測只有 4.44，
-        12px 文字差一點點不到 AA 的 4.5（在白色卡片上才有 4.87）。
-        foreground/70 是 6.53 / 8.79，而且視覺上仍然比數字退一階。
-      -->
+      <!-- 標籤使用 foreground/70，因 muted-foreground 在頁面底色上未達小字所需的 AA 對比。 -->
       <span class="block truncate text-xs" :class="visual.labelClass">{{ label }}</span>
       <span class="flex flex-wrap items-baseline gap-x-2">
         <span class="text-2xl font-bold leading-tight tracking-tight">{{ display }}</span>

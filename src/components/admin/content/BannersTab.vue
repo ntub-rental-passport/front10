@@ -47,10 +47,6 @@ const ordered = computed(() => [...banners.value].sort((a, b) => a.order - b.ord
 // 每次渲染都用同一個「現在」判斷所有列的階段，避免逐列各取一次而在跨秒時出現不一致
 const phaseOf = (item: Banner) => resolvePhase(item, new Date())
 
-/*
- * 排序用原生 HTML5 drag and drop，不引入拖曳套件——這裡只有一份短清單，
- * 為它加一個相依套件不值得。dropTargetId 只用於顯示要插入哪一列的邊框提示。
- */
 const draggingId = ref<string | null>(null)
 const dropTargetId = ref<string | null>(null)
 
@@ -67,7 +63,6 @@ function onDragEnd(): void {
   dropTargetId.value = null
 }
 
-/** 排序、刪除的錯誤顯示在清單上方；新增、編輯的錯誤留在對話框裡 */
 const listError = ref('')
 const dialogError = ref('')
 const saving = ref(false)
@@ -157,14 +152,9 @@ watch(
 // 網址改變就重置，否則換了網址但還沒重新載入完成前會誤顯示上一張的失敗狀態。
 const previewFailed = ref(false)
 
-/** 存檔前的圖片檢查狀態，見下面的 probeImage()。 */
 type ImageCheckState = 'idle' | 'checking' | 'failed'
 const imageCheckState = ref<ImageCheckState>('idle')
 
-/*
- * 上傳圖片：檔案存在伺服器上（backend/admin/banner_images.py），所有管理員與
- * 所有裝置看到的是同一批。上傳完直接填進「圖片網址」，不用自己複製貼上。
- */
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const uploadError = ref('')
@@ -185,7 +175,6 @@ let libraryRequest = 0
 
 async function loadUploadedImages(): Promise<void> {
   const request = ++libraryRequest
-  // 已經有資料時背景重讀，不把整個圖庫換成「讀取中」造成閃爍
   if (libraryLoadState.value !== 'ready') libraryLoadState.value = 'loading'
   const result = await fetchBannerImages()
   // 只套用最後一次讀取，避免較早的請求把操作後的新狀態蓋回去。
@@ -297,15 +286,7 @@ function openEdit(item: Banner): void {
   void loadUploadedImages()
 }
 
-/**
- * 送出前用**活的** router 再驗一次連結——白名單防得了手打，防不了路由之後
- * 被改名（見 tenant-route-link.ts 開頭的說明）。
- *
- * 這裡沒有直接重用 actionLinkError：那個函式處理的是通知操作按鈕「可以不
- * 填」的語意（只填文字沒填連結才報錯）。輪播的連結是必填的——整張圖都是
- * 連結，不存在「這個輪播沒有連結」這種合法狀態，Select 也不給選空值，
- * 所以只需要驗證「選到的這個網址現在還活著嗎」，用不到那組訊息。
- */
+/** 輪播連結必填，需用目前路由表驗證網址，不能套用通知按鈕可不填的驗證語意。 */
 const linkIssue = computed<string | null>(() => {
   const url = draft.value.linkUrl
   if (url === '') return null
@@ -316,11 +297,7 @@ const linkIssue = computed<string | null>(() => {
   return null
 })
 
-/**
- * 存檔前用瀏覽器實際載一次圖片，不只驗證網址格式——格式合法的網址仍可能是
- * 404、伺服器掛了，或圖床把這個 hotlink 擋掉。8 秒逾時也當作失敗，不然
- * 連不上的網址會讓管理員一直等轉圈；沒回應本身就是個訊號。
- */
+/** 合法的圖片網址仍可能無法載入，需實際載入檢查並以逾時避免無限等待。 */
 function probeImage(url: string, timeoutMs = 8000): Promise<boolean> {
   return new Promise((resolve) => {
     const img = new Image()
@@ -355,19 +332,7 @@ function buildBannerInput(): Omit<Banner, 'id' | 'updatedAt' | 'order'> & { id?:
   }
 }
 
-/**
- * force 為 true 時跳過圖片檢查，是「仍要儲存」按鈕走的路。
- *
- * 為什麼要留這條退路：企業防火牆、圖床的防盜連（hotlink protection）都可能
- * 讓 probeImage() 從瀏覽器發出的檢查請求被擋下來，誤判成「載入失敗」，
- * 但圖片其實是好的、租客瀏覽器點開來看得到。前端沒有辦法分辨「真的壞了」
- * 跟「檢查被擋但圖是好的」，如果沒有這顆按鈕，管理員會被一個假警報卡死、
- * 完全存不了檔。
- *
- * 連結檢查（linkIssue）沒有對應的退路：router.resolve() 問的是這個 app
- * 自己的路由表，不是外部網路請求，不會有「環境造成誤判」這種狀況——
- * 驗不過就是真的會把使用者丟回首頁，沒有理由放行。
- */
+/** 圖片檢查可能被防火牆或防盜連誤擋，force 允許略過圖片檢查，但不能略過路由驗證。 */
 async function submit(force = false): Promise<void> {
   if (!canSubmit()) return
 
@@ -408,21 +373,11 @@ const canSubmit = () =>
   imageCheckState.value !== 'checking' &&
   !saving.value
 
-// 只在使用者已經有輸入內容時才提示格式錯誤，避免新增輪播一開對話框就先罵人。
 const showUrlFormatWarning = computed(
   () => draft.value.imageUrl.trim() !== '' && !isValidImageUrl(draft.value.imageUrl),
 )
 
-/* -------------------- 上方即時預覽 -------------------- */
-
-/**
- * 對話框開著、而且已經有圖片網址時，把正在編輯的草稿疊進預覽清單——這樣
- * 管理員在按「儲存」之前就能看到效果，包含排期／發布開關是不是真的讓它在
- * 「現在」出現（BannerCarousel 用 resolvePhase 過濾，不是照單全收，所以
- * 把發布關掉或排到未來，草稿會從預覽消失——這是對的，不是 bug）。
- * 沒有圖片網址時草稿只會是一塊破圖，不如維持目前已存檔的清單，不要用半成品
- * 洗掉本來看得到的預覽。
- */
+/** 預覽疊入有圖片網址的草稿，並保留 BannerCarousel 依發布狀態與排期過濾的規則。 */
 const previewItems = computed<Banner[]>(() => {
   if (!dialogOpen.value || draft.value.imageUrl.trim() === '') return ordered.value
 
@@ -519,10 +474,7 @@ const hasActivePreview = computed(() =>
             </p>
           </div>
         </div>
-        <!--
-          拖曳是主要的排序方式，但它對鍵盤使用者不可用，所以 ▲▼ 保留當替代路徑，
-          並補上 aria-label——原本這兩顆只有圖示，讀螢幕的人完全不知道它們是做什麼的。
-        -->
+        <!-- 拖曳無法供鍵盤使用者操作，需保留帶 aria-label 的上下移動按鈕。 -->
         <div class="flex shrink-0 items-center justify-end gap-1">
           <Button
             variant="ghost"
@@ -636,10 +588,6 @@ const hasActivePreview = computed(() =>
               </Button>
             </div>
 
-            <!--
-              上傳的圖片存在伺服器上（/api/admin/banner-images），所有管理員與所有
-              裝置看到的是同一批；選過的圖再用不必重傳。
-            -->
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-xs text-muted-foreground">自己的圖片</span>
               <Button

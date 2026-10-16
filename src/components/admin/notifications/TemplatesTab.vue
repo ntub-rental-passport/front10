@@ -58,15 +58,10 @@ const variablesOf = (item: NotifTemplate) => extractVariables(`${item.title} ${i
 
 const batches = computed(() => groupIntoBatches(messages.value))
 
-// 使用紀錄靠 sourceLabel 對回模板名稱 —— 模板改名之後，舊批次會對不上而顯示
-// 「還沒發送過」。這是真實資料的限制，不要用模糊的模糊比對假裝它接得起來。
+// 使用紀錄以 sourceLabel 比對模板名稱，改名後舊批次無法對應，不應改用模糊比對。
 const usageOf = (item: NotifTemplate) => templateUsage(item.name, batches.value)
 
-/**
- * 變數預覽：把 {{姓名}} 這類變數填上範例值，讓管理員在送出前看到真實長度的訊息。
- * 填進去的是假的示範資料，所以介面上一定要標「範例值」，
- * 否則管理員會以為那是真的收件者資料。
- */
+/** 預覽使用示範資料，介面需標示「範例值」以免被誤認為真實收件者資料。 */
 function previewOf(item: NotifTemplate): { title: string; body: string } {
   const vars = sampleValuesFor(variablesOf(item))
   return {
@@ -88,8 +83,6 @@ const CHANNEL_OPTIONS: { key: NotifChannel; label: string }[] = [
 ]
 
 const CATEGORY_OPTIONS: NotifCategory[] = ['系統', '租約', '補貼', '帳務']
-
-/* -------------------- 編輯 Dialog -------------------- */
 
 const dialogOpen = ref(false)
 const deleteTarget = ref<NotifTemplate | null>(null)
@@ -149,7 +142,6 @@ function setChannel(channel: NotifChannel, on: boolean): void {
 
 const draftVariables = computed(() => extractVariables(`${draft.value.title} ${draft.value.body}`))
 
-/** 啟用切換、刪除的錯誤顯示在清單上方；新增、編輯的錯誤留在對話框裡 */
 const listError = ref('')
 const dialogError = ref('')
 const saving = ref(false)
@@ -227,9 +219,7 @@ function confirmDelete(): void {
   if (target) void run(() => removeTemplate(target.id))
 }
 
-/* -------------------- 發送 -------------------- */
-// 發送流程整個搬到 /admin/notifications/compose。這裡只負責把模板帶過去，
-// 編輯器會把內容複製進來 —— 之後改的是「這一次要送的內容」，不是模板本身。
+// 發送編輯器複製模板內容，後續修改只影響該次發送。
 
 function openSend(item: NotifTemplate): void {
   void router.push({ path: '/admin/notifications/compose', query: { template: item.id } })
@@ -304,7 +294,6 @@ function openSend(item: NotifTemplate): void {
           <TableRow v-if="isExpanded(item.id)" class="hover:bg-transparent">
             <TableCell colspan="6" class="bg-muted/30">
               <div class="grid gap-5 lg:grid-cols-[1fr_260px]">
-                <!-- 左：填上範例值之後的樣子 -->
                 <div>
                   <div class="mb-2 flex flex-wrap items-center gap-2">
                     <p class="text-xs font-medium text-foreground/70">預覽</p>
@@ -339,7 +328,6 @@ function openSend(item: NotifTemplate): void {
                   </details>
                 </div>
 
-                <!-- 右：這個模板實際被用過幾次 -->
                 <div class="rounded-lg border border-border bg-background p-3">
                   <p class="mb-2 text-xs font-medium text-foreground/70">使用紀錄</p>
                   <dl v-if="usageOf(item).batchCount > 0" class="space-y-1.5 text-sm">
@@ -379,7 +367,6 @@ function openSend(item: NotifTemplate): void {
       </TableBody>
     </Table>
 
-    <!-- 編輯 / 新增 Dialog -->
     <Dialog v-model:open="dialogOpen">
       <DialogContent class="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -425,12 +412,7 @@ function openSend(item: NotifTemplate): void {
             <Textarea id="nt-body" v-model="draft.body" rows="4" />
           </div>
 
-          <!--
-            操作按鈕存在模板上：「租約到期提醒」的按鈕永遠是「查看合約」，
-            每次發送重打一次沒有意義，而且遲早會有人打錯。
-            只給白名單不給自由輸入 —— router 末端有 catch-all，
-            打錯的連結不會 404，會無聲無息把租客丟回首頁。
-          -->
+          <!-- 連結限用白名單，因 catch-all 路由會將無效網址導回首頁而不顯示 404。 -->
           <div class="grid gap-4 sm:grid-cols-2">
             <div class="space-y-2">
               <Label>操作按鈕連到哪（可不選）</Label>
@@ -483,7 +465,6 @@ function openSend(item: NotifTemplate): void {
     </Dialog>
 
 
-    <!-- 刪除確認 Dialog -->
     <Dialog :open="deleteTarget !== null" @update:open="(o: boolean) => { if (!o) deleteTarget = null }">
       <DialogContent>
         <DialogHeader>

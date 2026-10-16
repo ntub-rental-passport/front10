@@ -6,20 +6,7 @@ import { ArrowUpRight } from 'lucide-vue-next'
 import { DEFAULT_ACTION_LABEL } from '@/src/utils/tenant-route-link'
 import { formatDateTime } from '@/src/utils/admin-format'
 
-/**
- * 租客會看到的那張通知卡。
- *
- * 版面照抄 src/pages/notifications.vue 的未讀卡片：左邊一條粗邊、標題在左
- * 時間在右、來源 badge、內文、最後是操作按鈕。管理員在按下發送之前，
- * 看到的東西必須跟租客真的收到的一樣 —— 只給「標題＋內文」兩行純文字的
- * 預覽，等於沒有預覽。
- *
- * 唯一刻意不同的地方：租客端那張卡寫死了 slate 色階，這裡用 design token。
- * 後台有深色模式，照抄 bg-white 的話整張卡在深色下會變成一塊白板。
- *
- * ⚠️ 這是複製品，不是同一個元件。租客端那頁改版時這裡不會自動跟著變 ——
- * 但把那個元件抽出來共用的代價是動到租客端，目前不在範圍內。
- */
+/** 租客通知卡的後台預覽使用主題色；此處與租客端為獨立實作，租客端改版時需同步更新。 */
 const props = defineProps<{
   title: string
   body: string
@@ -45,7 +32,7 @@ const actionText = computed(() => props.actionLabel?.trim() || DEFAULT_ACTION_LA
     </div>
 
     <div class="mt-2 flex flex-wrap items-center gap-1.5">
-      <!-- 後台送出的通知，sourceType 一律是 admin（見 backend/notifications/inbox_service.py） -->
+      <!-- 後台送出的通知 sourceType 一律為 admin。 -->
       <Badge variant="secondary">管理員</Badge>
     </div>
 

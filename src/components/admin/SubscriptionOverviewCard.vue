@@ -187,7 +187,6 @@ const chartOptions = computed<ChartOptions<'bar' | 'line'>>(() => ({
   },
 }))
 
-// 從 wrapper 事件取得 chart 實例做命中判定。
 const chartRef = ref<{ chart?: ChartJS<'bar' | 'line'> } | null>(null)
 
 function planAt(event: MouseEvent): PlanKey | null {
