@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 /**
  * 系統監控頁的功能維護開關。
  *
@@ -221,21 +222,29 @@ const rows = computed<RowView[]>(() =>
 
         <div class="space-y-4">
           <div class="space-y-2">
-            <Label for="outage-reason">內部原因</Label>
+            <div class="inline-flex items-center gap-1.5">
+              <Label for="outage-reason">內部原因</Label>
+              <InfoTip text="只有管理員看得到，不會顯示給使用者。" />
+            </div>
             <Textarea id="outage-reason" v-model="draft.internalReason" rows="2" placeholder="例如：契約分析 API 金鑰過期" />
-            <p class="text-xs text-muted-foreground">只有管理員看得到，不會顯示給使用者。</p>
           </div>
 
           <div class="space-y-2">
-            <Label for="outage-public-note">對外說明（選填）</Label>
+            <div class="inline-flex items-center gap-1.5">
+              <Label for="outage-public-note">對外說明（選填）</Label>
+              <InfoTip text="">
+                留白就會顯示這句：「{{ DEFAULT_PUBLIC_NOTE }}」
+              </InfoTip>
+            </div>
             <Textarea id="outage-public-note" v-model="draft.publicNote" rows="2" :placeholder="DEFAULT_PUBLIC_NOTE" />
-            <p class="text-xs text-muted-foreground">留白就會顯示這句：「{{ DEFAULT_PUBLIC_NOTE }}」</p>
           </div>
 
           <div class="space-y-2">
-            <Label for="outage-eta">預計恢復時間（選填）</Label>
+            <div class="inline-flex items-center gap-1.5">
+              <Label for="outage-eta">預計恢復時間（選填）</Label>
+              <InfoTip text="僅供顯示，時間到不會自動恢復。" />
+            </div>
             <Input id="outage-eta" v-model="draft.etaAtLocal" type="datetime-local" />
-            <p class="text-xs text-muted-foreground">僅供顯示，時間到不會自動恢復。</p>
           </div>
         </div>
 

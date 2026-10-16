@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
@@ -495,7 +496,10 @@ const confirmCount = computed(() =>
           <h2 class="text-sm font-semibold">內容</h2>
 
           <div class="space-y-2">
-            <Label>套用模板（可不選）</Label>
+            <div class="inline-flex items-center gap-1.5">
+              <Label>套用模板（可不選）</Label>
+              <InfoTip text="套用後文字可以再改 —— 改的是這一次要送的內容，不會動到模板本身。" />
+            </div>
             <Select
               :model-value="templateId"
               @update:model-value="(v) => applyTemplate(v as string)"
@@ -507,9 +511,6 @@ const confirmCount = computed(() =>
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p class="text-xs text-foreground/70">
-              套用後文字可以再改 —— 改的是這一次要送的內容，不會動到模板本身。
-            </p>
           </div>
 
           <div class="space-y-2">
@@ -567,10 +568,10 @@ const confirmCount = computed(() =>
 
         <section class="space-y-4 rounded-2xl border border-border p-5">
           <div>
-            <h2 class="text-sm font-semibold">操作按鈕</h2>
-            <p class="mt-1 text-xs text-foreground/70">
-              租客點了會直接到那一頁。不加的話這則通知只能讀，沒有下一步。
-            </p>
+            <h2 class="inline-flex items-center gap-1.5 text-sm font-semibold">
+              操作按鈕
+              <InfoTip text="租客點了會直接到那一頁。不加的話這則通知只能讀，沒有下一步。" />
+            </h2>
           </div>
 
           <div class="grid gap-4 sm:grid-cols-2">
@@ -655,7 +656,20 @@ const confirmCount = computed(() =>
         </section>
 
         <section class="space-y-4 rounded-2xl border border-border p-5">
-          <h2 class="text-sm font-semibold">何時送出</h2>
+          <h2 class="inline-flex items-center gap-1.5 text-sm font-semibold">
+            何時送出
+            <InfoTip text="">
+              <template v-if="isSchedule">
+                <span class="font-medium text-foreground">排程由系統執行</span>，到時間會自己寄出，
+                不需要開著後台。收件人是<span class="font-medium text-foreground">已註冊的帳號</span>，
+                而且在送出當下才計算。排程可以送站內與 Email，不能送推播。
+              </template>
+              <template v-else>
+                <span class="font-medium text-foreground">立即發送會馬上送進收件人的站內收件匣</span>，
+                勾了 Email 的話後端會接著寄信。推播還沒接通，會標成「待接通」。
+              </template>
+            </InfoTip>
+          </h2>
 
           <div class="flex gap-2">
             <Button
@@ -676,22 +690,12 @@ const confirmCount = computed(() =>
             </Button>
           </div>
 
-          <div class="rounded-xl bg-muted/40 p-3 text-xs leading-relaxed text-foreground/70">
-            <template v-if="isSchedule">
-              <span class="font-medium text-foreground">排程由系統執行</span>，到時間會自己寄出，
-              不需要開著後台。收件人是<span class="font-medium text-foreground">已註冊的帳號</span>，
-              而且在送出當下才計算。排程可以送站內與 Email，不能送推播。
-            </template>
-            <template v-else>
-              <span class="font-medium text-foreground">立即發送會馬上送進收件人的站內收件匣</span>，
-              勾了 Email 的話後端會接著寄信。推播還沒接通，會標成「待接通」。
-            </template>
-          </div>
-
           <div v-if="isSchedule" class="space-y-2">
-            <Label for="c-at">預定時間</Label>
+            <div class="inline-flex items-center gap-1.5">
+              <Label for="c-at">預定時間</Label>
+              <InfoTip text="系統每 20 秒檢查一次，實際寄出會落在預定時間之後幾十秒內。" />
+            </div>
             <Input id="c-at" v-model="scheduledAt" type="datetime-local" :min="minValue" :max="maxValue" />
-            <p class="text-xs text-foreground/70">系統每 20 秒檢查一次，實際寄出會落在預定時間之後幾十秒內。</p>
           </div>
         </section>
       </div>
@@ -699,8 +703,10 @@ const confirmCount = computed(() =>
       <div class="lg:sticky lg:top-4 lg:self-start">
         <div class="space-y-4 rounded-2xl border border-border p-5">
           <div>
-            <h2 class="text-sm font-semibold">租客會看到</h2>
-            <p class="mt-1 text-xs text-foreground/70">未讀狀態的樣子。時間以實際送出為準。</p>
+            <h2 class="inline-flex items-center gap-1.5 text-sm font-semibold">
+              租客會看到
+              <InfoTip text="未讀狀態的樣子。時間以實際送出為準。" />
+            </h2>
           </div>
 
           <NotifPreviewCard
@@ -750,18 +756,17 @@ const confirmCount = computed(() =>
               <Send class="mr-2 h-4 w-4" />
               {{ isSchedule ? '排程發送' : '發送' }}
             </Button>
-            <Button
-              variant="outline"
-              class="w-full"
-              :disabled="sending || renderedTitle.trim() === '' || renderedBody.trim() === ''"
-              @click="sendToSelf"
-            >
-              先寄給我自己
-            </Button>
-            <p class="text-xs text-foreground/70">
-              測試發送走跟正式發送一樣的路徑，會標成「測試發送」，發送紀錄預設不顯示。
-              它驗的是「資料送得出去」，不是租客端畫面 —— 那要用租客帳號才看得到。
-            </p>
+            <div class="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                class="flex-1"
+                :disabled="sending || renderedTitle.trim() === '' || renderedBody.trim() === ''"
+                @click="sendToSelf"
+              >
+                先寄給我自己
+              </Button>
+              <InfoTip text="測試發送走跟正式發送一樣的路徑，會標成「測試發送」，發送紀錄預設不顯示。 它驗的是「資料送得出去」，不是租客端畫面 —— 那要用租客帳號才看得到。" />
+            </div>
           </div>
         </div>
       </div>

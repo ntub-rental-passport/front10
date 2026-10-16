@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 /** 單一序列的趨勢面積圖卡，顏色由 CSS token 取得以配合主題。 */
 import { computed, onMounted, ref } from 'vue'
 import {
@@ -93,8 +94,10 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
   <Card class="h-full rounded-3xl border-border/70 bg-background/90 shadow-sm">
     <CardHeader class="p-5 flex flex-row items-start justify-between space-y-0 pb-2">
       <div>
-        <CardTitle class="text-sm font-medium">{{ title }}</CardTitle>
-        <p v-if="description" class="mt-1 text-xs text-muted-foreground">{{ description }}</p>
+        <CardTitle class="inline-flex items-center gap-1.5 text-sm font-medium">
+          {{ title }}
+          <InfoTip v-if="description" :text="description" />
+        </CardTitle>
       </div>
       <span
         v-if="summary"

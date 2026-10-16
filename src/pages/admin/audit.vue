@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { Badge } from '@/components/ui/badge/index'
 import { Button } from '@/components/ui/button/index'
@@ -116,13 +117,11 @@ function exportCsv(): void {
             <X class="mr-1 h-3.5 w-3.5" />
             清除篩選
           </Button>
-          <p class="whitespace-nowrap text-sm text-muted-foreground">
+          <p class="inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground">
             共 {{ filteredRows.length }} 筆
             <span v-if="loading">（伺服器紀錄讀取中…）</span>
-          </p>
-          <!-- 後端稽核紀錄由所有管理員共用；展示模組的操作只存在本機瀏覽器。 -->
-          <p class="ml-auto text-xs text-muted-foreground">
-            帳號、系統設定、功能停用、公告與輪播、通知模板、排程通知、管理員登入與服務狀態的紀錄保存在伺服器，所有管理員看到同一份；其他操作只存在這台瀏覽器。
+            <!-- 後端稽核紀錄由所有管理員共用；展示模組的操作只存在本機瀏覽器。 -->
+            <InfoTip text="帳號、系統設定、功能停用、公告與輪播、通知模板、排程通知、管理員登入與服務狀態的紀錄保存在伺服器，所有管理員看到同一份；其他操作只存在這台瀏覽器。" />
           </p>
         </div>
 

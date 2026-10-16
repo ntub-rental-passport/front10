@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
@@ -417,11 +418,10 @@ const hasActivePreview = computed(() =>
     />
     <section class="space-y-3">
       <div>
-        <h2 class="text-sm font-semibold">輪播預覽</h2>
-        <p class="mt-1 text-xs text-muted-foreground">
-          租客工作區與公開首頁現在會看到的樣子。排序、發布狀態、排期都即時反映；
-          正在編輯的草稿（含尚未儲存的變更）也看得到。
-        </p>
+        <h2 class="inline-flex items-center gap-1.5 text-sm font-semibold">
+          輪播預覽
+          <InfoTip text="租客工作區與公開首頁現在會看到的樣子。排序、發布狀態、排期都即時反映； 正在編輯的草稿（含尚未儲存的變更）也看得到。" />
+        </h2>
       </div>
       <BannerCarousel :items="previewItems" />
       <p
@@ -570,7 +570,10 @@ const hasActivePreview = computed(() =>
             <Input id="ban-title" v-model="draft.title" />
           </div>
           <div class="space-y-2">
-            <Label for="ban-image">圖片網址</Label>
+            <div class="inline-flex items-center gap-1.5">
+              <Label for="ban-image">圖片網址</Label>
+              <InfoTip text="建議 2400×800、WebP 格式；上限 5 MB。圖片存在伺服器上，重新部署不會消失。" />
+            </div>
             <Input id="ban-image" v-model="draft.imageUrl" placeholder="https://..." />
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-xs text-muted-foreground">內建圖片</span>
@@ -626,9 +629,6 @@ const hasActivePreview = computed(() =>
               圖片庫讀取失敗
               <Button variant="outline" size="sm" @click="loadUploadedImages">重試</Button>
             </div>
-            <p class="text-xs text-muted-foreground">
-              建議 2400×800、WebP 格式；上限 5 MB。圖片存在伺服器上，重新部署不會消失。
-            </p>
             <ActionError v-if="uploadError" :message="uploadError" @dismiss="uploadError = ''" />
 
             <p v-if="showUrlFormatWarning" class="text-xs text-destructive">
@@ -662,7 +662,10 @@ const hasActivePreview = computed(() =>
             </p>
           </div>
           <div class="space-y-2">
-            <Label>對象</Label>
+            <div class="inline-flex items-center gap-1.5">
+              <Label>對象</Label>
+              <InfoTip text="決定這張圖出現在誰的首頁。連結頁面的清單會跟著換。" />
+            </div>
             <Select v-model="draft.audience">
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -671,9 +674,6 @@ const hasActivePreview = computed(() =>
                 <SelectItem value="landlord">房東</SelectItem>
               </SelectContent>
             </Select>
-            <p class="text-xs text-muted-foreground">
-              決定這張圖出現在誰的首頁。連結頁面的清單會跟著換。
-            </p>
           </div>
           <div class="space-y-2">
             <Label>連結頁面</Label>

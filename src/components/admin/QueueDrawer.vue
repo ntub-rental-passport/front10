@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { onBeforeUnmount, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ArrowUpRight, X } from 'lucide-vue-next'
@@ -46,8 +47,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   >
     <div class="flex items-start justify-between gap-3 border-b px-5 py-4">
       <div class="min-w-0">
-        <p class="font-semibold">待辦佇列</p>
-        <p class="mt-0.5 text-xs text-muted-foreground">只列後台做得了事的項目。</p>
+        <p class="inline-flex items-center gap-1.5 font-semibold">
+          待辦佇列
+          <InfoTip :tabindex="open ? 0 : -1" text="只列後台做得了事的項目。" />
+        </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <!-- text-destructive-foreground 未產生 CSS，需明確覆寫文字色以免深色模式繼承白字而對比不足。 -->
@@ -74,11 +77,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       <div v-for="group in groups" :key="group.kind" class="space-y-2">
         <div class="flex items-baseline justify-between gap-3">
           <div class="min-w-0">
-            <p class="text-sm font-semibold">
+            <p class="inline-flex items-center gap-1.5 text-sm font-semibold">
               {{ group.label }}
               <span class="ml-1.5 text-muted-foreground">{{ group.count }} 件</span>
+              <InfoTip :tabindex="open ? 0 : -1" :text="group.hint" />
             </p>
-            <p class="truncate text-xs text-muted-foreground">{{ group.hint }}</p>
           </div>
           <RouterLink
             :to="group.to"

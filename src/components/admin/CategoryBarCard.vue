@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 /** 分類橫條卡，以同色相明度階梯表達排序。 */
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -50,8 +51,10 @@ const total = computed(() => props.items.reduce((sum, item) => sum + item.value,
     >
       <CardHeader class="p-5 flex flex-row items-start justify-between space-y-0 pb-2">
         <div>
-          <CardTitle class="text-sm font-medium">{{ title }}</CardTitle>
-          <p v-if="description" class="mt-1 text-xs text-muted-foreground">{{ description }}</p>
+          <CardTitle class="inline-flex items-center gap-1.5 text-sm font-medium">
+            {{ title }}
+            <InfoTip v-if="description" :text="description" />
+          </CardTitle>
         </div>
         <span class="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
           共 {{ total }}
