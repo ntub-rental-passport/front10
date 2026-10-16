@@ -1172,13 +1172,7 @@ function clearSearch(): void {
 
 const router = useRouter()
 
-// ── 終版確認 ────────────────────────────────────────────────────────────
-// OCR 與校對的結果原本只活在 sessionStorage，關掉分頁就沒了。
-// 校對完成後先問使用者「這份是不是雙方已簽署的最終版」：
-//   是 → 把欄位寫入 rentals（個資欄位在後端由 AES-GCM 加密落地）
-//   否 → 什麼都不寫，只留在本機工作階段
-// 還在協商中的版本進了資料庫，後面的帳單、繳租提醒、租屋補助
-// 都會照錯誤的條件運作，所以這個選擇不給預設值，也不自動存檔。
+// 終版確認不得預選或自動存檔，避免協商中條件影響帳單與補助；確認後個資由後端 AES-GCM 加密，未確認則只留 sessionStorage。
 const finalizeDialog = ref<HTMLDialogElement | null>(null)
 const finalizeChoice = ref<'final' | 'draft' | null>(null)
 const contractTag = ref('')
@@ -1230,7 +1224,6 @@ function continueToAnalysis(): void {
   router.push('/app/contract-analysis')
 }
 
-/** 必填欄位有缺時，讓使用者直接跳到該欄位所屬分組補齊。 */
 function jumpToMissingField(fieldId: string): void {
   const target = fields.value.find((field) => field.id === fieldId)
   if (!target) return

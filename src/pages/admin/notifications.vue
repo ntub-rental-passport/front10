@@ -9,7 +9,6 @@ import SentLogTab from '@/src/components/admin/notifications/SentLogTab.vue'
 import ScheduleTab from '@/src/components/admin/notifications/ScheduleTab.vue'
 import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
 
-// 與內容管理頁同樣的單層分頁樣式，兩個獨立頁面各自維持一致的視覺語言。
 const route = useRoute()
 const router = useRouter()
 
@@ -28,13 +27,6 @@ function handleTabChange(value: unknown): void {
   void router.replace({ query: TAB_QUERY.includes(tab) ? { tab } : {} })
 }
 
-/*
- * 發送改成整頁編輯器（/admin/notifications/compose）。
- * 原本是一顆按鈕開一個 max-h-[85vh] 的捲動對話框，預覽在摺線以下 ——
- * 套個有變數的模板就等於盲寫。
- *
- * 送完會帶著 ?sent=N 導回來，在這裡回報一次結果。
- */
 const sentMessage = computed(() => {
   const count = route.query.sent
   return typeof count === 'string' && count !== '' ? `已成功發送給 ${count} 位使用者。` : ''
@@ -43,7 +35,6 @@ const sentMessage = computed(() => {
 
 <template>
   <div class="space-y-6">
-    <!-- 標題移到頂部列（見 src/utils/admin-page-title.ts），這裡只剩動作與提示 -->
     <div class="flex flex-wrap items-center justify-between gap-4">
       <p v-if="sentMessage" class="text-sm font-medium text-success">
         {{ sentMessage }}

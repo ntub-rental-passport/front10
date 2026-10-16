@@ -36,15 +36,10 @@ import {
 const { items, unreadCount, loadState, markRead, markUnread, markAllRead, sendNote } =
   useAdminNotificationCenter()
 
-/**
- * 篩選。「未讀」不是來源、是跨來源的聚合，所以跟後面三顆來源頁籤分開放，
- * 並做得更大 —— 與工單頁的「待處理」、補貼頁的「待我處理」同一個作法。
- */
 const filter = ref<NotifFilter>('unread')
 
 const filtered = computed(() => items.value.filter((item) => matchesNotifFilter(item, filter.value)))
 
-// 依日期分組：清單一長，「今天的還是上週的」比一個一個看時間戳快得多
 const groups = computed(() => groupNotificationsByDay(filtered.value))
 
 // 「使用者訊息」先不列：使用者沒有地方可以寫信給管理員，這個分類不會有東西
@@ -91,17 +86,9 @@ async function submitNote(): Promise<void> {
 
 <template>
   <div class="space-y-6">
-    <!--
-      左邊篩選、右邊動作。
-
-      未讀數不再用 destructive 徽章：未讀既不是錯誤也不是危險，跟「系統告警」
-      共用紅色會讓兩個紅講不同的事。數字改由「未讀」那顆頁籤承擔 ——
-      那裡同時是計數與篩選入口，比一顆純顯示的徽章有用。
-    -->
     <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
       <Tabs class="min-w-0 max-w-full" :model-value="filter" @update:model-value="(v: string) => (filter = v as NotifFilter)">
         <TabsList :class="ADMIN_TAB_LIST">
-          <!-- 「未讀」是跨來源的聚合不是來源，做大並上主色，再用分隔線隔開 -->
           <TabsTrigger
             value="unread"
             class="rounded-full bg-primary/10 px-6 py-2.5 text-base font-semibold text-primary data-[state=active]:bg-primary-surface data-[state=active]:text-primary-surface-foreground data-[state=active]:shadow-sm"
@@ -137,7 +124,6 @@ async function submitNote(): Promise<void> {
       {{ filter === 'unread' ? '沒有未讀通知。' : '這個篩選沒有符合的通知。' }}
     </div>
 
-    <!-- 依日期分組（今天／昨天／更早），空的分組不會出現 -->
     <div v-for="group in groups" :key="group.label" class="space-y-3">
       <p class="text-xs font-semibold tracking-wide text-foreground/70">{{ group.label }}</p>
       <div
@@ -170,11 +156,6 @@ async function submitNote(): Promise<void> {
         </div>
 
         <div class="mt-2 flex flex-wrap items-center gap-1.5">
-          <!--
-            三種來源依輕重上色，全部用既有 token：告警紅、使用者訊息琥珀、
-            內部備註灰。原本是寫死的 red-50/blue-50/violet-50，沒有 dark:
-            變體，深色模式下是三塊發亮的近白方塊。見 admin-notification-center.ts。
-          -->
           <Badge variant="outline" :class="NOTIF_SOURCE_BADGE_CLASS[item.source]">
             {{ adminNotifSourceLabels[item.source] }}
           </Badge>
@@ -182,10 +163,7 @@ async function submitNote(): Promise<void> {
             來自 {{ item.senderName }}
           </span>
 
-          <!--
-            標回未讀。原本點開就回不去 —— 想把它留成待辦就不能點開看內容。
-            @click.stop 是必要的：外層整張卡的 click 會把它重新標成已讀。
-          -->
+          <!-- @click.stop 可避免外層卡片的 click 將通知重新標成已讀。 -->
           <button
             v-if="item.read"
             type="button"

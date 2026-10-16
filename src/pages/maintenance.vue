@@ -22,7 +22,6 @@ function formatSchedule(value: string): string {
   })
 }
 
-// 只顯示結束時間：使用者關心的是什麼時候能用，不是什麼時候開始維護的
 const resumesAt = computed(() => formatSchedule(publicSettings.value.maintenance.endsAt))
 </script>
 

@@ -119,15 +119,7 @@ useRegisterAdminPageTitle(
   computed(() => row.value?.user.nickname ?? row.value?.user.email ?? null),
 )
 
-/**
- * 這一頁看的是不是資料庫裡真的存在的人。
- *
- * 真實帳號與展示資料走的是完全不同的路：停用真實帳號要打後端 API，
- * 展示資料只改 localStorage。這一頁原本不分，一律呼叫展示資料的
- * setStatus —— 它只在 localStorage 裡找人，找不到 real-2 這種 id 就直接
- * return。結果真實帳號的「停用帳號」按了沒有任何作用、也沒有任何錯誤：
- * 管理員以為停用了，對方其實還登得進來。
- */
+/** 真實帳號須透過後端 API 停用，展示資料的 localStorage setStatus 無法停用真實帳號。 */
 const isReal = computed(() => row.value?.realAccountId !== undefined)
 
 const now = useNow()
@@ -147,11 +139,6 @@ const subscriptionStatusFlags = computed(() => {
   })
 })
 
-// ── 押金對帳、點交存證 ─────────────────────────────────────────────
-//
-// 真實帳號讀後端：房東的租約對上租客的合約、租客點交的 AI 比對結果（見
-// backend/admin/user_records.py）。展示帳號用瀏覽器裡的示範資料。兩種整理成
-// 同一種形狀（admin-user-records.ts），下面的畫面只有一條路徑。
 const realRecords = ref<UserRecords | null>(null)
 const recordsState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 
@@ -205,7 +192,6 @@ const handoverViews = computed<HandoverView[]>(() =>
     : demoHandoverViews(handoverRecords.value, userId.value),
 )
 
-// 點交紀錄同樣兩造都掛，依這個人是房東還是租客分開列
 const handoverGroups = computed(() =>
   (['tenant', 'landlord'] as const)
     .map((side) => ({ side, items: handoverViews.value.filter((record) => record.side === side) }))
@@ -238,8 +224,6 @@ function usagePercent(used: number, quota: number): number {
   if (quota <= 0) return 0
   return Math.min(100, Math.round((used / quota) * 100))
 }
-
-// ── 方案與用量 ────────────────────────────────────────────────────
 
 const effectivePlan = computed(() =>
   row.value ? userPlan(row.value.user, row.value.subscription, now.value) : null,
@@ -338,8 +322,7 @@ async function applyStatus(next: 'active' | 'suspended', reason?: string): Promi
     return
   }
 
-  // 真實帳號走後端，跟列表頁的停用同一條路。後端的拒絕理由
-  // （不能停用自己、這是最後一位管理員）要原樣顯示，靜靜失敗最糟。
+  // 後端拒絕停用的原因（不能停用自己、最後一位管理員）須原樣顯示。
   statusError.value = ''
   statusBusy.value = true
   try {
@@ -352,11 +335,7 @@ async function applyStatus(next: 'active' | 'suspended', reason?: string): Promi
   }
 }
 
-/*
- * 「停用中」旁邊的那一句：最近一次停用的原因、誰停的、什麼時候。
- * 真實帳號讀後端的稽核紀錄；展示帳號的停用本來就只記在這台瀏覽器，讀本機那份。
- * 這個功能上線前就被停用的帳號沒有紀錄，就不顯示，不編一句出來。
- */
+/* 停用原因依帳號來源讀取後端稽核或本機紀錄，沒有紀錄時不可推造原因。 */
 const { events: localAuditEvents } = useAdminAudit()
 const serverStatusHistory = ref<ServerAuditEvent[]>([])
 
@@ -390,14 +369,6 @@ function goToTickets(): void {
   void router.push({ path: '/admin/maintenance-tickets', query: { user: userId.value } })
 }
 
-// ── 發送通知 ────────────────────────────────────────────────────
-// 發送流程整個搬到 /admin/notifications/compose（整頁編輯器）。
-//
-// 原本刻意留在本頁顯示提示、不導頁，理由是「管理員多半要接著看下一列」。
-// 那個取捨在對話框時代成立；整頁編輯器帶得動預覽、收件人試算與排程，
-// 留一個縮水版的對話框在這裡只會讓兩套組字邏輯繼續漂移。
-// 編輯器送完會導回通知管理，要回到這一頁按瀏覽器上一頁即可。
-
 function openSendDialog(): void {
   if (!row.value) return
   void router.push({
@@ -414,28 +385,17 @@ function openSendDialog(): void {
       返回使用者列表
     </Button>
 
-    <!--
-      左右兩欄：左邊是固定的個人資料卡（這是誰、能對他做什麼），右邊是
-      他在各模組的資料。原本一欄到底，展示帳號的頁面高 1515px，往下看押金
-      或工單時，身分與操作按鈕早就捲出畫面了。
-
-      左欄 sticky 時限制高度並允許內部捲動 —— sticky 元素比視窗高的話，
-      它的下半部在頁面捲到底之前永遠看不到（sticky 的已知陷阱）。
-    -->
+    <!-- sticky 元素須限制高度並允許內部捲動，否則超出視窗的下半部難以看見。 -->
     <div class="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
       <aside
         class="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
       >
         <div class="space-y-5 rounded-3xl border bg-card p-5 shadow-sm">
-          <!--
-            名字已經在頂部列的麵包屑（useRegisterAdminPageTitle），這裡放的是
-            辨識這個帳號用的資料：Email 與暱稱。
-          -->
           <div class="space-y-1">
             <div class="flex items-center gap-1.5">
               <span class="break-all font-semibold">{{ row.user.email }}</span>
               <span :title="row.user.emailVerified ? 'Email 已驗證' : 'Email 未驗證'">
-                <!-- 跟列表頁同一組：--accent 是填色不是文字色，未驗證的圖示包在實心琥珀小圓裡 -->
+                <!-- --accent 是填色，須搭配實心背景使用以維持圖示對比。 -->
                 <BadgeCheck v-if="row.user.emailVerified" class="h-4 w-4 shrink-0 text-success" />
                 <span v-else class="inline-flex rounded-full bg-accent p-0.5">
                   <ShieldAlert class="h-3 w-3 text-accent-foreground" />
@@ -446,11 +406,6 @@ function openSendDialog(): void {
             <p class="text-sm text-muted-foreground">{{ row.user.nickname ?? '沒有暱稱' }}</p>
           </div>
 
-          <!--
-            狀態用 StatusDot：正常是安靜的綠點，停用才整顆上色。原本「正常」是
-            Badge 的 default variant —— 實心紫，整頁最搶眼的反而是沒事的狀態。
-            身分不是狀態，改成純文字。
-          -->
           <dl class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-sm">
             <dt class="text-foreground/70">狀態</dt>
             <dd>
@@ -493,10 +448,7 @@ function openSendDialog(): void {
             </dd>
           </dl>
 
-          <!--
-            真實帳號的角色不開放從網頁改：後端沒有這支 API，而且這是刻意的 ——
-            管理員只能由能登入伺服器的人用 manage_admin.py 授予（見 admin.py）。
-          -->
+          <!-- 真實帳號角色不開放網頁修改，管理員僅能由伺服器上的 manage_admin.py 授予。 -->
           <p v-if="isReal" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
             身分在這裡是唯讀，需要由系統管理者在伺服器上調整。
           </p>
@@ -527,11 +479,6 @@ function openSendDialog(): void {
           </div>
         </div>
 
-        <!--
-          原本頂部那四張 text-2xl 的大卡片。它們是「這個人的資料」而不是頁面
-          等級的 KPI，所以併進左欄，用跟工單詳情同一種重點資料格。
-          異常才上色：不符、逾期用實心紅 chip，其餘安靜。
-        -->
         <dl class="grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl bg-muted/40 p-5 text-sm">
           <div class="space-y-0.5">
             <dt class="text-xs text-foreground/70">{{ row.user.role === 'landlord' ? '物件' : 'AI 用量' }}</dt>
@@ -583,7 +530,6 @@ function openSendDialog(): void {
       </aside>
 
       <div class="min-w-0 space-y-6">
-        <!-- 訂閱與容量 -->
         <Card class="rounded-3xl">
           <CardHeader class="p-5"><CardTitle>訂閱與容量</CardTitle></CardHeader>
           <CardContent class="px-5 pb-5">
@@ -614,7 +560,6 @@ function openSendDialog(): void {
                   <p v-if="row.subscription && hasActivePaidPlan(row.subscription)" class="text-sm">
                     下次扣款日：{{ formatDate(row.subscription.expiresAt) }}
                   </p>
-                  <!-- 即將到期、額度已用滿是列表的警示條件（warn）；已停用是既成事實（idle）。 -->
                   <div class="flex flex-wrap items-center gap-2">
                     <StatusDot
                       v-for="flag in subscriptionStatusFlags"
@@ -628,7 +573,6 @@ function openSendDialog(): void {
                 <div v-if="inTrial && row.subscription" class="space-y-1.5">
                   <p class="text-sm text-muted-foreground">限時試用</p>
                   <p class="text-sm">
-                    <!-- 試用天數是資訊不是狀態，不需要膠囊。 -->
                     <span class="font-medium">還有 {{ trialDaysLeft }} 天</span>
                     <span class="text-muted-foreground">
                       ，期間享 {{ effectivePlan.name }}權益，到期自動回到{{ getPlan(row.subscription.role, row.subscription.planKey).name }}
@@ -637,7 +581,6 @@ function openSendDialog(): void {
                 </div>
               </div>
 
-              <!-- 方案內容沿用前台權益表原文，避免後台另編一套說法。 -->
               <div class="rounded-2xl border">
                 <button
                   type="button"
@@ -808,10 +751,6 @@ function openSendDialog(): void {
                       <span v-if="deposit.tenantDeclared === null" class="text-muted-foreground">未聲明</span>
                       <span v-else>{{ formatMoney(deposit.tenantDeclared) }}</span>
                     </TableCell>
-                    <!--
-                      表格裡原則上不開 emphasize（一整欄實心色塊很難掃）。這裡開，是因為
-                      只有「不符」會變成實心，其餘都是小圓點 —— 一欄裡偶爾一顆紅，正是要它跳出來。
-                    -->
                     <TableCell class="whitespace-nowrap">
                       <div class="flex items-center gap-2">
                         <StatusDot
@@ -831,10 +770,7 @@ function openSendDialog(): void {
           </CardContent>
         </Card>
 
-        <!--
-          點交存證：租客拍的入住、退租照片由 AI 逐項比對（backend/routers/inspection.py）。
-          真實帳號是真實資料，展示帳號是示範資料。後台只顯示比對結果，不顯示照片（2026-09-30 決定）。
-        -->
+        <!-- 後台點交存證只顯示 AI 比對結果，不顯示照片。 -->
         <Card v-if="handoverGroups.length > 0" :data-real="isReal ? 'true' : undefined" class="rounded-3xl">
           <CardHeader class="p-5">
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -892,7 +828,6 @@ function openSendDialog(): void {
                       <TableCell class="whitespace-nowrap text-muted-foreground">{{ item.room }}</TableCell>
                       <!-- 品項名稱都很短，讓說明欄去換行；不然窄的時候「冷氣」會被擠成一字一行 -->
                       <TableCell class="whitespace-nowrap">{{ item.name }}</TableCell>
-                      <!-- 跟押金一樣開 emphasize：只有損壞、無法判斷會變實心，一欄裡偶爾幾顆才跳得出來 -->
                       <TableCell class="whitespace-nowrap">
                         <StatusDot
                           :tone="handoverResultTone(item.result)"
@@ -917,7 +852,6 @@ function openSendDialog(): void {
           </CardContent>
         </Card>
 
-        <!-- 報修工單 -->
         <Card class="rounded-3xl">
           <CardHeader class="p-5">
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -960,7 +894,6 @@ function openSendDialog(): void {
                       {{ maintenanceCategoryLabels[ticket.category] }}
                     </TableCell>
                     <TableCell class="whitespace-nowrap">
-                      <!-- 與工單頁共用同一套顏色對應 -->
                       <StatusDot
                         :tone="maintenanceStatusTone(ticket.status)"
                         :label="maintenanceStatusLabels[ticket.status]"

@@ -89,12 +89,7 @@ const loginLink = computed(() => ({
 
 const redirectTarget = computed(() => normalizeAuthRedirect(route.query.redirect))
 
-// 密碼長度以後端為準（後台「系統設定」可調最短長度，見 backend/platform_settings.py）。
-// 以前讀的是瀏覽器裡的設定，管理員改了只有他自己那台的註冊頁會跟著變。
-// 讀不到時先用後端的預設值；送出後後端還會再檢查一次，這裡只是提早提示。
-//
-// 上限也改跟後端一致（128）：原本前端自己限 20，最短長度一旦設到 20 以上，
-// 就沒有任何密碼能通過了。
+// 密碼長度須與後端政策一致，讀取失敗時使用後端預設值且送出後仍由後端驗證。
 const passwordMinLength = ref(DEFAULT_PASSWORD_MIN_LENGTH)
 const passwordMaxLength = ref(DEFAULT_PASSWORD_MAX_LENGTH)
 

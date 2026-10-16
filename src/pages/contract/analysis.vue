@@ -7,7 +7,6 @@ import { uploadReport, deleteReviewFile, reviewFileUrl, type ReviewFile } from '
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-// 與 authApi.ts 相同的 API 位址來源：開發模式讀 VITE_API_BASE_URL，正式環境走同源 /api
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 import { loadContractOcrResult, saveContractOcrResult } from '@/src/utils/contract-ocr'
 import { contractAnalysisKey, readContractAnalysis, writeContractAnalysis } from '@/src/utils/contract-analysis-cache'
@@ -383,13 +382,7 @@ const riskTabs = computed(() => [
   { id: 'pending' as const, label: '待確認', count: assessmentSummary.value.pending },
   { id: 'history' as const, label: '處理紀錄', count: records.value.length + activeRisks.value.filter(r => r.status === 'not_applicable').length },
 ])
-/*
- * AI 分析的狀態必須讓使用者看得到。
- *
- * 原本失敗時是靜靜 return，畫面會顯示「RAG 風險 0 項、AI 建議 0 項」，
- * 使用者會理解成「我的合約沒有這些問題」—— 但真相是分析根本沒有跑。
- * 對一個要拿去跟房東談判的人來說，這跟給錯資訊沒有兩樣。
- */
+/* AI 分析失敗必須顯示狀態，不能以 0 項風險暗示已通過分析。 */
 type AiAnalysisState = 'loading' | 'ok' | 'failed'
 const aiAnalysisState = ref<AiAnalysisState>('loading')
 const analysisError = ref('')
@@ -450,7 +443,6 @@ async function loadBackendRagAndAiAnalysis(force = false) {
     })
 
     if (response.status === 401) {
-      // 登入逾期：導回登入頁，完成後回到本頁
       window.location.assign('/login?redirect=' + encodeURIComponent(window.location.pathname))
       return
     }
@@ -463,7 +455,6 @@ async function loadBackendRagAndAiAnalysis(force = false) {
       throw new Error('分析回應格式不完整')
     }
 
-    // 取得後端真正的 RAG 與 AI 風險，並與本機 field 風險疊加
     writeContractAnalysis(cacheKey, { state: 'ok', ragRisks: data.rag_risks, aiRisks: data.ai_risks })
     applyRemoteAnalysis(data.rag_risks, data.ai_risks)
   } catch (error) {
@@ -686,13 +677,11 @@ async function sendChat(message = chatInput.value): Promise<void> {
   const content = message.trim()
   if (!content) return
 
-  // 顯示使用者發送的訊息
   chatMessages.value.push({ id: nextMessageId.value++, role: 'user', text: content })
   chatInput.value = ''
 
   const activeRisk = risks.value.find((risk) => risk.id === activeRiskId.value)
 
-  // 呼叫後端 API 取得真實 LLM 回覆
   await fetchAiChatResponse(content, activeRisk)
 }
 
@@ -1155,14 +1144,7 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
               </div>
             </article>
 
-            <!--
-              分析失敗時不可顯示綠色勾勾 —— 那是在對使用者宣稱
-              一個我們沒有驗證過的結論。文案寫「不代表已通過檢查」
-              仍不夠，因為圖示本身就在說「沒問題」。
-
-              排除 history：那是處理紀錄，空的只代表還沒處理過任何項目，
-              跟 AI 分析成不成功無關。
-            -->
+            <!-- 分析失敗不可顯示通過檢查的綠勾，history 為處理紀錄須排除在分析狀態判斷之外。 -->
             <div
               v-if="!filteredRisks.length && aiAnalysisState === 'failed' && activeRiskTab !== 'history'"
               class="risk-empty-state is-unknown"

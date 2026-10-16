@@ -47,7 +47,6 @@ function clearFilter(): void {
 
 const filteredRows = computed(() => filterAuditRows(rows.value, filter))
 
-// 分頁跟使用者管理頁同一套：斷線事件併進來之後，一頁到底會很長
 const page = ref(1)
 const pageData = computed(() => paginate(filteredRows.value, page.value))
 watch(filter, () => (page.value = 1), { deep: true })
@@ -56,12 +55,7 @@ function goToPage(target: number): void {
   page.value = target
 }
 
-/**
- * 匯出「目前篩選後」的結果，不是全部紀錄 —— 管理員通常是先縮小範圍才想匯出，
- * 匯出全部反而要在 Excel 裡重篩一次，沒有意義。
- *
- * 前面加 BOM 是因為 Excel 開啟不帶 BOM 的 UTF-8 CSV 時，中文常被誤判編碼變亂碼。
- */
+/** 匯出 CSV 時加上 BOM，避免 Excel 將 UTF-8 中文誤判編碼。 */
 function exportCsv(): void {
   const csv = buildAuditCsv(
     filteredRows.value.map((row) => ({
@@ -111,14 +105,12 @@ function exportCsv(): void {
             <Label for="audit-to" class="text-xs text-muted-foreground">結束日</Label>
             <Input id="audit-to" v-model="filter.toDate" type="date" class="w-40" />
           </div>
-          <!-- 匯出的是目前篩選後的結果，放在篩選列尾端才不會讓人誤以為是匯出全部 -->
           <Button variant="outline" class="ml-auto" @click="exportCsv">
             <Download class="mr-1 h-4 w-4" />
             匯出 CSV
           </Button>
         </div>
 
-        <!-- 計數列：跟使用者管理頁同一個位置、同一種寫法 -->
         <div class="flex flex-wrap items-center gap-3">
           <Button v-if="filterActive" variant="outline" size="sm" @click="clearFilter">
             <X class="mr-1 h-3.5 w-3.5" />
@@ -128,12 +120,7 @@ function exportCsv(): void {
             共 {{ filteredRows.length }} 筆
             <span v-if="loading">（伺服器紀錄讀取中…）</span>
           </p>
-          <!--
-            來源講清楚：存在後端的功能（帳號、系統設定、功能停用、公告與輪播、
-            通知模板、排程通知、管理員登入、斷線）是後端記的，所有管理員看到同一份；
-            其餘模組是展示資料，操作只存在這台瀏覽器 —— 換一台電腦就看不到，
-            這件事不能讓人自己猜。
-          -->
+          <!-- 後端稽核紀錄由所有管理員共用；展示模組的操作只存在本機瀏覽器。 -->
           <p class="ml-auto text-xs text-muted-foreground">
             帳號、系統設定、功能停用、公告與輪播、通知模板、排程通知、管理員登入與服務狀態的紀錄保存在伺服器，所有管理員看到同一份；其他操作只存在這台瀏覽器。
           </p>
@@ -161,7 +148,6 @@ function exportCsv(): void {
               <TableCell class="whitespace-nowrap tabular-nums text-muted-foreground">
                 {{ formatDateTime(row.at) }}
               </TableCell>
-              <!-- 系統做的事退一階，讓人做的操作先被看到 -->
               <TableCell :class="row.actor === SYSTEM_ACTOR ? 'text-foreground/70' : 'font-medium'">
                 {{ actorLabel(row.actor) }}
               </TableCell>

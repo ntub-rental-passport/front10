@@ -33,8 +33,7 @@ import { useNotesState } from './useNotesState'
 
 const notes = reactive(useNotesState('roommate'))
 
-// 同步狀態列拿掉之後，這個框只剩下偶爾才出現的提示與協作空間設定；
-// 不加條件的話，沒有任何提示時會留下一個空白邊框。
+// 沒有提示或協作空間設定時須隱藏此框，避免留下空白邊框。
 const showSyncPanel = computed(
   () =>
     Boolean(notes.syncError) ||

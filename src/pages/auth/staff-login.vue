@@ -15,21 +15,11 @@ import {
 } from '@/src/composables/useAuth'
 import { recordLogin } from '@/src/composables/admin/useAdminUsers'
 
-/*
- * 兩階段登入：帳密 → 信箱驗證碼。
- *
- * 權限判定完全在後端：前端不再查任何名冊，也不再自選身分。
- * 第一階段成功「不代表登入」，只代表後端寄出了驗證碼；
- * 沒有信箱存取權的人，即使拿到正確帳密也停在這一步。
- *
- * challengeId 只放在元件的 ref，不寫進 localStorage —— 它是
- * 「已通過帳密驗證」的憑據，留在磁碟上等於把第一道關卡的成果外洩。
- */
+/* 權限由後端判定且須完成信箱驗證碼驗證才算登入，challengeId 是通過帳密的憑據，只能留在 ref，不可寫入 localStorage。 */
 const router = useRouter()
 const { blocked: deviceBlocked } = useAdminDeviceGate()
 const route = useRoute()
 
-/** 從後台被帶回來的原因（見 AdminLayout 的閒置登出），講清楚比讓人自己猜好 */
 const logoutNotice = computed(() => {
   if (route.query.reason === 'idle') return '你已經閒置超過 20 分鐘，為了保護後台已自動登出，請重新登入。'
   if (route.query.reason === 'expired') return '這次登入已經失效（可能在別處登出，或系統更新），請重新登入。'
@@ -44,7 +34,6 @@ const errorMessage = ref('')
 const submitting = ref(false)
 const challenge = ref<AdminLoginChallenge | null>(null)
 
-// 倒數：讓使用者知道驗證碼還剩多久，過期前就能自己重來
 const now = ref(Date.now())
 const ticker = window.setInterval(() => {
   now.value = Date.now()
@@ -82,9 +71,7 @@ async function submitCredentials(): Promise<void> {
     code.value = ''
     step.value = 'code'
 
-    // 本機開發：測試帳號的信箱是假的，後端直接把驗證碼回給我們。
-    // 自動送出而不是叫人手抄一次 —— 那一步沒有任何驗證價值。
-    // 正式環境不會有 devCode，這段等於不存在。
+    // devCode 僅供本機開發自動驗證，正式環境不會回傳。
     if (challenge.value.devCode) {
       code.value = challenge.value.devCode
       await submitCode()
@@ -136,10 +123,7 @@ function restart(): void {
   <DesktopOnlyNotice v-if="deviceBlocked" />
   <AuthShell v-else content-width-class="max-w-lg" footer-note="此入口僅供經授權的 RentMate 內部人員使用。">
     <div>
-      <!--
-        眉標原本是 text-primary/70：疊在登入頁的淺色漸層上實測只有 3.57，
-        14px 小字要 4.5。/80 最差的一段漸層是 4.42 仍不夠，/85 是 4.95。
-      -->
+      <!-- 淺色漸層上的 14px 文字須維持 4.5 對比，text-primary/85 才能符合。 -->
       <p class="text-sm font-semibold uppercase tracking-[0.3em] text-primary/85">Internal Access</p>
       <h1 class="mt-3 text-4xl font-black tracking-tight">內部人員登入</h1>
       <p class="mt-3 text-muted-foreground">

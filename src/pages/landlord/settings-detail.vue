@@ -210,7 +210,6 @@ function downloadFile(name: string, content: string, type: string) {
 }
 
 function exportJson() {
-  // 後端組出完整資料（含所有歷史租約、帳款、收款、支出、操作紀錄），並記一筆操作紀錄
   return attempt(async () => {
     const payload = await landlordRequest<Record<string, unknown>>('/landlord/backup')
     const stamp = new Date().toLocaleDateString('sv-SE')

@@ -71,8 +71,6 @@ type SettingsKey = keyof SystemSettings
 const { settings, saveSettings } = useAdminSettings()
 const { logAction } = useAdminAudit()
 
-/* -------------------- 頁籤 -------------------- */
-
 type SettingsTab = 'thresholds' | 'security' | 'maintenance'
 
 /** 「重置示範資料」是開發用的工具，正式站不出現 */
@@ -87,7 +85,6 @@ const TABS: { value: SettingsTab; label: string }[] = [
 const route = useRoute()
 const router = useRouter()
 
-// 目前的頁籤記在網址上：重新整理或把連結傳給別人，都會停在同一頁
 const activeTab = ref<SettingsTab>(
   TABS.some((tab) => tab.value === route.query.tab) ? (route.query.tab as SettingsTab) : 'thresholds',
 )
@@ -100,8 +97,6 @@ function selectTab(value: string | number): void {
 function clock(): string {
   return new Date().toLocaleTimeString('zh-TW', { hour12: false })
 }
-
-/* -------------------- 門檻與維護（存在後端，所有管理員共用） -------------------- */
 
 const AUDIT_KEYS = ['auditRetentionDays'] as const
 const REMINDER_KEYS = ['maintenanceOverdueDays', 'subscriptionExpiringSoonDays'] as const
@@ -205,8 +200,6 @@ function saveThresholds(): Promise<void> {
   return saveKeys(THRESHOLD_KEYS, 'thresholds')
 }
 
-/* -------------------- 門檻的即時預覽 -------------------- */
-
 const retentionText = computed(() => retentionPreview(draft.value.auditRetentionDays))
 const overdueImpact = computed(() =>
   overduePreview(adminMaintenanceCollection.value, draft.value.maintenanceOverdueDays),
@@ -215,7 +208,6 @@ const expiringImpact = computed(() =>
   expiringPreview(adminSubscriptionCollection.value, draft.value.subscriptionExpiringSoonDays),
 )
 
-// 傳草稿進去：還沒按儲存，就先看到照新門檻會是什麼等級
 const { usages: draftUsages } = useAdminAiUsage(draft)
 const quotaText = computed(() =>
   quotaPreview(
@@ -234,8 +226,6 @@ const responseText = computed(() =>
     ? '正在量測後端的回應時間…'
     : responsePreview(responseMs.value, draft.value.responseOkMs, draft.value.responseDegradedMs),
 )
-
-/* -------------------- 安全性（存在後端） -------------------- */
 
 const platform = ref<AdminPlatformSettings | null>(null)
 const platformState = ref<'loading' | 'ready' | 'error'>('loading')
@@ -292,7 +282,6 @@ function revertSecurity(): void {
   securityError.value = ''
 }
 
-/** 確認框裡的「這次會改什麼、影響誰」 */
 const securityChanges = computed(() => {
   if (!platform.value) return []
   const changes: { text: string; note: string }[] = []
@@ -330,8 +319,6 @@ async function saveSecurity(): Promise<void> {
   }
 }
 
-/* -------------------- 管理員名單（唯讀） -------------------- */
-
 const adminAccounts = ref<AdminAccount[] | null>(null)
 const rosterState = ref<'loading' | 'ready' | 'error'>('loading')
 const roster = computed(() => adminRoster(adminAccounts.value ?? []))
@@ -341,8 +328,6 @@ async function loadRoster(): Promise<void> {
   adminAccounts.value = accounts
   rosterState.value = accounts ? 'ready' : 'error'
 }
-
-/* -------------------- 維護 -------------------- */
 
 const confirmMaintenanceOpen = ref(false)
 const resetOpen = ref(false)
@@ -357,7 +342,6 @@ const maintenanceStatusText = computed(() => {
   return isMaintenanceActive(draft.value) ? '已開啟，此刻生效' : '已開啟，依排程此刻尚未生效'
 })
 
-/** 頁籤上方的橫幅：維護開著的時候，不用先切到維護頁籤才找得到「立即解除」 */
 const maintenanceBanner = computed(() => {
   if (!settings.value.maintenanceMode) return null
   return isMaintenanceActive(settings.value)
@@ -378,10 +362,7 @@ function requestSaveMaintenance(): void {
   saveMaintenance()
 }
 
-/**
- * 緊急出口：不經確認對話框，直接關閉維護模式並清掉排程。
- * 維護中誤設排程時，多一道確認就多一次點錯的機會。
- */
+/** 緊急解除直接關閉維護並清掉排程，不經確認對話框以免阻礙自救。 */
 const liftError = ref('')
 
 async function liftMaintenanceNow(): Promise<void> {
@@ -411,8 +392,6 @@ function confirmReset(): void {
   draft.value = { ...settings.value }
   resetOpen.value = false
 }
-
-/* -------------------- 還沒儲存就離開 -------------------- */
 
 const dirtyByTab = computed<Record<SettingsTab, boolean>>(() => ({
   thresholds: thresholdsDirty.value,
@@ -460,13 +439,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       <TabsList :class="ADMIN_TAB_LIST">
         <TabsTrigger v-for="tab in TABS" :key="tab.value" :value="tab.value" :class="ADMIN_TAB_TRIGGER">
           {{ tab.label }}
-          <!-- 有還沒儲存的修改：切頁籤不會丟，但要讓人看得到 -->
           <span v-if="dirtyByTab[tab.value]" class="ml-1.5 inline-block size-2 rounded-full bg-accent" aria-hidden="true" />
           <span v-if="dirtyByTab[tab.value]" class="sr-only">（有未儲存的變更）</span>
         </TabsTrigger>
       </TabsList>
 
-      <!-- ==================== 門檻與提醒 ==================== -->
       <TabsContent value="thresholds" class="mt-6 space-y-4">
         <p class="flex items-center gap-2 text-sm text-foreground/70">
           <Cloud class="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -524,7 +501,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 <Label for="maintenanceOverdueDays">報修逾期提醒門檻（天）</Label>
                 <Input id="maintenanceOverdueDays" v-model.number="draft.maintenanceOverdueDays" type="number" class="max-w-[9rem]" min="1" max="90" />
                 <p v-if="errors.maintenanceOverdueDays" class="text-sm text-destructive">{{ errors.maintenanceOverdueDays }}</p>
-                <!-- 原本寫「不會自動改變工單狀態」，但工單頁確實會自動標成逾期，並記進稽核紀錄 -->
                 <p class="text-xs text-muted-foreground">
                   工單「已通報房東」超過這個天數仍沒有進度，系統會自動標成「逾期未回應」。
                 </p>
@@ -645,7 +621,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         />
       </TabsContent>
 
-      <!-- ==================== 安全性與帳號 ==================== -->
       <TabsContent value="security" class="mt-6 space-y-4">
         <p class="flex items-center gap-2 text-sm text-foreground/70">
           <Cloud class="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -790,7 +765,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   </div>
                 </li>
               </ul>
-              <!-- 刻意不開放從網頁授權：見 backend/routers/admin.py 與 manage_admin.py 的說明 -->
+              <!-- 管理員授權僅能透過伺服器上的 manage_admin.py 執行，不開放網頁授權。 -->
               <p class="text-xs text-muted-foreground">
                 新增或移除管理員要在伺服器上執行 manage_admin.py。刻意不開放從網頁授權 —— 就算網頁被攻破，也拿不到管理員權限。
               </p>
@@ -799,7 +774,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         </Card>
       </TabsContent>
 
-      <!-- ==================== 維護與重置 ==================== -->
       <TabsContent value="maintenance" class="mt-6 space-y-4">
         <p class="flex items-center gap-2 text-sm text-foreground/70">
           <Cloud class="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -905,7 +879,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           @revert="revert(MAINTENANCE_KEYS)"
         />
 
-        <!-- 危險區：無法復原的操作，框起來跟上面分開。開發用，正式站不出現 -->
+        <!-- 重置操作無法復原，且只在開發環境開放。 -->
         <Card v-if="isDev" class="rounded-3xl border-destructive/40">
           <div class="grid gap-6 p-6 md:grid-cols-4 md:gap-8">
             <div class="md:col-span-1">

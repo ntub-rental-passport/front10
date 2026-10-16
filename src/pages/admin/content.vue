@@ -4,7 +4,6 @@ import AnnouncementsTab from '@/src/components/admin/content/AnnouncementsTab.vu
 import BannersTab from '@/src/components/admin/content/BannersTab.vue'
 import { ADMIN_TAB_LIST, ADMIN_TAB_TRIGGER } from '@/src/components/admin/admin-tabs'
 
-// 通知已拆到獨立頁面，這裡只剩一層分頁，膠囊樣式就夠用，不用再分兩層。
 </script>
 
 <template>

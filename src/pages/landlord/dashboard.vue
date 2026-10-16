@@ -114,7 +114,6 @@ const toneClasses: Record<string, string> = {
       </div>
     </header>
 
-    <!-- 後台維護的輪播，只顯示對象是房東或全部的那些（見 BannerCarousel） -->
     <BannerCarousel audience="landlord" />
 
     <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

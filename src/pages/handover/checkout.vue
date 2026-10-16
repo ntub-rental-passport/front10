@@ -1,16 +1,5 @@
 <script setup lang="ts">
-/**
- * 退租前點交與比對（Checkout + Diff）
- * ---------------------------------------------------------
- * 職責：
- *   1. 每個點交項目的每一張搬入照，各自配一張退租照（左唯讀、右可拍），一組一組比對。
- *      每張搬入照都有對應的退租照，這個項目才算完成（2026-10-08 決定：方案 A）。
- *   2. 匯出每組配對各佔一頁的 PDF，保留未拍攝、未比對與比對失敗，供分階段搬遷存檔與舉證。
- *   3. 在每張卡片顯示 diff 結果 Badge（狀態相同 / 使用痕跡 / 新增瑕疵）
- *
- * 不允許在這頁編輯搬入照，避免使用者退租時誤把搬入基準改掉
- * （那會讓比對失去意義）。要修搬入照請回 baseline 頁。
- */
+/** 退租點交逐張配對搬入照與退租照並匯出保留未拍攝、未比對與比對失敗的 PDF；搬入照在此唯讀，避免改動比對基準。 */
 
 import { useMediaQuery } from '@vueuse/core'
 import { computed, onMounted, ref } from 'vue'
@@ -71,8 +60,6 @@ const {
 
 const { registerRefresh } = useRefreshTarget()
 onMounted(() => registerRefresh(reload))
-
-// ---------- 上傳退租存證---------- //
 
 function resizeImage(file: File, maxWidth = 1024): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -142,8 +129,7 @@ async function capturePhoto(itemId: string, pairsWith: string) {
   input.click()
 }
 
-// ---------- 過濾：只顯示「搬入已存證」的項目 ---------- //
-// 沒拍搬入照的項目在退租階段不參與比對，避免誤導使用者。
+// 沒拍搬入照的項目不參與退租比對，避免誤導使用者。
 const itemsWithBaseline = computed(() =>
   itemsOfCurrentProperty.value.filter((it) => hasEvidenceInPhase(it, 'baseline')),
 )
@@ -166,8 +152,6 @@ const filteredItems = computed(() => {
   )
 })
 
-// ---------- 統計 ---------- //
-
 const stats = computed(() => {
   const total = itemsWithBaseline.value.length
   // 每張搬入照都有退租照才算完成
@@ -176,8 +160,6 @@ const stats = computed(() => {
   const comparable = itemsWithBaseline.value.some((it) => (it.pairs ?? []).some((p) => p.checkoutId))
   return { total, checkoutDone, diffDone, comparable }
 })
-
-// ---------- 工具 ---------- //
 
 function firstEvidence(item: HandoverItem, phase: 'baseline' | 'checkout') {
   return firstEvidenceOfPhase(item, phase)
@@ -195,8 +177,6 @@ function pairProgress(item: HandoverItem) {
 function fmtDate(iso: string) {
   return formatHandoverTimestamp(iso)
 }
-
-// ---------- 匯出 PDF ---------- //
 
 const lastDiffRunAt = computed(
   () =>
@@ -268,7 +248,6 @@ const desktop = useMediaQuery('(min-width: 640px)')
       <template #actions><HandoverAddItemsDialog :busy="busy" :add-items="addItems" /></template>
     </HandoverOverviewHeader>
 
-    <!-- 工具列 -->
     <div v-if="currentProperty" class="flex flex-wrap items-center gap-2 border-b pb-3">
       <div class="relative min-w-[200px] flex-1">
         <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -304,7 +283,6 @@ const desktop = useMediaQuery('(min-width: 640px)')
       <p>東西不見了也請拍下原本的位置，AI 會判定為遺失。</p>
     </div>
 
-    <!-- 對照清單 -->
     <section v-if="currentProperty" class="space-y-3">
       <p v-if="itemsWithBaseline.length === 0" class="text-sm text-muted-foreground">
         這個租屋處還沒有任何「已建立搬入存證」的項目。請先到
@@ -369,7 +347,6 @@ const desktop = useMediaQuery('(min-width: 640px)')
                   </Badge>
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <!-- 左：搬入（唯讀） -->
                   <div class="space-y-1">
                     <div class="flex items-center justify-between text-xs">
                       <span class="font-medium">搬入存證</span>
@@ -389,7 +366,6 @@ const desktop = useMediaQuery('(min-width: 640px)')
                     </div>
                   </div>
 
-                  <!-- 右：對應的退租照（從相同位置補拍） -->
                   <div class="space-y-1">
                     <div class="flex items-center justify-between text-xs">
                       <span class="font-medium">退租存證</span>
@@ -468,7 +444,6 @@ const desktop = useMediaQuery('(min-width: 640px)')
         </details>
       </Card>
 
-      <!-- 提示：沒搬入照的項目 -->
       <Card v-if="itemsWithoutBaseline.length > 0">
         <CardContent class="pt-6 text-sm text-muted-foreground">
           <p class="mb-2">以下 {{ itemsWithoutBaseline.length }} 項缺少搬入存證，無法進行比對：</p>

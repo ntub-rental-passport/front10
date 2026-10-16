@@ -381,7 +381,6 @@ async function saveTenant() {
     const saved = editingId.value
       ? await updateTenant(editingId.value, payload())
       : await createTenant(payload())
-    // OCR 用的那份合約原檔一併存成這份租約的附件（以前只在瀏覽器記檔名）
     let attachmentNote = ''
     const sourceFile = pendingContractOcr.value?.sourceFile
     if (sourceFile && saved.lease_id) {

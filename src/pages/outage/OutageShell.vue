@@ -38,7 +38,6 @@ const activeTabPath = computed(() => {
   return '/app/outage'
 })
 
-// 更換地址彈窗控制
 const showAddressDialog = ref(false)
 const inputAddress = ref('')
 
@@ -105,7 +104,6 @@ function confirmChangeAddress() {
 
                 <div class="flex shrink-0 flex-col gap-3 xl:items-end">
                   <div class="flex flex-wrap gap-3 xl:justify-end">
-                    <!-- 更換地址按鈕 -->
                     <Button 
                       variant="outline" 
                       class="h-11 rounded-2xl border-slate-200 bg-white px-5 text-slate-700 hover:bg-slate-50"
@@ -115,7 +113,6 @@ function confirmChangeAddress() {
                       更換地址
                     </Button>
 
-                    <!-- 重新整理按鈕 -->
                     <Button 
                       variant="outline" 
                       class="h-11 rounded-2xl border-slate-200 bg-white px-5 text-slate-700 hover:bg-slate-50"
@@ -160,7 +157,6 @@ function confirmChangeAddress() {
       </div>
     </section>
 
-    <!-- 更換地址彈窗 -->
     <Dialog v-model:open="showAddressDialog">
       <DialogContent class="sm:max-w-[425px]">
         <DialogHeader>

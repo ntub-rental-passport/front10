@@ -54,8 +54,6 @@ const visibleAnnouncements = computed(() =>
   ),
 )
 
-// 就算全是緊急公告也不能無上限堆疊——租客來首頁是要看自己的租約與帳單，
-// 超過的筆數改成一行提示導向通知中心，版面才不會被公告整片吃掉。
 const DASHBOARD_ANNOUNCEMENT_LIMIT = 2
 
 const dashboardAnnouncements = computed(() =>
@@ -65,13 +63,7 @@ const dashboardAnnouncements = computed(() =>
 const overflowAnnouncementCount = computed(() =>
   Math.max(0, visibleAnnouncements.value.length - DASHBOARD_ANNOUNCEMENT_LIMIT),
 )
-// 首頁有兩個直接通往「合約 OCR」功能的入口，該功能維護關閉時要標記出來——
-// 使用者在首頁看到一張正常的卡片、點下去卻是維護頁，那一下的落差可以避免，
-// 但入口本身仍保留可點（維護說明就在那個網址上）。
-//
-// 教學文章那幾列雖然也連到 /app/contract，但它們是內容不是功能入口，
-// 掛「維護中」等於在說文章壞了。那些連結指向功能頁本身是既有的資訊架構
-// 問題，不該由維護開關來補。
+// 功能維護僅標記 OCR 功能入口且保留說明頁連結，教學文章不套用維護標記。
 const { isPathUnderMaintenance } = useFeatureGate()
 
 const {
@@ -117,7 +109,6 @@ const {
   confirmUndoCyclePaid,
 } = useDashboard()
 
-// ---------- 房東平台租約：電費對帳 ----------
 const landlordUtilityOpen = ref(false)
 const landlordUtilityCycleId = ref<string | null>(null)
 const landlordUtilityCycle = computed(() =>
@@ -128,7 +119,6 @@ function openLandlordUtility(cycleId: string) {
   landlordUtilityOpen.value = true
 }
 
-// ---------- 帳款與簽約合約不符：提出異議 ----------
 const disputeOpen = ref(false)
 const disputeCycleId = ref<string | null>(null)
 const disputeCycle = computed(() =>
@@ -164,7 +154,6 @@ const activeLeaseId = computed(() =>
       </RouterLink>
     </div>
 
-    <!-- ── 頁面標題 ─────────────────────────────────────────────────────────── -->
     <header class="space-y-1">
       <h1 class="text-3xl font-bold tracking-tight text-slate-900">租屋總覽</h1>
       <p class="text-sm text-slate-500">
@@ -172,7 +161,6 @@ const activeLeaseId = computed(() =>
       </p>
     </header>
 
-    <!-- ── 四格統計卡片（月租金 / 待繳合計 / 最近應繳日 / 整體進度） ────────── -->
     <section class="grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4">
       <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
         <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
@@ -251,15 +239,12 @@ const activeLeaseId = computed(() =>
       {{ actionError }}
     </div>
 
-    <!-- ── 主要內容區：左側租約列表 + 右側帳單詳情 ─────────────────────────── -->
     <section class="grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 lg:grid-cols-[240px_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
-      <!-- 左側標題：row 1, col 1 -->
       <div class="lg:col-start-1 lg:row-start-1">
         <h2 class="text-lg font-bold tracking-tight text-slate-900">我的租約</h2>
         <p class="text-xs text-slate-500">選擇租約查看完整帳單</p>
       </div>
 
-      <!-- 左側：我的租約清單 row 2, col 1 -->
       <aside class="lg:col-start-1 lg:row-start-2">
         <div class="max-h-[44rem] space-y-2.5 overflow-y-auto pr-1">
           <p v-if="loading" class="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
@@ -275,7 +260,6 @@ const activeLeaseId = computed(() =>
             <button type="button" class="font-semibold underline" @click="loadContracts">重新載入</button>
           </div>
 
-          <!-- 沒有租約就明講，不以示範資料填充畫面 -->
           <div
             v-else-if="isEmpty"
             class="space-y-2 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600"
@@ -352,10 +336,8 @@ const activeLeaseId = computed(() =>
         </div>
       </aside>
 
-      <!-- 右側：選中租約詳情 row 2, col 2 -->
       <div v-if="activeContractView" class="min-w-0 space-y-3 lg:col-start-2 lg:row-start-2">
         <ContractLinkCard v-if="activeLeaseId" :lease-id="activeLeaseId" @changed="loadContracts" />
-        <!-- 租約資訊 Header Card -->
         <Card :class="['overflow-hidden rounded-2xl border shadow-sm', accentStyles[activeContractView.accent].selected]">
           <CardContent class="p-5">
             <div class="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -403,7 +385,6 @@ const activeLeaseId = computed(() =>
           </CardContent>
         </Card>
 
-        <!-- 本期帳單提醒 Card -->
         <Card
           :class="[
             'rounded-2xl border shadow-sm',
@@ -446,7 +427,6 @@ const activeLeaseId = computed(() =>
           </CardContent>
         </Card>
 
-        <!-- 帳單明細表格 Card -->
         <Card class="overflow-hidden rounded-2xl border border-slate-200/80 shadow-sm">
           <CardContent class="p-0">
             <div class="border-b border-slate-100 bg-white px-4 pt-2">
@@ -651,13 +631,8 @@ const activeLeaseId = computed(() =>
       </div>
     </section>
 
-    <!-- ── 停水停電通報 ──────────────────────────────────────────────────────── -->
     <section>
-      <!--
-        手機版：簡單橫幅連結（sm 以下顯示）。
-        這是停電通報在手機上的唯一入口 —— 手機沒有側邊欄，底部導航也只有六格
-        放不下它。下面那張桌機版卡片維持關閉，因為桌機側邊欄已經有入口了。
-      -->
+      <!-- 手機沒有側邊欄，這個橫幅是停電通報的唯一入口。 -->
       <RouterLink to="/app/outage" class="block sm:hidden">
         <Card class="group cursor-pointer overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm transition-all hover:border-amber-300 hover:shadow-md">
           <CardContent class="p-5">
@@ -675,9 +650,7 @@ const activeLeaseId = computed(() =>
         </Card>
       </RouterLink>
 
-      <!-- 桌面版：直接顯示資訊卡（sm 以上顯示） -->
       <div v-if="false" class="hidden sm:block space-y-3">
-        <!-- 標題列 -->
         <div class="flex items-center justify-between">
           <div>
             <h2 class="text-lg font-bold tracking-tight text-slate-900">停水停電通報</h2>
@@ -691,9 +664,7 @@ const activeLeaseId = computed(() =>
           </RouterLink>
         </div>
 
-        <!-- 兩欄資訊卡 -->
         <div class="grid gap-4 md:grid-cols-2">
-          <!-- 停電資訊 -->
           <Card class="rounded-2xl border-amber-200 bg-amber-50 shadow-sm">
             <CardHeader class="pb-2 pt-4 px-5">
               <div class="flex items-center justify-between">
@@ -715,7 +686,6 @@ const activeLeaseId = computed(() =>
             </CardContent>
           </Card>
 
-          <!-- 停水資訊 -->
           <Card class="rounded-2xl border-slate-200 bg-white shadow-sm">
             <CardHeader class="pb-2 pt-4 px-5">
               <div class="flex items-center justify-between">
@@ -738,7 +708,6 @@ const activeLeaseId = computed(() =>
       </div>
     </section>
 
-    <!-- ── 租客防禦指南區塊（AI 防禦卡 + 精選文章） ──────────────────────────── -->
     <section class="space-y-4">
       <div>
         <h2 class="text-lg font-semibold tracking-tight">租客防禦指南</h2>
@@ -836,7 +805,6 @@ const activeLeaseId = computed(() =>
       </div>
     </section>
 
-    <!-- ── Dialogs ────────────────────────────────────────────────────────────── -->
     <UtilityDialog
       :open="utilityDialogOpen"
       :target-cycle="utilityTargetCycle"

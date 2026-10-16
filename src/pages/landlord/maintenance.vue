@@ -39,7 +39,7 @@ import {
 
 type ActionStep = 'decision' | 'responsibility' | 'schedule' | 'completion' | 'inspection' | 'done' | 'canceled'
 
-// 伺服器只回傳這位房東自己租約上的工單（原本會列出所有人的工單）
+// 伺服器只回傳這位房東自己租約上的工單。
 const { tickets, error: repairError, updateTicket, markRead } = useRepairTickets()
 const statusFilter = ref<'all' | RepairStatus>('all')
 const emergencyOnly = ref(false)
@@ -54,7 +54,6 @@ const actionReason = ref('')
 const vendorPickerOpen = ref(false)
 const completeConfirmOpen = ref(false)
 const receiptFile = ref<File | null>(null)
-// 收據原本只存檔名、檔案從沒被保存；現在隨「送出驗收」一起上傳
 const receiptPending = ref<PendingRepairPhoto | null>(null)
 const photoUrls = ref<Record<string, string>>({})
 
