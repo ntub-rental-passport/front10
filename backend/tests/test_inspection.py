@@ -21,6 +21,9 @@ from routers import inspection
 from auth.security import create_access_token
 from migrations.create_inspection_items import upgrade
 
+# setUp 會把 subject_mismatch 換掉，先留住本尊給專門的測試用
+REAL_SUBJECT_MISMATCH = inspection.subject_mismatch
+
 
 class InspectionTests(unittest.TestCase):
     def setUp(self):
@@ -60,6 +63,10 @@ class InspectionTests(unittest.TestCase):
         self.defect = {'item_type': 'Wall', 'has_defect': False, 'severity': '無',
                        'defect_summary': 'No visible damage', 'cause_inference': '無'}
         self.diff = {'type': 'new_damage', 'confidence': 0.82, 'summary': 'New crack on right side'}
+        # 預設照片都拍到項目；沒拍到的情況由專門的測試覆寫
+        subject = patch.object(inspection, 'subject_mismatch', return_value=None)
+        subject.start()
+        self.addCleanup(subject.stop)
 
     def request(self, method, path, user=1, **kwargs):
         return self.client.request(method, '/api/inspection' + path,
@@ -511,6 +518,48 @@ class InspectionTests(unittest.TestCase):
         self.assertTrue(inspect(self.engine).has_table('inspection_items'))
         with self.Session() as db:
             self.assertEqual(db.query(Rental).count(), 2)
+
+    def test_photo_without_the_item_is_not_judged(self):
+        item = self.upload(self.item()['id'])
+        payload = {'item_id': int(item['id']), 'record_id': int(item['evidences'][0]['id'])}
+        with patch.object(inspection, 'subject_mismatch', return_value='一張名片'), \
+                patch.object(inspection, 'vision_result') as judge:
+            result = self.request('POST', '/analyze', json=payload).json()
+        judge.assert_not_called()
+        self.assertTrue(result['vlm_result']['subject_mismatch'])
+        self.assertIn('一張名片', result['vlm_result']['defect_summary'])
+        self.assertEqual(result['item']['evidences'][0]['aiLabel'], '未拍到此項目')
+
+    def test_pair_with_a_wrong_photo_is_uncertain_instead_of_compared(self):
+        item = self.upload(self.item()['id'])
+        output = io.BytesIO()
+        Image.new('RGB', (32, 32), 'black').save(output, 'PNG')
+        item = self.upload(item['id'], 'checkout', image_data='data:image/png;base64,' + base64.b64encode(output.getvalue()).decode())
+        with self.Session() as db:
+            record = db.get(InspectionRecord, int(item['evidences'][1]['id']))
+            checkout = base64.b64encode(inspection.read_photo(record)).decode()
+        wrong = lambda image, room, name: '螢幕截圖' if image == checkout else None
+        with patch.object(inspection, 'subject_mismatch', side_effect=wrong), \
+                patch.object(inspection, 'vision_result') as judge:
+            diff = self.request('POST', f"/items/{item['id']}/compare").json()['diff']
+        judge.assert_not_called()
+        self.assertEqual(diff['type'], 'uncertain')
+        self.assertTrue(diff['pairs'][0]['subjectMismatch'])
+        self.assertIn('退租照片拍到的是：螢幕截圖', diff['summary'])
+        self.assertNotIn('入住照片拍到的是', diff['summary'])
+
+    def test_subject_check_only_rejects_explicit_false(self):
+        # 審核模型回不出明確的 false（格式錯、缺欄位）就放行，交給後面的瑕疵判斷
+        for answer, expected in [({'match': False}, '名片'), ({'match': 'false'}, '名片'),
+                                 ({'match': True}, None), ({}, None), ([], None)]:
+            with patch.object(inspection, 'describe_photo', return_value='名片'), \
+                    patch.object(inspection, '_vlm_text', return_value=answer):
+                self.assertEqual(REAL_SUBJECT_MISMATCH('x', 'Room', 'Wall'), expected, answer)
+
+    def test_photo_description_drops_repeated_sentences(self):
+        looping = '這是一塊白牆。牆上有裂縫。牆上有裂縫。牆上有裂縫。牆上有裂縫。'
+        with patch.object(inspection, '_vlm_text', return_value=looping):
+            self.assertEqual(inspection.describe_photo('x'), '這是一塊白牆。牆上有裂縫。')
 
     def test_invalid_vlm_response_is_rejected(self):
         with patch.dict(os.environ, {'NVIDIA_API_KEY': 'test'}), patch.object(inspection, 'OpenAI') as client:
