@@ -64,7 +64,6 @@ watch(isSidebarPinned, (value) => {
 
 <template>
   <div class="app-layout flex h-[100dvh] w-full bg-muted/20">
-    <!-- Desktop Sidebar -->
     <aside
       v-if="!hidesDesktopSidebar"
       class="relative hidden flex-col border-r bg-sidebar-background transition-[width] duration-300 ease-out sm:flex"
@@ -131,7 +130,6 @@ watch(isSidebarPinned, (value) => {
       </nav>
     </aside>
 
-    <!-- Main Content -->
     <main ref="mainContent" class="flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pt-0 sm:pb-0">
       <header class="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background px-4 sm:hidden">
         <RouterLink to="/app" class="flex items-center gap-2 font-bold text-primary">
@@ -145,13 +143,7 @@ watch(isSidebarPinned, (value) => {
         :scroll-container="mainContent"
         :class="isWideContentRoute ? 'min-h-full w-full' : 'mx-auto min-h-full max-w-[1400px] p-4 md:p-6'"
       >
-        <!--
-          維護是後端控制的停用狀態，任何裝置都不該進入，所以優先於裝置擋板。
-          兩種攔截都刻意不 redirect：保留書籤與分享連結，換到電腦仍能開同一網址。
-          租客只有部分頁面不支援手機，不給登出才能繼續使用點交、報修與垃圾清運。
-          管理員不受維護攔截影響（見 useFeatureGate 的說明），因為改完設定總得
-          自己點一遍確認。
-        -->
+        <!-- 維護攔截須優先於裝置擋板並保留原網址，管理員須能繞過維護攔截以驗證設定。 -->
         <FeatureMaintenanceNotice v-if="blocked && outage" :outage="outage" />
         <DesktopOnlyNotice
           v-else-if="mobileUnsupported"
@@ -177,7 +169,6 @@ watch(isSidebarPinned, (value) => {
       </footer>
     </main>
 
-    <!-- Mobile Bottom Nav -->
     <nav class="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4rem+env(safe-area-inset-bottom))] border-t bg-background pb-[env(safe-area-inset-bottom)] sm:hidden">
       <RouterLink
         v-for="item in mobileNavItems"

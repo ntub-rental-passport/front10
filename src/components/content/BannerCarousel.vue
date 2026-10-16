@@ -7,23 +7,11 @@ import { matchesAudience } from '@/src/utils/announcement'
 import type { Banner } from '@/src/mocks/admin/content'
 
 const props = defineProps<{
-  /**
-   * 公開首頁（未登入）用。這裡的 banner 連結都是後台為登入後的租客工作區設的
-   * （/app/*），未登入訪客點下去會被路由守衛踢去 /login，行銷入口變登入牆。
-   * public 時一律導去 /register，忽略 banner 自己的 linkUrl。
-   */
+  /** 公開首頁忽略 linkUrl 並導向 /register，避免未登入訪客被 /app 路由守衛導向登入頁。 */
   public?: boolean
-  /**
-   * 後台預覽用。不傳就讀公開的輪播（usePublicContent，後端只給生效中的
-   * 資料）；傳了就用傳進來的這份——BannersTab 需要在使用者按下「儲存」之前，
-   * 把正在編輯的草稿也顯示在預覽裡，這件事不能靠這個元件自己讀 store 做到。
-   */
+  /** 後台預覽傳入尚未儲存的草稿；未傳入時讀取公開輪播資料。 */
   items?: Banner[]
-  /**
-   * 這是誰的首頁。後台可以指定輪播的對象（全部／租客／房東），這裡照著濾：
-   * 房東不該在自己的首頁看到「租補試算」這種租客專用的圖。
-   * 公開首頁（未登入）看不出身分，只顯示「全部」的那些。
-   */
+  /** 依租客／房東身分篩選輪播，未登入的公開首頁只顯示「全部」對象。 */
   audience?: 'tenant' | 'landlord'
 }>()
 
@@ -31,15 +19,10 @@ const { banners } = usePublicContent()
 
 const sourceBanners = computed(() => props.items ?? banners.value)
 
-// 跟公告一致：published 只是總開關，還要看 startAt／endAt 是不是「現在」落在
-// 區間內。這裡在讀取時判斷、不做背景工作——跟 resolvePhase 的設計是一致的，
-// 缺點是排程切換的當下不會自動重新渲染，但要等到別的東西觸發這個 computed
-// 重算才會更新（例如切頁、後台改資料）。這個限制是刻意接受的，見
-// src/utils/phase.ts。
+// 排程切換不會自動觸發重算，須等 computed 的其他依賴變動後才會更新。
 function forThisSide(item: Banner): boolean {
   // 後台預覽（items）要看得到正在編輯的那張，不管它指定給誰
   if (props.items) return true
-  // 公開首頁看不出身分，只放「全部」的那些
   if (!props.audience) return item.audience === 'all'
   return matchesAudience(item.audience, props.audience)
 }
@@ -92,13 +75,7 @@ watch(
 onMounted(startAutoplay)
 onBeforeUnmount(stopAutoplay)
 
-/*
- * 圖片載入失敗時的 fallback。
- *
- * key 用「id + imageUrl」而不是單純 id：後台預覽草稿時同一個 id 的圖片網址
- * 可能被改過（使用者正在編輯），網址一換就該重新給它一次機會，不能讓舊網址
- * 留下的失敗記錄卡住新網址。
- */
+// 圖片失敗紀錄須以 id 與 imageUrl 共同識別，避免草稿換圖後仍沿用舊網址的失敗狀態。
 const failedImageKeys = ref<Set<string>>(new Set())
 
 function imageKey(item: Banner): string {
@@ -129,9 +106,7 @@ function onImageError(item: Banner): void {
       class="block"
     >
       <div class="relative">
-        <!-- 從偏右（70%）裁而不是正中間：輪播圖都是「標題在左下、主角在右邊」的構圖，
-             手機上只看得到中間大約一半的寬度，從正中間裁會把右邊的人物切掉。
-             電腦版是左右塞滿、只裁上下，不受這個設定影響。 -->
+        <!-- 手機裁切位置須偏右，避免置中裁切時切掉輪播圖右側的人物。 -->
         <img
           v-if="!hasImageFailed(item)"
           :src="item.imageUrl"
@@ -139,8 +114,6 @@ function onImageError(item: Banner): void {
           class="h-48 w-full object-cover object-[70%_50%] sm:h-64 lg:h-72"
           @error="onImageError(item)"
         />
-        <!-- 圖床失效、防盜連、網址打錯都會落到這裡。高度跟正常圖片一樣，
-             版面不會塌陷，標題也還讀得到，不是破圖加一片空白。 -->
         <div
           v-else
           class="flex h-48 w-full items-center justify-center bg-muted sm:h-64 lg:h-72"

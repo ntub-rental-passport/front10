@@ -1,11 +1,5 @@
 <script setup lang="ts">
-/**
- * 右下角浮出提示容器。
- *
- * 掛在 layout.vue 最外層，整個 /app 只會有一個實例——useMaintenanceToasts
- * 的 watch 因此也只會建立一次，不會因為多個元件實例各自 watch 同一份
- * outages 而讓同一次維護事件跳出兩則一樣的提示。
- */
+/** 右下角維護提示容器須在 layout 最外層僅掛載一次，避免重複 watch 造成同一事件跳出多則提示。 */
 import { useRouter } from 'vue-router'
 import { AlertTriangle, CheckCircle2, PauseCircle, X } from 'lucide-vue-next'
 import { useMaintenanceToasts, type MaintenanceToast } from '@/src/composables/useMaintenanceToasts'
@@ -19,8 +13,6 @@ const kindIcon: Record<MaintenanceToast['kind'], typeof AlertTriangle> = {
   reopened: CheckCircle2,
 }
 
-// reopened 是好消息用正向的 emerald 系；closed／summary 都是壞消息（服務
-// 正在中斷／目前有幾項在維護），沿用專案既有的警示色 amber 系。
 const kindWrapClass: Record<MaintenanceToast['kind'], string> = {
   closed: 'border-amber-300 bg-amber-50 text-amber-900',
   summary: 'border-amber-300 bg-amber-50 text-amber-900',
@@ -32,7 +24,6 @@ const kindIconClass: Record<MaintenanceToast['kind'], string> = {
   reopened: 'text-emerald-600',
 }
 
-// 完整說明與預計恢復時間都在通知中心，點提示本體直接帶過去。
 function openNotifications(): void {
   router.push('/app/notifications')
 }

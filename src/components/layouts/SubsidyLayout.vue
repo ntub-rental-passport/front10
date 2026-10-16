@@ -43,7 +43,6 @@ const tabs = [
   min-height: 100%;
 }
 
-/* ── Header 區塊 (改為上下排列) ── */
 .subsidy-header {
   padding: 0 0 0 0; 
   display: flex;
@@ -52,7 +51,6 @@ const tabs = [
   background-color: transparent !important;
 }
 
-/* 獨立出來的頁面大標題 */
 .page-title {
   font-size: 28px; /* 加大字體更顯眼 */
   font-weight: 700;
@@ -61,7 +59,6 @@ const tabs = [
   letter-spacing: 0.05em; /* 稍微加一點字距提升質感 */
 }
 
-/* 膠囊導覽列容器 */
 .nav-pill-container {
   display: inline-flex; 
   align-self: flex-start; /* 加上這行！讓白色底色只包住按鈕，不會延伸到最右邊 */
@@ -80,14 +77,12 @@ const tabs = [
   display: none;
 }
 
-/* 按鈕群組容器 */
 .nav-tabs {
   display: flex;
   align-items: center;
   gap: 6px; /* 按鈕之間的間隔 */
 }
 
-/* 獨立 Tab 按鈕 */
 .nav-tab {
   padding: 8px 16px; /* 稍微增加上下高度 */
   font-size: 15px;
@@ -99,26 +94,22 @@ const tabs = [
   white-space: nowrap;
 }
 
-/* 游標移過去的顏色 */
 .nav-tab:hover:not(.active) {
   color: #4845A5;
   background-color: #f1f5f9; /* 移過去時帶有一點淺灰底色，手感更好 */
 }
 
-/* 作用中的 Tab 狀態 */
 .nav-tab.active {
   background-color: #4845A5; 
   color: #ffffff; 
   box-shadow: 0 2px 4px rgba(72, 69, 165, 0.2); 
 }
 
-/* ── 內容區 ── */
 .subsidy-body {
   flex: 1;
   padding: 2rem;
 }
 
-/* RWD 響應式設計調整 (手機版) */
 @media (max-width: 640px) {
   .subsidy-header { 
     padding: 16px 1rem; 

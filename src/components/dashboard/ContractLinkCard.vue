@@ -80,7 +80,6 @@ const fmt = (value: unknown) => (typeof value === 'number' ? value.toLocaleStrin
 
 <template>
   <template v-if="link">
-    <!-- 還沒對應：有租期重疊的自存合約就提示 -->
     <div
       v-for="item in link.linked ? [] : link.candidates ?? []"
       :key="item.rental_id"
@@ -97,7 +96,6 @@ const fmt = (value: unknown) => (typeof value === 'number' ? value.toLocaleStrin
       </div>
     </div>
 
-    <!-- 已對應：對照結果 -->
     <div
       v-if="link.linked"
       :class="['space-y-2 rounded-2xl border p-4 text-sm', link.differences?.length ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900']"

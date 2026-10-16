@@ -1,6 +1,5 @@
 <template>
   <Dialog :open="open" @update:open="handleOpenChange">
-    <!-- 關鍵：加入 w-full h-[90vh] sm:h-auto，手機上直接占滿大部分螢幕 -->
     <DialogContent
       class="w-full h-[92vh] sm:h-auto sm:max-w-2xl p-0 overflow-hidden bg-slate-950 text-white border-slate-800 flex flex-col"
     >
@@ -30,7 +29,6 @@
         </Button>
       </DialogHeader>
 
-      <!-- 相機預覽視窗：flex-1 讓它在手機上自動吃滿上下高度 -->
       <div class="relative w-full flex-1 bg-black overflow-hidden flex items-center justify-center">
         <video
           ref="videoEl"
@@ -41,7 +39,6 @@
           class="w-full h-full object-cover"
         ></video>
 
-        <!-- 錯誤提示 -->
         <div
           v-if="cameraNotice"
           class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-900/90 z-20"
@@ -57,9 +54,7 @@
           </Button>
         </div>
 
-        <!-- AR HUD 視覺引導層 -->
         <div v-if="isCameraReady" class="absolute inset-0 pointer-events-none z-10 select-none">
-          <!-- 九宮格輔助線 -->
           <div class="absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-30">
             <div class="border-r border-b border-white/20"></div>
             <div class="border-r border-b border-white/20"></div>
@@ -72,7 +67,6 @@
             <div></div>
           </div>
 
-          <!-- 中央目標對齊框：手機上保留大面積對焦範圍 -->
           <div
             class="absolute inset-x-8 inset-y-12 sm:inset-[15%] flex items-center justify-center"
           >
@@ -134,7 +128,6 @@
             </div>
           </div>
 
-          <!-- 頂部環境指標 HUD -->
           <div class="absolute top-3 left-3 right-3 flex items-center justify-between text-xs">
             <div
               class="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10"
@@ -162,7 +155,6 @@
           </div>
         </div>
       </div>
-      <!-- 底部控制列 -->
       <div class="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between">
         <Button
           variant="ghost"
@@ -197,7 +189,6 @@
         </Button>
       </div>
 
-      <!-- 隱藏的檔案上傳 input -->
       <input
         ref="fileInputRef"
         type="file"
@@ -266,7 +257,6 @@ const cameraNotice = computed<CameraUnavailable | null>(() => {
   return null
 })
 
-// AR 感測狀態
 const tiltAngle = ref(0)
 const brightnessValue = ref(128)
 const sharpnessScore = ref(100)
@@ -280,27 +270,18 @@ let stream: MediaStream | null = null
 let analysisTimer: number | null = null
 let orientationListening = false
 
-// 光線判斷
 const lightStatus = computed(() => {
   if (brightnessValue.value < 65) return { label: '偏暗', color: 'text-amber-400', isOk: false }
   if (brightnessValue.value > 215) return { label: '過曝', color: 'text-amber-400', isOk: false }
   return { label: '充足', color: 'text-emerald-400', isOk: true }
 })
 
-// 清晰度判斷
 const sharpnessStatus = computed(() => {
   if (sharpnessScore.value < 40) return { label: '晃動中', color: 'text-amber-400', isOk: false }
   return { label: '清晰', color: 'text-emerald-400', isOk: true }
 })
 
-/*
- * 最佳拍攝狀態（綠燈）。
- *
- * 刻意不要求 hasOrientationMeasurement：iOS 要使用者在原生對話框按「允許」才會
- * 吐 deviceorientation，沒授權時這個值永遠是 false，綠燈就變成永遠不亮的裝飾品。
- * 決定照片好壞的是光線與清晰度，水平只是構圖輔助 —— 一張清晰但歪 10 度的存證照，
- * 證據力高於一張水平但模糊的。有傾角資料時才把角度納入判斷，沒有就略過。
- */
+// iOS 未授權時不會提供傾角資料，因此僅在有量測資料時才將角度納入最佳拍攝狀態判斷。
 const isIdealState = computed(() => {
   const isAngleOk = !hasOrientationMeasurement.value || Math.abs(tiltAngle.value) < 8
   return (
@@ -324,17 +305,12 @@ const hudStatusText = computed(() => {
   return '🟢 畫面清晰，可點擊拍攝'
 })
 
-// ---------- 相機啟動與生命週期 ---------- //
-
 async function startCamera() {
   cameraError.value = null
   unavailable.value = null
   hasFrameMeasurement.value = false
   hasOrientationMeasurement.value = false
-  /*
-   * 先分辨裝置、網址安全性與瀏覽器支援情況，避免在非 HTTPS 網址上
-   * 讀取不存在的 navigator.mediaDevices 而顯示原始 JavaScript 錯誤。
-   */
+  // 非 HTTPS 時 navigator.mediaDevices 可能不存在，須先檢查安全性與支援情況。
   const reason = cameraUnavailableReason({
     coarsePointer: coarsePointer.value,
     isSecureContext: typeof window !== 'undefined' && window.isSecureContext,
@@ -365,7 +341,6 @@ async function startCamera() {
 
     if (videoEl.value) {
       videoEl.value.srcObject = mediaStream
-      // 確保影片播放成功
       await videoEl.value.play()
       isCameraReady.value = true
 
@@ -392,8 +367,6 @@ function stopCamera() {
     orientationListening = false
   }
 }
-
-// ---------- 即時亮度與模糊分析迴圈 (極輕量計算) ---------- //
 
 function startAnalysisLoop() {
   const sampleCanvas = document.createElement('canvas')
@@ -438,8 +411,6 @@ function startAnalysisLoop() {
   }, 250)
 }
 
-// ---------- iOS / Android 陀螺儀感測授權 ---------- //
-
 function handleOrientation(e: DeviceOrientationEvent) {
   if (e.gamma !== null) {
     tiltAngle.value = e.gamma
@@ -465,8 +436,6 @@ function requestOrientationPermission() {
     addOrientationListener()
   }
 }
-
-// ---------- 拍攝高清照片 ---------- //
 
 function onClickCapture() {
   if (!videoEl.value) return
@@ -497,8 +466,6 @@ function onClickCapture() {
   })
   handleOpenChange(false)
 }
-
-// ---------- 檔案上傳備援 ---------- //
 
 function triggerFileInput() {
   fileInputRef.value?.click()

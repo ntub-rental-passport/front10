@@ -66,9 +66,7 @@ const housing = reactive({
 })
 const income = computed(() => checkIncome(form.city, form.annual, form.people, form.expanded))
 
-// ---- 從存檔租約帶入 ----
-// 定位：幫忙備齊資料，送件與查進度由使用者自己在官網完成。
-// 不保存任何結果，每次打開都從存檔租約重新計算（2026-10-01 決定）。
+// 不保存結果，每次開啟都從存檔租約重新計算。
 const {
   summaries: storedRentals,
   selectedId: selectedRentalId,
