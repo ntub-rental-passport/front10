@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, ref, watch, type Component } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card/index'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/index'
 import {
   Table,
   TableBody,
@@ -318,10 +319,10 @@ function daysLeftText(usage: ProviderUsage): string {
 
     <section class="space-y-3" aria-labelledby="monitor-services">
       <div>
-        <h2 id="monitor-services" class="text-lg font-bold tracking-tight">服務是否在線</h2>
-        <p class="text-sm text-foreground/70">
-          前三項是後端本身，後兩項是它依賴的服務。AI 模型與 OCR 由後端每 60 秒檢查一次，沒人開這頁也照常檢查。
-        </p>
+        <h2 id="monitor-services" class="inline-flex items-center gap-1.5 text-lg font-bold tracking-tight">
+          服務是否在線
+          <InfoTip text="前三項是後端本身，後兩項是它依賴的服務。AI 模型與 OCR 由後端每 60 秒檢查一次，沒人開這頁也照常檢查。" />
+        </h2>
       </div>
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <MonitorCard
@@ -335,15 +336,19 @@ function daysLeftText(usage: ProviderUsage): string {
 
     <section class="space-y-3" aria-labelledby="monitor-queues">
       <div>
-        <h2 id="monitor-queues" class="text-lg font-bold tracking-tight">背景工作</h2>
-        <p class="text-sm text-foreground/70">後端每 20 秒派送一次。背景工作失敗不會有人發現，除非有人來問，所以在這裡盯著。</p>
+        <h2 id="monitor-queues" class="inline-flex items-center gap-1.5 text-lg font-bold tracking-tight">
+          背景工作
+          <InfoTip text="後端每 20 秒派送一次。背景工作失敗不會有人發現，除非有人來問，所以在這裡盯著。" />
+        </h2>
       </div>
       <div class="grid gap-4 lg:grid-cols-2">
         <Card v-for="queue in queueCards" :key="queue.key" class="rounded-3xl">
           <CardHeader class="flex flex-row items-start justify-between gap-3 space-y-0 p-5 pb-3">
             <div class="min-w-0">
-              <CardTitle class="text-base">{{ queue.label }}</CardTitle>
-              <CardDescription class="mt-1">{{ queue.description }}</CardDescription>
+              <CardTitle class="inline-flex items-center gap-1.5 text-base">
+                {{ queue.label }}
+                <InfoTip :text="queue.description" />
+              </CardTitle>
             </div>
             <StatusDot
               v-if="queue.view"
@@ -411,14 +416,18 @@ function daysLeftText(usage: ProviderUsage): string {
 
     <section class="space-y-3" aria-labelledby="monitor-config">
       <div>
-        <h2 id="monitor-config" class="text-lg font-bold tracking-tight">設定與維護</h2>
-        <p class="text-sm text-foreground/70">設定缺了要到伺服器的 .env 補上，再重新啟動後端；功能壞了可以先在這裡對使用者暫停。</p>
+        <h2 id="monitor-config" class="inline-flex items-center gap-1.5 text-lg font-bold tracking-tight">
+          設定與維護
+          <InfoTip text="設定缺了要到伺服器的 .env 補上，再重新啟動後端；功能壞了可以先在這裡對使用者暫停。" />
+        </h2>
       </div>
       <div class="space-y-4">
         <Card class="rounded-3xl">
           <CardHeader class="p-5">
-            <CardTitle class="text-base">外部服務設定</CardTitle>
-            <CardDescription>只檢查有沒有設定，不會顯示任何金鑰或密碼。</CardDescription>
+            <CardTitle class="inline-flex items-center gap-1.5 text-base">
+              外部服務設定
+              <InfoTip text="只檢查有沒有設定，不會顯示任何金鑰或密碼。" />
+            </CardTitle>
           </CardHeader>
           <CardContent class="px-5 pb-5">
             <ul v-if="config" class="grid gap-3 md:grid-cols-2">
@@ -428,8 +437,10 @@ function daysLeftText(usage: ProviderUsage): string {
                 class="flex items-start justify-between gap-4 rounded-2xl border p-4"
               >
                 <div class="min-w-0">
-                  <p class="text-sm font-medium">{{ item.label }}</p>
-                  <p class="mt-0.5 text-xs text-muted-foreground">{{ item.hint }}</p>
+                  <p class="inline-flex items-center gap-1.5 text-sm font-medium">
+                    {{ item.label }}
+                    <InfoTip :text="item.hint" />
+                  </p>
                 </div>
                 <StatusDot
                   class="shrink-0"
@@ -449,10 +460,10 @@ function daysLeftText(usage: ProviderUsage): string {
 
     <section class="space-y-3" aria-labelledby="monitor-events">
       <div>
-        <h2 id="monitor-events" class="text-lg font-bold tracking-tight">事件紀錄</h2>
-        <p class="text-sm text-foreground/70">
-          服務斷線與恢復、後端停機、排程通知出錯、伺服器錯誤都會記一筆，保留 30 天。錯誤的完整內容在後端的 log 檔。
-        </p>
+        <h2 id="monitor-events" class="inline-flex items-center gap-1.5 text-lg font-bold tracking-tight">
+          事件紀錄
+          <InfoTip text="服務斷線與恢復、後端停機、排程通知出錯、伺服器錯誤都會記一筆，保留 30 天。錯誤的完整內容在後端的 log 檔。" />
+        </h2>
       </div>
       <Card class="rounded-3xl">
         <CardContent class="space-y-4 p-5">
@@ -520,12 +531,11 @@ function daysLeftText(usage: ProviderUsage): string {
     >
       <div>
         <div class="flex flex-wrap items-center gap-2">
-          <h2 id="monitor-ai-usage" class="text-lg font-bold tracking-tight">AI 額度用量</h2>
+          <h2 id="monitor-ai-usage" class="inline-flex items-center gap-1.5 text-lg font-bold tracking-tight">
+            AI 額度用量
+            <InfoTip text="合約掃描每用 Google Vision 辨識一頁就記一頁。上限與門檻在系統設定頁調整， 本月用量到預警或告急門檻時會通知管理員。" />
+          </h2>
         </div>
-        <p class="text-sm text-foreground/70">
-          合約掃描每用 Google Vision 辨識一頁就記一頁。上限與門檻在系統設定頁調整，
-          本月用量到預警或告急門檻時會通知管理員。
-        </p>
       </div>
 
       <AdminLoadNotice :state="aiUsageState" what="AI 用量" @retry="loadAiUsage" />
@@ -574,8 +584,10 @@ function daysLeftText(usage: ProviderUsage): string {
 
         <Card class="rounded-3xl">
           <CardHeader class="p-5">
-            <CardTitle class="text-base">近 30 天用量趨勢</CardTitle>
-            <CardDescription>每天用掉的頁數佔月額度的百分比。</CardDescription>
+            <CardTitle class="inline-flex items-center gap-1.5 text-base">
+              近 30 天用量趨勢
+              <InfoTip text="每天用掉的頁數佔月額度的百分比。" />
+            </CardTitle>
           </CardHeader>
           <CardContent class="px-5 pb-5">
             <UsageTrendChart :labels="chartLabels" :series="chartSeries" />

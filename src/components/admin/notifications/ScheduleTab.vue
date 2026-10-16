@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
@@ -10,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table/index'
-import { CalendarClock, Info, RefreshCw } from 'lucide-vue-next'
+import { CalendarClock, RefreshCw } from 'lucide-vue-next'
 import StatusDot from '@/src/components/admin/StatusDot.vue'
 import { useNow } from '@/src/composables/useNow'
 import { formatDateTime } from '@/src/utils/admin-format'
@@ -89,11 +90,10 @@ async function onCancel(item: ScheduledNotif): Promise<void> {
   <div class="space-y-4">
     <div class="rounded-xl border border-border bg-muted/30 p-4">
       <div class="flex items-start gap-3">
-        <Info class="mt-0.5 h-4 w-4 shrink-0 text-foreground/70" />
         <div class="space-y-1.5 text-sm">
-          <p class="font-medium">排程由後端執行，不需要開著後台。</p>
-          <p class="text-foreground/70">
-            到了預定時間，後端會自己把 Email 寄出去 —— 半夜、沒人登入的時候都算數。
+          <p class="inline-flex items-center gap-1.5 font-medium">
+            排程由後端執行，不需要開著後台。
+            <InfoTip text="到了預定時間，後端會自己把 Email 寄出去 —— 半夜、沒人登入的時候都算數。" />
           </p>
           <p v-for="row in unsupported" :key="row.label" class="text-foreground/70">
             <span class="font-medium text-foreground">{{ row.label }}不支援排程：</span>

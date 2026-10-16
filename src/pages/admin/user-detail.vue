@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge/index'
@@ -417,7 +418,10 @@ function openSendDialog(): void {
               <p v-if="suspensionText" class="mt-1.5 text-xs text-foreground/70">{{ suspensionText }}</p>
             </dd>
 
-            <dt class="text-foreground/70">身分</dt>
+            <dt class="inline-flex items-center gap-1.5 text-foreground/70">
+              身分
+              <InfoTip v-if="isReal" text="身分在這裡是唯讀，需要由系統管理者在伺服器上調整。" />
+            </dt>
             <dd class="flex flex-wrap items-center gap-2">
               <Select
                 v-if="!isReal"
@@ -447,11 +451,6 @@ function openSendDialog(): void {
               {{ lastLoginText(row.user.lastLoginAt, now) }}
             </dd>
           </dl>
-
-          <!-- 真實帳號角色不開放網頁修改，管理員僅能由伺服器上的 manage_admin.py 授予。 -->
-          <p v-if="isReal" class="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
-            身分在這裡是唯讀，需要由系統管理者在伺服器上調整。
-          </p>
 
           <p
             v-if="statusError"
@@ -690,12 +689,14 @@ function openSendDialog(): void {
 
               <div v-if="effectivePlan.role === 'tenant'" class="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted/40 p-4">
                 <div class="space-y-1">
-                  <p class="text-sm font-medium">{{ tenantCheckPack.name }}</p>
+                  <p class="inline-flex items-center gap-1.5 text-sm font-medium">
+                    {{ tenantCheckPack.name }}
+                    <InfoTip text="1 包含 1 次契約分析與該次報告匯出；先用方案額度，不自動續訂、不隨月重置。" />
+                  </p>
                   <p v-if="packs" class="text-sm text-muted-foreground">
                     剩餘 {{ packs.remaining }} 包；購買 {{ packs.purchased }} 包、補發 {{ packs.granted }} 包
                   </p>
                   <p v-else class="text-sm text-muted-foreground">尚未串接</p>
-                  <p class="text-xs text-muted-foreground">1 包含 1 次契約分析與該次報告匯出；先用方案額度，不自動續訂、不隨月重置。</p>
                 </div>
                 <Button v-if="tenantSubscription" variant="outline" size="sm" @click="openCreditDialog">
                   <Plus class="mr-1 h-4 w-4" />
@@ -712,10 +713,10 @@ function openSendDialog(): void {
         -->
         <Card :data-real="isReal ? 'true' : undefined" class="rounded-3xl">
           <CardHeader class="p-5">
-            <CardTitle>押金對帳</CardTitle>
-            <p class="text-sm text-muted-foreground">
-              平台不經手押金，只比對兩邊寫的金額：房東在 RentMate 建的租約，對上租客自己存的合約。
-            </p>
+            <CardTitle class="inline-flex items-center gap-1.5">
+              押金對帳
+              <InfoTip text="平台不經手押金，只比對兩邊寫的金額：房東在 RentMate 建的租約，對上租客自己存的合約。" />
+            </CardTitle>
           </CardHeader>
           <CardContent class="space-y-6 px-5 pb-5">
             <AdminLoadNotice
@@ -774,7 +775,10 @@ function openSendDialog(): void {
         <Card v-if="handoverGroups.length > 0" :data-real="isReal ? 'true' : undefined" class="rounded-3xl">
           <CardHeader class="p-5">
             <div class="flex flex-wrap items-center justify-between gap-3">
-              <CardTitle>點交存證</CardTitle>
+              <CardTitle class="inline-flex items-center gap-1.5">
+                點交存證
+                <InfoTip text="租客拍的入住、退租照片由 AI 逐項比對。這裡只顯示比對結果，不顯示照片。" />
+              </CardTitle>
               <StatusDot
                 v-if="handoverDamagedCount > 0"
                 tone="danger"
@@ -782,9 +786,6 @@ function openSendDialog(): void {
                 emphasize
               />
             </div>
-            <p class="text-sm text-muted-foreground">
-              租客拍的入住、退租照片由 AI 逐項比對。這裡只顯示比對結果，不顯示照片。
-            </p>
           </CardHeader>
 
           <CardContent class="space-y-6 px-5 pb-5">
@@ -933,7 +934,10 @@ function openSendDialog(): void {
 
         <!-- 原因選填：寫進稽核紀錄，也會顯示在這一頁的「停用」旁邊 -->
         <div class="space-y-2">
-          <Label for="detail-suspend-reason">停用原因（選填）</Label>
+          <div class="inline-flex items-center gap-1.5">
+            <Label for="detail-suspend-reason">停用原因（選填）</Label>
+            <InfoTip text="只寫進稽核紀錄，對方看不到。" />
+          </div>
           <Textarea
             id="detail-suspend-reason"
             v-model="suspendReason"
@@ -941,7 +945,6 @@ function openSendDialog(): void {
             maxlength="200"
             placeholder="例如：多次發布不當內容"
           />
-          <p class="text-xs text-muted-foreground">只寫進稽核紀錄，對方看不到。</p>
         </div>
 
         <DialogFooter>

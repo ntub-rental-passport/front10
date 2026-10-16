@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
@@ -462,14 +463,12 @@ function displayName(row: UserDirectoryRow): string {
               清除篩選
             </Button>
 
-            <p class="whitespace-nowrap text-sm text-muted-foreground">
+            <p class="inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground">
               共 {{ filteredRows.length }} 人
               <span v-if="realAccountsLoading">（帳號讀取中…）</span>
+              <InfoTip text="點選任一列進入詳情" />
             </p>
 
-            <p class="ml-auto whitespace-nowrap text-xs text-muted-foreground">
-              點選任一列進入詳情
-            </p>
           </div>
 
           <div
@@ -781,7 +780,12 @@ function displayName(row: UserDirectoryRow): string {
           </li>
         </ul>
         <div v-if="bulkAction === 'suspend'" class="space-y-2">
-          <Label for="suspend-reason">停用原因（選填）</Label>
+          <div class="inline-flex items-center gap-1.5">
+            <Label for="suspend-reason">停用原因（選填）</Label>
+            <InfoTip text="">
+              只寫進稽核紀錄，對方看不到。{{ bulkTargets.length > 1 ? '這幾個帳號共用這一句。' : '' }}
+            </InfoTip>
+          </div>
           <Textarea
             id="suspend-reason"
             v-model="suspendReason"
@@ -789,9 +793,6 @@ function displayName(row: UserDirectoryRow): string {
             maxlength="200"
             placeholder="例如：多次發布不當內容"
           />
-          <p class="text-xs text-muted-foreground">
-            只寫進稽核紀錄，對方看不到。{{ bulkTargets.length > 1 ? '這幾個帳號共用這一句。' : '' }}
-          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" :disabled="bulkRunning" @click="closeBulk">取消</Button>

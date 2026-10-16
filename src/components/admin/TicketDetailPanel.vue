@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button/index'
 import { Textarea } from '@/components/ui/textarea/index'
@@ -80,8 +81,10 @@ async function handleSaveNote(): Promise<void> {
       </ol>
     </section>
     <section>
-      <h3 class="mb-2 text-xs font-semibold text-foreground/70">平台處理</h3>
-      <p class="mb-3 text-foreground/70">房東回報完工後，由租客複驗確認結案。</p>
+      <h3 class="inline-flex items-center gap-1.5 mb-2 text-xs font-semibold text-foreground/70">
+        平台處理
+        <InfoTip text="房東回報完工後，由租客複驗確認結案。" />
+      </h3>
       <p v-if="queueReason" class="mb-3">待處理原因：{{ adminQueueReasonLabels[queueReason] }}</p>
       <div class="flex flex-wrap gap-2">
         <Button v-if="!inQueue" size="sm" :disabled="saving" @click="queueTicket(ticket.id)">加入待處理</Button>

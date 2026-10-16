@@ -161,7 +161,8 @@ describe('SubscriptionOverviewCard', () => {
   it.each(['landlord', 'tenant'] as const)('%s 顯示單一組合圖與十二個月標籤', async (role) => {
     const html = await render(role)
     expect(html).toContain(role === 'tenant' ? '各方案訂閱人數與單次加購' : '各方案訂閱人數')
-    expect(html).toContain('近 12 個月各月月底人數，本月為今日；點長條可篩選方案')
+    expect(html).not.toContain('近 12 個月各月月底人數，本月為今日；點長條可篩選方案')
+    expect(html).toMatch(/<button[^>]*aria-label="說明"/)
     expect(html).toContain('relative h-72 min-w-0')
     expect(html).not.toContain('md:grid-cols-2')
     expect(html).not.toContain('目前沒有加購紀錄')

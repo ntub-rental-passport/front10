@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -239,11 +240,9 @@ function selectPlan(planKey: PlanKey): void {
     </CardHeader>
     <CardContent class="min-w-0 px-5 pb-5">
       <div class="min-w-0">
-        <p class="text-sm font-medium">
+        <p class="inline-flex items-center gap-1.5 text-sm font-medium">
           {{ role === 'tenant' ? '各方案訂閱人數與單次加購' : '各方案訂閱人數' }}
-        </p>
-        <p class="text-xs text-muted-foreground">
-          近 12 個月各月月底人數，本月為今日；點長條可篩選方案
+          <InfoTip text="近 12 個月各月月底人數，本月為今日；點長條可篩選方案" />
         </p>
         <div class="relative h-72 min-w-0" @click="handleChartClick" @mousemove="handleChartMove">
           <Bar

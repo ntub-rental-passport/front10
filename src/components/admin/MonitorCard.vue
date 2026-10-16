@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card/index'
 import { PlugZap } from 'lucide-vue-next'
+import InfoTip from './InfoTip.vue'
 import StatusDot from './StatusDot.vue'
 import { MONITOR_STATE_TONE, monitorStateLabels, type MonitorReading } from '@/src/utils/admin-monitoring'
 
@@ -16,8 +17,10 @@ const stateLabel = computed(() => props.reading.stateLabel ?? monitorStateLabels
   <Card class="h-full rounded-3xl">
     <CardHeader class="flex flex-row items-start justify-between gap-3 space-y-0 p-5 pb-3">
       <div class="min-w-0">
-        <CardTitle class="text-sm font-medium">{{ reading.label }}</CardTitle>
-        <p class="mt-1 text-xs text-muted-foreground">{{ reading.description }}</p>
+        <CardTitle class="inline-flex items-center gap-1.5 text-sm font-medium">
+          {{ reading.label }}
+          <InfoTip :text="reading.description" />
+        </CardTitle>
       </div>
       <StatusDot class="shrink-0" :tone="tone" :label="stateLabel" emphasize />
     </CardHeader>

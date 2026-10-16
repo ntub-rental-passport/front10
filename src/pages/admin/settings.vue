@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/src/components/admin/InfoTip.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button/index'
@@ -458,8 +459,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           <div class="grid gap-6 p-6 md:grid-cols-4 md:gap-8">
             <div class="space-y-3 md:col-span-1">
               <div>
-                <h3 class="text-base font-semibold">稽核紀錄</h3>
-                <p class="mt-1.5 text-sm text-muted-foreground">稽核紀錄頁要顯示多久以內的紀錄。</p>
+                <h3 class="inline-flex items-center gap-1.5 text-base font-semibold">
+                  稽核紀錄
+                  <InfoTip text="稽核紀錄頁要顯示多久以內的紀錄。" />
+                </h3>
               </div>
               <Button variant="ghost" size="sm" class="-ml-3" :disabled="atDefaults(AUDIT_KEYS)" @click="resetToDefaults(AUDIT_KEYS)">
                 <Undo2 class="mr-1 h-4 w-4" />
@@ -468,13 +471,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             </div>
             <div class="space-y-4 md:col-span-3">
               <div class="space-y-2">
-                <Label for="auditRetentionDays">稽核紀錄保留天數（天）</Label>
+                <div class="inline-flex items-center gap-1.5">
+                  <Label for="auditRetentionDays">稽核紀錄保留天數（天）</Label>
+                  <InfoTip text="設為 0 或負數代表不限制。原始紀錄不會被刪除，只是超過天數的不再顯示。 例外：斷線、恢復、後端停機這類服務狀態，後端只保留 30 天，不受這個設定影響。" />
+                </div>
                 <Input id="auditRetentionDays" v-model.number="draft.auditRetentionDays" type="number" class="max-w-[9rem]" />
                 <p v-if="errors.auditRetentionDays" class="text-sm text-destructive">{{ errors.auditRetentionDays }}</p>
-                <p class="text-xs text-muted-foreground">
-                  設為 0 或負數代表不限制。原始紀錄不會被刪除，只是超過天數的不再顯示。
-                  例外：斷線、恢復、後端停機這類服務狀態，後端只保留 30 天，不受這個設定影響。
-                </p>
               </div>
               <p class="flex items-start gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm text-foreground/80">
                 <Eye class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -488,8 +490,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           <div class="grid gap-6 p-6 md:grid-cols-4 md:gap-8">
             <div class="space-y-3 md:col-span-1">
               <div>
-                <h3 class="text-base font-semibold">提醒門檻</h3>
-                <p class="mt-1.5 text-sm text-muted-foreground">工單逾期與訂閱到期，要多早開始提醒。</p>
+                <h3 class="inline-flex items-center gap-1.5 text-base font-semibold">
+                  提醒門檻
+                  <InfoTip text="工單逾期與訂閱到期，要多早開始提醒。" />
+                </h3>
               </div>
               <Button variant="ghost" size="sm" class="-ml-3" :disabled="atDefaults(REMINDER_KEYS)" @click="resetToDefaults(REMINDER_KEYS)">
                 <Undo2 class="mr-1 h-4 w-4" />
@@ -498,22 +502,24 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             </div>
             <div class="grid gap-x-6 gap-y-5 sm:grid-cols-2 md:col-span-3">
               <div class="space-y-2">
-                <Label for="maintenanceOverdueDays">報修逾期提醒門檻（天）</Label>
+                <div class="inline-flex items-center gap-1.5">
+                  <Label for="maintenanceOverdueDays">報修逾期提醒門檻（天）</Label>
+                  <InfoTip text="工單「已通報房東」超過這個天數仍沒有進度，系統會自動標成「逾期未回應」。" />
+                </div>
                 <Input id="maintenanceOverdueDays" v-model.number="draft.maintenanceOverdueDays" type="number" class="max-w-[9rem]" min="1" max="90" />
                 <p v-if="errors.maintenanceOverdueDays" class="text-sm text-destructive">{{ errors.maintenanceOverdueDays }}</p>
-                <p class="text-xs text-muted-foreground">
-                  工單「已通報房東」超過這個天數仍沒有進度，系統會自動標成「逾期未回應」。
-                </p>
                 <p class="flex items-start gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm text-foreground/80">
                   <Eye class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   {{ overdueImpact.text }}
                 </p>
               </div>
               <div class="space-y-2">
-                <Label for="subscriptionExpiringSoonDays">訂閱到期提醒天數（天）</Label>
+                <div class="inline-flex items-center gap-1.5">
+                  <Label for="subscriptionExpiringSoonDays">訂閱到期提醒天數（天）</Label>
+                  <InfoTip text="到期前這麼多天內，使用者列表會標示「訂閱即將到期」。" />
+                </div>
                 <Input id="subscriptionExpiringSoonDays" v-model.number="draft.subscriptionExpiringSoonDays" type="number" class="max-w-[9rem]" min="1" max="90" />
                 <p v-if="errors.subscriptionExpiringSoonDays" class="text-sm text-destructive">{{ errors.subscriptionExpiringSoonDays }}</p>
-                <p class="text-xs text-muted-foreground">到期前這麼多天內，使用者列表會標示「訂閱即將到期」。</p>
                 <p class="flex items-start gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm text-foreground/80">
                   <Eye class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   {{ expiringImpact.text }}
@@ -528,11 +534,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             <div class="space-y-3 md:col-span-1">
               <div>
                 <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-base font-semibold">AI 平台額度</h3>
+                  <h3 class="inline-flex items-center gap-1.5 text-base font-semibold">
+                    AI 平台額度
+                    <InfoTip text="">
+                      <p>平台向 AI 廠商購買的每月額度與預警門檻，用於系統監控頁的 AI 用量。</p>
+                      <p>用量達預警或告急的比例時分別標示；依消耗速度推算的剩餘天數低於告急門檻時，不必等比例達標也直接告急。</p>
+                    </InfoTip>
+                  </h3>
                 </div>
-                <p class="mt-1.5 text-sm text-muted-foreground">
-                  平台向 AI 廠商購買的每月額度與預警門檻，用於系統監控頁的 AI 用量。
-                </p>
               </div>
               <Button variant="ghost" size="sm" class="-ml-3" :disabled="atDefaults(QUOTA_KEYS)" @click="resetToDefaults(QUOTA_KEYS)">
                 <Undo2 class="mr-1 h-4 w-4" />
@@ -562,9 +571,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   <p v-if="errors.quotaCriticalPercent" class="text-sm text-destructive">{{ errors.quotaCriticalPercent }}</p>
                 </div>
               </div>
-              <p class="text-xs text-muted-foreground">
-                用量達預警或告急的比例時分別標示；依消耗速度推算的剩餘天數低於告急門檻時，不必等比例達標也直接告急。
-              </p>
               <p class="flex items-start gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm text-foreground/80">
                 <Eye class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 {{ quotaText }}
@@ -577,10 +583,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           <div class="grid gap-6 p-6 md:grid-cols-4 md:gap-8">
             <div class="space-y-3 md:col-span-1">
               <div>
-                <h3 class="text-base font-semibold">系統監控門檻</h3>
-                <p class="mt-1.5 text-sm text-muted-foreground">
-                  後端回應時間的分級，用於系統監控頁。健康檢查 5 秒就逾時，門檻設超過 5000 毫秒不會生效。
-                </p>
+                <h3 class="inline-flex items-center gap-1.5 text-base font-semibold">
+                  系統監控門檻
+                  <InfoTip text="後端回應時間的分級，用於系統監控頁。健康檢查 5 秒就逾時，門檻設超過 5000 毫秒不會生效。" />
+                </h3>
               </div>
               <Button variant="ghost" size="sm" class="-ml-3" :disabled="atDefaults(RESPONSE_KEYS)" @click="resetToDefaults(RESPONSE_KEYS)">
                 <Undo2 class="mr-1 h-4 w-4" />
@@ -590,16 +596,20 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             <div class="space-y-4 md:col-span-3">
               <div class="grid gap-x-6 gap-y-5 sm:grid-cols-2">
                 <div class="space-y-2">
-                  <Label for="responseOkMs">正常門檻（毫秒）</Label>
+                  <div class="inline-flex items-center gap-1.5">
+                    <Label for="responseOkMs">正常門檻（毫秒）</Label>
+                    <InfoTip text="回應時間低於此值，判定為「正常」。" />
+                  </div>
                   <Input id="responseOkMs" v-model.number="draft.responseOkMs" type="number" class="max-w-[9rem]" min="50" max="5000" />
                   <p v-if="errors.responseOkMs" class="text-sm text-destructive">{{ errors.responseOkMs }}</p>
-                  <p class="text-xs text-muted-foreground">回應時間低於此值，判定為「正常」。</p>
                 </div>
                 <div class="space-y-2">
-                  <Label for="responseDegradedMs">變慢門檻（毫秒）</Label>
+                  <div class="inline-flex items-center gap-1.5">
+                    <Label for="responseDegradedMs">變慢門檻（毫秒）</Label>
+                    <InfoTip text="達到此值判定為「無回應」；必須大於正常門檻。" />
+                  </div>
                   <Input id="responseDegradedMs" v-model.number="draft.responseDegradedMs" type="number" class="max-w-[9rem]" min="50" max="5000" />
                   <p v-if="errors.responseDegradedMs" class="text-sm text-destructive">{{ errors.responseDegradedMs }}</p>
-                  <p class="text-xs text-muted-foreground">達到此值判定為「無回應」；必須大於正常門檻。</p>
                 </div>
               </div>
               <p class="flex items-start gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm text-foreground/80">
@@ -622,17 +632,18 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       </TabsContent>
 
       <TabsContent value="security" class="mt-6 space-y-4">
-        <p class="flex items-center gap-2 text-sm text-foreground/70">
-          <Cloud class="h-4 w-4 shrink-0" aria-hidden="true" />
-          密碼與登入的設定所有管理員共用，會直接套用在註冊與登入。
-        </p>
 
         <Card class="rounded-3xl">
           <div class="grid gap-6 p-6 md:grid-cols-4 md:gap-8">
             <div class="space-y-3 md:col-span-1">
               <div>
-                <h3 class="text-base font-semibold">密碼與登入</h3>
-                <p class="mt-1.5 text-sm text-muted-foreground">租客與房東的密碼長度，以及登入後多久要重新登入。</p>
+                <h3 class="inline-flex items-center gap-1.5 text-base font-semibold">
+                  密碼與登入
+                  <InfoTip text="">
+                    <p>租客與房東的密碼長度，以及登入後多久要重新登入。</p>
+                    <p>密碼與登入的設定所有管理員共用，會直接套用在註冊與登入。</p>
+                  </InfoTip>
+                </h3>
               </div>
               <Button
                 variant="ghost"
@@ -655,7 +666,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
               </p>
               <div v-else class="grid gap-x-6 gap-y-5 sm:grid-cols-2">
                 <div class="space-y-2">
-                  <Label for="passwordMinLength">密碼最短長度（字元）</Label>
+                  <div class="inline-flex items-center gap-1.5">
+                    <Label for="passwordMinLength">密碼最短長度（字元）</Label>
+                    <InfoTip text="適用於註冊、重設與修改密碼。既有帳號不會被強制要求變更密碼。" />
+                  </div>
                   <Input
                     id="passwordMinLength"
                     v-model.number="securityDraft.passwordMinLength"
@@ -665,12 +679,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                     :max="platform?.passwordMinLengthRange[1]"
                   />
                   <p v-if="passwordError" class="text-sm text-destructive">{{ passwordError }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    適用於註冊、重設與修改密碼。既有帳號不會被強制要求變更密碼。
-                  </p>
                 </div>
                 <div class="space-y-2">
-                  <Label for="sessionMinutes">登入有效時間</Label>
+                  <div class="inline-flex items-center gap-1.5">
+                    <Label for="sessionMinutes">登入有效時間</Label>
+                    <InfoTip text="">
+                      從登入起算，重新整理不會延長；只對之後登入的人生效。
+                      管理員固定 {{ sessionLabel(platform?.adminSessionMinutes ?? 480) }}、閒置
+                      {{ platform?.adminIdleMinutes ?? 20 }} 分鐘自動登出，不受這個設定影響 —— 設錯時你還進得來改回去。
+                    </InfoTip>
+                  </div>
                   <Select
                     :model-value="String(securityDraft.sessionMinutes)"
                     @update:model-value="(value) => (securityDraft.sessionMinutes = Number(value))"
@@ -682,11 +700,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                  <p class="text-xs text-muted-foreground">
-                    從登入起算，重新整理不會延長；只對之後登入的人生效。
-                    管理員固定 {{ sessionLabel(platform?.adminSessionMinutes ?? 480) }}、閒置
-                    {{ platform?.adminIdleMinutes ?? 20 }} 分鐘自動登出，不受這個設定影響 —— 設錯時你還進得來改回去。
-                  </p>
                 </div>
               </div>
             </div>
@@ -706,28 +719,36 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <Card class="rounded-3xl">
           <div class="grid gap-6 p-6 md:grid-cols-4 md:gap-8">
             <div class="md:col-span-1">
-              <h3 class="text-base font-semibold">登入保護</h3>
-              <p class="mt-1.5 text-sm text-muted-foreground">目前實際在擋的東西。這些規則寫在程式與伺服器設定裡，這裡不能改。</p>
+              <h3 class="inline-flex items-center gap-1.5 text-base font-semibold">
+                登入保護
+                <InfoTip text="目前實際在擋的東西。這些規則寫在程式與伺服器設定裡，這裡不能改。" />
+              </h3>
             </div>
             <ul class="space-y-3 text-sm md:col-span-3">
               <li>
-                <p class="font-medium">伺服器限速</p>
-                <p class="text-muted-foreground">伺服器對登入請求有速率限制，短時間內大量嘗試會被擋下。這是真正擋暴力猜密碼的那一層。</p>
-              </li>
-              <li>
-                <p class="font-medium">管理員閒置登出</p>
-                <p class="text-muted-foreground">
-                  管理員 {{ platform?.adminIdleMinutes ?? 20 }} 分鐘沒有操作就自動登出（登出前一分鐘會先提醒）。由伺服器判斷，關掉分頁或改電腦時鐘都繞不過；背景自動更新的頁面不算操作。
+                <p class="inline-flex items-center gap-1.5 font-medium">
+                  伺服器限速
+                  <InfoTip text="伺服器對登入請求有速率限制，短時間內大量嘗試會被擋下。這是真正擋暴力猜密碼的那一層。" />
                 </p>
               </li>
               <li>
-                <p class="font-medium">管理員登入驗證碼</p>
-                <p class="text-muted-foreground">管理員帳密正確之後，還要輸入寄到信箱的驗證碼；最多試 3 次，錯滿整組作廢、要重新輸入帳密。</p>
+                <p class="inline-flex items-center gap-1.5 font-medium">
+                  管理員閒置登出
+                  <InfoTip text="">
+                    管理員 {{ platform?.adminIdleMinutes ?? 20 }} 分鐘沒有操作就自動登出（登出前一分鐘會先提醒）。由伺服器判斷，關掉分頁或改電腦時鐘都繞不過；背景自動更新的頁面不算操作。
+                  </InfoTip>
+                </p>
               </li>
               <li>
-                <p class="font-medium">登入頁的失敗計數</p>
-                <p class="text-muted-foreground">
-                  同一個信箱在同一台瀏覽器連續輸錯 5 次，登入頁會請對方等 15 分鐘。計數存在使用者的瀏覽器裡，清除瀏覽器資料就能繞過 —— 它只是提示，不是防護。
+                <p class="inline-flex items-center gap-1.5 font-medium">
+                  管理員登入驗證碼
+                  <InfoTip text="管理員帳密正確之後，還要輸入寄到信箱的驗證碼；最多試 3 次，錯滿整組作廢、要重新輸入帳密。" />
+                </p>
+              </li>
+              <li>
+                <p class="inline-flex items-center gap-1.5 font-medium">
+                  登入頁的失敗計數
+                  <InfoTip text="同一個信箱在同一台瀏覽器連續輸錯 5 次，登入頁會請對方等 15 分鐘。計數存在使用者的瀏覽器裡，清除瀏覽器資料就能繞過 —— 它只是提示，不是防護。" />
                 </p>
               </li>
             </ul>
@@ -737,8 +758,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <Card class="rounded-3xl">
           <div class="grid gap-6 p-6 md:grid-cols-4 md:gap-8">
             <div class="md:col-span-1">
-              <h3 class="text-base font-semibold">管理員名單</h3>
-              <p class="mt-1.5 text-sm text-muted-foreground">現在誰能進後台。太久沒登入的帳號，建議移除。</p>
+              <h3 class="inline-flex items-center gap-1.5 text-base font-semibold">
+                管理員名單
+                <InfoTip text="">
+                  <p>現在誰能進後台。太久沒登入的帳號，建議移除。</p>
+                  <p>新增或移除管理員要在伺服器上執行 manage_admin.py。刻意不開放從網頁授權 —— 就算網頁被攻破，也拿不到管理員權限。</p>
+                </InfoTip>
+              </h3>
             </div>
             <div class="space-y-3 md:col-span-3">
               <p v-if="rosterState === 'loading'" class="text-sm text-muted-foreground">讀取中…</p>
@@ -766,27 +792,23 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 </li>
               </ul>
               <!-- 管理員授權僅能透過伺服器上的 manage_admin.py 執行，不開放網頁授權。 -->
-              <p class="text-xs text-muted-foreground">
-                新增或移除管理員要在伺服器上執行 manage_admin.py。刻意不開放從網頁授權 —— 就算網頁被攻破，也拿不到管理員權限。
-              </p>
             </div>
           </div>
         </Card>
       </TabsContent>
 
       <TabsContent value="maintenance" class="mt-6 space-y-4">
-        <p class="flex items-center gap-2 text-sm text-foreground/70">
-          <Cloud class="h-4 w-4 shrink-0" aria-hidden="true" />
-          開啟後，所有裝置的一般頁面都會導到維護頁；已經開著的頁面，換頁時才會跳過去。
-        </p>
 
         <Card class="rounded-3xl">
           <div class="space-y-6 p-6">
             <div>
-              <h3 class="text-base font-semibold">系統維護</h3>
-              <p class="mt-1.5 text-sm text-muted-foreground">
-                開啟後導向維護頁。管理後台與內部人員登入頁（/staff-login）不受影響。
-              </p>
+              <h3 class="inline-flex items-center gap-1.5 text-base font-semibold">
+                系統維護
+                <InfoTip text="">
+                  <p>開啟後導向維護頁。管理後台與內部人員登入頁（/staff-login）不受影響。</p>
+                  <p>開啟後，所有裝置的一般頁面都會導到維護頁；已經開著的頁面，換頁時才會跳過去。</p>
+                </InfoTip>
+              </h3>
             </div>
 
             <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -804,7 +826,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   <div v-if="draft.maintenanceMode" class="space-y-4">
                     <div class="grid gap-x-6 gap-y-5 sm:grid-cols-2">
                       <div class="space-y-2">
-                        <Label for="maintenanceStartsAt">開始時間（選填）</Label>
+                        <div class="inline-flex items-center gap-1.5">
+                          <Label for="maintenanceStartsAt">開始時間（選填）</Label>
+                          <InfoTip text="兩者留空代表開啟後持續生效，直到手動關閉。" />
+                        </div>
                         <Input id="maintenanceStartsAt" v-model="draft.maintenanceStartsAt" type="datetime-local" />
                       </div>
                       <div class="space-y-2">
@@ -813,13 +838,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                         <p v-if="errors.maintenanceEndsAt" class="text-sm text-destructive">{{ errors.maintenanceEndsAt }}</p>
                       </div>
                     </div>
-                    <p class="text-xs text-muted-foreground">兩者留空代表開啟後持續生效，直到手動關閉。</p>
 
                     <div class="space-y-2">
-                      <Label for="maintenanceAllowlist">白名單 Email（一行一個）</Label>
+                      <div class="inline-flex items-center gap-1.5">
+                        <Label for="maintenanceAllowlist">白名單 Email（一行一個）</Label>
+                        <InfoTip text="名單內的帳號在維護期間仍可正常使用，方便上線前驗證。" />
+                      </div>
                       <Textarea id="maintenanceAllowlist" v-model="draft.maintenanceAllowlist" rows="3" placeholder="admin@rentmate.tw" />
                       <p v-if="errors.maintenanceAllowlist" class="text-sm text-destructive">{{ errors.maintenanceAllowlist }}</p>
-                      <p class="text-xs text-muted-foreground">名單內的帳號在維護期間仍可正常使用，方便上線前驗證。</p>
                     </div>
                   </div>
                 </div>
@@ -849,10 +875,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                     <p v-if="errors.maintenanceMessage" class="text-sm text-destructive">{{ errors.maintenanceMessage }}</p>
                   </div>
                   <div class="space-y-2">
-                    <Label for="supportEmail">客服信箱</Label>
+                    <div class="inline-flex items-center gap-1.5">
+                      <Label for="supportEmail">客服信箱</Label>
+                      <InfoTip text="維護頁會顯示這個信箱，讓被擋在外面的人知道找誰。" />
+                    </div>
                     <Input id="supportEmail" v-model="draft.supportEmail" type="email" />
                     <p v-if="errors.supportEmail" class="text-sm text-destructive">{{ errors.supportEmail }}</p>
-                    <p class="text-xs text-muted-foreground">維護頁會顯示這個信箱，讓被擋在外面的人知道找誰。</p>
                   </div>
                 </div>
               </div>
