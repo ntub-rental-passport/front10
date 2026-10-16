@@ -37,8 +37,7 @@ const batchId = computed(() => String(route.params.batchId ?? ''))
 // 不會因為兩邊各自寫一套判斷邏輯而兜不起來。
 const batch = computed(() => groupIntoBatches(messages.value).find((item) => item.batchId === batchId.value) ?? null)
 
-// 標題交給頂部列。用路徑當 key，所以離開這一頁之後不會有殘留的舊標題
-// ——即使忘了清理也一樣，見 useAdminPageTitle 的說明。
+// 頁面標題以路徑為 key，避免離頁後殘留舊標題。
 useRegisterAdminPageTitle(
   computed(() => route.path),
   computed(() => batch.value?.title ?? null),
@@ -55,8 +54,7 @@ function nicknameOf(email: string): string | null {
 // 管道標籤與發送紀錄共用 notif-stats，兩頁對同一批資料才不會給出不同說法。
 const channelStats = computed(() => (batch.value ? batchChannelStats(batch.value) : []))
 
-// 舊資料的 sourceLabel 是補上去的空字串——不知道當初是不是套模板，
-// 顯示成「一次性撰寫」等於偽造來源，用「—」老實標示「不知道」。
+// sourceLabel 為空表示來源未知，須顯示「—」，不可推定為一次性撰寫。
 const sourceLabel = computed(() => {
   const value = batch.value?.recipients[0]?.sourceLabel
   return value && value.trim() !== '' ? value : '—'
@@ -65,8 +63,6 @@ const sourceLabel = computed(() => {
 const readCount = computed(() => (batch.value ? batchReadStat(batch.value).read : 0))
 const totalCount = computed(() => batch.value?.recipients.length ?? 0)
 const readPercent = computed(() => (totalCount.value === 0 ? 0 : Math.round((readCount.value / totalCount.value) * 100)))
-
-/* -------------------- 收件人清單：可搜尋 -------------------- */
 
 const recipientSearch = ref('')
 
@@ -88,14 +84,8 @@ const filteredRecipients = computed(() => {
       返回發送紀錄
     </Button>
 
-    <!--
-      標題移到頂部列（麵包屑「通知管理 / 批次名稱」）。批次名稱是資料，
-      所以由下面的 useRegisterAdminPageTitle 回報上去；發送時間留在這裡，
-      它是這一頁的內容不是標題。
-    -->
     <p class="text-muted-foreground">{{ formatDateTime(batch.createdAt) }} 發送</p>
 
-    <!-- 通知內容 -->
     <Card class="rounded-3xl">
       <CardHeader class="p-5"><CardTitle>通知內容</CardTitle></CardHeader>
       <CardContent class="px-5 pb-5 space-y-3">
@@ -114,7 +104,6 @@ const filteredRecipients = computed(() => {
       </CardContent>
     </Card>
 
-    <!-- 發送資訊 -->
     <Card class="rounded-3xl">
       <CardHeader class="p-5"><CardTitle>發送資訊</CardTitle></CardHeader>
       <CardContent class="px-5 pb-5 space-y-4">
@@ -148,7 +137,6 @@ const filteredRecipients = computed(() => {
       </CardContent>
     </Card>
 
-    <!-- 已讀統計 -->
     <Card class="rounded-3xl">
       <CardHeader class="p-5"><CardTitle>已讀統計</CardTitle></CardHeader>
       <CardContent class="px-5 pb-5 space-y-2">
@@ -157,7 +145,6 @@ const filteredRecipients = computed(() => {
       </CardContent>
     </Card>
 
-    <!-- 收件人清單 -->
     <Card class="rounded-3xl">
       <CardHeader class="p-5"><CardTitle>收件人清單（{{ totalCount }} 位）</CardTitle></CardHeader>
       <CardContent class="px-5 pb-5 space-y-3">

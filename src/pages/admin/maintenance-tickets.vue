@@ -68,7 +68,6 @@ const {
 
 const categoryOptions = Object.keys(maintenanceCategoryLabels) as MaintenanceCategory[]
 
-// 從使用者詳情跳轉過來時預選該使用者，但只是初始值 —— 按「顯示全部使用者」就能解除
 watch(
   () => route.query.user,
   (value) => {
@@ -99,7 +98,6 @@ const filteredUserName = computed(() => {
 
 const selectedId = ref<string | null>(null)
 
-// 待辦佇列的每一筆明細用 ?ticket= 直接把該工單的詳情打開，點進來就能動手
 watch(
   () => route.query.ticket,
   (value) => {
@@ -162,27 +160,9 @@ function clearFilters(): void {
       </Button>
     </div>
 
-    <!--
-      左邊頁籤、右邊 KPI 直向條列，併成同一條橫帶。
-
-      原本 KPI 是橫跨整列的四張卡，佔掉約 70px 而且左右都很空。改成右側條列
-      之後那塊垂直空間讓給了頁籤 —— 頁籤是這一頁最常點的東西，本來就該比
-      「看一眼就好」的統計數字大。
-
-      真實資料：stats 與工單清單來自 /api/admin/repairs。
-      約定見 src/utils/admin-data-marking.md。
-    -->
     <div class="flex flex-wrap items-center justify-between gap-x-10 gap-y-4">
       <Tabs class="min-w-0 max-w-full" :model-value="statusTab" @update:model-value="handleStatusTabChange">
         <TabsList :class="ADMIN_TAB_LIST">
-        <!--
-          「待處理」不是工單狀態，是跨狀態的聚合（送出＋通報＋逾期＋爭議）。
-          原本只靠一條分隔線跟後面七顆狀態頁籤區隔，但同樣大小、同樣顏色的
-          膠囊排在一起，分隔線攔不住「這是第八種狀態」的直覺。
-
-          所以它更大（py-2、字體加粗）而且用主色：未選時是淡色底＋主色字，
-          選中時整顆填滿主色。後面七顆維持原本的白底浮起，兩者不會混淆。
-        -->
         <TabsTrigger
           :value="maintenanceQueueTab.value"
           class="rounded-full bg-primary/10 px-6 py-2.5 text-base font-semibold text-primary data-[state=active]:bg-primary-surface data-[state=active]:text-primary-surface-foreground data-[state=active]:shadow-sm"
@@ -201,18 +181,7 @@ function clearFilters(): void {
         </TabsList>
       </Tabs>
 
-      <!--
-        右側統計條列。用 <dl> 而不是一堆 div：這就是「名稱／數值」的定義
-        清單，語意對了螢幕閱讀器才唸得出配對關係。
-
-        「逾期未回應」是這一頁唯一會叫人現在動手的數字，所以它要跳出來。
-        但**不能把 destructive 拿來當文字色**：--destructive 是
-        oklch(0.7 0.18 40)，偏亮，當文字踩在淺色卡上實測只有 2.61，遠低於
-        AA —— status-dot.ts 的註解早就寫過這件事，這裡差點重蹈覆轍。
-
-        改用實心填色（STATUS_CHIP_CLASS.danger），前景色是跟填色配對設計的，
-        實測兩個模式都是 6.35。其餘三列維持中性，有色才有意義。
-      -->
+      <!-- destructive 當淺色卡片的文字色不符合 AA 對比，須使用前景色配對的實心 STATUS_CHIP_CLASS.danger。 -->
       <dl v-if="loadState === 'ready'" class="min-w-[13rem] divide-y divide-border text-sm">
         <div class="flex items-baseline justify-between gap-8 py-1.5">
           <dt class="text-foreground/70">逾期未回應</dt>
@@ -292,11 +261,6 @@ function clearFilters(): void {
               <TableCell class="whitespace-nowrap">{{ ticket.landlordName }}</TableCell>
               <TableCell class="whitespace-nowrap">{{ maintenanceCategoryLabels[ticket.category] }}</TableCell>
               <TableCell class="whitespace-nowrap">
-                <!--
-                  狀態用圓點不用徽章：圓點＝會變的狀態、徽章＝不會變的分類
-                  （這一列左邊的「問題類型」仍然是徽章）。顏色對應與四分的
-                  理由見 admin-maintenance.ts 的 maintenanceStatusTone。
-                -->
                 <StatusDot
                   :tone="ticket.awaitingInspection || ticket.status === 'submitted' || ticket.status === 'notified' ? 'idle' : maintenanceStatusTone(ticket.status)"
                   :label="ticket.awaitingInspection ? '待租客複驗' : maintenanceStatusLabels[ticket.status]"

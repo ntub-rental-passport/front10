@@ -27,11 +27,7 @@ import {
 import { LANDLORD_WORKSPACE_CHANGED_EVENT, readFileAsDataUrl } from '@/src/services/landlordApiClient'
 import { useEventListener } from '@vueuse/core'
 
-/**
- * 合約資料全部來自後端（/api/landlord/contracts）：每份租約一列，含續約與歷史租約。
- * 以前這頁有 4 筆寫死的展示合約、續約只插進畫面陣列、附件只記檔名；現在續約、
- * 附件上傳都由伺服器確認後才顯示成功。
- */
+/** 合約由後端提供，每份租約一列；續約與附件上傳須由伺服器確認後才顯示成功。 */
 interface ContractRow {
   tenantId: number; leaseId: number
   id: string; tenant: string; phone: string; email: string; nationalId: string; contactAddress: string
@@ -88,7 +84,6 @@ const frequencyLabel = { monthly: '月繳', bimonthly: '每 2 個月', quarterly
 const money = (value: number) => `NT$${value.toLocaleString('zh-TW')}`
 const displayDate = (value: string) => (value || '—').replaceAll('-', '/')
 
-// 生命週期：建立 → 起租 → 續約窗口（到期前 60 天）→ 到期／退租
 const lifecycle = computed(() => {
   const item = selected.value
   const today = todayKey()
@@ -106,7 +101,7 @@ function todayKey(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
-// 用日期字串計算，不經過 UTC（以前 toISOString 會在台灣時區少一天）
+// 日期使用字串計算，避免 UTC 轉換造成台灣時區日期少一天。
 function shiftDays(value: string, days: number): string {
   const [year, month, day] = value.split('-').map(Number)
   const date = new Date(year!, month! - 1, day! + days)
@@ -278,7 +273,6 @@ async function removeFile(file: ContractFile) {
     notify(cause instanceof Error ? cause.message : '刪除失敗', 'error')
   }
 }
-// 點交存證：租客在這份租約上拍的入住／退租照片（唯讀）
 const inspectionOpen = ref(false)
 const inspectionLoading = ref(false)
 const inspectionItems = ref<LeaseInspectionItem[]>([])

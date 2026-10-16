@@ -130,9 +130,7 @@ const loginErrorMessages: Record<EmailSignInError, string> = {
 }
 
 async function handleLogin(): Promise<void> {
-  // 擋重複送出。按鈕原本沒有任何 loading 回饋，使用者會以為沒點到而連點，
-  // 而每一次連點都是一個完整的登入請求 —— 伺服器各跑一次 argon2，
-  // 也各吃掉一份出口 IP 共用的限流額度，愈急就愈慢。
+  // 重複登入請求會各自執行 argon2 並消耗共用 IP 的限流額度，須阻擋重複送出。
   if (submitting.value) return
   submitting.value = true
 
@@ -154,8 +152,7 @@ async function handleLogin(): Promise<void> {
 
     const result = await signInWithEmail(email.value, password.value, selectedOption.value.authRole)
     if ('error' in result) {
-      // 只有帳密錯誤才計次；服務中斷、被限流、逾時都不是使用者的問題，
-      // 不該因此把人鎖住 —— 被限流的人若還要被鎖 15 分鐘，等於懲罰他同學手快。
+      // 只有帳密錯誤才計入鎖定次數，服務中斷、限流與逾時不計次。
       if (result.error === 'invalid-password' || result.error === 'account-not-found') {
         const next = evaluateLockout(recordFailure(email.value), policy)
         loginError.value = next.locked
@@ -181,13 +178,7 @@ const googleOAuthErrorMessages: Record<string, string> = {
   verification_failed: 'Google 帳號驗證失敗，請稍後再試。',
 }
 
-/**
- * Google 按鈕何時不該再被按。
- *
- * 本來只看 googleLoginPending（換票證中）。但帳密登入正在送出時也該擋：
- * 這個連結一按就跳到 /auth/google/start，同樣吃限流額度，而且會把使用者
- * 帶離頁面、讓剛剛送出的那次登入白做。
- */
+/** 帳密登入送出時也須停用 Google 入口，避免消耗限流額度並中斷進行中的登入。 */
 const googleLoginBlocked = computed(() => googleLoginPending.value || submitting.value)
 
 async function clearGoogleOAuthQuery(): Promise<void> {

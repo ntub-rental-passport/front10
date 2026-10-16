@@ -57,23 +57,7 @@ import {
 } from '@/src/utils/notif-schedule'
 import type { NotifCategory, NotifChannel } from '@/src/mocks/admin-seed'
 
-/**
- * 發送通知的編輯器。
- *
- * 原本是一顆按鈕 + 一個 max-h-[85vh] 的捲動對話框，裡面塞了五個不相關的
- * 區塊，而「即時預覽」在最底下 —— 套一個有三個變數的模板之後預覽就掉到
- * 摺線以下，等於盲寫。排程又是另一個對話框，兩邊已經開始漂移。
- *
- * 改成整頁之後：左邊編輯、右邊釘住一張租客真的會看到的卡片，立即與排程
- * 收進同一個「何時送出」。
- *
- * ## 一個不能藏起來的差異
- *
- * 立即發送寫的是 localStorage，收件人是後台那份示範資料；
- * 排程由後端執行，收件人是 MySQL 裡真正註冊過的帳號。
- * 切換「何時送出」會**換掉收件人是誰**。這件事必須顯示在畫面上 ——
- * 藏起來不會讓它消失，只會讓管理員在不知情的狀況下送錯人。
- */
+/** 發送通知的編輯器，提供立即發送、排程與預覽。 */
 
 const route = useRoute()
 const router = useRouter()
@@ -106,8 +90,6 @@ const NO_ACTION = '__none__'
 /** 放在 script 而不是直接寫進 template：雙大括號會被 Vue 當成插值語法。 */
 const VARIABLE_EXAMPLE = '{{變數}}'
 
-/* -------------------- 表單狀態 -------------------- */
-
 const templateId = ref('')
 const title = ref('')
 const body = ref('')
@@ -131,16 +113,11 @@ const success = ref('')
 const audienceOpen = ref(false)
 const restoredAt = ref('')
 
-/* -------------------- 頁面標題 -------------------- */
-// ⚠️ 一定要放在上面那些 ref 之後：這個 composable 裡的 watch 是 immediate，
-// 會在 setup 當下就讀 when.value，放在宣告之前會踩到 TDZ 而整頁掛掉
-// （而且 vue-tsc 不會報）。
+// immediate watcher 會在 setup 讀取 when.value，必須放在相關 ref 宣告之後以免觸發 TDZ。
 useRegisterAdminPageTitle(
   computed(() => route.path),
   computed(() => (when.value === 'schedule' ? '排程發送' : '發送通知')),
 )
-
-/* -------------------- 模板 -------------------- */
 
 const enabledTemplates = computed(() => templates.value.filter((item) => item.enabled))
 
@@ -148,13 +125,7 @@ const appliedTemplate = computed(
   () => enabledTemplates.value.find((item) => item.id === templateId.value) ?? null,
 )
 
-/**
- * 套用模板＝把內容**複製**進來，之後就是在編輯一則訊息。
- *
- * 原本的對話框是相反的：套了模板就只能填變數，正文動不了，送出時再從模板
- * 重新 render。那代表「這次想多加一句話」做不到，只能去改模板本身 ——
- * 而改模板會影響之後所有人。
- */
+/** 套用模板會將內容複製到本次訊息，後續編輯不影響原模板。 */
 function applyTemplate(id: string): void {
   templateId.value = id
   const template = enabledTemplates.value.find((item) => item.id === id)
@@ -183,8 +154,6 @@ const renderedTitle = computed(() => renderTemplate(title.value, filledVars.valu
 const renderedBody = computed(() => renderTemplate(body.value, filledVars.value))
 const missingVars = computed(() => variableNames.value.filter((name) => !filledVars.value[name]))
 
-/* -------------------- 操作按鈕 -------------------- */
-
 const actionUrlValue = computed({
   get: () => (actionUrl.value === '' ? NO_ACTION : actionUrl.value),
   set: (value: string) => {
@@ -199,27 +168,18 @@ function optionsInGroup(group: string) {
   return TENANT_ROUTE_OPTIONS.filter((item) => item.group === group)
 }
 
-/**
- * 用**活的** router 驗連結，不是比對一份寫死的清單。
- *
- * router 末端有 `{ path: '/:pathMatch(.*)*', redirect: '/' }`，所以死連結
- * 不會出現 404，而是無聲無息把租客丟回首頁。白名單防得了手打，防不了
- * 路由之後被改名 —— seed 裡的 /app/maintenance 就是那樣來的。
- */
+/** 路由的 catch-all 會將無效連結導回首頁，須用實際 router 驗證連結以免無聲跳轉。 */
 const actionIssue = computed(() => {
   const url = actionUrl.value.trim()
   const matched = url === '' ? [] : router.resolve(url).matched.map((record) => record.path)
   return actionLinkError(url, actionLabel.value, matched)
 })
 
-/* -------------------- 收件人 -------------------- */
-
 const realUsers = ref<AdminAccount[] | null>(null)
 const realUsersLoading = ref(false)
 let realUsersController: AbortController | undefined
 
-// 立即發送與排程的收件人都由後端從 users 表算（2026-09-30 以前立即發送用的是
-// 瀏覽器裡的示範帳號），所以兩種模式都用真實帳號那份名單，畫面上的人數才對得上。
+// 立即發送與排程都由後端 users 表計算收件人，畫面必須使用同一份真實帳號名單。
 watch(
   when,
   async (value) => {
@@ -292,8 +252,6 @@ function removeRecipient(email: string): void {
   recipientEmails.value = recipientEmails.value.filter((item) => item !== email)
 }
 
-/* -------------------- 管道 -------------------- */
-
 function channelOn(channel: NotifChannel): boolean {
   return channels.value.includes(channel)
 }
@@ -303,8 +261,6 @@ function setChannel(channel: NotifChannel, on: boolean): void {
     ? [...new Set([...channels.value, channel])]
     : channels.value.filter((item) => item !== channel)
 }
-
-/* -------------------- 初始狀態：query 帶進來的意圖 > 草稿 -------------------- */
 
 const presetTemplate = typeof route.query.template === 'string' ? route.query.template : ''
 // ?to= 可以是一個 email，也可以是逗號分隔的好幾個（使用者管理的批次發通知）。
@@ -320,17 +276,7 @@ const presetEmails = [
 ]
 const presetSchedule = route.query.when === 'schedule'
 
-/**
- * 帶著明確意圖進來時（模板列按「發送」、使用者管理對某幾個人發通知、
- * 排程頁按「排程發送」）不還原草稿。
- *
- * 原本是先還原草稿、再讓 query 蓋過去，結果兩件事混在一起：從使用者管理
- * 對兩個人按「發送通知」，卻帶回上次沒寫完的排程草稿的標題與排程模式；
- * 而模式從「立即」變「排程」又觸發了「清空收件人」，剛帶進來的兩個人
- * 就這樣不見了，畫面寫「沒有符合的收件人」。2026-09-24 驗收批次發通知時踩到。
- *
- * 舊草稿不會被刪；管理員開始編輯後，這一次的內容會成為新的草稿。
- */
+/** 帶有明確 query 意圖時不還原草稿，避免舊草稿混入本次內容或清掉指定收件人。 */
 const hasPreset = presetTemplate !== '' || presetEmails.length > 0 || presetSchedule
 
 const restored = hasPreset ? null : readDraft()
@@ -372,27 +318,17 @@ if (scheduledAt.value === '') {
   scheduledAt.value = toDateTimeLocal(next)
 }
 
-// ⚠️ 以下兩個 watcher 一定要在上面的初始化之後才註冊。Vue 的 watcher 會對
-// 「註冊之後」的變化起反應，setup 當下還原草稿或套用 ?when=schedule 時改到
-// when，如果 watcher 已經在了，就會把剛帶進來的收件人清掉。
-// 切換模式時把挑好的人清掉：兩邊是不同的名單，留著會變成「後端沒有這個人」
+// watcher 必須在草稿與 query 初始化後註冊，避免初始化 when 時清掉剛帶入的收件人。
 watch(when, () => {
   if (recipientEmails.value.length > 0) recipientEmails.value = []
 })
 
-/**
- * 切到排程時把管道收斂成只有 Email。
- *
- * 不做這件事會變成死路：套了模板之後站內是開的，切到排程後「站內不支援」
- * 擋住發送，但那顆開關在排程模式是 disabled —— 管理員關不掉它，只能切回
- * 立即發送關掉再切回來。自己收斂掉，比要求對方猜出這個順序好。
- */
+/** 切到排程時只保留 Email，避免不支援且已停用的管道開關阻擋發送。 */
 watch(when, (value) => {
   if (value === 'schedule') channels.value = ['email']
 })
 
 
-// 變數輸入框要跟著內容裡實際出現的變數走
 watch(
   variableNames,
   (names) => {
@@ -433,8 +369,6 @@ function discardDraft(): void {
   recipientEmails.value = []
   vars.value = {}
 }
-
-/* -------------------- 送出 -------------------- */
 
 const minValue = computed(() => minScheduleValue(now.value))
 const maxValue = computed(() => maxScheduleValue(now.value))
@@ -477,20 +411,7 @@ function composed(overrideSource?: string) {
   }
 }
 
-/**
- * 先寄給我自己。
- *
- * 走的是跟正式發送完全一樣的路徑：真的建立一筆 UserNotification、真的產生
- * 一個批次、真的進發送紀錄。所以它驗得到的是「這條路走得通、資料長對」。
- *
- * ⚠️ 它**看不到租客端的實際畫面**。租客收件匣是 /app/notifications，
- * router 的 meta.roles 只放行 tenant，管理員身分會被導回 /admin
- * （實測過）。所以文案不能寫「到通知中心看實際效果」—— 後台的通知中心
- * 是另一個獨立的 collection，根本不會顯示這筆。
- *
- * 要真的看到租客端長怎樣，只能用租客帳號登入。右邊那張預覽卡是為此存在的
- * 替代方案，而它是複製品不是同一個元件，這點也已經寫在 NotifPreviewCard 裡。
- */
+/** 試寄會建立正式通知與發送紀錄，但管理員無權開啟租客收件匣，後台通知中心也不會顯示這筆。 */
 async function sendToSelf(): Promise<void> {
   const email = getAuthSession()?.email
   if (!email) {
@@ -560,7 +481,6 @@ const confirmCount = computed(() =>
       </Button>
     </div>
 
-    <!-- 草稿回復：安靜地講一句，並給一顆清空 -->
     <div
       v-if="restoredAt"
       class="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/40 px-4 py-2.5 text-sm"
@@ -570,7 +490,6 @@ const confirmCount = computed(() =>
     </div>
 
     <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <!-- ============ 左：編輯 ============ -->
       <div class="space-y-6">
         <section class="space-y-4 rounded-2xl border border-border p-5">
           <h2 class="text-sm font-semibold">內容</h2>
@@ -757,10 +676,6 @@ const confirmCount = computed(() =>
             </Button>
           </div>
 
-          <!--
-            這段是整頁最重要的一句話：兩種送法能用的管道不一樣，
-            不寫出來的話管理員不可能知道。
-          -->
           <div class="rounded-xl bg-muted/40 p-3 text-xs leading-relaxed text-foreground/70">
             <template v-if="isSchedule">
               <span class="font-medium text-foreground">排程由系統執行</span>，到時間會自己寄出，
@@ -781,7 +696,6 @@ const confirmCount = computed(() =>
         </section>
       </div>
 
-      <!-- ============ 右：預覽與送出（釘住） ============ -->
       <div class="lg:sticky lg:top-4 lg:self-start">
         <div class="space-y-4 rounded-2xl border border-border p-5">
           <div>
@@ -805,7 +719,6 @@ const confirmCount = computed(() =>
             <Badge v-for="ch in channels" :key="ch" variant="outline">{{ CHANNEL_LABELS[ch] }}</Badge>
           </div>
 
-          <!-- 收件人：人數 + 可展開的前幾位 -->
           <div class="rounded-xl border border-border p-3">
             <div v-if="audienceUnavailable" class="text-sm">
               <p class="font-medium text-destructive">讀不到後端的帳號清單。</p>

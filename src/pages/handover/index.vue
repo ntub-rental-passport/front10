@@ -1,17 +1,5 @@
 <script setup lang="ts">
-/**
- * 點交清單與存證 — Hub 頁
- * ---------------------------------------------------------
- * 這頁是「集散地」，本身不執行拍照或比對，只負責：
- *   1. 讓使用者切換帳號所屬的租客合約（多址支援）
- *   2. 顯示目前租屋處的整體統計（搬入幾項、退租幾項、已比對幾項）
- *   3. 提供兩張大卡，分別連到：
- *      - 入住前點交：/app/handover/baseline
- *      - 退租前點交與比對：/app/handover/checkout
- *
- * 設計理由：搬入與退租是租期兩端的事件，中間隔數月到數年，
- * 把它們做成不同頁面比塞在同一頁更貼近真實使用情境。
- */
+/** 點交入口：切換租約、顯示統計，並導向入住與退租點交頁。 */
 
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -45,13 +33,9 @@ const { properties, currentProperty, selectProperty, busy, error, reload, itemsO
 const { registerRefresh } = useRefreshTarget()
 onMounted(() => registerRefresh(reload))
 
-// ---------- 租屋處 ---------- //
-
 function onSelectProperty(val: string) {
   selectProperty(val)
 }
-
-// ---------- 統計 ---------- //
 
 const stats = computed(() => {
   const items = itemsOfCurrentProperty.value
@@ -62,8 +46,6 @@ const stats = computed(() => {
     diffDone: items.filter((it) => it.diff).length,
   }
 })
-
-// ---------- 導航 ---------- //
 
 function goBaseline() {
   router.push('/app/handover/baseline')
@@ -86,7 +68,6 @@ function goCheckout() {
       {{ error }}
       <Button variant="outline" size="sm" :disabled="busy" @click="reload">重新載入</Button>
     </div>
-    <!-- 標題 -->
     <div>
       <h1 class="text-3xl font-bold tracking-tight">點交清單與存證</h1>
       <p class="text-muted-foreground">
@@ -94,7 +75,6 @@ function goCheckout() {
       </p>
     </div>
 
-    <!-- 租屋處選擇器 -->
     <Card>
       <CardContent class="pt-6">
         <div class="flex flex-wrap items-end gap-3">
@@ -142,9 +122,7 @@ function goCheckout() {
       </CardContent>
     </Card>
 
-    <!-- 兩個階段入口卡 -->
     <div v-if="currentProperty" class="grid gap-4 md:grid-cols-2">
-      <!-- 入住前點交（含彙整 + 列印 + 匯出） -->
       <Card class="hover:border-primary transition-colors cursor-pointer" @click="goBaseline">
         <CardHeader>
           <div class="flex items-center gap-2 text-primary">
@@ -163,7 +141,6 @@ function goCheckout() {
         </CardContent>
       </Card>
 
-      <!-- 退租前點交與比對 -->
       <Card class="hover:border-primary transition-colors cursor-pointer" @click="goCheckout">
         <CardHeader>
           <div class="flex items-center gap-2 text-primary">

@@ -81,7 +81,6 @@ function unreadAccent(item: InboxItem): string {
 
     <MaintenanceStatusPanel />
 
-    <!-- 分類篩選 -->
     <div class="flex flex-wrap gap-2">
       <button
         v-for="tab in filterTabs"

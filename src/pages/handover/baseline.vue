@@ -48,7 +48,6 @@ import {
   groupItemsByRoom,
   baselinePhotoCount,
 } from '@/src/utils/handover'
-// ---------- AR 相機彈窗狀態 ---------- //
 import { createHandoverPdf } from '@/src/utils/handover-pdf'
 const showCameraDialog = ref(false)
 const activeTargetItem = ref<HandoverItem | null>(null)
@@ -83,8 +82,6 @@ const {
 const { registerRefresh } = useRefreshTarget()
 onMounted(() => registerRefresh(reload))
 
-// ---------- 拍照與上傳存證---------- //
-
 function readOriginal(file: File): Promise<string> {
   if (file.size > 8_000_000)
     return Promise.reject(new Error('原始照片需小於 8 MB，請選擇較小的檔案。'))
@@ -115,7 +112,6 @@ async function processPhotoWithAI(
   })
 }
 
-// 相機拍照回傳
 async function handlePhotoCaptured(payload: CapturePayload) {
   if (!activeTargetItem.value) return
   await processPhotoWithAI(
@@ -168,8 +164,6 @@ async function capturePhoto(itemId: string, replacesId?: string) {
   input.click()
 }
 
-// ---------- 搜尋 / 篩選 ---------- //
-
 const keyword = ref('')
 const onlyDone = ref(false)
 
@@ -187,12 +181,8 @@ const filteredItems = computed(() => {
   })
 })
 
-// ---------- 依房間分組（用於主畫面 + 完整匯出） ---------- //
-
 type Grouped = { room: string; items: HandoverItem[] }
 const groupedByRoom = computed<Grouped[]>(() => groupItemsByRoom(filteredItems.value))
-
-// ---------- 統計 ---------- //
 
 const stats = computed(() => {
   const all = itemsOfCurrentProperty.value
@@ -202,8 +192,6 @@ const stats = computed(() => {
     rooms: new Set(all.map((it) => it.room)).size,
   }
 })
-
-// ---------- 匯出（雙格式）---------- //
 
 const exporting = ref(false)
 const exportError = ref('')
@@ -236,8 +224,6 @@ const detailOpen = computed({
   },
 })
 
-// ---------- 工具 ---------- //
-
 function firstBaseline(it: HandoverItem) {
   return firstEvidenceOfPhase(it, 'baseline')
 }
@@ -261,7 +247,6 @@ async function archivePhoto(id: string) {
       {{ error }}
       <Button variant="outline" size="sm" :disabled="busy" @click="reload">重新載入</Button>
     </div>
-    <!-- =================== 螢幕檢視（列印時隱藏） =================== -->
     <div class="screen-only space-y-6">
       <HandoverOverviewHeader
         title="入住前點交"
@@ -282,7 +267,6 @@ async function archivePhoto(id: string) {
         這是房東平台上的租約：你在這裡的點交照片與辨識結果，房東也看得到（只能看、不能改），退租時雙方可以對照。
       </p>
 
-      <!-- 工具列：新增 / 搜尋 / 篩選 / 兩種匯出 -->
       <div v-if="currentProperty" class="flex flex-wrap items-center gap-2 border-b pb-3">
         <div class="flex-1 min-w-0 space-y-1">
           <div class="relative">
@@ -336,7 +320,6 @@ async function archivePhoto(id: string) {
 
       <p v-if="exporting" role="status" class="text-sm text-muted-foreground">正在產生 PDF…</p>
       <p v-if="exportError" role="alert" class="text-sm text-destructive">{{ exportError }}</p>
-      <!-- 主內容：依房間分組，每組內以卡片網格呈現 -->
       <section v-if="currentProperty" class="space-y-6">
         <p v-if="groupedByRoom.length === 0" class="text-sm text-muted-foreground">
           <span v-if="itemsOfCurrentProperty.length === 0">
@@ -435,7 +418,6 @@ async function archivePhoto(id: string) {
       </DialogContent>
     </Dialog>
 
-    <!-- AR 智慧相機彈窗 -->
     <SmartCaptureCamera
       v-if="activeTargetItem"
       v-model:open="showCameraDialog"

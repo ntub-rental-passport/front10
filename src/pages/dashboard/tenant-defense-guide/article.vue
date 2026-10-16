@@ -342,7 +342,6 @@ const formatCurrency = (value: number) =>
 
       <div class="flex w-full justify-center">
         <div class="flex w-full max-w-[860px] flex-col gap-10 pt-2">
-          <!-- 案例問題 -->
           <section class="space-y-5">
             <div class="flex items-center gap-3">
               <div class="rounded-2xl bg-violet-100 p-3 text-violet-700">
@@ -380,7 +379,6 @@ const formatCurrency = (value: number) =>
 
           <div class="h-px bg-slate-200" />
 
-          <!-- 可援引的法律依據 -->
           <section class="space-y-5">
             <div class="flex items-center gap-3">
               <div class="rounded-2xl bg-slate-100 p-3 text-slate-700">
@@ -432,7 +430,6 @@ const formatCurrency = (value: number) =>
 
           <div class="h-px bg-slate-200" />
 
-          <!-- 四個關鍵爭點：改為單欄交錯圖文，順著文章往下讀 -->
           <section class="space-y-8">
             <h2 class="text-xl font-black sm:text-2xl">四個關鍵爭點</h2>
 
@@ -474,7 +471,6 @@ const formatCurrency = (value: number) =>
 
           <div class="h-px bg-slate-200" />
 
-          <!-- 租客處理流程 -->
           <section class="space-y-5">
             <div class="flex items-center gap-3">
               <div class="rounded-2xl bg-emerald-100 p-3 text-emerald-700">
@@ -502,7 +498,6 @@ const formatCurrency = (value: number) =>
             </ol>
           </section>
 
-          <!-- 回覆房東範本 -->
           <section
             class="overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-600 p-6 text-white sm:p-8"
           >
@@ -541,7 +536,6 @@ const formatCurrency = (value: number) =>
 
           <div class="h-px bg-slate-200" />
 
-          <!-- 常見問答（互動手風琴） -->
           <section class="space-y-5">
             <div class="flex items-center gap-3">
               <div class="rounded-2xl bg-indigo-100 p-3 text-indigo-700">
@@ -585,7 +579,6 @@ const formatCurrency = (value: number) =>
             </div>
           </section>
 
-          <!-- 分享文章 -->
           <section
             class="flex flex-col items-start justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:p-6"
           >

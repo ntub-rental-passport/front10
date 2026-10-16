@@ -103,15 +103,12 @@ const {
   setRealAccountStatus,
 } = useAdminDirectory()
 
-// 對應 Free、Plus、Pro，用明度表達方案越高階顏色越深。
 const planColors = computed(() => [
   chartColor('series-3'),
   chartColor('series-2'),
   chartColor('series-1'),
 ])
 
-// 再點一次同一個方案就取消篩選，不用特地跑去按「清除篩選」。
-// 圖表搬到列表下方之後，點了圖卻看不到列表變化 —— 所以篩完捲回列表。
 const listCard = ref<HTMLElement | null>(null)
 function handlePlanSelect(planKey: PlanDistributionSegment['planKey']): void {
   const plan = `${planRole.value}-${planKey}` as const
@@ -120,7 +117,6 @@ function handlePlanSelect(planKey: PlanDistributionSegment['planKey']): void {
   listCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-// 總覽頁的 KPI 卡帶著 ?alert= 跳過來，預選對應的警示條件
 watch(
   () => route.query.alert,
   (value) => {
@@ -160,30 +156,19 @@ watch(
 
 const alertOptions = Object.keys(userAlertLabels) as UserAlert[]
 
-/*
- * 真實帳號的統計。
- *
- * ⚠️ 只數 realAccounts —— 那是資料庫裡真的存在的人。下方表格同時列出
- * 展示資料（為了呈現訂閱、押金、工單等模組而生成的），把它們算進來
- * 會讓這四個數字變成沒有意義的混合值，而且看起來仍然很正常。
- */
+/* 統計只計 realAccounts，不可混入表格中的展示資料。 */
 const accountStats = computed(() => realAccountStats(realAccounts.value))
 const sourceSegments = computed(() =>
   registrationSources(realAccounts.value).map((s) => ({ label: s.label, value: s.count })),
 )
 
-// ── 停用／啟用真實帳號 ──────────────────────────────────────────
-//
-// 只有真實帳號有這個操作。展示資料沒有可以停用的對象 ——
-// 給它一顆按不動的按鈕，只會讓人以為是壞掉了。
+// 只有真實帳號能停用，展示資料沒有可停用的對象。
 
 const statusBusyId = ref<number | null>(null)
 const statusError = ref('')
 
 async function toggleStatus(row: UserDirectoryRow): Promise<void> {
   if (row.realAccountId === undefined) return
-  // 停用走確認框（跟批次同一個）：按下去對方立刻登不進來，而且可以附原因。
-  // 啟用是把權限還回去，維持一鍵。
   if (row.user.status === 'active') {
     openSingleSuspend(row)
     return
@@ -222,24 +207,12 @@ function handleFilterChange<K extends keyof typeof filter.value>(
   filter.value[key] = value as (typeof filter.value)[K]
 }
 
-// ── 發送通知 ────────────────────────────────────────────────────
-// 發送流程整個搬到 /admin/notifications/compose（整頁編輯器）。
-//
-// 原本刻意留在本頁顯示提示、不導頁，理由是「管理員多半要接著看下一列」。
-// 那個取捨在對話框時代成立；整頁編輯器帶得動預覽、收件人試算與排程，
-// 留一個縮水版的對話框在這裡只會讓兩套組字邏輯繼續漂移。
-// 編輯器送完會導回通知管理，要回到這一頁按瀏覽器上一頁即可。
-
 function openSend(row: UserDirectoryRow): void {
   void router.push({
     path: '/admin/notifications/compose',
     query: { to: row.user.email },
   })
 }
-
-// ── 排序 ────────────────────────────────────────────────────────
-// 點同一欄依序：第一次 → 反向 → 回到預設順序（真實帳號在前）。
-// 「最後登入」第一次點是降冪，因為要找的通常是「最近誰有在用」。
 
 const now = useNow()
 
@@ -279,9 +252,6 @@ const sortedRows = computed(() =>
   sortKey.value ? sortUserRows(filteredRows.value, sortKey.value, sortDir.value) : filteredRows.value,
 )
 
-// ── 分頁 ────────────────────────────────────────────────────────
-// 篩選或排序一變就回第 1 頁；paginate 本身也會把超出範圍的頁碼夾回來。
-
 const page = ref(1)
 const pageData = computed(() => paginate(sortedRows.value, page.value))
 watch([filter, sortKey, sortDir], () => (page.value = 1), { deep: true })
@@ -290,10 +260,7 @@ function goToPage(target: number): void {
   page.value = target
 }
 
-// ── 批次選取 ────────────────────────────────────────────────────
-// 只有真實、非管理員的帳號可以勾（理由見 isBulkSelectable）。
-// 換頁保留已勾的；已勾但被篩選藏起來的人也還在 —— 確認框會逐一列出，
-// 所以不會有「看不到的人被一起停用」這種事。
+// 僅真實且非管理員的帳號可勾選，換頁或篩選仍保留選取，確認框須列出完整名單。
 
 const selectedIds = ref<Set<string>>(new Set())
 
@@ -338,10 +305,7 @@ function bulkSend(): void {
   })
 }
 
-// ── 批次停用／啟用 ──────────────────────────────────────────────
-// 打開確認框的當下就把名單凍結起來。執行過程中每停用一位，那個人就會
-// 從 bulkPlan.suspend 裡消失 —— 直接拿 computed 顯示的話，確認框裡的
-// 名單會一邊跑一邊變短。
+// 確認框開啟時須凍結名單，避免執行停用後 computed 名單逐筆縮短。
 
 type BulkAction = 'suspend' | 'activate'
 
@@ -403,11 +367,6 @@ function displayName(row: UserDirectoryRow): string {
 
 <template>
   <div class="space-y-6">
-    <!--
-      標題與副標搬到頂部列了（見 src/utils/admin-page-title.ts）。
-      副標裡「點選任一列進入詳情」是操作提示不是說明，沒有跟著刪掉，
-      改放在表格自己的計數列旁邊 —— 那裡才是使用者正要動手的地方。
-    -->
 
     <div
       v-if="realAccountsError"
@@ -427,15 +386,7 @@ function displayName(row: UserDirectoryRow): string {
       {{ statusError }}
     </p>
 
-    <!--
-      KPI 從四張 StatTile（一排 156px 高）縮成一行式 InlineStat（約 56px），
-      理由同總覽頁：進這一頁是來找人的，列表應該一打開就看得到。
-      原本的表格要到 y=824 才開始，在 900px 高的畫面裡幾乎完全在摺線以下。
-
-      四格講的仍然是「這個平台實際上有幾個人」，只數真實帳號，不含下方
-      表格裡的展示資料。刻意不給 trend —— 沒有歷史快照可以比。
-      data-real 的約定見 src/pages/admin/index.vue 最上方。
-    -->
+    <!-- KPI 只計真實帳號，不含展示資料；沒有歷史快照，不能提供 trend。 -->
     <div data-real="true" class="grid grid-cols-2 gap-x-2 gap-y-1 lg:grid-cols-4">
       <InlineStat :icon="Users" label="註冊帳號" :value="accountStats.total" hero />
       <InlineStat :icon="UserPlus" label="本週新增" :value="accountStats.newThisWeek" />
@@ -516,16 +467,11 @@ function displayName(row: UserDirectoryRow): string {
               <span v-if="realAccountsLoading">（帳號讀取中…）</span>
             </p>
 
-            <!-- 從原本的頁面副標搬過來的操作提示 -->
             <p class="ml-auto whitespace-nowrap text-xs text-muted-foreground">
               點選任一列進入詳情
             </p>
           </div>
 
-          <!--
-            批次操作列：勾了人才出現。只有真實、非管理員的帳號能勾，
-            理由寫在 isBulkSelectable —— 這一行小字是給勾不下去的人看的。
-          -->
           <div
             v-if="selectedRows.length > 0"
             class="flex flex-wrap items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-4 py-2.5 text-sm"
@@ -557,7 +503,6 @@ function displayName(row: UserDirectoryRow): string {
             </div>
           </div>
 
-          <!-- 批次結果：成功幾位、誰失敗、為什麼。失敗的不能被「完成」兩個字吞掉 -->
           <div
             v-if="bulkResult"
             class="rounded-xl border px-4 py-3 text-sm"
@@ -620,7 +565,6 @@ function displayName(row: UserDirectoryRow): string {
                   </button>
                 </TableHead>
                 <TableHead class="text-right">操作</TableHead>
-                <!-- 鑽取箭頭欄：無標題，純粹是「這一列點得進去」的視覺提示 -->
                 <TableHead class="w-10" />
               </TableRow>
             </TableHeader>
@@ -645,11 +589,7 @@ function displayName(row: UserDirectoryRow): string {
                 <TableCell>
                   <div class="flex items-center gap-1.5">
                     <span class="font-medium">{{ row.user.email }}</span>
-                    <!--
-                      驗證狀態用圖示：獨立成欄時中文標題會在 1280px 被壓成直排。
-                      未驗證的圖示包在實心琥珀色的小圓裡 —— --accent 是填色不是文字色，
-                      直接拿來當圖示顏色在白底上只有 1.9（見 index.css 的說明）。
-                    -->
+                    <!-- --accent 直接作為圖示色在白底上對比不足，須搭配實心琥珀背景使用。 -->
                     <span :title="row.user.emailVerified ? 'Email 已驗證' : 'Email 未驗證'">
                       <BadgeCheck
                         v-if="row.user.emailVerified"
@@ -674,7 +614,6 @@ function displayName(row: UserDirectoryRow): string {
                   </div>
                 </TableCell>
 
-                <!-- 相對時間給掃視用，完整時間放 title，滑過去看；沒有紀錄的滑過去看原因 -->
                 <TableCell
                   class="whitespace-nowrap text-sm"
                   :title="row.user.lastLoginAt ? formatDateTime(row.user.lastLoginAt) : NO_LOGIN_RECORD_HINT"
@@ -749,10 +688,7 @@ function displayName(row: UserDirectoryRow): string {
                   </AdminRowActions>
                 </TableCell>
 
-                <!--
-                  這一格沒有 @click.stop：箭頭暗示「點得進去」，
-                  點它就該跟點整列一樣打開詳情，不然就是騙人。
-                -->
+                <!-- 此格須讓 click 冒泡到整列，才能點箭頭開啟詳情。 -->
                 <TableCell class="w-10 text-right text-muted-foreground">
                   <ArrowUpRight :size="16" class="inline" aria-hidden="true" />
                 </TableCell>
@@ -802,10 +738,6 @@ function displayName(row: UserDirectoryRow): string {
       </Card>
     </div>
 
-    <!--
-      統計圖表搬到列表下方：它們是偶爾看一次的東西，不該擋在「找人」前面。
-      點方案圓餅圖仍然會篩選上方的列表，篩完會自己捲回列表（見 handlePlanSelect）。
-    -->
     <CategoryBarCard
       v-if="sourceSegments.length"
       data-real="true"
@@ -814,10 +746,6 @@ function displayName(row: UserDirectoryRow): string {
       :items="sourceSegments"
     />
 
-    <!--
-      甜甜圈要留白給外側標籤所以吃比較多寬度；管理員人數只有一個數字，
-      給它等寬只會空一大片。items-start 讓它照內容收高，不被甜甜圈撐平。
-    -->
     <div class="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
       <PlanDistributionCard
         v-model="planRole"
@@ -829,10 +757,6 @@ function displayName(row: UserDirectoryRow): string {
       <AdminRoleCountCard :count="adminTotal" />
     </div>
 
-    <!--
-      停用／啟用的確認框：逐一列出會動到誰，名單在打開時就凍結。
-      單筆的「停用」也走這裡（名單只有一個人），才有地方填停用原因。
-    -->
     <Dialog :open="bulkAction !== null" @update:open="(open: boolean) => { if (!open) closeBulk() }">
       <DialogContent>
         <DialogHeader>
@@ -856,7 +780,6 @@ function displayName(row: UserDirectoryRow): string {
             <span class="truncate text-xs text-muted-foreground">{{ row.user.email }}</span>
           </li>
         </ul>
-        <!-- 原因選填：寫進稽核紀錄，事後回頭查才知道當初為什麼停 -->
         <div v-if="bulkAction === 'suspend'" class="space-y-2">
           <Label for="suspend-reason">停用原因（選填）</Label>
           <Textarea

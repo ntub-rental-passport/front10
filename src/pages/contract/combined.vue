@@ -40,9 +40,6 @@ import {
   Printer,
 } from 'lucide-vue-next'
 
-// ─────────────────────────────────────────────
-// 契約基本資訊 & 整體分數（ContractResult）
-// ─────────────────────────────────────────────
 const contractInfo = ref({
   fileName: '租賃契約書_陳大明_林小明.pdf',
   analyzedAt: '2026-05-21 14:32',
@@ -54,9 +51,6 @@ const contractInfo = ref({
   rent: 'NT$18,000 / 月',
 })
 
-// ─────────────────────────────────────────────
-// 契約頁面瀏覽（左欄）
-// ─────────────────────────────────────────────
 interface ContractLine {
   text: string
   highlight?: 'danger' | 'warning' | null
@@ -131,9 +125,6 @@ function zoomOut() {
   if (zoomLevel.value > 70) zoomLevel.value -= 10
 }
 
-// ─────────────────────────────────────────────
-// 風險條款資料（合併 ContractAnalysis + ContractResult）
-// ─────────────────────────────────────────────
 interface LegalRef {
   law: string
   content: string
@@ -252,9 +243,6 @@ const riskClauses = ref<RiskClause[]>([
   },
 ])
 
-// ─────────────────────────────────────────────
-// 整體風險評分（ContractResult 邏輯）
-// ─────────────────────────────────────────────
 const riskStats = computed(() => {
   const counts = { high: 0, medium: 0, low: 0, safe: 0 }
   riskClauses.value.forEach(c => counts[c.riskLevel]++)
@@ -343,9 +331,6 @@ const riskIconColor = (level: string) => {
   }
 }
 
-// ─────────────────────────────────────────────
-// AI 談判腳本 Dialog（合併 ContractNegotiation）
-// ─────────────────────────────────────────────
 const showNegotiationDialog = ref(false)
 const negotiationTarget = ref<RiskClause | null>(null)
 const isGenerating = ref(false)
@@ -469,7 +454,6 @@ async function copyScript() {
 <template>
   <div class="contract-combined-page">
 
-    <!-- ─── 頁首 ─── -->
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-foreground">契約風險完整報告</h1>
@@ -489,9 +473,7 @@ async function copyScript() {
       </div>
     </div>
 
-    <!-- ─── 整體摘要列 ─── -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <!-- 圓形評分 -->
       <Card>
         <CardContent class="pt-6 flex flex-col items-center justify-center">
           <div class="relative size-28 flex items-center justify-center">
@@ -518,7 +500,6 @@ async function copyScript() {
         </CardContent>
       </Card>
 
-      <!-- 風險分佈 -->
       <Card>
         <CardHeader class="pb-2">
           <CardTitle class="text-sm text-muted-foreground">風險分佈</CardTitle>
@@ -549,7 +530,6 @@ async function copyScript() {
         </CardContent>
       </Card>
 
-      <!-- 契約基本資訊 -->
       <Card class="md:col-span-2">
         <CardHeader class="pb-2">
           <CardTitle class="text-sm text-muted-foreground">契約基本資訊</CardTitle>
@@ -585,10 +565,8 @@ async function copyScript() {
       </Card>
     </div>
 
-    <!-- ─── 主要兩欄 ─── -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
 
-      <!-- ─────── 左欄：契約內容瀏覽 ─────── -->
       <Card class="sticky top-6">
         <CardHeader class="flex flex-row items-center justify-between pb-3">
           <CardTitle class="text-lg">原始契約內容</CardTitle>
@@ -598,7 +576,6 @@ async function copyScript() {
           </Badge>
         </CardHeader>
         <CardContent>
-          <!-- 契約內容 -->
           <div
             class="rounded-lg border bg-white p-8 min-h-[520px] overflow-auto"
             :style="{ fontSize: `${zoomLevel * 0.14}px`, lineHeight: '2' }"
@@ -637,7 +614,6 @@ async function copyScript() {
             </div>
           </div>
 
-          <!-- 翻頁 & 縮放 -->
           <div class="flex items-center justify-between mt-4 text-sm text-muted-foreground">
             <div class="flex items-center gap-1">
               <Button variant="ghost" size="sm" :disabled="currentPage <= 1" @click="prevPage">
@@ -664,9 +640,7 @@ async function copyScript() {
         </CardContent>
       </Card>
 
-      <!-- ─────── 右欄：風險分析卡片 ─────── -->
       <div class="flex flex-col gap-4">
-        <!-- 小標題列 -->
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <AlertTriangle :size="20" class="text-amber-600" />
@@ -694,14 +668,12 @@ async function copyScript() {
           </label>
         </div>
 
-        <!-- 風險卡片列表 -->
         <div
           v-for="clause in filteredClauses"
           :key="clause.id"
           class="rounded-xl border transition-all overflow-hidden"
           :class="[riskBorderColor(clause.riskLevel), riskCardBg(clause.riskLevel)]"
         >
-          <!-- 卡片標題列 -->
           <div
             class="flex items-center justify-between p-4 cursor-pointer"
             @click="toggleExpand(clause)"
@@ -725,14 +697,11 @@ async function copyScript() {
             />
           </div>
 
-          <!-- 收合時的摘要 -->
           <div v-if="!clause.expanded" class="px-4 pb-4 -mt-1">
             <p class="text-sm text-muted-foreground">{{ clause.riskDescription }}</p>
           </div>
 
-          <!-- 展開的完整內容 -->
           <div v-if="clause.expanded" class="px-4 pb-4">
-            <!-- 原文條款 -->
             <div class="mb-3">
               <p class="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
                 <FileText :size="12" />
@@ -743,7 +712,6 @@ async function copyScript() {
               </div>
             </div>
 
-            <!-- 白話解釋 + 修改建議（兩欄） -->
             <div
               v-if="clause.riskLevel !== 'safe'"
               class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3"
@@ -765,12 +733,10 @@ async function copyScript() {
               </div>
             </div>
 
-            <!-- safe 等級的簡單說明 -->
             <div v-else class="mb-3">
               <p class="text-sm text-muted-foreground">{{ clause.plainExplanation }}</p>
             </div>
 
-            <!-- 修改建議 -->
             <div v-if="clause.riskLevel !== 'safe'" class="mb-3">
               <p class="text-xs font-medium text-muted-foreground mb-1">修改建議</p>
               <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm leading-relaxed text-emerald-900">
@@ -778,7 +744,6 @@ async function copyScript() {
               </div>
             </div>
 
-            <!-- 法律依據（可展開） -->
             <div
               v-if="clause.legalRefs.length > 0"
               class="rounded-lg border bg-muted/30 overflow-hidden mb-3"
@@ -810,7 +775,6 @@ async function copyScript() {
               <Badge variant="outline" class="text-xs">{{ clause.legalBasis }}</Badge>
             </div>
 
-            <!-- 底部操作按鈕 -->
             <div v-if="clause.riskLevel !== 'safe'" class="flex items-center justify-end">
               <Button size="sm" @click.stop="openNegotiationDialog(clause)">
                 <MessageSquareText data-icon="inline-start" />
@@ -820,7 +784,6 @@ async function copyScript() {
           </div>
         </div>
 
-        <!-- 底部免責聲明 -->
         <div class="flex items-center gap-2 rounded-lg border bg-muted/30 px-4 py-3">
           <Info :size="16" class="text-muted-foreground shrink-0" />
           <p class="text-xs text-muted-foreground">
@@ -830,7 +793,6 @@ async function copyScript() {
       </div>
     </div>
 
-    <!-- ─── AI 談判腳本 Dialog ─── -->
     <Dialog v-model:open="showNegotiationDialog">
       <DialogContent class="max-w-2xl max-h-[85vh] overflow-auto">
         <DialogHeader>
@@ -843,7 +805,6 @@ async function copyScript() {
           </DialogDescription>
         </DialogHeader>
 
-        <!-- 語氣選擇 -->
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-sm text-muted-foreground shrink-0">溝通語氣：</span>
           <label
@@ -865,19 +826,16 @@ async function copyScript() {
           </label>
         </div>
 
-        <!-- 產生中 -->
         <div v-if="isGenerating" class="flex flex-col items-center justify-center py-12">
           <Loader2 :size="32" class="animate-spin text-primary mb-3" />
           <p class="text-muted-foreground text-sm">AI 正在產生談判腳本...</p>
         </div>
 
-        <!-- 已產生 -->
         <div v-else class="flex flex-col gap-4">
           <div class="rounded-lg border bg-muted/20 p-5 text-sm leading-7 whitespace-pre-wrap">
             {{ generatedScript }}
           </div>
 
-          <!-- 使用建議 -->
           <div class="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
             <ThumbsUp :size="16" class="text-primary shrink-0 mt-0.5" />
             <p class="text-xs text-muted-foreground">
@@ -885,7 +843,6 @@ async function copyScript() {
             </p>
           </div>
 
-          <!-- 操作按鈕 -->
           <div class="flex items-center justify-end gap-2">
             <Button variant="outline" size="sm" @click="regenerateScript">
               <RotateCcw data-icon="inline-start" />

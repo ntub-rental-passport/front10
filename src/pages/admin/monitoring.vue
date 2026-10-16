@@ -85,11 +85,7 @@ const now = computed(() => {
   return serverNow()
 })
 
-/* -------------------- 事件紀錄（服務卡的「上次斷線」也要用） -------------------- */
-
 const eventRows = computed(() => buildEventRows(events.value ?? []))
-
-/* -------------------- 服務是否在線 -------------------- */
 
 function withNotes(reading: MonitorReading, notes: (string | null)[]): MonitorReading {
   const kept = notes.filter((note): note is string => note !== null)
@@ -106,8 +102,6 @@ const serviceReadings = computed(() =>
     return reading
   }),
 )
-
-/* -------------------- 背景工作 -------------------- */
 
 interface QueueCard {
   key: string
@@ -139,8 +133,6 @@ const queueCards = computed<QueueCard[]>(() => {
   })
 })
 
-/* -------------------- 總結列 -------------------- */
-
 const heartbeatStale = computed(() => (summary.value ? isHeartbeatStale(summary.value) : false))
 
 const closedFeatures = computed(() =>
@@ -169,10 +161,6 @@ const OVERVIEW_ICONS: Record<StatusDotTone, Component> = {
   idle: Activity,
 }
 
-/**
- * 總結列左邊那塊的底色。異常沿用 StatusDot 的實心 chip；正常只給淡淡的綠，
- * 跟 StatusDot 的原則一致：沒事的時候不要搶眼。
- */
 const OVERVIEW_TILE_CLASS: Record<StatusDotTone, string> = {
   ok: 'bg-success/10 text-success',
   warn: STATUS_CHIP_CLASS.warn,
@@ -189,8 +177,6 @@ const heartbeatText = computed(() => {
   if (!summary.value) return '—'
   return formatTimeAgo(summary.value.lastHeartbeat, now.value)
 })
-
-/* -------------------- 事件紀錄 -------------------- */
 
 const eventFilter = ref<EventFilter>('all')
 const EVENT_PAGE_SIZE = 20
@@ -223,15 +209,11 @@ function selectEventFilter(value: string | number): void {
   showAllEvents.value = false
 }
 
-/* -------------------- AI 額度用量（OCR 服務回報的 Google Vision 頁數） -------------------- */
-
 const { records, loadState: aiUsageState, usages, trendDates, seriesFor } = useAdminAiUsage()
 // 每次打開都重讀：用量是 OCR 服務一直在回報的，上次讀到的可能已經舊了
 void loadAiUsage()
 
-// 從額度通知的「查看 AI 用量」、首頁的 AI 額度卡點進來會帶 #ai-usage。這一區在頁面
-// 很下面，要等上面的監控數據與事件紀錄也讀完再捲（不然捲完上面才長出來，又被推走）。
-// 路由沒有全站的 scrollBehavior（加了會動到租客端），所以在這頁自己處理。
+// 等監控數據與事件紀錄載入後再捲到 #ai-usage，避免上方內容長出來後推移位置。
 const route = useRoute()
 const aiUsageSection = ref<HTMLElement | null>(null)
 watch(
@@ -296,10 +278,6 @@ function daysLeftText(usage: ProviderUsage): string {
 
 <template>
   <div class="space-y-8">
-    <!--
-      總結列：一進來不用看完整頁，就知道今天有沒有事。
-      「需要注意」只數要管理員動手的（warn／danger），規則見 collectAttention。
-    -->
     <Card class="rounded-3xl">
       <CardContent class="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
         <div class="flex min-w-0 items-center gap-4">
@@ -338,7 +316,6 @@ function daysLeftText(usage: ProviderUsage): string {
       </CardContent>
     </Card>
 
-    <!-- 一、服務是否在線：掛了要去重啟 -->
     <section class="space-y-3" aria-labelledby="monitor-services">
       <div>
         <h2 id="monitor-services" class="text-lg font-bold tracking-tight">服務是否在線</h2>
@@ -346,7 +323,6 @@ function daysLeftText(usage: ProviderUsage): string {
           前三項是後端本身，後兩項是它依賴的服務。AI 模型與 OCR 由後端每 60 秒檢查一次，沒人開這頁也照常檢查。
         </p>
       </div>
-      <!-- 六欄：上排三張各佔二欄，下排兩張各佔三欄 —— 下排有備援與上次斷線要講，需要寬一點 -->
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <MonitorCard
           v-for="(reading, index) in serviceReadings"
@@ -357,7 +333,6 @@ function daysLeftText(usage: ProviderUsage): string {
       </div>
     </section>
 
-    <!-- 二、背景工作：失敗了要去看是哪幾筆 -->
     <section class="space-y-3" aria-labelledby="monitor-queues">
       <div>
         <h2 id="monitor-queues" class="text-lg font-bold tracking-tight">背景工作</h2>
@@ -434,16 +409,11 @@ function daysLeftText(usage: ProviderUsage): string {
       </div>
     </section>
 
-    <!-- 三、設定與維護：缺了要去補 .env；功能壞了先對使用者暫停 -->
     <section class="space-y-3" aria-labelledby="monitor-config">
       <div>
         <h2 id="monitor-config" class="text-lg font-bold tracking-tight">設定與維護</h2>
         <p class="text-sm text-foreground/70">設定缺了要到伺服器的 .env 補上，再重新啟動後端；功能壞了可以先在這裡對使用者暫停。</p>
       </div>
-      <!--
-        上下疊而不是左右並排：功能開關有六列、每列一顆按鈕，並排時左邊的設定卡
-        會空出一大塊。兩張卡各自在卡內排成兩欄，高度都收得起來。
-      -->
       <div class="space-y-4">
         <Card class="rounded-3xl">
           <CardHeader class="p-5">
@@ -477,7 +447,6 @@ function daysLeftText(usage: ProviderUsage): string {
       </div>
     </section>
 
-    <!-- 四、事件紀錄：壞掉的時候留下的紀錄 -->
     <section class="space-y-3" aria-labelledby="monitor-events">
       <div>
         <h2 id="monitor-events" class="text-lg font-bold tracking-tight">事件紀錄</h2>
@@ -524,7 +493,6 @@ function daysLeftText(usage: ProviderUsage): string {
                 <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
                   <component :is="EVENT_ICONS[row.kind]" class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   {{ row.title }}
-                  <!-- 整份紀錄只有這一種要上色：還沒恢復的斷線是現在進行式，其他都是過去式 -->
                   <StatusDot v-if="row.ongoing" tone="danger" label="尚未恢復" emphasize />
                 </p>
                 <p v-if="row.detail" class="mt-0.5 break-words text-sm text-muted-foreground">{{ row.detail }}</p>
@@ -543,10 +511,7 @@ function daysLeftText(usage: ProviderUsage): string {
       </Card>
     </section>
 
-    <!--
-      五、AI 額度用量：真實資料。OCR 服務每次呼叫 Google Vision 都會回報頁數
-      （backend/admin/ai_usage.py）。讀不到時整區換成提示，不顯示 0 頁、正常。
-    -->
+    <!-- AI 用量讀取失敗時不可顯示為 0 頁或正常。 -->
     <section
       ref="aiUsageSection"
       data-real="true"
