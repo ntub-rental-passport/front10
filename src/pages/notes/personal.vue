@@ -78,7 +78,7 @@ const notes = reactive(useNotesState('personal'))
 
       <div class="rhythm-summary" aria-label="今日節奏摘要">
         <div class="summary-item">
-          <span class="summary-label">今日事項</span>
+          <span class="summary-label max-sm:whitespace-nowrap">今日事項</span>
           <strong>{{ String(notes.personalStats.today).padStart(2, '0') }}</strong>
           <small>TO DO</small>
         </div>

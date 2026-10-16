@@ -1122,6 +1122,11 @@ main > div:has(> .garbage-page--wide) {
   }
 }
 @media (max-width: 639px) {
+  .garbage-page .garbage-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    overflow: visible;
+  }
   .garbage-page .station-detail {
     bottom: calc(64px + 16px + env(safe-area-inset-bottom));
   }

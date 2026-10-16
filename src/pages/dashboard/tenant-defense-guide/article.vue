@@ -391,17 +391,17 @@ const formatCurrency = (value: number) =>
             </div>
 
             <div class="overflow-hidden rounded-3xl border border-slate-100">
-              <table class="w-full border-collapse text-left text-sm">
-                <thead class="bg-slate-50 text-xs font-bold text-slate-500">
+              <table class="block w-full border-collapse text-left text-sm sm:table">
+                <thead class="hidden bg-slate-50 text-xs font-bold text-slate-500 sm:table-header-group">
                   <tr>
                     <th class="px-4 py-3">法條</th>
                     <th class="px-4 py-3">重點</th>
                     <th class="px-4 py-3">可怎麼用</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100">
-                  <tr v-for="row in lawRows" :key="row.name" class="align-top">
-                    <td class="px-4 py-4 font-bold text-slate-900">
+                <tbody class="block divide-y divide-slate-100 sm:table-row-group">
+                  <tr v-for="row in lawRows" :key="row.name" class="block align-top sm:table-row">
+                    <td class="block px-4 pb-2 pt-4 font-bold text-slate-900 sm:table-cell sm:py-4">
                       <a
                         :href="row.href"
                         target="_blank"
@@ -410,8 +410,14 @@ const formatCurrency = (value: number) =>
                         >{{ row.name }}</a
                       >
                     </td>
-                    <td class="px-4 py-4 text-slate-600">{{ row.point }}</td>
-                    <td class="px-4 py-4 text-slate-600">{{ row.usage }}</td>
+                    <td class="block px-4 pb-2 text-slate-600 sm:table-cell sm:py-4">
+                      <span class="mb-1 block text-xs font-bold text-slate-500 sm:hidden">重點</span>
+                      {{ row.point }}
+                    </td>
+                    <td class="block px-4 pb-4 text-slate-600 sm:table-cell sm:py-4">
+                      <span class="mb-1 block text-xs font-bold text-slate-500 sm:hidden">可怎麼用</span>
+                      {{ row.usage }}
+                    </td>
                   </tr>
                 </tbody>
               </table>

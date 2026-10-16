@@ -157,74 +157,87 @@ const activeLeaseId = computed(() =>
     <header class="space-y-1">
       <h1 class="text-3xl font-bold tracking-tight text-slate-900">租屋總覽</h1>
       <p class="text-sm text-slate-500">
-        {{ activeContractView ? `${activeContractView.title} · ${activeContractView.city}` : '尚未選擇租約' }}
+        {{ activeContractView ? [activeContractView.title, activeContractView.city].filter(Boolean).join(' · ') : '尚未選擇租約' }}
       </p>
     </header>
 
     <section class="grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4">
       <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
-        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+        <CardHeader class="relative flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-4 py-4 sm:px-5">
           <div class="min-w-0">
-            <CardTitle class="text-xs font-semibold text-slate-500">月租金合計</CardTitle>
-            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+            <CardTitle class="pr-8 text-xs font-semibold text-slate-500 sm:pr-0">月租金合計</CardTitle>
+            <div class="mt-1 whitespace-nowrap text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
               {{ globalStats.totalMonthlyRent === 0 ? '--' : formatCurrency(globalStats.totalMonthlyRent) }}
             </div>
-            <p class="mt-0.5 text-xs text-slate-500">所有租約合計</p>
+            <p class="mt-0.5 text-xs text-slate-500">
+              <span class="sm:hidden">合計</span>
+              <span class="hidden sm:inline">所有租約合計</span>
+            </p>
           </div>
-          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+          <div class="absolute right-3 top-3 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1.5 text-slate-500 sm:static sm:p-2.5">
             <Building2 class="h-4 w-4" />
           </div>
         </CardHeader>
       </Card>
 
       <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
-        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+        <CardHeader class="relative flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-4 py-4 sm:px-5">
           <div class="min-w-0">
-            <CardTitle class="text-xs font-semibold text-slate-500">本期待繳合計</CardTitle>
-            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+            <CardTitle class="pr-8 text-xs font-semibold text-slate-500 sm:pr-0">本期待繳合計</CardTitle>
+            <div class="mt-1 whitespace-nowrap text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
               {{ globalStats.totalPending === 0 ? '已清繳' : formatCurrency(globalStats.totalPending) }}
             </div>
-            <p class="mt-0.5 text-xs text-slate-500">所有租約本期已知待繳金額</p>
+            <p class="mt-0.5 text-xs text-slate-500">
+              <span class="sm:hidden">本期待繳</span>
+              <span class="hidden sm:inline">所有租約本期已知待繳金額</span>
+            </p>
           </div>
-          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+          <div class="absolute right-3 top-3 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1.5 text-slate-500 sm:static sm:p-2.5">
             <PiggyBank class="h-4 w-4" />
           </div>
         </CardHeader>
       </Card>
 
       <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
-        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+        <CardHeader class="relative flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-4 py-4 sm:px-5">
           <div class="min-w-0">
-            <CardTitle class="text-xs font-semibold text-slate-500">最近應繳日</CardTitle>
-            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+            <CardTitle class="pr-8 text-xs font-semibold text-slate-500 sm:pr-0">最近應繳日</CardTitle>
+            <div class="mt-1 whitespace-nowrap text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
               {{ globalStats.nearestDue ? formatDate(globalStats.nearestDue, true) : '已清繳' }}
             </div>
             <p
               class="mt-0.5 text-xs"
               :class="globalStats.overdueCount > 0 ? 'font-medium text-red-500' : 'text-slate-500'"
             >
-              {{ globalStats.overdueCount > 0 ? `有 ${globalStats.overdueCount} 筆逾期帳單` : '最近待繳期限' }}
+              <span v-if="globalStats.overdueCount > 0">有 {{ globalStats.overdueCount }} 筆逾期帳單</span>
+              <template v-else>
+                <span class="sm:hidden">待繳期限</span>
+                <span class="hidden sm:inline">最近待繳期限</span>
+              </template>
             </p>
           </div>
-          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+          <div class="absolute right-3 top-3 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1.5 text-slate-500 sm:static sm:p-2.5">
             <CalendarClock class="h-4 w-4" />
           </div>
         </CardHeader>
       </Card>
 
       <Card class="rounded-2xl border border-slate-200/80 shadow-sm">
-        <CardHeader class="flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-5 py-4">
+        <CardHeader class="relative flex min-w-0 flex-row items-center justify-between gap-3 space-y-0 px-4 py-4 sm:px-5">
           <div class="min-w-0">
-            <CardTitle class="text-xs font-semibold text-slate-500">整體租約進度</CardTitle>
-            <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+            <CardTitle class="pr-8 text-xs font-semibold text-slate-500 sm:pr-0">整體租約進度</CardTitle>
+            <div class="mt-1 whitespace-nowrap text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
               {{ globalStats.totalPaid }} / {{ globalStats.totalCycles }}
             </div>
-            <p class="mt-0.5 text-xs text-slate-500">已繳期數 / 全部期數</p>
+            <p class="mt-0.5 text-xs text-slate-500">
+              <span class="sm:hidden">已繳 / 全部</span>
+              <span class="hidden sm:inline">已繳期數 / 全部期數</span>
+            </p>
             <p v-if="globalStats.pendingUtilityCount > 0" class="text-xs text-slate-500">
               另有 {{ globalStats.pendingUtilityCount }} 期水電資料待填寫
             </p>
           </div>
-          <div class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+          <div class="absolute right-3 top-3 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1.5 text-slate-500 sm:static sm:p-2.5">
             <CheckSquare class="h-4 w-4" />
           </div>
         </CardHeader>
