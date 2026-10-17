@@ -9,6 +9,7 @@ import {
 import {
   fetchDashboardContracts,
   downloadBillPaymentProof,
+  downloadPaymentRecords,
   recordBillPayment,
   reportLandlordPayment,
   undoBillPayment,
@@ -101,6 +102,7 @@ export function useDashboard() {
   const loading = ref(true)
   const loadError = ref('')
   const actionError = ref('')
+  const exportingPayments = ref(false)
   const selectedContractId = ref('')
 
   async function loadContracts(): Promise<void> {
@@ -350,6 +352,19 @@ export function useDashboard() {
     }
   }
 
+  async function exportPayments() {
+    if (exportingPayments.value) return
+    exportingPayments.value = true
+    actionError.value = ''
+    try {
+      await downloadPaymentRecords()
+    } catch (error) {
+      actionError.value = error instanceof Error ? error.message : '資料匯出失敗，請稍後重試。'
+    } finally {
+      exportingPayments.value = false
+    }
+  }
+
   async function downloadPaymentProof(cycleId: string) {
     actionError.value = ''
     try {
@@ -436,6 +451,8 @@ export function useDashboard() {
     cycleRowClass,
     defenseReminder,
     downloadPaymentProof,
+    exportPayments,
+    exportingPayments,
     featuredArticles,
     filterTab,
     filteredCycles,

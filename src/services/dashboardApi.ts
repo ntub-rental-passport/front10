@@ -1,4 +1,5 @@
 import { getAuthSession } from '@/src/composables/useAuth'
+import { downloadTenantExport } from '@/src/services/tenantExportApi'
 import type { PaymentMethod, RentalContract } from '@/src/utils/dashboard-contract'
 
 const API_BASE = import.meta.env.DEV
@@ -41,6 +42,10 @@ async function dashboardRequest<T>(path: string, method = 'GET', data?: unknown)
 /** 使用者已存檔的終版租約與每期帳單。沒有租約時回空陣列。 */
 export function fetchDashboardContracts(): Promise<RentalContract[]> {
   return dashboardRequest<RentalContract[]>('/contracts')
+}
+
+export function downloadPaymentRecords(): Promise<void> {
+  return downloadTenantExport('/dashboard/payments/export', 'RentMate-繳費紀錄.zip')
 }
 
 export function recordBillPayment(

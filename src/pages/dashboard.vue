@@ -82,6 +82,8 @@ const {
   cycleRowClass,
   defenseReminder,
   downloadPaymentProof,
+  exportPayments,
+  exportingPayments,
   featuredArticles,
   filterTab,
   filteredCycles,
@@ -444,6 +446,12 @@ const activeLeaseId = computed(() =>
         <Card class="overflow-hidden rounded-2xl border border-slate-200/80 shadow-sm">
           <CardContent class="p-0">
             <div class="border-b border-slate-100 bg-white px-4 pt-2">
+              <div class="flex flex-wrap items-center justify-between gap-2 py-2">
+                <h2 class="text-sm font-semibold text-slate-900">繳費紀錄</h2>
+                <Button type="button" variant="outline" size="sm" :disabled="exportingPayments" @click="exportPayments">
+                  {{ exportingPayments ? '匯出中…' : '匯出繳費紀錄' }}
+                </Button>
+              </div>
               <div class="overflow-x-auto">
                 <div class="flex min-w-max items-center gap-5">
                   <button

@@ -7,6 +7,7 @@ import type { CycleView } from '@/src/utils/dashboard-contract'
 
 const mocks = vi.hoisted(() => ({
   selected: true,
+  exporting: false,
   cycles: [] as CycleView[],
   contract: {
     id: 'rental-1',
@@ -35,6 +36,7 @@ vi.mock('@/src/composables/useDashboard', async (importOriginal) => {
   return {
     useDashboard: () => ({
       ...actual.useDashboard(),
+      exportingPayments: ref(mocks.exporting),
       activeContractView: ref(mocks.selected ? mocks.contract : null),
       globalStats: ref(mocks.stats),
       filteredCycles: ref(mocks.cycles),
@@ -65,6 +67,7 @@ async function render() {
 
 beforeEach(() => {
   mocks.selected = true
+  mocks.exporting = false
   mocks.contract.title = 'pp 1'
   mocks.contract.city = ''
   mocks.stats.overdueCount = 0
@@ -72,6 +75,15 @@ beforeEach(() => {
 })
 
 describe('租屋總覽手機文案', () => {
+  it('繳費清單顯示可用的匯出按鈕，下載中顯示停用狀態', async () => {
+    const button = (html: string, label: string) => [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)]
+      .map(([value]) => value).find((value) => value.includes(label))
+    expect(button(await render(), '匯出繳費紀錄')).toBeDefined()
+    expect(button(await render(), '匯出繳費紀錄')).not.toMatch(/\bdisabled(?:[\s=>])/)
+    mocks.exporting = true
+    expect(button(await render(), '匯出中…')).toMatch(/\bdisabled(?:[\s=>])/)
+  })
+
   it.each([
     ['pp 1', '', 'pp 1'],
     ['pp 1', '臺北市', 'pp 1 · 臺北市'],

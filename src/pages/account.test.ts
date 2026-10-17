@@ -9,6 +9,7 @@ import { publicSettings } from '@/src/composables/usePublicSettings'
 const mocks = vi.hoisted(() => ({
   saveNickname: vi.fn(),
   signOut: vi.fn(),
+  downloadAccountData: vi.fn(),
 }))
 const unreadCount = ref(0)
 const pushState = ref('off')
@@ -41,6 +42,7 @@ vi.mock('@/src/composables/useAuth', () => ({
   finishNicknameSetup: mocks.saveNickname,
   signOut: mocks.signOut,
 }))
+vi.mock('@/src/services/tenantExportApi', () => ({ downloadAccountData: mocks.downloadAccountData }))
 vi.mock('@/src/composables/useNotifications', () => ({
   useNotifications: vi.fn(() => ({ unreadCount })),
 }))
@@ -54,6 +56,8 @@ interface PageState {
   isEditing: boolean
   feedback: string
   saveProfile: () => Promise<void>
+  exportingData: boolean
+  exportData: () => Promise<void>
 }
 
 async function mount() {
@@ -148,7 +152,6 @@ describe('我的帳戶的真實功能與未開放狀態', () => {
     '意見回饋',
     '語言設定',
     '隱私權政策',
-    '資料匯出',
     '安全檢查',
     '手機號碼',
   ])('%s 尚未提供，入口不可操作且不顯示成功訊息', async (label) => {
@@ -167,6 +170,34 @@ describe('我的帳戶的真實功能與未開放狀態', () => {
     expect(html).toContain('登入紀錄尚未開放')
     expect(html).not.toMatch(/Windows · Chrome|iPhone 15|目前裝置|2024\/11\/18|80%|中等/)
     expect(html).not.toMatch(/role="switch"[^>]*aria-label="(?:兩步驟驗證|安全檢查)/)
+  })
+
+  it('資料匯出可操作，下載中停用，完成後顯示成功', async () => {
+    let resolve!: () => void
+    mocks.downloadAccountData.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done }))
+    const page = await mount()
+    expect(button(page.html, '資料匯出')).not.toMatch(/\bdisabled(?:[\s=>])/)
+    expect(button(page.html, '資料匯出')).toContain('下載個人資料與上傳檔案（zip）')
+    const downloading = page.state.exportData()
+    expect(page.state.exportingData).toBe(true)
+    expect(page.state.feedback).toBe('')
+    expect(button(await page.render(), '匯出中…')).toMatch(/\bdisabled(?:[\s=>])/)
+    await page.state.exportData()
+    expect(mocks.downloadAccountData).toHaveBeenCalledOnce()
+    resolve()
+    await downloading
+    expect(page.state.exportingData).toBe(false)
+    expect(page.state.feedback).toBe('資料已下載。')
+    expect(button(await page.render(), '資料匯出')).not.toMatch(/\bdisabled(?:[\s=>])/)
+  })
+
+  it('資料匯出失敗顯示錯誤並恢復按鈕', async () => {
+    mocks.downloadAccountData.mockRejectedValueOnce(new Error('資料庫暫時無法連線。'))
+    const page = await mount()
+    await page.state.exportData()
+    expect(page.state.feedback).toBe('資料庫暫時無法連線。')
+    expect(page.state.exportingData).toBe(false)
+    expect(button(await page.render(), '資料匯出')).not.toMatch(/\bdisabled(?:[\s=>])/)
   })
 
   it('伺服器未啟用時推播開關停用並說明原因', async () => {

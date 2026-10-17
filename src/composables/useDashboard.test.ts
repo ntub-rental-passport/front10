@@ -7,6 +7,7 @@ import { useDashboard } from './useDashboard'
 const api = vi.hoisted(() => ({
   fetchDashboardContracts: vi.fn(), recordBillPayment: vi.fn(), reportLandlordPayment: vi.fn(),
   undoBillPayment: vi.fn(), saveBillUtilities: vi.fn(), downloadBillPaymentProof: vi.fn(),
+  downloadPaymentRecords: vi.fn(),
 }))
 vi.mock('@/src/services/dashboardApi', () => api)
 
@@ -43,6 +44,30 @@ async function dashboard() {
 }
 
 describe('自記帳單上傳憑證', () => {
+  it('匯出繳費紀錄時防止重複下載，完成後恢復按鈕', async () => {
+    let resolve!: () => void
+    api.downloadPaymentRecords.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done }))
+    const state = await dashboard()
+    const downloading = state.exportPayments()
+    expect(state.exportingPayments.value).toBe(true)
+    await state.exportPayments()
+    expect(api.downloadPaymentRecords).toHaveBeenCalledOnce()
+    resolve()
+    await downloading
+    expect(state.exportingPayments.value).toBe(false)
+    expect(state.actionError.value).toBe('')
+  })
+
+  it('匯出失敗顯示後端錯誤並允許重試', async () => {
+    api.downloadPaymentRecords.mockRejectedValueOnce(new Error('資料匯出暫時無法使用。'))
+    const state = await dashboard()
+    await state.exportPayments()
+    expect(state.actionError.value).toBe('資料匯出暫時無法使用。')
+    expect(state.exportingPayments.value).toBe(false)
+    await state.exportPayments()
+    expect(state.actionError.value).toBe('')
+  })
+
   it('選檔時沿用 data URL 讀取並傳送 proof', async () => {
     const data = 'data:application/pdf;base64,JVBERi0='
     const read = vi.fn()
