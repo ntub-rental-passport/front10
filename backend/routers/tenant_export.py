@@ -12,17 +12,21 @@ from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+from cryptography.exceptions import InvalidTag
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import LargeBinary, type_coerce
+from sqlalchemy.orm import Session, defer, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 from starlette.background import BackgroundTask
 
 import storage
 from auth.security import get_current_user, CurrentUser
 from db.database import get_db
+from db.encrypted_fields import EncryptedText
 from db.models import (
     Bill, ContractReview, ContractReviewFile, GarbageReminder, Household, HouseholdMember,
-    HouseholdTask, InspectionRecord, Note, Rental, RepairTicket, SubsidyApplication,
+    HouseholdTask, InspectionRecord, LandlordChargeEvent, Note, Rental, RepairTicket, SubsidyApplication,
     SubsidyFile, TrashFavorite, User, UtilityEvidence,
 )
 from routers import inspection, repairs, utility_evidence
@@ -47,6 +51,24 @@ def fields(record, names):
 
 def columns(record):
     return fields(record, record.__table__.columns.keys())
+
+
+def decrypted_records(db, model, query, archive, path, indexed=True):
+    encrypted = [column for column in model.__table__.columns if isinstance(column.type, EncryptedText)]
+    # 同一查詢略過 ORM 解密並取原始密文，避免單一欄位解不開就中止整份匯出。
+    rows = query.options(*(defer(getattr(model, column.key)) for column in encrypted)).add_columns(
+        *(type_coerce(column, LargeBinary) for column in encrypted)).all()
+    for index, (record, *ciphertexts) in enumerate(rows):
+        record_path = f'{path}[{index}]' if indexed else path
+        for column, ciphertext in zip(encrypted, ciphertexts):
+            try:
+                value = column.type.process_result_value(ciphertext, db.get_bind().dialect)
+            except (InvalidTag, ValueError):
+                value = None
+                archive.undecryptable_fields.append(f'{record_path}.{column.key}')
+            # 只設定匯出時的載入值，不將容錯結果標成待寫回資料庫的修改。
+            set_committed_value(record, column.key, value)
+        yield record
 
 
 def json_value(value):
@@ -75,6 +97,7 @@ class ExportArchive:
         self.legacy = []
         self.missing = []
         self.undecryptable = []
+        self.undecryptable_fields = []
         for folder in folders:
             self.zip.writestr(folder + '/', b'')
 
@@ -115,7 +138,10 @@ class ExportArchive:
         return path
 
     def encrypted_attachment(self, folder, kind, record):
-        return self.attachment(folder, record.original_name, record.stored_name,
+        name = record.original_name
+        if name is None:
+            name = f'{folder}-{record.id}{Path(record.stored_name).suffix}'
+        return self.attachment(folder, name, record.stored_name,
                                lambda: storage.read(kind, record.stored_name, encrypted=True))
 
     def csv(self, name, fieldnames, rows):
@@ -140,6 +166,8 @@ class ExportArchive:
             *(self.missing or ['無']),
             '', '無法解密的檔案：',
             *(self.undecryptable or ['無']),
+            '', '無法解密的欄位：',
+            *(self.undecryptable_fields or ['無']),
         ]
         self.zip.writestr('說明.txt', '\n'.join(description).encode('utf-8'))
         self.zip.close()
@@ -207,28 +235,47 @@ def lease_reports(db, user_id, archive, folder, kinds):
     return result
 
 
+def lease_payment_reports(db, user_id):
+    records = db.query(LandlordChargeEvent.created_at, LandlordChargeEvent.detail).filter(
+        LandlordChargeEvent.kind == 'tenant_reported', LandlordChargeEvent.actor_user_id == user_id,
+    ).order_by(LandlordChargeEvent.created_at, LandlordChargeEvent.id).all()
+    result = []
+    seen = set()
+    for record in records:
+        key = (record.detail, record.created_at.replace(microsecond=0))
+        if key not in seen:
+            seen.add(key)
+            result.append(fields(record, ('created_at', 'detail')))
+    return result
+
+
 def account_data(db, user_id, archive):
-    user = db.get(User, user_id)
+    user = next(decrypted_records(db, User, db.query(User).filter(User.id == user_id), archive,
+                                  'account', indexed=False))
     account = fields(user, ('email', 'display_name', 'national_id', 'avatar_url', 'email_verified_at',
                            'created_at', 'last_login_at'))
     account['roles'] = [role.role for role in user.roles]
     account['identities'] = [fields(item, ('provider', 'created_at')) for item in user.identities]
     bills = payment_records(db, user_id, archive, '繳費憑證')
-    rentals = db.query(Rental).filter(Rental.user_id == user_id).order_by(Rental.id).all()
+    rentals = decrypted_records(db, Rental, db.query(Rental).filter(Rental.user_id == user_id).order_by(Rental.id),
+                                archive, 'rentals')
     result = {
         'exported_at': archive.exported_at,
         'account': account,
         'rentals': [{**columns(rental), 'bills': bills.get(rental.id, [])} for rental in rentals],
         'landlord_lease_reports': lease_reports(db, user_id, archive, '房東租約回報',
                                               ('payment_proof', 'tenant_reading', 'charge_dispute')),
+        'landlord_lease_payment_reports': lease_payment_reports(db, user_id),
         'contract_reviews': [], 'inspections': [], 'repairs': [], 'notes': [], 'households': [],
         'subsidy': {'applications': [], 'files': []}, 'trash_favorites': [], 'garbage_reminders': [],
     }
     reviews = db.query(ContractReview).filter(ContractReview.user_id == user_id).order_by(ContractReview.id).all()
-    for review in reviews:
+    for index, review in enumerate(reviews):
         row = columns(review)
         row['files'] = []
-        files = db.query(ContractReviewFile).filter(ContractReviewFile.review_id == review.id).order_by(ContractReviewFile.id).all()
+        files = decrypted_records(db, ContractReviewFile, db.query(ContractReviewFile).filter(
+            ContractReviewFile.review_id == review.id).order_by(ContractReviewFile.id),
+            archive, f'contract_reviews[{index}].files')
         for file in files:
             row['files'].append({
                 **fields(file, ('kind', 'original_name', 'size_bytes', 'created_at')),
@@ -244,8 +291,9 @@ def account_data(db, user_id, archive):
             'attachment': archive.attachment('點交照片', f'點交-{record.id}.jpg', record.photo_url,
                                              lambda: inspection.read_photo(record)),
         })
-    tickets = db.query(RepairTicket).options(selectinload(RepairTicket.events), selectinload(RepairTicket.photos)).filter(
-        RepairTicket.tenant_user_id == user_id).order_by(RepairTicket.id).all()
+    tickets = decrypted_records(db, RepairTicket, db.query(RepairTicket).options(
+        selectinload(RepairTicket.events), selectinload(RepairTicket.photos)).filter(
+        RepairTicket.tenant_user_id == user_id).order_by(RepairTicket.id), archive, 'repairs')
     for ticket in tickets:
         row = fields(ticket, ('location', 'equipment', 'description', 'phone', 'urgency', 'available_time',
                               'access_permission', 'contact_before_arrival', 'status', 'created_at'))
@@ -267,7 +315,8 @@ def account_data(db, user_id, archive):
             'tasks': [fields(task, ('title', 'content', 'tag', 'due_date', 'due_time', 'done', 'done_at',
                                     'created_at', 'updated_at')) for task in tasks],
         })
-    files = db.query(SubsidyFile).filter(SubsidyFile.user_id == user_id).order_by(SubsidyFile.id).all()
+    files = decrypted_records(db, SubsidyFile, db.query(SubsidyFile).filter(
+        SubsidyFile.user_id == user_id).order_by(SubsidyFile.id), archive, 'subsidy.files')
     result['subsidy']['files'] = [{
         **fields(file, ('doc_type', 'original_name', 'size_bytes', 'created_at', 'expires_at')),
         'attachment': archive.encrypted_attachment('補助文件', 'subsidy', file),
@@ -295,7 +344,10 @@ def export_payments(db: Session = Depends(get_db), user: CurrentUser = Depends(g
             'created_at': '回報時間', 'amount': '金額', 'note': '備註',
             'original_name': '檔名', 'attachment': '附件路徑',
         }, reports)
-        return archive.response('繳費紀錄', '自記租約的繳費紀錄 CSV、繳費憑證與本人在房東租約回報的繳費憑證 CSV 及附件。')
+        archive.csv('房東租約繳費回報.csv', {
+            'created_at': '回報時間', 'detail': '回報內容',
+        }, lease_payment_reports(db, user.id))
+        return archive.response('繳費紀錄', '自記租約的繳費紀錄 CSV、繳費憑證與本人在房東租約的繳費回報 CSV、回報憑證 CSV 及附件。')
     except Exception:
         archive.close()
         raise
@@ -307,7 +359,7 @@ def export_account(db: Session = Depends(get_db), user: CurrentUser = Depends(ge
     try:
         data = account_data(db, user.id, archive)
         archive.zip.writestr('資料.json', json.dumps(data, ensure_ascii=False, indent=2, default=json_value).encode('utf-8'))
-        return archive.response('個人資料', '個人資料 JSON、自記租約與繳費紀錄 CSV、本人租約回報、契約審閱、點交、報修、筆記、群組與自建任務、補助、垃圾車收藏與提醒，以及本人附件。')
+        return archive.response('個人資料', '個人資料 JSON、自記租約與繳費紀錄 CSV、本人租約回報與房東租約繳費回報、契約審閱、點交、報修、筆記、群組與自建任務、補助、垃圾車收藏與提醒，以及本人附件。')
     except Exception:
         archive.close()
         raise

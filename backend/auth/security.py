@@ -32,7 +32,7 @@ import jwt  # PyJWT
 from dotenv import load_dotenv
 from fastapi import Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from db.database import get_db
 from db.models import AdminSession, User
@@ -170,7 +170,8 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
             detail="無效的登入憑證，請重新登入。",
         )
 
-    user = db.get(User, current.id)
+    # 驗證身分不需要身分證字號，避免異金鑰個資在進入匯出端點前就讓驗證失敗。
+    user = db.get(User, current.id, options=[defer(User.national_id)])
     if user is None or not user.has_role(current.role):
         raise HTTPException(status_code=401, detail="帳號或身分已變更，請重新登入。")
     _reject_if_suspended(user)
