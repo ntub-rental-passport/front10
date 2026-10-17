@@ -26,6 +26,7 @@ import {
 import { usePushSubscription } from '@/src/composables/usePushSubscription'
 import { useNotifications } from '@/src/composables/useNotifications'
 import { publicSettings } from '@/src/composables/usePublicSettings'
+import { downloadAccountData } from '@/src/services/tenantExportApi'
 import {
   finishNicknameSetup,
   getAuthSession,
@@ -54,6 +55,7 @@ const email = ref(session?.email || 'user@example.com')
 const isEditing = ref(false)
 const deleteConfirming = ref(false)
 const feedback = ref('')
+const exportingData = ref(false)
 let feedbackTimer: ReturnType<typeof setTimeout> | undefined
 
 const roleLabels: Record<AuthRole, string> = {
@@ -97,6 +99,19 @@ async function saveProfile(): Promise<void> {
   displayName.value = cleanName
   isEditing.value = false
   showFeedback('暱稱已更新')
+}
+
+async function exportData(): Promise<void> {
+  if (exportingData.value) return
+  exportingData.value = true
+  try {
+    await downloadAccountData()
+    showFeedback('資料已下載。')
+  } catch (error) {
+    showFeedback(error instanceof Error ? error.message : '資料匯出失敗，請稍後重試。')
+  } finally {
+    exportingData.value = false
+  }
 }
 
 function handleSignOut(): void {
@@ -322,9 +337,9 @@ function handleDeleteAccount(): void {
               ><strong>隱私權政策</strong><small>尚未開放</small></span
             >
           </button>
-          <button type="button" disabled>
+          <button type="button" :disabled="exportingData" @click="exportData">
             <Download :size="21" /><span
-              ><strong>資料匯出</strong><small>尚未開放</small></span
+              ><strong>{{ exportingData ? '匯出中…' : '資料匯出' }}</strong><small>下載個人資料與上傳檔案（zip）</small></span
             >
           </button>
         </div>
