@@ -7,11 +7,12 @@ import os
 import tempfile
 import unittest
 import zipfile
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import unquote
 
+from cryptography.exceptions import InvalidTag
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
@@ -21,10 +22,14 @@ from sqlalchemy.pool import StaticPool
 import storage
 from db import database, models
 from db.database import Base, get_db
+from db.encrypted_fields import EncryptedText
 
 with patch.dict(os.environ, {'JWT_SECRET': os.getenv('JWT_SECRET') or 'tenant-export-tests-secret-32-bytes'}):
     from auth import security
     from routers import tenant_export
+
+
+OTHER_KEY = base64.b64encode(b'x' * 32).decode()
 
 
 class TenantExportTests(unittest.TestCase):
@@ -206,6 +211,94 @@ class TenantExportTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 503)
                     self.assertEqual(response.json(), {'detail': '檔案加密金鑰尚未設定，暫時無法匯出附件。'})
 
+    def test_other_key_fields_are_null_and_listed_without_losing_other_data(self):
+        own = self.rental()
+        self.rental()
+        partial = self.rental()
+        self.bill(own, 1, payment_note='正常繳費備註')
+        review_file = storage.save('reviews', b'%PDF-review', 'pdf', encrypt=True)
+        subsidy_file = storage.save('subsidy', b'%PDF-subsidy', 'pdf', encrypt=True)
+        encrypted_rental_fields = [column.key for column in models.Rental.__table__.columns
+                                   if isinstance(column.type, EncryptedText)]
+        with self.Session() as db:
+            user = db.get(models.User, 1)
+            rental = db.get(models.Rental, own)
+            partial_rental = db.get(models.Rental, partial)
+            db.add(models.ContractReview(id='異金鑰審閱', user_id=1, records=['正常審閱內容'],
+                                         activity_at=datetime(2026, 1, 1)))
+            db.add(models.RepairTicket(id=1, tenant_user_id=1, rental_id=own, description='正常報修',
+                                       phone='0912345678'))
+            db.flush()
+            with patch.dict(os.environ, {'PII_ENCRYPTION_KEY': OTHER_KEY}):
+                user.national_id = 'B123456789'
+                for name in encrypted_rental_fields:
+                    setattr(rental, name, '異金鑰租約資料')
+                partial_rental.bank_account = '異金鑰銀行帳號'
+                db.add(models.RepairTicket(id=2, tenant_user_id=1, rental_id=own, description='異金鑰報修',
+                                           phone='0987654321'))
+                db.add(models.ContractReviewFile(id=1, review_id='異金鑰審閱', kind='evidence',
+                                                 stored_name=review_file, original_name='異金鑰審閱.pdf',
+                                                 content_type='application/pdf', size_bytes=11))
+                db.add(models.SubsidyFile(id=1, user_id=1, doc_type='other', stored_name=subsidy_file,
+                                          original_name='異金鑰補助.pdf', content_type='application/pdf',
+                                          size_bytes=12, expires_at=datetime(2027, 1, 1)))
+                db.flush()
+            db.commit()
+
+        for path in ('/api/dashboard/payments/export', '/api/account/export'):
+            with self.subTest(path=path):
+                archive = self.archive(path)
+                [bill] = self.csv_rows(archive)
+                self.assertEqual(bill['租約地址'], '使用者1自記地址')
+                self.assertEqual(bill['備註'], '正常繳費備註')
+                description = archive.read('說明.txt').decode()
+                if path.endswith('payments/export'):
+                    self.assertIn('無法解密的欄位：\n無', description)
+                    continue
+                data = json.loads(archive.read('資料.json'))
+                self.assertIsNone(data['account']['national_id'])
+                self.assertEqual(data['account']['email'], '本人@example.com')
+                self.assertEqual(data['account']['roles'], ['tenant'])
+                self.assertTrue(all(data['rentals'][0][name] is None for name in encrypted_rental_fields))
+                self.assertEqual(data['rentals'][1]['bank_account'], '本人填寫的銀行帳號')
+                self.assertEqual(data['rentals'][1]['tenant_phone'], '0912345678')
+                self.assertIsNone(data['rentals'][2]['bank_account'])
+                self.assertEqual(data['rentals'][2]['tenant_phone'], '0912345678')
+                self.assertEqual(data['repairs'][0]['phone'], '0912345678')
+                self.assertIsNone(data['repairs'][1]['phone'])
+                self.assertEqual(data['repairs'][1]['description'], '異金鑰報修')
+                self.assertEqual(data['contract_reviews'][0]['records'], ['正常審閱內容'])
+                for file, folder, content in (
+                    (data['contract_reviews'][0]['files'][0], '契約審閱', b'%PDF-review'),
+                    (data['subsidy']['files'][0], '補助文件', b'%PDF-subsidy'),
+                ):
+                    self.assertIsNone(file['original_name'])
+                    self.assertEqual(file['attachment'], f'{folder}/{folder}-1.pdf')
+                    self.assertEqual(archive.read(file['attachment']), content)
+                self.assertEqual(set(description.split('無法解密的欄位：\n')[1].splitlines()), {
+                    'account.national_id', 'repairs[1].phone', 'contract_reviews[0].files[0].original_name',
+                    'subsidy.files[0].original_name', 'rentals[2].bank_account',
+                    *(f'rentals[0].{name}' for name in encrypted_rental_fields),
+                })
+
+        # 匯出後密文仍在，不能把容錯用的 null 寫回資料庫。
+        with self.Session() as db:
+            with self.assertRaises(InvalidTag):
+                db.query(models.RepairTicket.phone).filter(models.RepairTicket.id == 2).scalar()
+
+    def test_legacy_encrypted_field_format_is_null_and_listed(self):
+        own = self.rental()
+        with self.Session() as db:
+            db.add(models.RepairTicket(id=1, tenant_user_id=1, rental_id=own, description='舊格式電話'))
+            db.commit()
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql('UPDATE repair_tickets SET phone = ? WHERE id = ?', (b'legacy-phone', 1))
+        archive = self.archive('/api/account/export')
+        [repair] = json.loads(archive.read('資料.json'))['repairs']
+        self.assertIsNone(repair['phone'])
+        self.assertEqual(repair['description'], '舊格式電話')
+        self.assertIn('無法解密的欄位：\nrepairs[0].phone', archive.read('說明.txt').decode())
+
     def test_unnamed_repair_photos_keep_stored_extensions(self):
         own = self.rental()
         files = [('pdf', b'%PDF-receipt'), ('jpg', b'JPEG-photo')]
@@ -280,6 +373,60 @@ class TenantExportTests(unittest.TestCase):
                 self.assertEqual({row['kind'] for row in rows}, {'payment_proof', 'tenant_reading', 'charge_dispute'})
                 self.assertEqual(set(rows[0]), {'kind', 'reading', 'amount', 'note', 'original_name', 'created_at', 'attachment'})
 
+    def test_payment_reports_without_proof_deduplicate_and_exclude_other_events(self):
+        self.seed_landlord()
+        created_at = datetime(2026, 1, 3, 12, 30, 0, 100000)
+        detail = '租客回報已繳款：2026-01-03，轉帳，備註：原文\n第二行（待房東確認入帳）'
+        with self.Session() as db:
+            db.query(models.UtilityEvidence).delete()
+            db.add(models.LandlordCharge(id=2, landlord_id=3, lease_id=1, kind='electricity',
+                                         title='房東電費帳款不得出現', amount=500,
+                                         period_start=date(2026, 1, 1), period_end=date(2026, 1, 31),
+                                         due_date=date(2026, 1, 5)))
+            db.flush()
+            for charge_id, timestamp in ((1, created_at), (2, created_at + timedelta(microseconds=500000))):
+                db.add(models.LandlordChargeEvent(charge_id=charge_id, kind='tenant_reported',
+                                                  actor_user_id=1, detail=detail, created_at=timestamp))
+            for kind, actor, text in (
+                ('payment_recorded', 3, '房東確認收款事件不得出現'),
+                ('tenant_reported', 3, '房東回報事件不得出現'),
+                ('tenant_reported', 2, '其他租客事件不得出現'),
+                ('payment_recorded', 1, '本人非繳款回報事件不得出現'),
+                ('tenant_reported', None, '無送出者事件不得出現'),
+            ):
+                db.add(models.LandlordChargeEvent(charge_id=1, kind=kind, actor_user_id=actor,
+                                                  detail=text, created_at=created_at))
+            db.commit()
+
+        def check_exports(expected):
+            for path in ('/api/dashboard/payments/export', '/api/account/export'):
+                with self.subTest(path=path, count=len(expected)):
+                    archive = self.archive(path)
+                    self.assert_absent(archive, '房東確認收款事件不得出現', '房東回報事件不得出現',
+                                       '其他租客事件不得出現', '本人非繳款回報事件不得出現', '無送出者事件不得出現',
+                                       '房東帳款標題不得出現', '房東電費帳款不得出現', '房東收款備註不得出現')
+                    if path.endswith('payments/export'):
+                        self.assertEqual(self.csv_rows(archive, '房東租約回報憑證.csv'), [])
+                        self.assertEqual(self.csv_rows(archive, '房東租約繳費回報.csv'), [
+                            {'回報時間': timestamp.isoformat(), '回報內容': text} for timestamp, text in expected])
+                    else:
+                        data = json.loads(archive.read('資料.json'))
+                        self.assertEqual(data['landlord_lease_reports'], [])
+                        self.assertEqual(data['landlord_lease_payment_reports'], [
+                            {'created_at': timestamp.isoformat(), 'detail': text} for timestamp, text in expected])
+                    self.assertIn('房東租約', archive.read('說明.txt').decode())
+                    self.assertIn('繳費回報', archive.read('說明.txt').decode())
+
+        check_exports([(created_at, detail)])
+        # 同秒不同內容、跨秒相同內容都是另一筆回報；去重不改動原始時間與內容。
+        later = created_at.replace(microsecond=0) + timedelta(seconds=1)
+        with self.Session() as db:
+            for timestamp, text in ((created_at, '另一筆回報'), (later, detail)):
+                db.add(models.LandlordChargeEvent(charge_id=1, kind='tenant_reported', actor_user_id=1,
+                                                  detail=text, created_at=timestamp))
+            db.commit()
+        check_exports([(created_at, detail), (created_at, '另一筆回報'), (later, detail)])
+
     def test_account_all_sections_and_private_attachments(self):
         own, other = self.rental(), self.rental(2)
         self.bill(own, 1)
@@ -340,7 +487,8 @@ class TenantExportTests(unittest.TestCase):
             db.commit()
         archive = self.archive('/api/account/export')
         data = json.loads(archive.read('資料.json'))
-        self.assertEqual(set(data), {'exported_at', 'account', 'rentals', 'landlord_lease_reports', 'contract_reviews',
+        self.assertEqual(set(data), {'exported_at', 'account', 'rentals', 'landlord_lease_reports',
+                                     'landlord_lease_payment_reports', 'contract_reviews',
                                      'inspections', 'repairs', 'notes', 'households', 'subsidy', 'trash_favorites', 'garbage_reminders'})
         self.assertEqual(data['account']['national_id'], 'A123456789')
         self.assertEqual(data['account']['roles'], ['tenant'])
@@ -436,12 +584,15 @@ class TenantExportTests(unittest.TestCase):
             self.login(user_id, role)
             archive = self.archive('/api/dashboard/payments/export')
             self.assertIn('無法解密的檔案：\n無', archive.read('說明.txt').decode())
+            self.assertIn('無法解密的欄位：\n無', archive.read('說明.txt').decode())
             self.assertEqual(self.csv_rows(archive), [])
             self.assertEqual(self.csv_rows(archive, '房東租約回報憑證.csv'), [])
+            self.assertEqual(self.csv_rows(archive, '房東租約繳費回報.csv'), [])
             archive = self.archive('/api/account/export')
             self.assertIn('無法解密的檔案：\n無', archive.read('說明.txt').decode())
+            self.assertIn('無法解密的欄位：\n無', archive.read('說明.txt').decode())
             data = json.loads(archive.read('資料.json'))
-            for key in ('rentals', 'landlord_lease_reports', 'contract_reviews', 'inspections', 'repairs',
+            for key in ('rentals', 'landlord_lease_reports', 'landlord_lease_payment_reports', 'contract_reviews', 'inspections', 'repairs',
                         'notes', 'households', 'trash_favorites', 'garbage_reminders'):
                 self.assertEqual(data[key], [])
             self.assertEqual(data['subsidy'], {'applications': [], 'files': []})
