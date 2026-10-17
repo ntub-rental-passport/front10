@@ -44,7 +44,7 @@ import { useSystemHealth } from '@/src/composables/admin/useSystemHealth'
 import { useTickingNow } from '@/src/composables/useTickingNow'
 import type { AiProviderId } from '@/src/mocks/admin-seed'
 import { chartColor } from '@/src/constants/admin-chart'
-import { aggregateDailyUsage } from '@/src/utils/admin-ai-usage'
+import { aggregateDailyUsage, daysLeftInMonth } from '@/src/utils/admin-ai-usage'
 import { PLAN_FEATURES, PLAN_FEATURE_KEYS } from '@/src/utils/admin-entitlements'
 import { outageOf } from '@/src/utils/admin-feature-status'
 import { formatShortDateTime, formatTimeAgo, type MonitorReading } from '@/src/utils/admin-monitoring'
@@ -278,6 +278,8 @@ function daysLeftText(usage: ProviderUsage): string {
   if (usage.daysLeft === null) return '目前無消耗'
   // 向下取整後是 0：剩的不夠一天的平均用量，寫「0 天」像是已經用完
   if (usage.daysLeft === 0) return '不到 1 天'
+  // 額度每月重置，撐得過月底就不必報一個上萬天的數字
+  if (usage.daysLeft >= daysLeftInMonth(new Date())) return '本月用不完'
   return `${usage.daysLeft} 天`
 }
 </script>
