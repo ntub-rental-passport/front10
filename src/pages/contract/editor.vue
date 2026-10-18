@@ -683,16 +683,22 @@ const activeFieldGroup = computed(
 )
 
 const batchConfirmableFields = computed(() =>
-  activeGroupFields.value.filter(
-    (field) =>
-      isFieldPopulated(field) &&
-      field.reviewState === 'unreviewed' &&
-      field.confidence === 'high' &&
-      field.formatValid !== false &&
-      field.labelDistanceNormal !== false &&
-      !validateLegalField(field),
-  ),
+  activeGroupFields.value.filter(isBatchConfirmableField),
 )
+
+function isBatchConfirmableField(field: ContractField): boolean {
+  return isFieldPopulated(field) &&
+    field.reviewState === 'unreviewed' &&
+    field.confidence === 'high' &&
+    field.formatValid !== false &&
+    field.labelDistanceNormal !== false &&
+    !validateLegalField(field)
+}
+
+const mobileBatchConfirmableFields = computed(() => {
+  if (!isMobile.value || !['pending', 'all'].includes(activeFieldFilter.value)) return []
+  return filteredFields.value.filter(isBatchConfirmableField)
+})
 
 function selectFieldGroup(groupId: string): void {
   if (isMobile.value) fields.value.filter(field => field.editing).forEach(cancelFieldEdit)
@@ -1158,6 +1164,17 @@ function verifyField(field: ContractField): void {
 function confirmActiveGroupHighConfidence(): void {
   if (!batchConfirmableFields.value.length) return
   batchConfirmableFields.value.forEach((field) => {
+    field.validationError = ''
+    field.reviewState = 'verified'
+  })
+  saveError.value = ''
+}
+
+function confirmMobileHighConfidence(): void {
+  const confirmableFields = [...mobileBatchConfirmableFields.value]
+  if (!confirmableFields.length) return
+  fields.value.filter((field) => field.editing).forEach(cancelFieldEdit)
+  confirmableFields.forEach((field) => {
     field.validationError = ''
     field.reviewState = 'verified'
   })
@@ -1795,6 +1812,15 @@ function returnToOcr(): void {
             class="field-list"
             :class="{ 'field-list--single': activeFieldGroupId === 'property' }"
           >
+            <button
+              v-if="isMobile && mobileBatchConfirmableFields.length"
+              type="button"
+              class="mobile-batch-confirm"
+              @click="confirmMobileHighConfidence"
+            >
+              <CheckCircle :size="18" />
+              一鍵確認 {{ mobileBatchConfirmableFields.length }} 個高信心欄位
+            </button>
             <section
               v-for="section in fieldSections"
               :key="section.id"

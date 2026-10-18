@@ -1585,6 +1585,23 @@
     padding: 0;
   }
 
+  .mobile-batch-confirm {
+    display: flex;
+    width: 100%;
+    min-height: 44px;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    padding: 0 14px;
+    color: var(--primary);
+    font-size: 13px;
+    font-weight: 700;
+    text-align: left;
+  }
+
   .field-filter-bar {
     gap: 8px;
     max-width: 100%;
