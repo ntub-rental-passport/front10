@@ -13,6 +13,8 @@ import {
 import { Progress } from '@/components/ui/progress/index'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/index'
 import { useRouter } from 'vue-router'
+import MobileContractPages from './MobileContractPages.vue'
+import { appendContractFiles, moveItem, sortContractFiles } from '@/src/utils/contract-files'
 import {
   clearContractOcrResult,
   normalizeContractOcrResult,
@@ -54,6 +56,7 @@ type FilePickerMode = 'replace' | 'append'
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileActionsMenu = ref<HTMLDetailsElement | null>(null)
 const selectedFiles = ref<File[]>([])
+const manuallyReordered = ref(false)
 const filePickerMode = ref<FilePickerMode>('replace')
 const isUploading = ref(false)
 const isDragOver = ref(false)
@@ -70,10 +73,6 @@ const defaultLanguageHints = ['zh-TW', 'en']
 const maxFileSize = 20 * 1024 * 1024
 const maxTotalSize = 80 * 1024 * 1024
 const maxFileCount = 20
-const contractFileNameCollator = new Intl.Collator('zh-Hant-TW', {
-  numeric: true,
-  sensitivity: 'base',
-})
 const supportedExtensions = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif']
 const supportedMimeTypes = [
   'application/pdf',
@@ -160,6 +159,9 @@ const canAppendFiles = computed(
     selectedFiles.value.length < maxFileCount &&
     !selectedFiles.value.some((file) => file.name.toLowerCase().endsWith('.pdf')),
 )
+const selectedImages = computed(
+  () => selectedFiles.value.length > 0 && !selectedFiles.value[0].name.toLowerCase().endsWith('.pdf'),
+)
 
 function formatFileSize(size: number): string {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
@@ -191,7 +193,15 @@ function resetOcrState(keepFile = true): void {
 
 function removeSelectedFile(index: number): void {
   selectedFiles.value = selectedFiles.value.filter((_, fileIndex) => fileIndex !== index)
+  if (!selectedFiles.value.length) manuallyReordered.value = false
   resetOcrState(selectedFiles.value.length > 0)
+}
+
+function reorderSelectedFile(from: number, to: number): void {
+  if (isUploading.value || from === to || to < 0 || to >= selectedFiles.value.length) return
+  selectedFiles.value = moveItem(selectedFiles.value, from, to)
+  manuallyReordered.value = true
+  resetOcrState(true)
 }
 
 function closeFileActionsMenu(): void {
@@ -205,6 +215,7 @@ function replaceAllFiles(): void {
 
 function clearAllFiles(): void {
   selectedFiles.value = []
+  manuallyReordered.value = false
   if (fileInput.value) fileInput.value.value = ''
   closeFileActionsMenu()
   resetOcrState(false)
@@ -256,24 +267,22 @@ function validateFiles(files: File[]): string | null {
   return null
 }
 
-function sortContractFiles(files: File[]): File[] {
-  return [...files].sort((firstFile, secondFile) =>
-    contractFileNameCollator.compare(firstFile.name, secondFile.name),
-  )
-}
-
 function prepareFiles(files: File[], preserveExistingOnError = false): void {
   const validationError = validateFiles(files)
 
   if (validationError) {
-    if (!preserveExistingOnError) selectedFiles.value = []
+    if (!preserveExistingOnError) {
+      selectedFiles.value = []
+      manuallyReordered.value = false
+    }
     uploadError.value = validationError
     uploadStatus.value = '檔案無法使用'
     uploadProgress.value = 0
     return
   }
 
-  selectedFiles.value = sortContractFiles(files)
+  selectedFiles.value = preserveExistingOnError ? files : sortContractFiles(files)
+  if (!preserveExistingOnError) manuallyReordered.value = false
   resetOcrState(true)
 }
 
@@ -291,7 +300,10 @@ function appendFiles(files: File[]): void {
     return
   }
 
-  prepareFiles([...selectedFiles.value, ...newFiles], true)
+  prepareFiles(
+    appendContractFiles(selectedFiles.value, newFiles, manuallyReordered.value),
+    true,
+  )
 }
 
 async function copyRecognizedText(): Promise<void> {
@@ -624,10 +636,18 @@ function onDragLeave(): void {
       >
         <template v-if="selectedFiles.length">
           <div class="selected-file-list" :inert="isUploading">
+            <MobileContractPages
+              v-if="selectedImages"
+              :files="selectedFiles"
+              :disabled="isUploading"
+              @remove="removeSelectedFile"
+              @move="reorderSelectedFile"
+            />
             <div
               v-for="(file, index) in selectedFiles"
               :key="`${file.name}-${file.size}-${file.lastModified}`"
               class="selected-file-row"
+              :class="{ 'selected-file-row--image': selectedImages }"
             >
               <div class="selected-file-row-icon"><FileCheck2 /></div>
               <div class="selected-file-copy">
