@@ -4,6 +4,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import {
   filterContractReviewFields,
+  filterMobileContractReviewFields,
   type ContractReviewFilter,
 } from '@/src/utils/contract-review-filter'
 import {
@@ -442,6 +443,27 @@ const activeFieldGroupId = ref(
     ? requestedGroupId
     : (CONTRACT_FIELD_GROUPS[0]?.id ?? 'review'),
 )
+const fieldGroupNav = ref<HTMLElement | null>(null)
+const isMobilePending = computed(() => isMobile.value && activeFieldFilter.value === 'pending')
+
+async function scrollActiveFieldGroupIntoView(): Promise<void> {
+  if (!isMobile.value) return
+  await nextTick()
+  const nav = fieldGroupNav.value
+  const chip = nav?.querySelector<HTMLElement>('.is-active')
+  if (!nav || !chip) return
+  const navBounds = nav.getBoundingClientRect()
+  const chipBounds = chip.getBoundingClientRect()
+  const offset = chipBounds.left < navBounds.left
+    ? chipBounds.left - navBounds.left
+    : chipBounds.right > navBounds.right
+      ? chipBounds.right - navBounds.right
+      : 0
+  if (offset) nav.scrollBy({ left: offset, behavior: 'auto' })
+}
+
+watch([isMobile, activeFieldGroupId], scrollActiveFieldGroupIntoView, { flush: 'post' })
+onMounted(scrollActiveFieldGroupIntoView)
 const linkedFieldId = ref(typeof route.query.field === 'string' ? route.query.field : '')
 const searchQuery = ref('')
 const activeSearchMatchIndex = ref(-1)
@@ -511,7 +533,14 @@ const activeGroupFields = computed(() =>
   applicableFields.value.filter((field) => field.groupId === activeFieldGroupId.value),
 )
 const filteredFields = computed(() =>
-  filterContractReviewFields(activeGroupFields.value, activeFieldFilter.value, isMobile.value),
+  isMobile.value
+    ? filterMobileContractReviewFields(
+      applicableFields.value,
+      activeFieldFilter.value,
+      activeFieldGroupId.value,
+      CONTRACT_FIELD_GROUPS,
+    )
+    : filterContractReviewFields(activeGroupFields.value, activeFieldFilter.value),
 )
 
 const fieldSections = computed<FieldSection[]>(() => {
@@ -566,7 +595,12 @@ const fieldFilters = computed<Array<{ id: ContractReviewFilter; label: string; c
   ...(isMobile.value ? [{
     id: 'pending' as const,
     label: '待確認優先',
-    count: filterContractReviewFields(activeGroupFields.value, 'pending', true).length,
+    count: filterMobileContractReviewFields(
+      applicableFields.value,
+      'pending',
+      activeFieldGroupId.value,
+      CONTRACT_FIELD_GROUPS,
+    ).length,
   }] : []),
   { id: 'all', label: '本類全部', count: activeGroupFields.value.length },
   {
@@ -621,6 +655,7 @@ const fieldGroups = computed(() =>
       completedCount: groupRequiredFields.filter(isFieldCompleted).length,
       requiredCount: groupRequiredFields.length,
       missingCount: groupRequiredFields.filter((field) => !isFieldPopulated(field)).length,
+      pendingCount: filterContractReviewFields(groupFields, 'pending', true).length,
     }
   }),
 )
@@ -645,7 +680,11 @@ const batchConfirmableFields = computed(() =>
 
 function selectFieldGroup(groupId: string): void {
   activeFieldGroupId.value = groupId
-  activeFieldFilter.value = isMobile.value ? 'pending' : 'all'
+  activeFieldFilter.value = 'all'
+}
+
+function fieldGroupTitle(groupId: string): string {
+  return fieldGroups.value.find((group) => group.id === groupId)?.title ?? ''
 }
 
 const searchMatches = computed<TextMatch[]>(() => {
@@ -785,6 +824,18 @@ function updateMobileField(field: ContractField, value: string): void {
 function confirmMobileField(field: ContractField): void {
   if (field.editing) confirmFieldEdit(field)
   else verifyField(field)
+}
+
+function confirmMobileFieldEdit(field: ContractField): void {
+  if (field.editing && field.value !== field.editStartValue) {
+    confirmMobileField(field)
+    return
+  }
+  const input = document.querySelector<HTMLInputElement | HTMLSelectElement>(
+    `[data-field-id="${field.id}"] .mobile-field-input`,
+  )
+  input?.focus()
+  if (input && 'select' in input) input.select()
 }
 
 const fieldEvidenceUrls = ref<Record<string, string | null>>({})
@@ -1591,10 +1642,10 @@ function returnToOcr(): void {
                 </div>
               </details>
             </div>
-            <CardDescription>依契約章節順序整理關鍵欄位，分類編號不代表契約條號</CardDescription>
+            <CardDescription class="field-panel-description">依契約章節順序整理關鍵欄位，分類編號不代表契約條號</CardDescription>
           </CardHeader>
 
-          <nav class="field-group-nav" aria-label="法規欄位分類">
+          <nav ref="fieldGroupNav" class="field-group-nav" aria-label="法規欄位分類">
             <button
               v-for="group in fieldGroups"
               :key="group.id"
@@ -1611,7 +1662,11 @@ function returnToOcr(): void {
               <span class="field-group-index">{{ group.order }}</span>
               <span class="field-group-label">
                 <strong>{{ group.shortTitle }}</strong>
-                <small v-if="group.requiredCount">
+                <small v-if="isMobile">
+                  <template v-if="group.missingCount">缺 {{ group.missingCount }}</template>
+                  <template v-else>待 {{ group.pendingCount }}</template>
+                </small>
+                <small v-else-if="group.requiredCount">
                   <template v-if="group.missingCount">缺 {{ group.missingCount }} 項</template>
                   <template v-else>{{ group.completedCount }}/{{ group.requiredCount }} 已校對</template>
                 </small>
@@ -1620,7 +1675,7 @@ function returnToOcr(): void {
             </button>
           </nav>
 
-          <div class="active-field-group-heading">
+          <div v-if="!isMobilePending" class="active-field-group-heading">
             <div>
               <span>第 {{ activeFieldGroup?.order }} 類</span>
               <strong>{{ activeFieldGroup?.title }}</strong>
@@ -1646,7 +1701,7 @@ function returnToOcr(): void {
             </div>
           </div>
 
-          <div v-if="activeGroupFields.length" class="field-filter-bar" aria-label="依欄位狀態篩選">
+          <div v-if="isMobile || activeGroupFields.length" class="field-filter-bar" aria-label="依欄位狀態篩選">
             <button
               v-for="filter in fieldFilters"
               :key="filter.id"
@@ -1689,6 +1744,7 @@ function returnToOcr(): void {
                     { 'is-linked-field': linkedFieldId === field.id },
                   ]"
                 >
+              <span v-if="isMobilePending" class="mobile-field-category">{{ fieldGroupTitle(field.groupId) }}</span>
               <div class="field-card-header">
                 <span class="text-xs font-medium text-muted-foreground">
                   {{ field.label }}
@@ -1780,7 +1836,7 @@ function returnToOcr(): void {
                 </details>
                 <p v-else class="mobile-source-missing">來源未定位</p>
                 <div v-if="isFieldPopulated(field) || field.editing" class="mobile-field-actions">
-                  <Button variant="outline" @click="confirmMobileField(field)">修改後確認</Button>
+                  <Button variant="outline" @click="confirmMobileFieldEdit(field)">修改後確認</Button>
                   <Button
                     :disabled="field.editing && field.value !== field.editStartValue"
                     @click="confirmMobileField(field)"
@@ -1941,7 +1997,11 @@ function returnToOcr(): void {
               </div>
             </section>
             <p
-              v-if="!activeGroupFields.length"
+              v-if="isMobilePending && !filteredFields.length"
+              class="field-filter-empty"
+            >都確認完了，可以開始分析</p>
+            <p
+              v-else-if="!activeGroupFields.length && !isMobilePending"
               class="field-filter-empty field-filter-empty--conditional"
             >
               本契約未適用代理或轉租，不需填寫代理人及相關授權資料。若實際由代理人或二房東簽約，請先在左側補上相關內容後重新辨識。

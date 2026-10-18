@@ -35,6 +35,7 @@ import Editor from './editor.vue'
 
 interface Field {
   id: string
+  confidence: 'high' | 'medium' | 'low'
   value: string
   editing: boolean
   reviewState: string
@@ -44,6 +45,8 @@ interface EditorState {
   isMobile: Ref<boolean>
   fields: Ref<Field[]>
   filteredFields: Ref<Field[]>
+  fieldFilters: Ref<Array<{ id: ContractReviewFilter; count: number }>>
+  fieldGroupNav: Ref<HTMLElement | null>
   fieldSections: Ref<Array<{ fields: Field[] }>>
   activeFieldFilter: Ref<ContractReviewFilter>
   canStartAnalysis: Ref<boolean>
@@ -56,6 +59,8 @@ interface EditorState {
   startFieldEdit: (field: Field) => void
   updateMobileField: (field: Field, value: string) => void
   confirmMobileField: (field: Field) => void
+  confirmMobileFieldEdit: (field: Field) => void
+  scrollActiveFieldGroupIntoView: () => Promise<void>
   completeReviewAndAnalyze: () => void
   loadFieldEvidence: (field: Field) => Promise<void>
   enlargeFieldEvidence: (field: Field) => Promise<void>
@@ -97,7 +102,7 @@ describe('契約欄位手機校對', () => {
     expect(html).not.toContain('data-field-id="landlord_review_signature"')
   })
 
-  it('切換寬度保留各自篩選，切換手機群組回到待確認優先', async () => {
+  it('切換寬度保留各自篩選，切換手機群組回到本類全部', async () => {
     const { state } = await render()
     state.activeFieldFilter.value = 'medium'
     state.isMobile.value = true
@@ -108,8 +113,110 @@ describe('契約欄位手機校對', () => {
     state.isMobile.value = true
     expect(state.activeFieldFilter.value).toBe('low')
     state.selectFieldGroup('scope')
-    expect(state.activeFieldFilter.value).toBe('pending')
+    expect(state.activeFieldFilter.value).toBe('all')
     expect(state.fieldSections.value).toHaveLength(1)
+  })
+
+  it('手機預設跨分類待確認，卡片標示分類、數量涵蓋所有分類，點分類後只顯示本類', async () => {
+    mocks.mobile = true
+    const { state, html } = await render(state => {
+      const field = state.fields.value.find(field => field.id === 'start_date')!
+      field.value = '民國 115 年 10 月 1 日'
+      field.confidence = 'low'
+    })
+    expect(state.filteredFields.value.map(field => field.id)).toEqual(['review_days', 'start_date', 'review_date'])
+    expect(state.fieldFilters.value.find(filter => filter.id === 'pending')?.count).toBe(3)
+    expect(html).toMatch(/class="mobile-field-category"[^>]*>契約審閱期<\/span>/)
+    expect(html).toMatch(/class="mobile-field-category"[^>]*>租賃期間<\/span>/)
+    expect(html).not.toContain('class="active-field-group-heading"')
+    state.selectFieldGroup('term')
+    expect(state.activeFieldFilter.value).toBe('all')
+    expect(state.filteredFields.value.map(field => field.id)).toContain('end_date')
+    expect(state.filteredFields.value.map(field => field.id)).not.toContain('review_days')
+    state.activeFieldFilter.value = 'pending'
+    expect(state.filteredFields.value.map(field => field.id)).toEqual(['review_days', 'start_date', 'review_date'])
+  })
+
+  it('即使作用中分類不適用，待確認仍列出其他分類；全部確認後顯示完成提示', async () => {
+    mocks.mobile = true
+    const pending = await render(state => {
+      state.selectFieldGroup('authorization')
+      state.activeFieldFilter.value = 'pending'
+    })
+    expect(pending.state.filteredFields.value.map(field => field.id)).toEqual(['review_days', 'review_date'])
+    expect(pending.html).not.toContain('本契約未適用代理或轉租')
+    const completed = await render(state => {
+      state.selectFieldGroup('authorization')
+      state.activeFieldFilter.value = 'pending'
+      for (const field of state.filteredFields.value) state.confirmMobileField(field)
+    })
+    expect(completed.html).toContain('都確認完了，可以開始分析')
+    expect(completed.html).not.toContain('目前沒有符合此狀態的欄位')
+    expect(completed.state.fieldFilters.value.find(filter => filter.id === 'pending')?.count).toBe(0)
+  })
+
+  it('未修改時修改後確認只聚焦並選取該卡片輸入，改回原值亦不確認，正確才完成校對', async () => {
+    mocks.mobile = true
+    const { state } = await render()
+    const field = state.fields.value.find(field => field.id === 'review_days')!
+    const input = { focus: vi.fn(), select: vi.fn() }
+    const querySelector = vi.fn(() => input)
+    vi.stubGlobal('document', { querySelector })
+    state.confirmMobileFieldEdit(field)
+    expect(querySelector).toHaveBeenCalledWith('[data-field-id="review_days"] .mobile-field-input')
+    expect(input.focus).toHaveBeenCalledOnce()
+    expect(input.select).toHaveBeenCalledOnce()
+    expect(field.reviewState).toBe('unreviewed')
+    expect(field.editing).toBe(false)
+    state.updateMobileField(field, '6 日')
+    state.updateMobileField(field, '5 日')
+    state.confirmMobileFieldEdit(field)
+    expect(input.focus).toHaveBeenCalledTimes(2)
+    expect(field.reviewState).toBe('unreviewed')
+    state.confirmMobileField(field)
+    expect(field.reviewState).toBe('verified')
+  })
+
+  it('選項欄位未修改時只聚焦，已修改時修改後確認會儲存且正確維持停用', async () => {
+    mocks.mobile = true
+    const choice = await render(state => {
+      const field = state.fields.value.find(field => field.id === 'rental_scope')!
+      field.value = '全部'
+    })
+    const select = { focus: vi.fn() }
+    vi.stubGlobal('document', { querySelector: () => select })
+    const field = choice.state.fields.value.find(field => field.id === 'rental_scope')!
+    choice.state.confirmMobileFieldEdit(field)
+    expect(select.focus).toHaveBeenCalledOnce()
+    expect(field.reviewState).toBe('unreviewed')
+    const edited = await render(state => {
+      state.updateMobileField(state.fields.value.find(field => field.id === 'review_days')!, '6 日')
+    })
+    expect(edited.html.replace(/<!--.*?-->/g, '')).toMatch(/<button[^>]* disabled[^>]*>正確<\/button>/)
+    const days = edited.state.fields.value.find(field => field.id === 'review_days')!
+    edited.state.confirmMobileFieldEdit(days)
+    expect(days.reviewState).toBe('edited')
+    expect(edited.state.filteredFields.value).not.toContain(days)
+    expect(select.focus).toHaveBeenCalledOnce()
+  })
+
+  it('手機作用中分類超出捲動列時自動水平捲入，桌面不捲動', async () => {
+    const { state } = await render()
+    const chip = { getBoundingClientRect: () => ({ left: 400, right: 520 }) }
+    const nav = {
+      querySelector: vi.fn(() => chip),
+      getBoundingClientRect: () => ({ left: 20, right: 350 }),
+      scrollBy: vi.fn(),
+    }
+    state.fieldGroupNav.value = nav as unknown as HTMLElement
+    await state.scrollActiveFieldGroupIntoView()
+    expect(nav.scrollBy).not.toHaveBeenCalled()
+    state.isMobile.value = true
+    await state.scrollActiveFieldGroupIntoView()
+    expect(nav.scrollBy).toHaveBeenCalledWith({ left: 170, behavior: 'auto' })
+    chip.getBoundingClientRect = () => ({ left: -100, right: 20 })
+    await state.scrollActiveFieldGroupIntoView()
+    expect(nav.scrollBy).toHaveBeenCalledWith({ left: -120, behavior: 'auto' })
   })
 
   it('清空輸入不移除卡片，格式錯誤保留驗證，修正確認後退出待確認清單', async () => {
