@@ -14,7 +14,7 @@ export function filterContractReviewFields<T extends ReviewFilterField>(
   keepEditing = false,
 ): T[] {
   const result = fields.filter((field) => {
-    // 手機直接在卡片輸入，編輯完成前維持原篩選歸屬，避免清空值時卡片消失。
+    // 手機編輯完成前維持原篩選歸屬，避免清空或補填時欄位消失。
     const value = keepEditing && field.editing ? field.editStartValue ?? field.value : field.value
     const populated = Boolean(value.trim() && value !== '尚未辨識')
     switch (filter) {
@@ -43,7 +43,7 @@ export function filterMobileContractReviewFields<T extends ReviewFilterField & {
   activeGroupId: string,
   groups: ReadonlyArray<{ id: string; order: number }>,
 ): T[] {
-  if (filter !== 'pending') {
+  if (!['pending', 'low', 'reviewed'].includes(filter)) {
     return filterContractReviewFields(
       fields.filter((field) => field.groupId === activeGroupId),
       filter,
@@ -51,10 +51,10 @@ export function filterMobileContractReviewFields<T extends ReviewFilterField & {
     )
   }
 
-  // 先依分類排序，再沿用待確認的信心排序；同分類、同信心保留原欄位順序。
+  // 狀態篩選跨分類；待確認沿用信心排序，其餘依分類及原欄位順序顯示。
   const groupOrder = new Map(groups.map((group) => [group.id, group.order]))
   const orderedFields = [...fields].sort((left, right) =>
     (groupOrder.get(left.groupId) ?? Infinity) - (groupOrder.get(right.groupId) ?? Infinity),
   )
-  return filterContractReviewFields(orderedFields, 'pending', true)
+  return filterContractReviewFields(orderedFields, filter, true)
 }

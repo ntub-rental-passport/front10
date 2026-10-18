@@ -810,6 +810,10 @@
   line-height: 1.65;
 }
 
+.document-reader-wrapper {
+  display: contents;
+}
+
 .contract-document-card {
   min-width: 0;
   overflow: hidden;
@@ -1508,120 +1512,88 @@
   }
 }
 
-.mobile-review-count,
-.mobile-review-note,
 .mobile-review-actions {
   display: none;
 }
 
 @media (max-width: 639px) {
   .contract-editor-page {
-    padding: 0.75rem;
-    gap: 0.75rem;
+    width: calc(100% + 32px);
+    max-width: none;
+    margin-inline: -16px;
+    padding: 0 0 calc(65px + env(safe-area-inset-bottom));
+    gap: 8px;
   }
 
   .editor-header,
   .review-summary-header,
   .review-stat-grid,
-  .review-summary-footer {
+  .review-summary-footer,
+  .field-panel-description {
     display: none;
   }
 
   .review-summary {
-    padding: 0.875rem;
+    gap: 4px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0 14px;
+    box-shadow: none;
   }
 
-  .mobile-review-count,
-  .mobile-review-note {
-    display: block;
-    margin: 0;
+  .mobile-review-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   .mobile-review-count {
-    font-size: 0.9375rem;
+    margin: 0;
+    font-size: 15px;
     font-weight: 700;
   }
 
-  .mobile-review-note,
-  .mobile-missing-note,
-  .mobile-source-missing {
-    color: var(--muted-foreground);
-    font-size: 0.8125rem;
-    line-height: 1.6;
+  .mobile-text-button {
+    color: var(--primary);
+    font-size: 13px;
+  }
+
+  .review-progress-track {
+    height: 4px;
   }
 
   .editor-layout,
   .field-section-grid {
     grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 
-  .editor-side-column {
-    grid-row: 1;
+  .contract-fields-panel {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
-  .field-panel-header,
-  .active-field-group-heading {
-    padding: 0.75rem;
+  .field-panel-header {
+    padding: 0 14px;
   }
 
   .field-list {
-    padding: 0.75rem;
-  }
-
-  .field-group-nav {
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    gap: 0.5rem;
-    padding: 0.25rem 0.75rem;
-    scroll-snap-type: x mandatory;
-    scroll-padding-inline: 0.75rem;
-    scrollbar-width: none;
-  }
-
-  .field-group-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .field-group-button {
-    flex: 0 0 auto;
-    min-height: 44px;
-    gap: 0.375rem;
-    padding: 0.375rem 0.5rem;
-    scroll-snap-align: start;
-  }
-
-  .field-group-label {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-  }
-
-  .field-panel-description {
-    display: none;
-  }
-
-  .mobile-field-category {
-    display: block;
-    margin-bottom: 0.375rem;
-    color: var(--muted-foreground);
-    font-size: 0.6875rem;
-  }
-
-  .active-field-group-heading,
-  .editor-empty-notice {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .active-field-group-tools {
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    padding: 0;
   }
 
   .field-filter-bar {
-    gap: 0.5rem;
+    gap: 8px;
     max-width: 100%;
+    padding: 4px 14px;
+    scrollbar-width: none;
+  }
+
+  .field-filter-bar::-webkit-scrollbar {
+    display: none;
   }
 
   .field-filter-button {
@@ -1629,17 +1601,137 @@
     border-color: var(--border);
     border-radius: 999px;
     background: var(--background);
-    font-size: 0.8125rem;
+    font-size: 13px;
+    white-space: nowrap;
   }
 
-  .field-card-header {
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+  .field-filter-button.is-active {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, var(--background));
   }
 
-  .field-card-header > span {
+  .mobile-field-row {
+    min-height: 64px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+    padding: 9px 14px 10px;
+  }
+
+  .mobile-field-main {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mobile-status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    border-radius: 50%;
+  }
+
+  .mobile-status-dot--pending {
+    background: #f59e0b;
+  }
+
+  .mobile-status-dot--reviewed {
+    background: #22c55e;
+  }
+
+  .mobile-status-dot--missing {
+    background: #9ca3af;
+  }
+
+  .mobile-field-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mobile-field-label {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    color: var(--muted-foreground);
+    font-size: 11px;
+    line-height: 20px;
+  }
+
+  .mobile-field-category {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .contract-editor-page .mobile-evidence-link {
+    min-height: 20px;
+    min-width: auto;
+    flex: 0 0 auto;
+    color: var(--primary);
+  }
+
+  .contract-editor-page .mobile-field-value {
+    display: block;
+    width: 100%;
+    min-height: 24px;
+    overflow: hidden;
+    border-bottom: 1px dashed var(--muted-foreground);
     color: var(--foreground);
-    font-size: 0.875rem;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 23px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-field-confirm {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    place-items: center;
+    border: 1px solid var(--primary);
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  .mobile-field-confirm.is-reviewed {
+    background: transparent;
+    color: var(--primary);
+  }
+
+  .mobile-missing-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    line-height: 24px;
+  }
+
+  .contract-editor-page .mobile-field-fill {
+    min-height: 24px;
+    min-width: auto;
+    flex: 0 0 auto;
+    color: var(--primary);
+  }
+
+  .mobile-field-main.is-editing {
+    align-items: flex-start;
+  }
+
+  .mobile-field-main.is-editing > .mobile-status-dot {
+    margin-top: 6px;
+  }
+
+  .mobile-field-main.is-editing .mobile-field-content {
+    display: grid;
+    gap: 8px;
   }
 
   .mobile-field-input {
@@ -1659,7 +1751,7 @@
   }
 
   .mobile-field-input:focus-visible,
-  .field-evidence-source summary:focus-visible {
+  .mobile-field-row button:focus-visible {
     outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
@@ -1670,26 +1762,10 @@
     gap: 0.5rem;
   }
 
-  .mobile-field-fill {
-    width: 100%;
-  }
-
   .field-evidence-source {
-    margin-block: 0.5rem;
+    margin-top: 8px;
     color: var(--muted-foreground);
-    font-size: 0.8125rem;
-  }
-
-  .field-evidence-source summary {
-    display: flex;
-    align-items: center;
-    color: var(--primary);
-    cursor: pointer;
-    list-style: none;
-  }
-
-  .field-evidence-source summary::-webkit-details-marker {
-    display: none;
+    font-size: 13px;
   }
 
   .field-evidence-text {
@@ -1750,26 +1826,104 @@
     cursor: pointer;
   }
 
-  :global(body:has(.field-evidence-dialog[open])) {
+  :global(body:has(.field-evidence-dialog[open])),
+  :global(body:has(.mobile-document-dialog[open])) {
     overflow: hidden;
   }
 
-  .mobile-source-missing {
-    margin-block: 0.75rem;
+  .mobile-document-dialog {
+    position: fixed;
+    inset: auto 0 0;
+    width: 100%;
+    max-width: none;
+    height: 85dvh;
+    max-height: 85dvh;
+    margin: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 0;
+    border-radius: 16px 16px 0 0;
+    background: var(--background);
+    padding: 0 0 env(safe-area-inset-bottom);
+    color: var(--foreground);
+  }
+
+  .mobile-document-dialog::backdrop {
+    background: rgb(15 23 42 / 45%);
+  }
+
+  .mobile-document-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--background);
+    padding: 10px 14px;
+  }
+
+  .mobile-document-close {
+    display: grid;
+    place-items: center;
+  }
+
+  .mobile-document-dialog .contract-document-card {
+    border: 0;
+    box-shadow: none;
+  }
+
+  .document-reader-heading {
+    padding: 0 14px 12px;
+  }
+
+  .pdf-reader-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 12px 14px;
+  }
+
+  .pdf-file-info strong {
+    max-width: 100%;
+  }
+
+  .pdf-reader-canvas {
+    min-height: 31rem;
+    padding: 8px;
+  }
+
+  .pdf-page {
+    height: 30rem;
+  }
+
+  .pdf-page-text,
+  .pdf-page-editor {
+    padding: 44px 16px 24px;
+    font-size: 13px;
+    line-height: 1.75;
   }
 
   .mobile-review-actions {
-    position: sticky;
+    position: fixed;
+    left: 0;
+    right: 0;
     bottom: 0;
-    z-index: 10;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 0.5rem;
-    margin: 0 -0.75rem -0.75rem;
+    z-index: 20;
+    display: flex;
+    gap: 8px;
     border-top: 1px solid var(--border);
     background: var(--background);
-    padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom));
-    box-shadow: 0 -4px 16px rgb(15 23 42 / 6%);
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-review-actions > button {
+    height: 44px;
+    flex: 0 0 auto;
+  }
+
+  .mobile-review-actions > button:last-child {
+    min-width: 0;
+    flex: 1;
   }
 
   .contract-editor-page button,
@@ -1788,14 +1942,21 @@
 
   .pdf-search-bar {
     width: 100%;
+    min-width: 0;
+    flex-basis: auto;
     min-height: 44px;
   }
 
   .pdf-pagination {
+    width: 100%;
+    max-width: 100%;
+    flex-basis: auto;
+    justify-content: flex-start;
     gap: 0.125rem;
   }
 
   .page-number-scroll {
+    flex: 0 1 auto;
     overflow-x: auto;
     gap: 0.125rem;
   }
