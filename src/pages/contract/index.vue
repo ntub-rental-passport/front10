@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs/i
 import { useRouter } from 'vue-router'
 import MobileContractPages from './MobileContractPages.vue'
 import { appendContractFiles, moveItem, sortContractFiles } from '@/src/utils/contract-files'
+import { rememberContractSourceImages } from '@/src/utils/contract-field-evidence'
 import {
   clearContractOcrResult,
   normalizeContractOcrResult,
@@ -394,6 +395,7 @@ async function sendToOcr(files: File[]): Promise<void> {
 
     // 瀏覽器的 File.name 保留使用者選取時的正確 Unicode 檔名。
     result.fileName = files.map((file) => file.name).join('、')
+    rememberContractSourceImages(files, result)
 
     ocrResult.value = result
     uploadStatus.value =
