@@ -228,6 +228,7 @@ async function handleGoogleOAuthReturn(): Promise<void> {
       account.accessToken,
       account.userId,
       account.name,
+      account.picture,
     )
     await router.replace(
       normalizeAuthRedirect(account.redirectPath) || resolveRoleHome(session.role),

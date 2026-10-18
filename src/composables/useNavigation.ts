@@ -19,6 +19,14 @@ export interface NavItem {
   path: string
 }
 
+export function isMobileNavItemActive(itemPath: string, currentPath: string): boolean {
+  const path = currentPath.replace(/\/+$/, '')
+  if (itemPath === '/app/contract/scanner') {
+    return ['/app/contract/scanner', '/app/contract/editor', '/app/contract-analysis'].includes(path)
+  }
+  return path === itemPath || path.startsWith(`${itemPath}/`)
+}
+
 export function useNavigation() {
   const navItems: NavItem[] = [
     { icon: Home, label: '首頁', path: '/app' },
@@ -35,14 +43,13 @@ export function useNavigation() {
 
   const accountItem: NavItem = { icon: User, label: '我的帳戶', path: '/app/account' }
 
-  // 手機底部列專用項目（6 項）；合約流程仍可由桌機側邊欄進入。
+  // 手機底部列專用項目；首頁與帳戶由頂部列進入。
   const mobileNavItems: NavItem[] = [
-    { icon: Home, label: '首頁', path: '/app' },
-    { icon: CheckSquare, label: '點交清單', path: '/app/handover' },
-    { icon: Trash2, label: '垃圾清運', path: '/app/garbage' },
+    { icon: CheckSquare, label: '點交', path: '/app/handover' },
+    { icon: FileText, label: '契約辨識', path: '/app/contract/scanner' },
+    { icon: Trash2, label: '垃圾', path: '/app/garbage' },
     { icon: Wrench, label: '報修', path: '/app/repairs' },
     { icon: ClipboardList, label: '備忘錄', path: '/app/notes' },
-    { icon: User, label: '我的帳戶', path: '/app/account' },
   ]
 
   return { navItems, accountItem, mobileNavItems }

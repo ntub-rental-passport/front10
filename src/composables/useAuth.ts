@@ -22,6 +22,7 @@ export interface AuthSession {
   role: AuthRole
   emailVerified: boolean
   nickname: string | null
+  picture?: string | null
   /** 登入時間（epoch 毫秒）。舊 session 沒有這個欄位，視為不過期。 */
   issuedAt?: number
   accessToken?: string
@@ -49,6 +50,7 @@ interface UserProfile {
   email: string
   emailVerified: boolean
   nickname: string | null
+  picture?: string | null
   password?: string
   role?: AuthRole
 }
@@ -140,6 +142,7 @@ function createSession(
     role,
     emailVerified: profile.emailVerified,
     nickname: profile.nickname,
+    picture: profile.picture ?? null,
     issuedAt: Date.now(),
     accessToken: accessToken || undefined,
   }
@@ -214,6 +217,7 @@ export async function signInWithEmail(
     const profile = upsertUserProfile(result.email, {
       emailVerified: true,
       nickname: result.displayName,
+      picture: result.avatarUrl,
       role: result.role,
     })
     return {
@@ -280,6 +284,7 @@ export async function completeAdminSignIn(
   const profile = upsertUserProfile(result.email, {
     emailVerified: true,
     nickname: result.displayName,
+    picture: result.avatarUrl,
     role: result.role,
   })
   return createSession(result.role, profile, result.accessToken, result.userId)
@@ -291,11 +296,13 @@ export function registerWithGoogle(
   accessToken?: string | null,
   userId?: string | number | null,
   displayName: string | null = null,
+  picture: string | null = null,
 ): AuthSession {
   const profile = upsertUserProfile(email, {
     role,
     emailVerified: true,
     nickname: displayName,
+    picture,
   })
 
   return createSession(role, profile, accessToken, userId)
@@ -347,6 +354,7 @@ export async function syncSessionWithServer(): Promise<AuthSession | null> {
   const profile = upsertUserProfile(remote.email, {
     emailVerified: true,
     nickname: remote.displayName,
+    picture: remote.avatarUrl,
     role: remote.role,
   })
   return createSession(remote.role, profile, remote.accessToken, remote.userId)
@@ -485,6 +493,7 @@ export async function completeEmailVerification(code: string): Promise<AuthSessi
   const profile = upsertUserProfile(verified.email, {
     emailVerified: true,
     nickname: verified.displayName,
+    picture: verified.avatarUrl,
     role: verified.role,
   })
 
@@ -510,6 +519,7 @@ export async function finishNicknameSetup(nickname: string): Promise<AuthSession
   const profile = upsertUserProfile(updated.email, {
     role: updated.role,
     nickname: updated.displayName,
+    picture: updated.avatarUrl,
     emailVerified: true,
   })
 

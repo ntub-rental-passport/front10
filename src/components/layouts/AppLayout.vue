@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 import brandLogoIcon from '@/src/assets/Logo/Rentmate-Logo-icon.png'
-import { useNavigation } from '@/src/composables/useNavigation'
+import { isMobileNavItemActive, useNavigation } from '@/src/composables/useNavigation'
 import { useFeatureGate } from '@/src/composables/useFeatureGate'
 import { useFieldCaptureSupport, useTenantDeviceGate } from '@/src/composables/useDeviceGate'
 import PullToRefresh from '@/src/components/PullToRefresh.vue'
 import { isMobileUnsupportedTenantPath } from '@/src/utils/mobile-surface'
+import { hasInAppHistory } from '@/src/utils/mobile-flow'
 import DesktopOnlyNotice from '@/src/components/DesktopOnlyNotice.vue'
 import TenantNotificationBell from '@/src/components/TenantNotificationBell.vue'
+import TenantAvatarButton from '@/src/components/TenantAvatarButton.vue'
 import FeatureMaintenanceNotice from '@/src/components/maintenance/FeatureMaintenanceNotice.vue'
 import MaintenanceToaster from '@/src/components/maintenance/MaintenanceToaster.vue'
 
 const route = useRoute()
+const router = useRouter()
+const mobileFlow = computed(() => route.meta.mobileFlow)
 const { navItems, accountItem, mobileNavItems } = useNavigation()
 const { blocked, outage, isPathUnderMaintenance } = useFeatureGate()
 const { blocked: deviceBlocked } = useTenantDeviceGate()
@@ -51,6 +55,15 @@ function isActive(path: string): boolean {
 
 function toggleSidebarPin(): void {
   isSidebarPinned.value = !isSidebarPinned.value
+}
+
+function goBack(): void {
+  if (!mobileFlow.value) return
+  if (hasInAppHistory(router.options.history.state.back)) {
+    router.back()
+  } else {
+    void router.push(mobileFlow.value.backPath)
+  }
 }
 
 onMounted(() => {
@@ -130,13 +143,33 @@ watch(isSidebarPinned, (value) => {
       </nav>
     </aside>
 
-    <main ref="mainContent" class="flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pt-0 sm:pb-0">
+    <main
+      ref="mainContent"
+      class="flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] sm:pt-0 sm:pb-0"
+      :class="mobileFlow ? 'pb-[env(safe-area-inset-bottom)]' : 'pb-[calc(4rem+env(safe-area-inset-bottom))]'"
+    >
       <header class="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background px-4 sm:hidden">
-        <RouterLink to="/app" class="flex items-center gap-2 font-bold text-primary">
-          <img :src="brandLogoIcon" alt="RentMate Logo" class="h-6 w-6 shrink-0 object-contain" />
-          <span>租隊友 RentMate</span>
-        </RouterLink>
-        <TenantNotificationBell />
+        <div v-if="mobileFlow" class="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            aria-label="返回"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            @click="goBack"
+          >
+            <ArrowLeft class="h-5 w-5" aria-hidden="true" />
+          </button>
+          <span class="truncate font-semibold">{{ mobileFlow.title }}</span>
+        </div>
+        <template v-else>
+          <RouterLink to="/app" class="flex items-center gap-2 font-bold text-primary">
+            <img :src="brandLogoIcon" alt="RentMate Logo" class="h-6 w-6 shrink-0 object-contain" />
+            <span>租隊友</span>
+          </RouterLink>
+          <div class="flex items-center gap-1">
+            <TenantNotificationBell />
+            <TenantAvatarButton />
+          </div>
+        </template>
       </header>
       <PullToRefresh
         :enabled="coarsePointer && !mobileUnsupported"
@@ -155,7 +188,11 @@ watch(isSidebarPinned, (value) => {
         />
         <RouterView v-else />
       </PullToRefresh>
-      <footer v-if="!mobileUnsupported" class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300">
+      <footer
+        v-if="!mobileUnsupported"
+        class="border-t border-slate-800 bg-[linear-gradient(180deg,_#111827,_#0f172a)] text-slate-300"
+        :class="{ 'hidden sm:block': mobileFlow }"
+      >
         <div class="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 py-4 text-center">
           <p class="text-sm text-slate-300/90">臺北商業大學畢業專題｜AI 租屋資訊整合與契約輔助平台展示頁</p>
           <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-400">
@@ -169,7 +206,7 @@ watch(isSidebarPinned, (value) => {
       </footer>
     </main>
 
-    <nav class="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4rem+env(safe-area-inset-bottom))] border-t bg-background pb-[env(safe-area-inset-bottom)] sm:hidden">
+    <nav v-if="!mobileFlow" class="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4rem+env(safe-area-inset-bottom))] border-t bg-background pb-[env(safe-area-inset-bottom)] sm:hidden">
       <RouterLink
         v-for="item in mobileNavItems"
         :key="item.path"
@@ -177,7 +214,7 @@ watch(isSidebarPinned, (value) => {
         :title="isPathUnderMaintenance(item.path) ? `${item.label}（維護中）` : item.label"
         :class="cn(
           'flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors',
-          isActive(item.path)
+          isMobileNavItemActive(item.path, route.path)
             ? 'text-primary'
             : isPathUnderMaintenance(item.path)
               ? 'text-muted-foreground/50'
