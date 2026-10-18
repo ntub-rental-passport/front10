@@ -1569,7 +1569,43 @@
   }
 
   .field-group-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 0.75rem;
+    scrollbar-width: none;
+  }
+
+  .field-group-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .field-group-button {
+    flex: 0 0 auto;
+    min-height: 44px;
+    gap: 0.375rem;
+    padding: 0.375rem 0.5rem;
+    scroll-snap-align: start;
+  }
+
+  .field-group-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .field-panel-description {
+    display: none;
+  }
+
+  .mobile-field-category {
+    display: block;
+    margin-bottom: 0.375rem;
+    color: var(--muted-foreground);
+    font-size: 0.6875rem;
   }
 
   .active-field-group-heading,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterContractReviewFields } from './contract-review-filter'
+import { filterContractReviewFields, filterMobileContractReviewFields } from './contract-review-filter'
 
 const fields = [
   { id: 'high', value: '甲', confidence: 'high', reviewState: 'unreviewed' },
@@ -48,5 +48,49 @@ describe('契約欄位篩選', () => {
   it('空清單與無待確認欄位皆回傳空陣列', () => {
     expect(filterContractReviewFields([], 'pending')).toEqual([])
     expect(filterContractReviewFields(fields.slice(3, 4), 'pending')).toEqual([])
+  })
+})
+
+describe('手機跨分類待確認篩選', () => {
+  const groups = [{ id: 'term', order: 4 }, { id: 'review', order: 1 }]
+  const mobileFields = [
+    { ...fields[0]!, id: 'term-high', groupId: 'term' },
+    { ...fields[2]!, id: 'term-medium', groupId: 'term' },
+    { ...fields[4]!, id: 'review-low', groupId: 'review' },
+    { ...fields[2]!, id: 'review-medium', groupId: 'review' },
+    { ...fields[0]!, id: 'review-high', groupId: 'review' },
+    { ...fields[1]!, groupId: 'review' },
+    { ...fields[3]!, groupId: 'term' },
+  ]
+
+  it('不受作用中分類影響，低／中信心優先，再依分類編號排序且不改動原陣列', () => {
+    const original = [...mobileFields]
+    for (const activeGroup of ['review', 'term', 'empty']) {
+      expect(filterMobileContractReviewFields(mobileFields, 'pending', activeGroup, groups)
+        .map(field => field.id)).toEqual([
+        'review-low', 'review-medium', 'term-medium', 'review-high', 'term-high',
+      ])
+    }
+    expect(mobileFields).toEqual(original)
+  })
+
+  it('其他篩選只顯示作用中分類，保留原欄位順序', () => {
+    expect(filterMobileContractReviewFields(mobileFields, 'all', 'term', groups)
+      .map(field => field.id)).toEqual(['term-high', 'term-medium', 'verified'])
+    expect(filterMobileContractReviewFields(mobileFields, 'reviewed', 'term', groups)
+      .map(field => field.id)).toEqual(['verified'])
+    expect(filterMobileContractReviewFields(mobileFields, 'all', 'empty', groups)).toEqual([])
+  })
+
+  it('跨分類編輯清空原值仍保留待確認卡片，完成後才移除', () => {
+    const field = { ...mobileFields[0]!, value: '', editing: true, editStartValue: '甲' }
+    expect(filterMobileContractReviewFields([field], 'pending', 'review', groups)).toEqual([field])
+    field.editing = false
+    expect(filterMobileContractReviewFields([field], 'pending', 'review', groups)).toEqual([])
+  })
+
+  it('沒有待確認欄位或空陣列時回傳空陣列', () => {
+    expect(filterMobileContractReviewFields(mobileFields.slice(5), 'pending', 'review', groups)).toEqual([])
+    expect(filterMobileContractReviewFields([], 'pending', 'review', groups)).toEqual([])
   })
 })
