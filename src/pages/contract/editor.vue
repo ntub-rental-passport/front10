@@ -1,6 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
+import {
+  filterContractReviewFields,
+  type ContractReviewFilter,
+} from '@/src/utils/contract-review-filter'
+import {
+  createContractFieldCropUrl,
+  findContractFieldCrop,
+} from '@/src/utils/contract-field-evidence'
 import {
   loadContractOcrResult,
   mergeContractPageTexts,
@@ -97,8 +106,6 @@ interface FieldSection {
   grouped: boolean
   fields: ContractField[]
 }
-
-type FieldFilter = 'all' | 'good' | 'medium' | 'low' | 'reviewed'
 
 interface TextMatch {
   pageIndex: number
@@ -419,7 +426,16 @@ const isEditing = ref(false)
 const isSaved = ref(false)
 const isDirty = ref(false)
 const saveError = ref('')
-const activeFieldFilter = ref<FieldFilter>('all')
+const isMobile = useMediaQuery('(max-width: 639px)')
+const desktopFieldFilter = ref<ContractReviewFilter>('all')
+const mobileFieldFilter = ref<ContractReviewFilter>('pending')
+const activeFieldFilter = computed({
+  get: () => isMobile.value ? mobileFieldFilter.value : desktopFieldFilter.value,
+  set: (value: ContractReviewFilter) => {
+    if (isMobile.value) mobileFieldFilter.value = value
+    else desktopFieldFilter.value = value
+  },
+})
 const requestedGroupId = typeof route.query.group === 'string' ? route.query.group : ''
 const activeFieldGroupId = ref(
   CONTRACT_FIELD_GROUPS.some((group) => group.id === requestedGroupId)
@@ -495,32 +511,11 @@ const activeGroupFields = computed(() =>
   applicableFields.value.filter((field) => field.groupId === activeFieldGroupId.value),
 )
 const filteredFields = computed(() =>
-  activeGroupFields.value.filter((field) => {
-    switch (activeFieldFilter.value) {
-      case 'good':
-        return (
-          isFieldPopulated(field) &&
-          field.confidence === 'high' &&
-          field.reviewState === 'unreviewed'
-        )
-      case 'medium':
-        return (
-          isFieldPopulated(field) &&
-          field.confidence !== 'high' &&
-          field.reviewState === 'unreviewed'
-        )
-      case 'low':
-        return !isFieldPopulated(field)
-      case 'reviewed':
-        return field.reviewState !== 'unreviewed'
-      default:
-        return true
-    }
-  }),
+  filterContractReviewFields(activeGroupFields.value, activeFieldFilter.value, isMobile.value),
 )
 
 const fieldSections = computed<FieldSection[]>(() => {
-  if (activeFieldGroupId.value !== 'scope') {
+  if (isMobile.value || activeFieldGroupId.value !== 'scope') {
     return [{ id: 'default', title: '', grouped: false, fields: filteredFields.value }]
   }
 
@@ -567,7 +562,12 @@ const fieldSections = computed<FieldSection[]>(() => {
     .filter((section) => section.fields.length > 0)
 })
 
-const fieldFilters = computed<Array<{ id: FieldFilter; label: string; count: number }>>(() => [
+const fieldFilters = computed<Array<{ id: ContractReviewFilter; label: string; count: number }>>(() => [
+  ...(isMobile.value ? [{
+    id: 'pending' as const,
+    label: '待確認優先',
+    count: filterContractReviewFields(activeGroupFields.value, 'pending', true).length,
+  }] : []),
   { id: 'all', label: '本類全部', count: activeGroupFields.value.length },
   {
     id: 'good',
@@ -645,7 +645,7 @@ const batchConfirmableFields = computed(() =>
 
 function selectFieldGroup(groupId: string): void {
   activeFieldGroupId.value = groupId
-  activeFieldFilter.value = 'all'
+  activeFieldFilter.value = isMobile.value ? 'pending' : 'all'
 }
 
 const searchMatches = computed<TextMatch[]>(() => {
@@ -775,6 +775,60 @@ function clearFieldValidation(field: ContractField): void {
   field.validationError = ''
   saveError.value = ''
 }
+
+function updateMobileField(field: ContractField, value: string): void {
+  if (!field.editing) startFieldEdit(field)
+  field.value = value
+  clearFieldValidation(field)
+}
+
+function confirmMobileField(field: ContractField): void {
+  if (field.editing) confirmFieldEdit(field)
+  else verifyField(field)
+}
+
+const fieldEvidenceUrls = ref<Record<string, string | null>>({})
+const loadingEvidence = ref(new Set<string>())
+const evidenceDialog = ref<HTMLDialogElement | null>(null)
+const enlargedEvidence = ref<{ url: string; label: string } | null>(null)
+let evidenceDisposed = false
+
+function fieldEvidencePage(field: ContractField): number | null {
+  return findContractFieldCrop(storedOcrResult.value, field.id)?.pageIndex ?? field.sourcePageIndex
+}
+
+async function loadFieldEvidence(field: ContractField): Promise<void> {
+  if (field.id in fieldEvidenceUrls.value || loadingEvidence.value.has(field.id)) return
+  loadingEvidence.value.add(field.id)
+  try {
+    const url = await createContractFieldCropUrl(storedOcrResult.value, field.id)
+    if (evidenceDisposed) {
+      if (url) URL.revokeObjectURL(url)
+      return
+    }
+    fieldEvidenceUrls.value[field.id] = url
+  } catch {
+    fieldEvidenceUrls.value[field.id] = null
+  } finally {
+    loadingEvidence.value.delete(field.id)
+  }
+}
+
+async function enlargeFieldEvidence(field: ContractField): Promise<void> {
+  const url = fieldEvidenceUrls.value[field.id]
+  if (!url) return
+  enlargedEvidence.value = { url, label: field.label }
+  await nextTick()
+  evidenceDialog.value?.showModal()
+}
+
+watch(isMobile, () => evidenceDialog.value?.close())
+onUnmounted(() => {
+  evidenceDisposed = true
+  Object.values(fieldEvidenceUrls.value).forEach(url => {
+    if (url) URL.revokeObjectURL(url)
+  })
+})
 
 function parseNumericValue(value: string): number {
   return Number(value.replace(/[^0-9]/g, '')) || 0
@@ -1262,7 +1316,7 @@ function returnToOcr(): void {
 
     <div
       v-if="!hasOcrData"
-      class="flex items-center justify-between gap-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3"
+      class="editor-empty-notice flex items-center justify-between gap-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3"
     >
       <div class="flex items-center gap-3">
         <AlertTriangle class="shrink-0 text-red-600" :size="20" />
@@ -1274,6 +1328,7 @@ function returnToOcr(): void {
     </div>
 
     <section v-if="hasOcrData" class="review-summary" aria-labelledby="review-summary-title">
+      <p class="mobile-review-count">已校對 {{ completedRequiredCount }} / {{ reviewableRequiredCount }}</p>
       <div class="review-summary-header">
         <div>
           <p class="review-summary-kicker">OCR 辨識完成</p>
@@ -1316,6 +1371,7 @@ function returnToOcr(): void {
       >
         <div class="review-progress-bar" :style="{ width: `${reviewProgress}%` }" />
       </div>
+      <p class="mobile-review-note">缺少的欄位將在風險分析中提醒。</p>
 
       <div class="review-summary-footer">
         <div class="review-summary-copy">
@@ -1644,7 +1700,7 @@ function returnToOcr(): void {
                 </span>
                 <div class="field-card-badges">
                   <button
-                    v-if="field.sourcePageIndex !== null"
+                    v-if="!isMobile && field.sourcePageIndex !== null"
                     type="button"
                     class="field-source-page"
                     :aria-label="`前往${field.label}的來源第 ${field.sourcePageIndex + 1} 頁`"
@@ -1653,7 +1709,7 @@ function returnToOcr(): void {
                   >
                     第 {{ field.sourcePageIndex + 1 }} 頁
                   </button>
-                  <span v-else class="field-source-page field-source-page--missing">
+                  <span v-else-if="!isMobile" class="field-source-page field-source-page--missing">
                     來源未定位
                   </span>
                   <Badge variant="secondary" class="text-xs" :class="fieldStatus(field).class">
@@ -1662,6 +1718,79 @@ function returnToOcr(): void {
                 </div>
               </div>
 
+              <template v-if="isMobile">
+                <template v-if="isFieldPopulated(field) || field.editing">
+                  <select
+                    v-if="field.control === 'choice'"
+                    class="mobile-field-input"
+                    :value="field.value"
+                    :aria-label="field.label"
+                    :aria-invalid="Boolean(field.validationError)"
+                    :aria-describedby="field.validationError ? `${field.id}-validation-error` : undefined"
+                    @change="updateMobileField(field, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option disabled value="">請選擇</option>
+                    <option v-for="option in field.options" :key="option" :value="option">{{ option }}</option>
+                  </select>
+                  <input
+                    v-else
+                    class="mobile-field-input"
+                    :value="field.value"
+                    :aria-label="field.label"
+                    :aria-invalid="Boolean(field.validationError)"
+                    :aria-describedby="field.validationError ? `${field.id}-validation-error` : undefined"
+                    :placeholder="field.placeholder"
+                    @input="updateMobileField(field, ($event.target as HTMLInputElement).value)"
+                    @keyup.enter="confirmMobileField(field)"
+                  />
+                  <span
+                    v-if="['exclusive_area', 'accessory_area', 'rental_area'].includes(field.id) && areaInPing(field.value)"
+                    class="field-area-conversion"
+                  >{{ areaInPing(field.value) }}</span>
+                </template>
+                <p v-else class="mobile-missing-note">尚未辨識，風險分析會提醒此欄位缺少資料。</p>
+                <div
+                  v-if="field.validationError"
+                  :id="`${field.id}-validation-error`"
+                  class="field-validation-error"
+                  role="alert"
+                >
+                  <AlertTriangle :size="14" />
+                  <span>{{ field.validationError }}</span>
+                </div>
+                <details
+                  v-if="field.sourceValue || findContractFieldCrop(storedOcrResult, field.id)"
+                  class="field-evidence-source"
+                  @toggle="($event.target as HTMLDetailsElement).open && loadFieldEvidence(field)"
+                >
+                  <summary>
+                    {{ fieldEvidencePage(field) !== null ? `第 ${fieldEvidencePage(field)! + 1} 頁` : '來源未定位' }}・看原文
+                  </summary>
+                  <p v-if="loadingEvidence.has(field.id)" role="status">正在載入原文圖片…</p>
+                  <button
+                    v-else-if="fieldEvidenceUrls[field.id]"
+                    type="button"
+                    class="field-evidence-image"
+                    :aria-label="`全螢幕檢視${field.label}原文`"
+                    @click="enlargeFieldEvidence(field)"
+                  >
+                    <img :src="fieldEvidenceUrls[field.id]!" :alt="`${field.label}的原文裁切圖片`" />
+                  </button>
+                  <p v-else class="field-evidence-text">{{ field.sourceValue || '沒有可用的原文影像，請對照原始契約。' }}</p>
+                </details>
+                <p v-else class="mobile-source-missing">來源未定位</p>
+                <div v-if="isFieldPopulated(field) || field.editing" class="mobile-field-actions">
+                  <Button variant="outline" @click="confirmMobileField(field)">修改後確認</Button>
+                  <Button
+                    :disabled="field.editing && field.value !== field.editStartValue"
+                    @click="confirmMobileField(field)"
+                  >正確</Button>
+                </div>
+                <Button v-else class="mobile-field-fill" variant="outline" @click="startFieldEdit(field)">
+                  填寫
+                </Button>
+              </template>
+              <template v-else>
               <div
                 v-if="field.editing && field.control === 'choice'"
                 class="field-choice-edit-row"
@@ -1758,6 +1887,7 @@ function returnToOcr(): void {
                   </button>
                 </div>
               </div>
+              </template>
               <div
                 v-if="!field.editing && field.id === 'address' && field.addressResolution"
                 class="address-evidence"
@@ -1822,6 +1952,17 @@ function returnToOcr(): void {
           </CardContent>
         </Card>
       </div>
+    </div>
+
+    <div class="mobile-review-actions" aria-label="校對操作">
+      <Button
+        variant="outline"
+        :disabled="!hasOcrData || (isSaved && !isDirty)"
+        @click="handleSave"
+      >確認儲存</Button>
+      <Button :disabled="!canStartAnalysis" @click="completeReviewAndAnalyze">
+        完成校對，開始分析
+      </Button>
     </div>
 
     <dialog ref="finalizeDialog" class="finalize-dialog" @cancel.prevent>
@@ -1931,6 +2072,18 @@ function returnToOcr(): void {
           </Button>
         </footer>
       </form>
+    </dialog>
+    <dialog
+      v-if="isMobile"
+      ref="evidenceDialog"
+      class="field-evidence-dialog"
+      aria-label="契約原文圖片"
+      @close="enlargedEvidence = null"
+    >
+      <button type="button" class="field-evidence-close" aria-label="關閉原文圖片" autofocus @click="evidenceDialog?.close()">
+        <X :size="24" />
+      </button>
+      <img v-if="enlargedEvidence" :src="enlargedEvidence.url" :alt="`${enlargedEvidence.label}的原文裁切圖片`" />
     </dialog>
   </div>
 </template>
