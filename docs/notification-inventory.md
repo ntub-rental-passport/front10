@@ -31,6 +31,7 @@
 | 合約審閱紀錄 14 天後刪除 | `routers/contract_reviews.py:288` | **無** |
 | 房東手動催繳 | `routers/landlord_finance.py:605` | **無** |
 | 收租自動提醒（前 3 天／當天／逾期隔天） | `notifications/landlord_reminders.py:62` | **無** |
+| 停水停電自動提醒（每小時：未來 24 小時計畫停電／首次發現停水公告；站內＋推播） | `notifications/outage_reminders.py` | `/app/outage` |
 
 ### 送給房東
 
