@@ -7,7 +7,9 @@ import { uploadReport, deleteReviewFile, reviewFileUrl, type ReviewFile } from '
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const API_BASE_URL = import.meta.env.DEV
+  ? '/api'
+  : (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 import { loadContractOcrResult, saveContractOcrResult } from '@/src/utils/contract-ocr'
 import { contractAnalysisKey, readContractAnalysis, writeContractAnalysis } from '@/src/utils/contract-analysis-cache'
 import { downloadPdf, generateContractReportPdf } from '@/src/utils/contract-report'

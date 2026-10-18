@@ -190,8 +190,12 @@ async def _call_nvidia(prompt: str, *, read_timeout: float, force_json: bool, pu
     # 預設不送這個參數 —— 不認得它的模型會直接回 400，
     # 反而讓「模型其實可用」被誤判成「模型壞掉」。
     # 需要時才由 .env 開啟（NVIDIA_DISABLE_THINKING=true）。
+    #
+    # 兩個鍵都送：DeepSeek 認 thinking，Nemotron 3 認 enable_thinking。
+    # 實測（2026-10-18）Nemotron 3 Super 預設會思考，只送 thinking 它照樣想，
+    # 16k 字的真實契約要 160 秒以上，超過 180 秒逾時就回 503。
     if _disable_thinking(purpose):
-        payload["chat_template_kwargs"] = {"thinking": False}
+        payload["chat_template_kwargs"] = {"thinking": False, "enable_thinking": False}
 
     timeout = httpx.Timeout(read_timeout, connect=CONNECT_TIMEOUT)
 
