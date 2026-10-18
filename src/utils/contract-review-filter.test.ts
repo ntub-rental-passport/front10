@@ -51,7 +51,7 @@ describe('契約欄位篩選', () => {
   })
 })
 
-describe('手機跨分類待確認篩選', () => {
+describe('手機跨分類狀態篩選', () => {
   const groups = [{ id: 'term', order: 4 }, { id: 'review', order: 1 }]
   const mobileFields = [
     { ...fields[0]!, id: 'term-high', groupId: 'term' },
@@ -74,12 +74,42 @@ describe('手機跨分類待確認篩選', () => {
     expect(mobileFields).toEqual(original)
   })
 
-  it('其他篩選只顯示作用中分類，保留原欄位順序', () => {
+  it('分類全部只顯示作用中分類，保留原欄位順序', () => {
     expect(filterMobileContractReviewFields(mobileFields, 'all', 'term', groups)
       .map(field => field.id)).toEqual(['term-high', 'term-medium', 'verified'])
-    expect(filterMobileContractReviewFields(mobileFields, 'reviewed', 'term', groups)
-      .map(field => field.id)).toEqual(['verified'])
     expect(filterMobileContractReviewFields(mobileFields, 'all', 'empty', groups)).toEqual([])
+  })
+
+  it.each([
+    ['low', ['review-missing', 'term-blank']],
+    ['reviewed', ['review-edited', 'verified']],
+  ] as const)('%s 跨分類並依分類編號排序，不受作用中分類影響', (filter, expected) => {
+    const allFields = [
+      ...mobileFields,
+      { ...fields[1]!, id: 'review-missing', groupId: 'review' },
+      { ...fields[5]!, id: 'term-blank', groupId: 'term' },
+      { ...fields[6]!, id: 'review-edited', groupId: 'review' },
+    ].filter(field => field.id !== 'missing')
+    const original = [...allFields]
+    for (const activeGroup of ['review', 'term', 'empty']) {
+      expect(filterMobileContractReviewFields(allFields, filter, activeGroup, groups)
+        .map(field => field.id)).toEqual(expected)
+    }
+    expect(allFields).toEqual(original)
+  })
+
+  it('缺少欄位補填和已處理欄位編輯時維持原篩選，確認後更新歸屬', () => {
+    const missing = { ...fields[1]!, groupId: 'term', value: '已補上', editing: true, editStartValue: '' }
+    expect(filterMobileContractReviewFields([missing], 'low', 'review', groups)).toEqual([missing])
+    missing.editing = false
+    expect(filterMobileContractReviewFields([missing], 'low', 'review', groups)).toEqual([])
+    const reviewed = { ...fields[3]!, groupId: 'review', value: '', editing: true, editStartValue: '丙' }
+    expect(filterMobileContractReviewFields([reviewed], 'reviewed', 'term', groups)).toEqual([reviewed])
+  })
+
+  it.each(['low', 'reviewed'] as const)('%s 沒有符合的欄位或空陣列時回傳空陣列', filter => {
+    expect(filterMobileContractReviewFields([mobileFields[0]!], filter, 'review', groups)).toEqual([])
+    expect(filterMobileContractReviewFields([], filter, 'review', groups)).toEqual([])
   })
 
   it('跨分類編輯清空原值仍保留待確認卡片，完成後才移除', () => {

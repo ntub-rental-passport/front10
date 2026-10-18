@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, ref, type Ref, type SetupContext } from 'vue'
+import { createSSRApp, nextTick, ref, type Ref, type SetupContext } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import type { ContractReviewFilter } from '@/src/utils/contract-review-filter'
 
@@ -38,6 +38,7 @@ interface Field {
   confidence: 'high' | 'medium' | 'low'
   value: string
   editing: boolean
+  editStartValue: string
   reviewState: string
   validationError: string
 }
@@ -59,7 +60,15 @@ interface EditorState {
   startFieldEdit: (field: Field) => void
   updateMobileField: (field: Field, value: string) => void
   confirmMobileField: (field: Field) => void
-  confirmMobileFieldEdit: (field: Field) => void
+  confirmFieldEdit: (field: Field) => void
+  cancelFieldEdit: (field: Field) => void
+  verifyField: (field: Field) => void
+  resetFieldReview: (field: Field) => void
+  selectFieldFilter: (filter: ContractReviewFilter) => void
+  documentReader: Ref<Pick<HTMLDialogElement, 'showModal' | 'close'>>
+  openDocumentReader: () => void
+  expandedEvidenceId: Ref<string | null>
+  toggleFieldEvidence: (field: Field) => void
   scrollActiveFieldGroupIntoView: () => Promise<void>
   completeReviewAndAnalyze: () => void
   loadFieldEvidence: (field: Field) => Promise<void>
@@ -76,8 +85,9 @@ async function render(prepare?: (state: EditorState) => void) {
       return state
     },
   }
-  const html = await renderToString(createSSRApp(component))
-  return { state, html }
+  const context: { teleports?: Record<string, string> } = {}
+  const html = await renderToString(createSSRApp(component), context)
+  return { state, html, teleports: context.teleports }
 }
 
 beforeEach(() => {
@@ -91,14 +101,28 @@ describe('契約欄位手機校對', () => {
   it('桌面維持全部篩選，手機預設待確認且優先顯示建議確認', async () => {
     const desktop = await render()
     expect(desktop.state.activeFieldFilter.value).toBe('all')
-    expect(desktop.html).not.toContain('待確認優先')
+    expect(desktop.html).toContain('本類全部')
+    expect(desktop.html).not.toContain('mobile-field-row')
+    expect(desktop.html).not.toContain('mobile-document-dialog')
     mocks.mobile = true
     const { state, html } = await render()
     expect(state.activeFieldFilter.value).toBe('pending')
     expect(state.filteredFields.value.map(field => field.id)).toEqual(['review_days', 'review_date'])
     expect(html).toContain('已校對 0 / 2')
-    expect(html).toContain('第 1 頁・看原文')
-    expect(html).toContain('修改後確認')
+    expect(html).toContain('aria-label="查看審閱日數原文"')
+    expect(html).toContain('aria-label="審閱日數正確"')
+    expect(html).toContain('mobile-status-dot--pending')
+    expect(html).not.toContain('修改後確認')
+    expect(html).not.toContain('class="mobile-field-input"')
+    expect(html).not.toContain('class="field-group-nav"')
+    expect(html).not.toContain('本類全部')
+    expect(html).not.toContain('高信心待確認')
+    expect(html).not.toContain('建議確認</span>')
+    expect(html.match(/class="field-filter-bar"/g)).toHaveLength(1)
+    expect(state.fieldFilters.value.map(filter => filter.id)).toEqual(['pending', 'low', 'reviewed'])
+    expect(html).toContain('黃＝待確認')
+    expect(html).toContain('綠＝已確認')
+    expect(html).toContain('灰＝缺少')
     expect(html).not.toContain('data-field-id="landlord_review_signature"')
   })
 
@@ -126,8 +150,8 @@ describe('契約欄位手機校對', () => {
     })
     expect(state.filteredFields.value.map(field => field.id)).toEqual(['review_days', 'start_date', 'review_date'])
     expect(state.fieldFilters.value.find(filter => filter.id === 'pending')?.count).toBe(3)
-    expect(html).toMatch(/class="mobile-field-category"[^>]*>契約審閱期<\/span>/)
-    expect(html).toMatch(/class="mobile-field-category"[^>]*>租賃期間<\/span>/)
+    expect(html).toMatch(/class="mobile-field-category"[^>]*>契約審閱期・審閱日數<span/)
+    expect(html).toMatch(/class="mobile-field-category"[^>]*>租賃期間・租期起始<span/)
     expect(html).not.toContain('class="active-field-group-heading"')
     state.selectFieldGroup('term')
     expect(state.activeFieldFilter.value).toBe('all')
@@ -155,49 +179,106 @@ describe('契約欄位手機校對', () => {
     expect(completed.state.fieldFilters.value.find(filter => filter.id === 'pending')?.count).toBe(0)
   })
 
-  it('未修改時修改後確認只聚焦並選取該卡片輸入，改回原值亦不確認，正確才完成校對', async () => {
+  it('正確按鈕確認欄位，改回待確認後重新進入待確認清單', async () => {
+    mocks.mobile = true
+    const { state, html } = await render(state => {
+      state.verifyField(state.fields.value.find(field => field.id === 'review_days')!)
+      state.selectFieldFilter('reviewed')
+    })
+    const field = state.fields.value.find(field => field.id === 'review_days')!
+    expect(field.reviewState).toBe('verified')
+    expect(html).toContain('aria-label="審閱日數改回待確認"')
+    expect(html).toContain('mobile-status-dot--reviewed')
+    state.resetFieldReview(field)
+    expect(field.reviewState).toBe('unreviewed')
+    expect(state.filteredFields.value).not.toContain(field)
+    state.selectFieldFilter('pending')
+    expect(state.filteredFields.value).toContain(field)
+  })
+
+  it('點值後聚焦輸入，取消還原原值與校對狀態；開啟另一欄也取消未儲存修改', async () => {
     mocks.mobile = true
     const { state } = await render()
     const field = state.fields.value.find(field => field.id === 'review_days')!
-    const input = { focus: vi.fn(), select: vi.fn() }
+    const other = state.fields.value.find(field => field.id === 'review_date')!
+    const input = { focus: vi.fn() }
     const querySelector = vi.fn(() => input)
     vi.stubGlobal('document', { querySelector })
-    state.confirmMobileFieldEdit(field)
+    state.startFieldEdit(field)
+    await nextTick()
     expect(querySelector).toHaveBeenCalledWith('[data-field-id="review_days"] .mobile-field-input')
     expect(input.focus).toHaveBeenCalledOnce()
-    expect(input.select).toHaveBeenCalledOnce()
+    state.updateMobileField(field, '6 日')
+    state.cancelFieldEdit(field)
+    expect(field.value).toBe('5 日')
     expect(field.reviewState).toBe('unreviewed')
     expect(field.editing).toBe(false)
-    state.updateMobileField(field, '6 日')
-    state.updateMobileField(field, '5 日')
-    state.confirmMobileFieldEdit(field)
-    expect(input.focus).toHaveBeenCalledTimes(2)
-    expect(field.reviewState).toBe('unreviewed')
-    state.confirmMobileField(field)
-    expect(field.reviewState).toBe('verified')
+    state.startFieldEdit(field)
+    state.updateMobileField(field, '7 日')
+    state.startFieldEdit(other)
+    expect(field.value).toBe('5 日')
+    expect(field.editing).toBe(false)
+    expect(other.editing).toBe(true)
+    expect(state.fields.value.filter(field => field.editing)).toHaveLength(1)
   })
 
-  it('選項欄位未修改時只聚焦，已修改時修改後確認會儲存且正確維持停用', async () => {
+  it('儲存並確認會驗證文字、儲存修改並退出編輯；未修改時也可確認', async () => {
     mocks.mobile = true
-    const choice = await render(state => {
+    const { state, html } = await render(state => {
+      state.startFieldEdit(state.fields.value.find(field => field.id === 'review_days')!)
+    })
+    expect(html).toContain('取消')
+    expect(html).toContain('儲存並確認')
+    expect(html).not.toContain('aria-label="審閱日數正確"')
+    const field = state.fields.value.find(field => field.id === 'review_days')!
+    state.updateMobileField(field, '錯誤')
+    state.confirmFieldEdit(field)
+    expect(field.validationError).toContain('審閱日數')
+    expect(field.editing).toBe(true)
+    state.updateMobileField(field, '6 日')
+    state.confirmFieldEdit(field)
+    expect(field.reviewState).toBe('edited')
+    expect(field.editing).toBe(false)
+    expect(state.filteredFields.value).not.toContain(field)
+    const other = state.fields.value.find(field => field.id === 'review_date')!
+    state.startFieldEdit(other)
+    state.confirmFieldEdit(other)
+    expect(other.reviewState).toBe('verified')
+    expect(mocks.finalize).not.toHaveBeenCalled()
+  })
+
+  it('選項欄位只在編輯時顯示選單，取消還原，儲存後成為已修正', async () => {
+    mocks.mobile = true
+    const { state, html } = await render(state => {
+      state.selectFieldGroup('scope')
       const field = state.fields.value.find(field => field.id === 'rental_scope')!
       field.value = '全部'
+      state.startFieldEdit(field)
     })
-    const select = { focus: vi.fn() }
-    vi.stubGlobal('document', { querySelector: () => select })
-    const field = choice.state.fields.value.find(field => field.id === 'rental_scope')!
-    choice.state.confirmMobileFieldEdit(field)
-    expect(select.focus).toHaveBeenCalledOnce()
-    expect(field.reviewState).toBe('unreviewed')
-    const edited = await render(state => {
-      state.updateMobileField(state.fields.value.find(field => field.id === 'review_days')!, '6 日')
-    })
-    expect(edited.html.replace(/<!--.*?-->/g, '')).toMatch(/<button[^>]* disabled[^>]*>正確<\/button>/)
-    const days = edited.state.fields.value.find(field => field.id === 'review_days')!
-    edited.state.confirmMobileFieldEdit(days)
-    expect(days.reviewState).toBe('edited')
-    expect(edited.state.filteredFields.value).not.toContain(days)
-    expect(select.focus).toHaveBeenCalledOnce()
+    expect(html).toMatch(/<select[^>]*class="mobile-field-input"/)
+    const field = state.fields.value.find(field => field.id === 'rental_scope')!
+    state.updateMobileField(field, '部分')
+    state.cancelFieldEdit(field)
+    expect(field.value).toBe('全部')
+    state.startFieldEdit(field)
+    state.updateMobileField(field, '部分')
+    state.confirmFieldEdit(field)
+    expect(field.reviewState).toBe('edited')
+    expect(field.editing).toBe(false)
+  })
+
+  it('已確認欄位取消編輯保留已確認狀態，切換篩選會取消未儲存修改', async () => {
+    mocks.mobile = true
+    const { state } = await render()
+    const field = state.fields.value.find(field => field.id === 'review_days')!
+    state.verifyField(field)
+    state.selectFieldFilter('reviewed')
+    state.startFieldEdit(field)
+    state.updateMobileField(field, '6 日')
+    state.selectFieldFilter('pending')
+    expect(field.value).toBe('5 日')
+    expect(field.editing).toBe(false)
+    expect(field.reviewState).toBe('verified')
   })
 
   it('手機作用中分類超出捲動列時自動水平捲入，桌面不捲動', async () => {
@@ -240,9 +321,54 @@ describe('契約欄位手機校對', () => {
   it('缺少資料預設不顯示輸入，但保留填寫入口', async () => {
     mocks.mobile = true
     const { html } = await render(state => { state.activeFieldFilter.value = 'low' })
-    expect(html).toContain('風險分析會提醒此欄位缺少資料')
-    expect(html).toContain('填寫')
+    expect(html).toContain('合約沒寫，分析時會提醒')
+    expect(html).toContain('補填')
+    expect(html).not.toContain('mobile-field-confirm')
     expect(html).not.toContain('class="mobile-field-input"')
+  })
+
+  it.each([
+    ['pending', '都確認完了，可以開始分析'],
+    ['low', '沒有缺少的欄位'],
+    ['reviewed', '還沒有處理過的欄位'],
+  ] as const)('手機 %s 空清單顯示對應提示', async (filter, message) => {
+    mocks.mobile = true
+    const { html } = await render(state => {
+      state.selectFieldFilter(filter)
+      if (filter === 'pending') state.fields.value.forEach(field => { field.reviewState = 'verified' })
+      if (filter === 'low') state.fields.value.forEach(field => { field.value = '已有值' })
+    })
+    expect(html).toContain(message)
+    expect(html).not.toContain('目前沒有符合此狀態的欄位')
+  })
+
+  it('手機只有一份閱讀器且在對話框內，按全文入口才開啟', async () => {
+    const desktop = await render()
+    const showModal = vi.fn()
+    desktop.state.documentReader.value = { showModal, close: vi.fn() }
+    desktop.state.openDocumentReader()
+    expect(showModal).not.toHaveBeenCalled()
+    mocks.mobile = true
+    const { state, html } = await render()
+    expect(html.match(/contract-document-card/g)).toHaveLength(1)
+    expect(html).toMatch(/<dialog class="mobile-document-dialog"[^>]*>/)
+    expect(html).toContain('看合約全文')
+    expect(html).toContain('aria-label="關閉合約全文"')
+    state.documentReader.value = { showModal, close: vi.fn() }
+    state.openDocumentReader()
+    expect(showModal).toHaveBeenCalledOnce()
+  })
+
+  it('手機操作列移至 body，保留儲存與開始分析兩個操作', async () => {
+    mocks.mobile = true
+    const { html, teleports } = await render()
+    expect(html).not.toContain('class="mobile-review-actions"')
+    const bar = teleports?.body ?? ''
+    expect(bar).toContain('class="mobile-review-actions"')
+    expect(bar.match(/<button /g)).toHaveLength(2)
+    expect(bar).toContain('儲存')
+    expect(bar).not.toContain('確認儲存')
+    expect(bar).toContain('完成校對，開始分析')
   })
 
   it('完成校對才開啟確認面板，仍無預選且不自動寫入資料庫', async () => {
@@ -289,7 +415,13 @@ describe('契約欄位手機校對', () => {
     state.evidenceDialog.value = { showModal, close: vi.fn() }
     await state.loadFieldEvidence(field)
     expect(state.fieldEvidenceUrls.value[field.id]).toBeNull()
-    expect(html).toContain('5日')
+    state.toggleFieldEvidence(field)
+    expect(state.expandedEvidenceId.value).toBe(field.id)
+    state.toggleFieldEvidence(field)
+    expect(state.expandedEvidenceId.value).toBeNull()
+    const expanded = await render(state => { state.expandedEvidenceId.value = 'review_days' })
+    expect(expanded.html).toMatch(/class="field-evidence-text"[^>]*>5日<\/p>/)
+    expect(html).toContain('aria-expanded="false"')
     await state.enlargeFieldEvidence(field)
     expect(showModal).not.toHaveBeenCalled()
   })
