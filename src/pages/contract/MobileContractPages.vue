@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
 const props = defineProps<{ files: File[]; disabled: boolean }>()
 const emit = defineEmits<{
@@ -144,7 +145,7 @@ onBeforeUnmount(() => {
             :aria-label="`第 ${index + 1} 頁往前`"
             @click.stop="movePage(index, index - 1)"
           >
-            往前
+            <ChevronLeft :size="20" aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -152,7 +153,7 @@ onBeforeUnmount(() => {
             :aria-label="`第 ${index + 1} 頁往後`"
             @click.stop="movePage(index, index + 1)"
           >
-            往後
+            <ChevronRight :size="20" aria-hidden="true" />
           </button>
         </div>
       </article>
@@ -243,17 +244,23 @@ onBeforeUnmount(() => {
 
   .mobile-page-controls {
     display: flex;
-    flex-direction: column;
+    height: 44px;
   }
 
   .mobile-page-controls button {
+    display: grid;
+    flex: 1;
+    place-items: center;
     min-width: 44px;
-    min-height: 44px;
+    height: 44px;
     border: 0;
     border-top: 1px solid var(--contract-border);
     background: #fff;
     color: var(--contract-primary);
-    font-size: 13px;
+  }
+
+  .mobile-page-controls button + button {
+    border-left: 1px solid var(--contract-border);
   }
 
   button {
