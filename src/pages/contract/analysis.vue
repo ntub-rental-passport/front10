@@ -15,6 +15,7 @@ import { buildContractAssessments, gateRemoteAssessments, reconcileAssessments, 
 import { contractSectionLabel, explainContractRisk } from '@/src/utils/contract-risk-explanation'
 import RiskExplanation from './RiskExplanation.vue'
 import AnalysisWaiting from './AnalysisWaiting.vue'
+import { useAnalysisPanels } from './useAnalysisPanels'
 import { Button } from '@/components/ui/button/index'
 import {
   AlertTriangle,
@@ -126,8 +127,7 @@ const activeRiskTab = ref<RiskTab>('risk')
 const activeRiskId = ref<string | null>(null)
 const chatInput = ref('')
 const nextMessageId = ref(3)
-const chatOpen = ref(false)
-const chatPanelRef = ref<HTMLElement | null>(null)
+const { isMobile, activePanel, chatOpen, sheetOpen, readerPanelRef, chatPanelRef, sheetStyle, openPanel, closePanel, beginSheetSwipe, endSheetSwipe, cancelSheetSwipe } = useAnalysisPanels()
 const chatPosition = reactive({ x: 24, y: 72 })
 const chatDragOffset = reactive({ x: 0, y: 0 })
 const chatDragging = ref(false)
@@ -525,6 +525,7 @@ function focusRisk(risk: RiskItem): void {
   activeRiskId.value = risk.id
   riskFocusText.value = risk.focusText
   if (risk.pageIndex !== null) goToPage(risk.pageIndex)
+  openPanel('reader')
   void scrollToReaderHighlight()
 }
 
@@ -534,13 +535,15 @@ function toggleRiskDetails(risk: RiskItem): void {
     riskFocusText.value = ''
     return
   }
-  focusRisk(risk)
+  if (isMobile.value) activeRiskId.value = risk.id
+  else focusRisk(risk)
 }
 
 function focusRiskDetail(detail: RiskDetail): void {
   if (detail.pageIndex === null) return
   riskFocusText.value = detail.focusText
   goToPage(detail.pageIndex)
+  openPanel('reader')
   void scrollToReaderHighlight()
 }
 
@@ -556,8 +559,9 @@ function openFieldEditor(risk: RiskItem): void {
 }
 
 function startNegotiation(risk: RiskItem): void {
-  focusRisk(risk)
-  chatOpen.value = true
+  if (isMobile.value) activeRiskId.value = risk.id
+  else focusRisk(risk)
+  openPanel('chat')
   const explanation = explainContractRisk(risk)
   chatMessages.value.push({
     id: nextMessageId.value++,
@@ -572,6 +576,12 @@ function startNegotiation(risk: RiskItem): void {
   })
 }
 
+function openGeneralChat(): void {
+  activeRiskId.value = null
+  riskFocusText.value = ''
+  openPanel('chat')
+}
+
 function clampChatPosition(x: number, y: number): { x: number; y: number } {
   const panelWidth = chatPanelRef.value?.offsetWidth ?? Math.min(680, window.innerWidth - 24)
   const panelHeight = chatPanelRef.value?.offsetHeight ?? Math.min(620, window.innerHeight - 24)
@@ -582,7 +592,7 @@ function clampChatPosition(x: number, y: number): { x: number; y: number } {
 }
 
 function positionChatWindow(): void {
-  if (!chatOpen.value) return
+  if (isMobile.value || !chatOpen.value) return
   const preferred = chatHasBeenPositioned
     ? clampChatPosition(chatPosition.x, chatPosition.y)
     : clampChatPosition(window.innerWidth - (chatPanelRef.value?.offsetWidth ?? 680) - 24, 72)
@@ -592,6 +602,7 @@ function positionChatWindow(): void {
 }
 
 function moveChatWindow(event: PointerEvent): void {
+  if (isMobile.value) return
   const next = clampChatPosition(
     event.clientX - chatDragOffset.x,
     event.clientY - chatDragOffset.y,
@@ -609,7 +620,7 @@ function endChatDrag(): void {
 }
 
 function beginChatDrag(event: PointerEvent): void {
-  if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+  if (isMobile.value || event.button !== 0 || (event.target as HTMLElement).closest('button')) return
   event.preventDefault()
   chatDragging.value = true
   chatDragOffset.x = event.clientX - chatPosition.x
@@ -619,6 +630,14 @@ function beginChatDrag(event: PointerEvent): void {
   document.addEventListener('pointermove', moveChatWindow)
   document.addEventListener('pointerup', endChatDrag, { once: true })
 }
+
+watch(isMobile, async mobile => {
+  if (chatDragging.value) endChatDrag()
+  if (!mobile) {
+    await nextTick()
+    positionChatWindow()
+  }
+})
 
 onBeforeUnmount(() => {
   endChatDrag()
@@ -776,11 +795,12 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
           <FileDown :size="17" /> 匯出診斷報告
         </Button>
         <Button variant="outline" @click="router.push('/app/contract/document')">
-          <FileText :size="17" /> 檢視契約內容
+          <FileText :size="17" /> {{ isMobile ? '合約文件' : '檢視契約內容' }}
         </Button>
         <Button variant="outline" @click="router.push('/app/contract/scanner')">
           重新上傳
         </Button>
+        <small v-if="isMobile" class="analysis-document-note">完整合約文件請存成終版後，用電腦從租約頁開啟</small>
       </div>
     </header>
 
@@ -960,13 +980,24 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
     </section>
 
     <div class="analysis-workspace">
-      <section class="analysis-reader-card" aria-labelledby="analysis-reader-title">
-        <div class="analysis-panel-heading">
+      <component
+        :is="isMobile ? 'dialog' : 'section'"
+        v-if="!isMobile || activePanel === 'reader'"
+        ref="readerPanelRef"
+        class="analysis-reader-card"
+        aria-labelledby="analysis-reader-title"
+        :aria-modal="isMobile ? true : undefined"
+        :style="isMobile ? sheetStyle : undefined"
+        @cancel.prevent="closePanel"
+      >
+        <div v-if="isMobile" class="analysis-sheet-handle" aria-hidden="true" @pointerdown="beginSheetSwipe" @pointerup="endSheetSwipe" @pointercancel="cancelSheetSwipe"><span /></div>
+        <div class="analysis-panel-heading" @pointerdown="beginSheetSwipe" @pointerup="endSheetSwipe" @pointercancel="cancelSheetSwipe">
           <div>
             <span class="analysis-section-index">DOCUMENT · 04</span>
             <h2 id="analysis-reader-title"><FileText :size="19" /> 契約 PDF 閱讀器</h2>
-            <p>搜尋全文，或從右側風險直接定位原文。</p>
+            <p>{{ isMobile ? '搜尋全文，或核對已標示的風險原文。' : '搜尋全文，或從右側風險直接定位原文。' }}</p>
           </div>
+          <button v-if="isMobile" type="button" class="analysis-sheet-close" aria-label="關閉契約原文" @click="closePanel"><X :size="20" /></button>
         </div>
 
         <div class="analysis-reader-toolbar">
@@ -1044,7 +1075,7 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
             </div>
           </article>
         </div>
-      </section>
+      </component>
 
       <div class="analysis-right-column">
         <section class="risk-panel" aria-labelledby="risk-panel-title">
@@ -1139,7 +1170,7 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
                   <ExternalLink :size="14" /> 修改欄位
                 </button>
                 <button type="button" class="risk-chat-button" @click="startNegotiation(risk)">
-                  <MessageSquareText :size="14" /> 詢問 AI
+                  <MessageSquareText :size="14" /> {{ isMobile ? '談判' : '詢問 AI' }}
                 </button>
               </div>
             </article>
@@ -1166,17 +1197,20 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
           </div>
         </section>
 
-        <section
+        <component
+          :is="isMobile ? 'dialog' : 'section'"
           v-if="chatOpen"
           ref="chatPanelRef"
           class="legal-chat-panel"
           :class="{ 'is-dragging': chatDragging }"
           role="dialog"
-          aria-modal="false"
+          :aria-modal="isMobile ? 'true' : 'false'"
           aria-labelledby="legal-chat-title"
-          :style="{ left: `${chatPosition.x}px`, top: `${chatPosition.y}px` }"
+          :style="isMobile ? sheetStyle : { left: `${chatPosition.x}px`, top: `${chatPosition.y}px` }"
+          @cancel.prevent="closePanel"
         >
-          <div class="chat-heading" @pointerdown="beginChatDrag">
+          <div v-if="isMobile" class="analysis-sheet-handle" aria-hidden="true" @pointerdown="beginSheetSwipe" @pointerup="endSheetSwipe" @pointercancel="cancelSheetSwipe"><span /></div>
+          <div class="chat-heading" @pointerdown="isMobile ? beginSheetSwipe($event) : beginChatDrag($event)" @pointerup="endSheetSwipe" @pointercancel="cancelSheetSwipe">
             <span class="chat-bot-mark"><Bot :size="20" /></span>
             <div>
               <h2 id="legal-chat-title">AI 談判腳本 Law Chat</h2>
@@ -1188,7 +1222,7 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
               type="button"
               class="chat-close-button"
               aria-label="關閉 AI 談判腳本 Law Chat"
-              @click="chatOpen = false"
+              @click="closePanel"
             >
               <X :size="17" />
             </button>
@@ -1247,10 +1281,13 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
             </button>
           </form>
           <p class="chat-disclaimer">AI 回覆僅供契約溝通參考，不取代律師的個案法律意見。</p>
-        </section>
+        </component>
       </div>
     </div>
 
+    <button v-if="isMobile && !sheetOpen && !exportDialogOpen" type="button" class="analysis-chat-fab" aria-label="問 Law Chat" @click="openGeneralChat">
+      <MessageSquareText :size="25" />
+    </button>
 
   </main>
   </Transition>
