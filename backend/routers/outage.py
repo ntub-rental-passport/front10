@@ -58,8 +58,8 @@ def _tls_context() -> ssl.SSLContext:
 
 # ---------- 停水（即時查台水） ---------------------------------------
 
-async def fetch_real_water_outage(address: str):
-    """向台水 API 發送真實查詢。"""
+async def fetch_water_outage_case(address: str):
+    """保留第一筆公告的原始時間，讓排程能排除已結束的停水。"""
     now = datetime.now()
     start_date = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
     end_date = (now + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -84,31 +84,39 @@ async def fetch_real_water_outage(address: str):
             resp = await client.post(WATER_API_URL, json=payload, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
-                if isinstance(data, list) and len(data) > 0:
-                    case = data[0]
-                    s_time = case.get("startTime", "")
-                    e_time = case.get("endTime", "")
-                    time_range = f"{s_time} - {e_time}" if s_time and e_time else "依公告排程"
-
-                    return {
-                        "id": f"water-{case.get('id', 'case')}",
-                        "utilityType": "water",
-                        "status": "scheduled",
-                        "statusLabel": "緊急停水" if case.get("type") == 1 else "計畫停水",
-                        "title": "台灣自來水公司停水公告",
-                        "dateLabel": f"{now.strftime('%m月%d日')} 施工維修",
-                        "timeRange": time_range,
-                        "workLabel": "停水原因",
-                        "workContent": case.get("waterOffReason") or "自來水管線施工維修",
-                        "referenceLabel": "公告編號",
-                        "referenceValue": case.get("no") or "無編號",
-                        "sourceName": "台灣自來水公司",
-                        "sourceUpdatedAt": "剛剛更新",
-                        "officialUrl": "https://web.water.gov.tw/wateroffmap/map",
-                        "hint": case.get("note", "停水前請關閉抽水馬達，預先儲水備用。"),
-                    }
+                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                    return data[0]
     except Exception as e:
         logger.warning("[Water API Error] 連線失敗: %s", e)
+    return None
+
+
+async def fetch_real_water_outage(address: str):
+    """向台水 API 發送真實查詢，維持查詢頁的 UtilityEvent 格式。"""
+    now = datetime.now()
+    case = await fetch_water_outage_case(address)
+    if case is not None:
+        s_time = case.get("startTime", "")
+        e_time = case.get("endTime", "")
+        time_range = f"{s_time} - {e_time}" if s_time and e_time else "依公告排程"
+
+        return {
+            "id": f"water-{case.get('id', 'case')}",
+            "utilityType": "water",
+            "status": "scheduled",
+            "statusLabel": "緊急停水" if case.get("type") == 1 else "計畫停水",
+            "title": "台灣自來水公司停水公告",
+            "dateLabel": f"{now.strftime('%m月%d日')} 施工維修",
+            "timeRange": time_range,
+            "workLabel": "停水原因",
+            "workContent": case.get("waterOffReason") or "自來水管線施工維修",
+            "referenceLabel": "公告編號",
+            "referenceValue": case.get("no") or "無編號",
+            "sourceName": "台灣自來水公司",
+            "sourceUpdatedAt": "剛剛更新",
+            "officialUrl": "https://web.water.gov.tw/wateroffmap/map",
+            "hint": case.get("note", "停水前請關閉抽水馬達，預先儲水備用。"),
+        }
 
     # 查無停水事件或連線逾時，回傳供水正常
     return {
@@ -183,8 +191,8 @@ def _address_parts(address: str):
     return city, district, roads
 
 
-def _find_power_matches(address: str, now=None):
-    """回傳命中的停電記錄，只含尚未結束的，依開始時間排序。"""
+def _find_power_matches(address: str, now=None, *, include_past=False):
+    """回傳命中的停電記錄，預設略過太舊的第一段，依開始時間排序。"""
     records, _ = _load_power_data()
     if not records:
         return []
@@ -208,7 +216,8 @@ def _find_power_matches(address: str, now=None):
             continue
 
         start = record.get("start")
-        if start:
+        # 排程另查兩段開始時間，不能因第一段過期就漏掉仍在未來的第二段；查詢頁沿用原篩選。
+        if start and not include_past:
             try:
                 if datetime.fromisoformat(start) < now - timedelta(hours=6):
                     continue  # 已經結束太久的略過

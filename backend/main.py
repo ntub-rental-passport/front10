@@ -18,7 +18,7 @@ from routers import password, contract_pdf, push_api
 from notifications.garbage_service import dispatch_due
 from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
 from admin import monitoring_service
-from notifications import landlord_reminders
+from notifications import landlord_reminders, outage_reminders
 
 # ---------------------------------------------------------------
 # 應用程式的 log
@@ -76,6 +76,10 @@ async def lifespan(app):
                     await asyncio.to_thread(landlord_reminders.dispatch_due)
                 except Exception:
                     logging.getLogger(__name__).exception('Landlord reminder dispatcher failed')
+                try:
+                    await asyncio.to_thread(outage_reminders.dispatch_due)
+                except Exception:
+                    logging.getLogger(__name__).exception('停水停電通知排程失敗')
                 try:
                     await asyncio.to_thread(contract_reviews.dispatch_expiry)
                 except Exception:
