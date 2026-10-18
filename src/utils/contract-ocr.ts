@@ -165,6 +165,7 @@ export type ContractAiReviewJob = {
 }
 
 const CONTRACT_OCR_STORAGE_KEY = 'rentmate:contract-ocr-result'
+let memory: ContractOcrResult | null = null
 
 function normalizePageText(pageText: unknown): string {
   return typeof pageText === 'string'
@@ -477,19 +478,24 @@ export function saveContractOcrResult(result: ContractOcrResult): boolean {
   const normalizedResult = normalizeContractOcrResult(result)
   if (!normalizedResult) return false
 
+  memory = normalizedResult
   try {
     window.sessionStorage.setItem(
       CONTRACT_OCR_STORAGE_KEY,
-      JSON.stringify(normalizedResult),
+      // Vision 版面資料僅保留於記憶體，避免超過工作階段儲存配額。
+      JSON.stringify({ ...normalizedResult, visionPages: [] }),
     )
-    return true
   } catch {
-    return false
+    // 儲存失敗仍可於同分頁導覽，並盡可能移除舊資料，避免重新載入時誤用。
+    try { window.sessionStorage.removeItem(CONTRACT_OCR_STORAGE_KEY) } catch { /* 儲存空間無法存取。 */ }
   }
+  return true
 }
 
 export function loadContractOcrResult(): ContractOcrResult | null {
   if (typeof window === 'undefined') return null
+  // 回傳副本，避免呼叫端就地修改後影響暫存內容。
+  if (memory) return JSON.parse(JSON.stringify(memory)) as ContractOcrResult
 
   try {
     const rawResult = window.sessionStorage.getItem(CONTRACT_OCR_STORAGE_KEY)
@@ -504,7 +510,8 @@ export function loadContractOcrResult(): ContractOcrResult | null {
 }
 
 export function clearContractOcrResult(): void {
+  memory = null
   clearContractAnalysis()
   if (typeof window === 'undefined') return
-  window.sessionStorage.removeItem(CONTRACT_OCR_STORAGE_KEY)
+  try { window.sessionStorage.removeItem(CONTRACT_OCR_STORAGE_KEY) } catch { /* 儲存空間無法存取。 */ }
 }
