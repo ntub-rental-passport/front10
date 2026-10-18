@@ -1900,6 +1900,11 @@
     padding: 12px 14px;
   }
 
+  /* 工具列改直向後，桌機的 12rem flex-basis 會變成高度，撐出大片空白。 */
+  .pdf-file-info {
+    flex: 0 0 auto;
+  }
+
   .pdf-file-info strong {
     max-width: 100%;
   }
