@@ -1271,8 +1271,8 @@ async function deleteSavedReport(report: ReviewFile): Promise<void> {
           <form class="chat-composer" @submit.prevent="sendChat()">
             <textarea
               v-model="chatInput"
-              rows="1"
-              placeholder="輸入問題，例如：整理成給房東的 LINE 訊息"
+              :rows="isMobile ? 1 : 2"
+              :placeholder="isMobile ? '輸入問題，例如：整理成給房東的 LINE 訊息' : '輸入你的問題，例如：幫我把押金問題整理成給房東的 LINE 訊息'"
               aria-label="輸入法律 GPT 問題"
               @keydown.enter.exact.prevent="sendChat()"
             />
