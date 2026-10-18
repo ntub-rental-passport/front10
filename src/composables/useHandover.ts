@@ -114,7 +114,7 @@ export function useHandover() {
     currentPropertyId: null,
   })
   const busy = ref(false)
-  const analyzingItemId = ref<string | null>(null)
+  const analyzingItemIds = reactive(new Map<string, number>())
   const error = ref('')
   const selectionKey = `rentmate-inspection-rental-${getAuthSession()?.userId ?? getAuthSession()?.email}`
   const properties = computed(() => store.properties)
@@ -220,7 +220,7 @@ export function useHandover() {
   }
 
   async function analyze(itemId: string, recordId: string) {
-    analyzingItemId.value = itemId
+    analyzingItemIds.set(itemId, (analyzingItemIds.get(itemId) ?? 0) + 1)
     try {
       const result = await inspectionRequest<{ item: HandoverItem }>('/analyze', 'POST', {
         item_id: Number(itemId),
@@ -228,7 +228,18 @@ export function useHandover() {
       })
       replaceItem(result.item)
     } finally {
-      analyzingItemId.value = null
+      const remaining = (analyzingItemIds.get(itemId) ?? 1) - 1
+      if (remaining) analyzingItemIds.set(itemId, remaining)
+      else analyzingItemIds.delete(itemId)
+    }
+  }
+
+  async function analyzeAndReload(itemId: string, recordId: string) {
+    try {
+      await analyze(itemId, recordId)
+    } finally {
+      // 照片已儲存，辨識失敗也要同步張數與配對狀態，且保留目前選擇的租約。
+      await loadItems()
     }
   }
 
@@ -247,7 +258,9 @@ export function useHandover() {
       originalName?: string
       photoTakenAt?: string
     },
-  ) {
+  ): Promise<boolean> {
+    let saved = false
+    let baselineRecordId: string | undefined
     await perform(async () => {
       const item = await inspectionRequest<HandoverItem>(
         `/items/${itemId}/photos/${phase}`,
@@ -273,16 +286,20 @@ export function useHandover() {
         },
       )
       replaceItem(item)
+      saved = true
       const record = item.evidences
         .filter((e) => e.phase === phase)
         .reduce((a, b) => (Number(a.id) > Number(b.id) ? a : b))
-      try {
-        await analyze(itemId, record.id)
-      } finally {
-        // 照片已儲存，辨識失敗也要同步張數與配對狀態，且保留目前選擇的租約。
-        await loadItems()
-      }
+      if (phase === 'baseline') baselineRecordId = record.id
+      else await analyzeAndReload(itemId, record.id)
     })
+    // 入住照片存檔後先解除 busy，讓下一張可立即上傳；辨識與同步在背景繼續。
+    if (baselineRecordId) {
+      void analyzeAndReload(itemId, baselineRecordId).catch((cause) => {
+        error.value = cause instanceof Error ? cause.message : '點交操作失敗，請重試。'
+      })
+    }
+    return saved
   }
 
   async function retryAnalysis(itemId: string, recordId: string) {
@@ -350,7 +367,7 @@ export function useHandover() {
     retryAnalysis,
     runAutoDiff,
     busy,
-    analyzingItemId,
+    analyzingItemIds,
     error,
     reload,
   }
