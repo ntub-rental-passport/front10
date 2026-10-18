@@ -1511,3 +1511,130 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+@media (max-width: 639px) {
+  .contract-index-page {
+    gap: 16px;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  .eyebrow,
+  .section-kicker,
+  .hero-trust-badge,
+  .capability-grid {
+    display: none;
+  }
+
+  .contract-hero h1 {
+    font-size: 26px;
+  }
+
+  .ocr-workspace {
+    gap: 16px;
+  }
+
+  .section-heading {
+    gap: 8px;
+  }
+
+  .workspace-badge,
+  .append-files-button small,
+  .selected-file-total,
+  .file-actions-popover small,
+  .status-heading small,
+  .status-message,
+  .ocr-scan-eyebrow,
+  .ocr-scan-detail,
+  .result-metrics span,
+  .usage-steps span,
+  .benefits-grid small {
+    font-size: 13px;
+  }
+
+  .upload-dropzone {
+    min-height: 220px;
+    padding: 16px 12px;
+  }
+
+  .upload-copy h3 {
+    font-size: 16px;
+  }
+
+  .select-file-button {
+    width: 100%;
+    min-height: 44px;
+    margin-left: 0;
+  }
+
+  .upload-dropzone--selected {
+    min-height: 0;
+  }
+
+  .selected-file-list {
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    padding: 44px 0 0;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .selected-file-row--image {
+    display: none;
+  }
+
+  .selected-file-row {
+    gap: 8px;
+  }
+
+  .selected-file-row .remove-file-button {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  .file-actions-menu {
+    top: 8px;
+    right: 8px;
+  }
+
+  .file-actions-menu summary {
+    width: 44px;
+    height: 44px;
+  }
+
+  .file-actions-popover {
+    width: min(250px, calc(100vw - 90px));
+  }
+
+  .file-actions-popover button,
+  .recognition-details summary,
+  .result-tabs button,
+  .result-summary button,
+  .result-footer button,
+  .faq-item summary {
+    min-height: 44px;
+  }
+
+  .recognition-status {
+    padding: 12px;
+  }
+
+  .status-heading > div {
+    min-width: 0;
+  }
+
+  .status-heading small {
+    max-width: 100%;
+  }
+
+  .result-summary,
+  .result-card > div {
+    padding: 16px;
+  }
+
+  .recognize-button {
+    min-height: 48px;
+  }
+}
