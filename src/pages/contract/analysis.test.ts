@@ -3,6 +3,8 @@ import { createSSRApp, type Ref, type SetupContext } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import type { ReviewFile } from '@/src/services/contractReviewApi'
 import type { EvidenceAttachment } from '@/src/utils/contract-evidence'
+import { buildContractAssessments, type ContractAssessment } from '@/src/utils/contract-risk'
+import problem from '@/src/utils/__fixtures__/problem-lease.json'
 
 const mocks = vi.hoisted(() => ({
   getReview: vi.fn(), uploadReport: vi.fn(), deleteReviewFile: vi.fn(),
@@ -43,8 +45,24 @@ type AnalysisState = {
   loadReview: () => Promise<void>
   exportAnalysisReport: (saveToSpace?: boolean) => Promise<void>
   deleteSavedReport: (report: ReviewFile) => Promise<void>
+  isMobile: Ref<boolean>
+  activePanel: Ref<'reader' | 'chat' | null>
+  chatOpen: Ref<boolean>
+  activeRiskId: Ref<string | null>
+  riskFocusText: Ref<string>
+  currentPageIndex: Ref<number>
+  pages: Ref<string[]>
+  risks: Ref<ContractAssessment[]>
+  chatMessages: Ref<{ role: string; text: string }[]>
+  focusRisk: (risk: ContractAssessment) => void
+  focusRiskDetail: (detail: { label: string; pageIndex: number | null; focusText: string }) => void
+  toggleRiskDetails: (risk: ContractAssessment) => void
+  startNegotiation: (risk: ContractAssessment) => void
+  openGeneralChat: () => void
+  closePanel: () => void
+  sendChat: (message: string) => Promise<void>
 }
-async function render(history = false) {
+async function render(history = false, configure?: (state: AnalysisState) => void) {
   let state!: AnalysisState
   const component = {
     ...Analysis,
@@ -57,6 +75,7 @@ async function render(history = false) {
       // 分析頁預設渲染等待畫面（aiAnalysisState 初值是 loading），報告區要等
       // 分析回來才掛上去。這幾個案例測的是報告區的行為，所以直接進入完成狀態。
       state.aiAnalysisState.value = 'ok'
+      configure?.(state)
       return result
     },
   }
@@ -75,6 +94,90 @@ beforeEach(() => {
   mocks.generateContractReportPdf.mockResolvedValue({ bytes: new Uint8Array([1, 2]), fileName: '診斷.pdf', reportId: 'RM-123' })
   mocks.uploadReport.mockResolvedValue({ ...report, id: 9, url: `/api/contract/reviews/${id}/files/9` })
   mocks.deleteReviewFile.mockResolvedValue(undefined)
+})
+
+describe('分析頁手機面板入口', () => {
+  const risk = buildContractAssessments({ text: problem.join('\n'), pageTexts: problem }).find(item => item.ruleId === 'deposit-limit')!
+
+  beforeEach(() => {
+    vi.stubGlobal('document', { activeElement: null, querySelector: vi.fn(() => ({ scrollIntoView: vi.fn() })) })
+    vi.stubGlobal('window', { confirm: vi.fn(() => true), setTimeout: vi.fn(), matchMedia: vi.fn(() => ({ matches: true })) })
+  })
+
+  async function renderMobile(panel?: 'reader' | 'chat') {
+    return render(false, state => {
+      state.isMobile.value = true
+      state.exportDialogOpen.value = false
+      state.pages.value = [...problem]
+      state.risks.value = [risk]
+      if (panel === 'reader') state.focusRisk(risk)
+      if (panel === 'chat') state.startNegotiation(risk)
+    })
+  }
+
+  it('預設顯示風險與一般提問入口，不顯示原文閱讀器', async () => {
+    const { html } = await renderMobile()
+    expect(html).toContain('risk-panel')
+    expect(html).toContain('aria-label="問 Law Chat"')
+    expect(html).toContain('合約文件')
+    expect(html).toContain('完整合約文件請存成終版後，用電腦從租約頁開啟')
+    expect(html).not.toContain('class="analysis-reader-card"')
+    expect(html).not.toContain('class="legal-chat-panel"')
+  })
+
+  it('原文入口開啟面板、切換頁碼並標記對應文字', async () => {
+    const { state, html } = await renderMobile('reader')
+    expect(state.activePanel.value).toBe('reader')
+    expect(state.currentPageIndex.value).toBe(risk.pageIndex)
+    expect(state.riskFocusText.value).toBe(risk.focusText)
+    expect(html).toMatch(/<dialog[^>]*class="analysis-reader-card"/)
+    expect(html).toContain('analysis-reader-highlight--risk')
+    expect(html).not.toContain('aria-label="問 Law Chat"')
+    state.focusRiskDetail({ label: '另一處原文', pageIndex: 1, focusText: '對照條款' })
+    expect(state.currentPageIndex.value).toBe(1)
+    expect(state.riskFocusText.value).toBe('對照條款')
+    state.closePanel()
+    expect(state.activePanel.value).toBeNull()
+  })
+
+  it('展開判斷依據留在風險清單，談判才開啟聊天並帶入該風險', async () => {
+    const { state } = await renderMobile()
+    state.toggleRiskDetails(risk)
+    expect(state.activeRiskId.value).toBe(risk.id)
+    expect(state.activePanel.value).toBeNull()
+    state.focusRisk(risk)
+    state.startNegotiation(risk)
+    expect(state.activePanel.value).toBe('chat')
+    expect(state.chatMessages.value.at(-1)?.text).toContain(risk.title)
+    const fetchChat = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ reply: '測試回覆' }) })
+    vi.stubGlobal('fetch', fetchChat)
+    await state.sendChat('請協助談判')
+    expect(JSON.parse(fetchChat.mock.calls[0]![1].body).active_risk.id).toBe(risk.id)
+  })
+
+  it('聊天面板隱藏浮動入口，一般提問不沿用前一次的風險', async () => {
+    const { state, html } = await renderMobile('chat')
+    expect(html).toMatch(/<dialog[^>]*class="legal-chat-panel"/)
+    expect(html).not.toContain('class="analysis-reader-card"')
+    expect(html).not.toContain('aria-label="問 Law Chat"')
+    state.closePanel()
+    state.openGeneralChat()
+    expect(state.chatOpen.value).toBe(true)
+    expect(state.activeRiskId.value).toBeNull()
+    const fetchChat = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ reply: '測試回覆' }) })
+    vi.stubGlobal('fetch', fetchChat)
+    await state.sendChat('一般契約問題')
+    expect(JSON.parse(fetchChat.mock.calls[0]![1].body).active_risk).toBeNull()
+  })
+
+  it('桌面仍保留行內閱讀器且沒有手機入口與提示', async () => {
+    const { state, html } = await render()
+    expect(html).toMatch(/<section[^>]*class="analysis-reader-card"/)
+    expect(html).not.toContain('aria-label="問 Law Chat"')
+    expect(html).not.toContain('完整合約文件請存成終版後，用電腦從租約頁開啟')
+    state.focusRisk(risk)
+    expect(state.activePanel.value).toBeNull()
+  })
 })
 afterEach(() => vi.unstubAllGlobals())
 
