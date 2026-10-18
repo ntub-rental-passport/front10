@@ -46,6 +46,7 @@ interface EditorState {
   isMobile: Ref<boolean>
   fields: Ref<Field[]>
   filteredFields: Ref<Field[]>
+  mobileBatchConfirmableFields: Ref<Field[]>
   fieldFilters: Ref<Array<{ id: ContractReviewFilter; count: number }>>
   fieldGroupNav: Ref<HTMLElement | null>
   fieldSections: Ref<Array<{ fields: Field[] }>>
@@ -60,6 +61,7 @@ interface EditorState {
   startFieldEdit: (field: Field) => void
   updateMobileField: (field: Field, value: string) => void
   confirmMobileField: (field: Field) => void
+  confirmMobileHighConfidence: () => void
   confirmFieldEdit: (field: Field) => void
   cancelFieldEdit: (field: Field) => void
   verifyField: (field: Field) => void
@@ -124,6 +126,39 @@ describe('契約欄位手機校對', () => {
     expect(html).toContain('綠＝已確認')
     expect(html).toContain('灰＝缺少')
     expect(html).not.toContain('data-field-id="landlord_review_signature"')
+  })
+
+  it('一鍵確認只涵蓋目前手機清單中的高信心欄位', async () => {
+    mocks.mobile = true
+    const { state, html } = await render()
+    expect(state.mobileBatchConfirmableFields.value.map(field => field.id)).toContain('review_date')
+    expect(state.mobileBatchConfirmableFields.value.some(field => field.id === 'start_date')).toBe(false)
+    expect(html).toContain('一鍵確認')
+
+    state.selectFieldGroup('term')
+    expect(state.mobileBatchConfirmableFields.value.some(field => field.id === 'review_date')).toBe(false)
+    expect(state.mobileBatchConfirmableFields.value.every(field => ['start_date', 'end_date'].includes(field.id))).toBe(true)
+
+    state.selectFieldFilter('low')
+    expect(state.mobileBatchConfirmableFields.value).toHaveLength(0)
+    state.selectFieldFilter('reviewed')
+    expect(state.mobileBatchConfirmableFields.value).toHaveLength(0)
+
+    state.selectFieldFilter('pending')
+    const eligibleIds = state.mobileBatchConfirmableFields.value.map(field => field.id)
+    const editedField = state.fields.value.find(field => field.id === 'end_date')!
+    state.startFieldEdit(editedField)
+    state.confirmMobileHighConfidence()
+    for (const field of state.fields.value) {
+      expect(field.reviewState === 'verified').toBe(eligibleIds.includes(field.id))
+    }
+    expect(editedField.editing).toBe(false)
+
+    const empty = await render(state => {
+      for (const field of state.fields.value) state.verifyField(field)
+    })
+    expect(empty.state.mobileBatchConfirmableFields.value).toHaveLength(0)
+    expect(empty.html).not.toContain('mobile-batch-confirm')
   })
 
   it('切換寬度保留各自篩選，切換手機群組回到本類全部', async () => {
