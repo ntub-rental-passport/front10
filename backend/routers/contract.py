@@ -10,6 +10,7 @@ import os
 import json
 import logging
 import re
+import time
 
 from db.database import get_db
 from db import models
@@ -40,6 +41,18 @@ logger = logging.getLogger(__name__)
 OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "5"))
 OLLAMA_ANALYZE_TIMEOUT = float(os.getenv("OLLAMA_ANALYZE_TIMEOUT", "180"))
 OLLAMA_CHAT_TIMEOUT = float(os.getenv("OLLAMA_CHAT_TIMEOUT", "60"))
+
+# 快速回空可能是模型省略分析，有限重試才不會拖過代理伺服器的逾時。
+try:
+    CONTRACT_EMPTY_RETRIES = max(0, int(os.getenv("CONTRACT_EMPTY_RETRIES", "2")))
+except ValueError:
+    CONTRACT_EMPTY_RETRIES = 2
+try:
+    CONTRACT_EMPTY_RETRY_FAST_SECONDS = float(os.getenv("CONTRACT_EMPTY_RETRY_FAST_SECONDS", "15"))
+except ValueError:
+    CONTRACT_EMPTY_RETRY_FAST_SECONDS = 15
+if not 0 <= CONTRACT_EMPTY_RETRY_FAST_SECONDS < float("inf"):
+    CONTRACT_EMPTY_RETRY_FAST_SECONDS = 15
 
 # 對外統一的錯誤訊息。
 #
@@ -250,43 +263,54 @@ async def analyze_contract(req: AnalyzeRequest):
 }}
 """
 
-        raw_response = await generate(
-            prompt, read_timeout=OLLAMA_ANALYZE_TIMEOUT, force_json=True
-        )
+        for attempt in range(CONTRACT_EMPTY_RETRIES + 1):
+            try:
+                started = time.monotonic()
+                raw_response = await generate(
+                    prompt, read_timeout=OLLAMA_ANALYZE_TIMEOUT, force_json=True
+                )
+                elapsed = time.monotonic() - started
 
-        # 模型即使被要求 format=json 也常在前後夾雜說明文字，
-        # 取第一個 { 到最後一個 } 是必要的容錯。
-        json_match = re.search(r"\{[\s\S]*\}", raw_response)
-        if not json_match:
-            logger.warning("Ollama 回應中找不到 JSON 結構（前 200 字）：%s", raw_response[:200])
-            raise LlmUnavailable
+                # 模型即使被要求 format=json 也常在前後夾雜說明文字，
+                # 取第一個 { 到最後一個 } 是必要的容錯。
+                json_match = re.search(r"\{[\s\S]*\}", raw_response)
+                if not json_match:
+                    logger.warning("Ollama 回應中找不到 JSON 結構（前 200 字）：%s", raw_response[:200])
+                    raise LlmUnavailable
 
-        try:
-            parsed = json.loads(json_match.group(0))
-        except json.JSONDecodeError as error:
-            logger.warning("Ollama 回應 JSON 解析失敗：%s", error)
-            raise LlmUnavailable from error
+                try:
+                    parsed = json.loads(json_match.group(0))
+                except json.JSONDecodeError as error:
+                    logger.warning("Ollama 回應 JSON 解析失敗：%s", error)
+                    raise LlmUnavailable from error
 
-        # 相容 snake_case 與 camelCase：小模型的鍵名不穩定
-        if not isinstance(parsed, dict):
-            raise LlmUnavailable
-        raw_rag = parsed.get("rag_risks", parsed.get("ragRisks"))
-        raw_ai = parsed.get("ai_risks", parsed.get("aiRisks"))
-        if not isinstance(raw_rag, list) or not isinstance(raw_ai, list):
-            raise LlmUnavailable
-        rag_risks = _validate_risks(raw_rag, "rag")
-        ai_risks = _validate_risks(raw_ai, "ai")
+                # 相容 snake_case 與 camelCase：小模型的鍵名不穩定
+                if not isinstance(parsed, dict):
+                    raise LlmUnavailable
+                raw_rag = parsed.get("rag_risks", parsed.get("ragRisks"))
+                raw_ai = parsed.get("ai_risks", parsed.get("aiRisks"))
+                if not isinstance(raw_rag, list) or not isinstance(raw_ai, list):
+                    raise LlmUnavailable
+                rag_risks = _validate_risks(raw_rag, "rag")
+                ai_risks = _validate_risks(raw_ai, "ai")
 
-        if (raw_rag or raw_ai) and not rag_risks and not ai_risks:
-            # 模型有回應但沒有任何合格的卡片：可能是格式跑掉，
-            # 也可能是注入指令讓它拒答。都不該當成「這份合約沒問題」。
-            logger.warning("模型回應中沒有任何通過驗證的風險項目")
-            raise LlmUnavailable
+                if (raw_rag or raw_ai) and not rag_risks and not ai_risks:
+                    # 模型有回應但沒有任何合格的卡片：可能是格式跑掉，
+                    # 也可能是注入指令讓它拒答。都不該當成「這份合約沒問題」。
+                    logger.warning("模型回應中沒有任何通過驗證的風險項目")
+                    raise LlmUnavailable
+            except LlmUnavailable:
+                if attempt:
+                    # 已有通過驗證的空結果，重試失敗不應讓原本可完成的請求變成 503。
+                    return {"rag_risks": [], "ai_risks": []}
+                raise
 
-        return {
-            "rag_risks": rag_risks,
-            "ai_risks": ai_risks,
-        }
+            if raw_rag or raw_ai or elapsed >= CONTRACT_EMPTY_RETRY_FAST_SECONDS or attempt == CONTRACT_EMPTY_RETRIES:
+                return {
+                    "rag_risks": rag_risks,
+                    "ai_risks": ai_risks,
+                }
+            logger.info("模型 %.1f 秒就回空結果，重試第 %d 次", elapsed, attempt + 1)
 
     except LlmUnavailable:
         # 做不到就明說。不回傳任何「預設的」風險卡片 ——
