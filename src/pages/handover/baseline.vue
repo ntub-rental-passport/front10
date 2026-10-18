@@ -74,7 +74,7 @@ const {
   removeEvidence,
   updateEvidenceNote,
   busy,
-  analyzingItemId,
+  analyzingItemIds,
   error,
   reload,
 } = useHandover()
@@ -101,7 +101,7 @@ async function processPhotoWithAI(
   originalName?: string,
   photoTakenAt?: string,
 ) {
-  await addEvidence(item.id, 'baseline', {
+  return addEvidence(item.id, 'baseline', {
     url: dataUrl,
     source,
     quality,
@@ -124,7 +124,7 @@ async function handlePhotoCaptured(payload: CapturePayload) {
   )
 }
 
-// 本地檔案上傳：一次可以選多張，逐張上傳（每張都要經過伺服器壓縮與 AI 辨識）。
+// 本地檔案上傳：一次可以選多張，逐張存檔後在背景進行 AI 辨識。
 // 重拍某一張時只能選一張。
 async function capturePhoto(itemId: string, replacesId?: string) {
   if (busy.value) return
@@ -149,8 +149,8 @@ async function capturePhoto(itemId: string, replacesId?: string) {
       uploadProgress.value = files.length > 1 ? `正在上傳第 ${index + 1} / ${files.length} 張…` : ''
       try {
         const dataUrl = await readOriginal(file)
-        await processPhotoWithAI(targetItem, dataUrl, 'file', null, file.name)
-        if (error.value) failed.push(`${file.name}：${error.value}`)
+        const saved = await processPhotoWithAI(targetItem, dataUrl, 'file', null, file.name)
+        if (!saved) failed.push(`${file.name}：${error.value}`)
       } catch (cause) {
         failed.push(`${file.name}：${cause instanceof Error ? cause.message : '無法讀取圖片'}`)
         console.error('圖片壓縮或處理失敗:', cause)
@@ -364,7 +364,7 @@ async function archivePhoto(id: string) {
                 <div class="flex items-center gap-1 text-xs text-muted-foreground">
                   <CheckCircle2 v-if="baselinePhotoCount(it) > 0" class="h-3 w-3" />
                   {{
-                    analyzingItemId === it.id
+                    analyzingItemIds.has(it.id)
                       ? '辨識中…'
                       : baselinePhotoCount(it) > 0
                         ? `已存證 ${baselinePhotoCount(it)} 張`
