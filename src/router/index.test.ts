@@ -80,6 +80,23 @@ function deferred() {
   return { promise, resolve }
 }
 
+describe('租客手機流程路由', () => {
+  it.each([
+    ['/app/contract/editor', '校對合約欄位', '/app/contract/scanner'],
+    ['/app/contract-analysis', '契約風險分析', '/app/contract/editor'],
+  ])('%s 設定流程標題與返回路徑', async (path, title, backPath) => {
+    const router = await setup()
+    expect(router.resolve(path).meta.mobileFlow).toEqual({ title, backPath })
+  }, 10000)
+
+  it.each(['/app', '/app/contract/scanner', '/app/contract', '/app/contract/electricity-fee'])(
+    '%s 保持一般手機導覽', async (path) => {
+      const router = await setup()
+      expect(router.resolve(path).meta.mobileFlow).toBeUndefined()
+    },
+  )
+})
+
 describe('後台路由', () => {
   it('租補審核落入既有的未知後台路徑處理', async () => {
     const router = await setup()

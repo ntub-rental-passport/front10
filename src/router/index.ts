@@ -125,8 +125,16 @@ const router = createRouter({
             import('@/src/pages/dashboard/tenant-defense-guide/electricity-fee/article.vue'),
         },
         { path: 'contract/scanner', component: () => import('@/src/pages/contract/index.vue') },
-        { path: 'contract-analysis', component: () => import('@/src/pages/contract/analysis.vue') },
-        { path: 'contract/editor', component: () => import('@/src/pages/contract/editor.vue') },
+        {
+          path: 'contract-analysis',
+          component: () => import('@/src/pages/contract/analysis.vue'),
+          meta: { mobileFlow: { title: '契約風險分析', backPath: '/app/contract/editor' } },
+        },
+        {
+          path: 'contract/editor',
+          component: () => import('@/src/pages/contract/editor.vue'),
+          meta: { mobileFlow: { title: '校對合約欄位', backPath: '/app/contract/scanner' } },
+        },
         { path: 'contract/combined', component: () => import('@/src/pages/contract/combined.vue') },
         { path: 'contract/document', component: () => import('@/src/pages/contract/document.vue') },
         { path: 'subsidy', component: () => import('@/src/pages/subsidy/index.vue') },

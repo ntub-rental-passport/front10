@@ -33,9 +33,6 @@ describe('landlord mobile surface', () => {
 
 describe('tenant mobile surface', () => {
   it.each([
-    '/app/contract/scanner',
-    '/app/contract-analysis',
-    '/app/contract/editor',
     '/app/contract/combined',
     '/app/contract/document',
     '/app/subsidy',
@@ -51,6 +48,9 @@ describe('tenant mobile surface', () => {
   })
 
   it.each([
+    '/app/contract/scanner',
+    '/app/contract-analysis',
+    '/app/contract/editor',
     '/app/contract',
     '/app/contract/air-conditioner-repair',
     '/app/contract/electricity-fee',
@@ -63,14 +63,14 @@ describe('tenant mobile surface', () => {
     expect(isMobileUnsupportedTenantPath(`${path}/`)).toBe(false)
   })
 
-  it('allows contract teaching content while blocking the contract scanner', () => {
+  it('教學文章與契約辨識都允許手機使用', () => {
     expect(isMobileUnsupportedTenantPath('/app/contract')).toBe(false)
-    expect(isMobileUnsupportedTenantPath('/app/contract/scanner')).toBe(true)
+    expect(isMobileUnsupportedTenantPath('/app/contract/scanner')).toBe(false)
   })
 
   it('matches contract tools exactly and subsidy children by route segment', () => {
-    expect(isMobileUnsupportedTenantPath('/app/contract/scanner/details')).toBe(false)
-    expect(isMobileUnsupportedTenantPath('/app/contract/scanner-other')).toBe(false)
+    expect(isMobileUnsupportedTenantPath('/app/contract/combined/details')).toBe(false)
+    expect(isMobileUnsupportedTenantPath('/app/contract/combined-other')).toBe(false)
     expect(isMobileUnsupportedTenantPath('/app/subsidy/new/nested')).toBe(true)
     expect(isMobileUnsupportedTenantPath('/app/subsidy-other')).toBe(false)
   })

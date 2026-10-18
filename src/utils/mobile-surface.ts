@@ -1,9 +1,6 @@
 const landlordUnsupportedPaths = ['/landlord/finance', '/landlord/contracts']
 
 const tenantUnsupportedContractPaths = [
-  '/app/contract/scanner',
-  '/app/contract-analysis',
-  '/app/contract/editor',
   '/app/contract/combined',
   '/app/contract/document',
 ]
