@@ -2,6 +2,7 @@ import logging
 import os
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,7 @@ from routers import password, contract_pdf, push_api
 from notifications.garbage_service import dispatch_due
 from notifications.scheduled_notification_service import dispatch_due as dispatch_scheduled_notifications
 from admin import monitoring_service
-from notifications import landlord_reminders, outage_reminders
+from notifications import landlord_reminders, outage_reminders, taipower_sync
 
 # ---------------------------------------------------------------
 # 應用程式的 log
@@ -56,12 +57,29 @@ def background_jobs_enabled() -> bool:
 
 @asynccontextmanager
 async def lifespan(app):
+    outage_sync_task = None
+
+    async def sync_outage_data(output_dir):
+        try:
+            await asyncio.to_thread(taipower_sync.sync, output_dir)
+        except Exception as error:
+            taipower_sync.record_failure()
+            logging.getLogger(__name__).warning('台電停電資料同步失敗（%s）', error)
+
     async def reminders_loop():
+        nonlocal outage_sync_task
         landlord_tick = 0
-        # 兩個排程器共用同一個迴圈，但各自 try/except ——
+        # 排程器共用同一個迴圈，但各自 try/except ——
         # 包在一起的話，垃圾車提醒炸掉會連帶讓後台排程整輪被跳過，
         # 而它們之間沒有任何關係。
         while True:
+            try:
+                # 下載另開任務，避免等待外站時拖慢其他派送；前一輪未完成就不重複啟動。
+                if (outage_sync_task is None or outage_sync_task.done()) and taipower_sync.needs_sync():
+                    outage_sync_task = asyncio.create_task(sync_outage_data(Path(os.environ['OUTAGE_DATA_DIR'])))
+            except Exception as error:
+                taipower_sync.record_failure()
+                logging.getLogger(__name__).warning('台電停電資料同步檢查失敗（%s）', error)
             try:
                 await asyncio.to_thread(dispatch_due)
             except Exception:
@@ -119,6 +137,8 @@ async def lifespan(app):
     try:
         yield
     finally:
+        if outage_sync_task is not None:
+            tasks.append(outage_sync_task)
         for task in tasks:
             task.cancel()
         for task in tasks:

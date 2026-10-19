@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import logging
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -80,3 +81,72 @@ def test_lifespan_controls_and_cancels_background_tasks(
     assert len(messages) == 1
     assert ('背景排程已啟用' if enabled else '背景排程未啟用') in messages[0]
     assert 'BACKGROUND_JOBS_ENABLED' in messages[0]
+
+
+@pytest.mark.parametrize('sync_fails', [False, True])
+def test_outage_sync_does_not_block_dispatch_or_overlap(
+    main_module, monkeypatch, tmp_path, caplog, sync_fails,
+):
+    monkeypatch.setenv('BACKGROUND_JOBS_ENABLED', 'true')
+    monkeypatch.setenv('OUTAGE_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(main_module.taipower_sync, '_last_failure_at', None)
+    caplog.set_level(logging.WARNING, logger='main')
+    calls = []
+    sync_calls = []
+    original_create_task = asyncio.create_task
+
+    async def run():
+        started = asyncio.Event()
+        release = asyncio.Event()
+        settled = asyncio.Event()
+        ticks = asyncio.Queue()
+        proceed = asyncio.Queue()
+
+        async def to_thread(function, *args):
+            if function is main_module.taipower_sync.sync:
+                sync_calls.append(args)
+                started.set()
+                await release.wait()
+                settled.set()
+                if sync_fails:
+                    raise RuntimeError('fake download failed')
+                (tmp_path / 'taipower-outage-source.json').write_text(
+                    '{"fetchedAt":"' + datetime.now(main_module.taipower_sync.TZ).isoformat() + '"}',
+                )
+                return 1
+            # 所有通知與資料庫工作都替換，只驗證排程能在下載尚未完成時繼續派送。
+            calls.append(function)
+
+        async def sleep(seconds):
+            assert seconds == 20
+            ticks.put_nowait(None)
+            await proceed.get()
+
+        def create_task(coroutine):
+            if coroutine.cr_code.co_name == 'monitor_loop':
+                coroutine.close()
+                return asyncio.get_running_loop().create_future()
+            return original_create_task(coroutine)
+
+        monkeypatch.setattr(main_module.asyncio, 'to_thread', to_thread)
+        monkeypatch.setattr(main_module.asyncio, 'sleep', sleep)
+        monkeypatch.setattr(main_module.asyncio, 'create_task', create_task)
+        async with main_module.lifespan(main_module.app):
+            await asyncio.wait_for(ticks.get(), timeout=1)
+            await asyncio.wait_for(started.wait(), timeout=1)
+            proceed.put_nowait(None)
+            await asyncio.wait_for(ticks.get(), timeout=1)
+            assert sync_calls == [(tmp_path,)]
+            assert calls.count(main_module.dispatch_due) == 2
+            assert calls.count(main_module.dispatch_scheduled_notifications) == 2
+            assert main_module.outage_reminders.dispatch_due in calls
+            release.set()
+            await asyncio.wait_for(settled.wait(), timeout=1)
+            proceed.put_nowait(None)
+            await asyncio.wait_for(ticks.get(), timeout=1)
+            assert len(sync_calls) == 1
+            assert calls.count(main_module.dispatch_due) == 3
+            assert not main_module.taipower_sync.needs_sync()
+
+    asyncio.run(run())
+    assert ('台電停電資料同步失敗' in caplog.text) is sync_fails

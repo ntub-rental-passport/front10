@@ -57,6 +57,18 @@ docker compose logs -f     # 看啟動紀錄
 
 資料表由 FastAPI 啟動時依 `models.py` 自動建立（`Base.metadata.create_all`）。
 
+### 台電停電資料每日同步
+
+fastapi 啟用 `BACKGROUND_JOBS_ENABLED` 並設定 `OUTAGE_DATA_DIR: /app/outage-data`，
+以可寫掛載 `./data/outage:/app/outage-data` 保存每日同步結果。
+`~/rentmate/data/outage/` 是 VM 獨有資料，Docker 會自動建立目錄（fastapi 以 root 執行），
+`deploy.sh` 的 `--exclude /data` 會保護它，不會被再次部署覆蓋；`public/data/` 保留唯讀種子資料。
+
+首次部署會立即同步，之後以 `taipower-outage-source.json` 的 `fetchedAt` 判斷是否超過 24 小時；
+同步失敗保留舊資料，至少隔一小時才重試。正式資料由 VM 產生，不再透過 GitHub workflow 更新。
+部署後可在 VM 執行 `cat ~/rentmate/data/outage/taipower-outage-source.json` 確認 `fetchedAt`，
+並在再次執行 `./deploy.sh fastapi` 後確認該檔仍保留。
+
 ### 推播與寄件信箱（2026-10-10）
 
 以下在 VM 的 `~/rentmate` 執行，先確認更新的程式碼與映像已部署、fastapi 容器正在運行。
