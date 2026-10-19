@@ -43,6 +43,6 @@ python backend/scripts/eval_retrieval.py --help
 | Web Push | `notifications/garbage_service.py` | VAPID、訂閱權限與失效訂閱處理 |
 | 清運班表 | `public/data/`、`scripts/update-*-garbage.ts` | 資料來源、完整分頁、更新時間與既有提醒快照 |
 | 停水 | `routers/outage.py` | 呼叫台水 API；失敗不是無公告 |
-| 停電 | `routers/outage.py`、`scripts/fetch_taipower_outage.py` | API 讀本地 JSON，需外部安排更新；本 repo 的 GitHub workflow 不包含停電每日更新排程 |
+| 停電 | `routers/outage.py`、`notifications/taipower_sync.py`、`scripts/fetch_taipower_outage.py` | VM 的 fastapi 背景排程每日同步至 `OUTAGE_DATA_DIR`；API 與提醒共用本地 JSON，尚未同步時讀 `public/data/` 種子；腳本保留開發機手動下載用途 |
 
 目前唯一 `.github/workflows/` 自動流程是清運資料更新，每月 1 日臺灣時間 10:17 執行，也支援手動觸發；它測試並建置後提出資料更新 PR，不代表完整系統已有持續部署。

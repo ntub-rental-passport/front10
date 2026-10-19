@@ -3,8 +3,8 @@
 ## 兩邊的資料來源不一樣
 
 * 停水：即時打台水 API（web.water.gov.tw），拿到當下的公告。
-* 停電：讀本地 JSON（public/data/taipower-outage.json），
-  由 scripts/fetch_taipower_outage.py 每天下載一次。
+* 停電：優先讀 OUTAGE_DATA_DIR 的本地 JSON，由 fastapi 背景排程每日同步；
+  尚未同步或開發機未設定目錄時，退回 public/data/ 的種子資料。
 
 停電為什麼不即時查台電：
 台電的地址查詢頁（ndft112.aspx）有 Session 綁定的圖形驗證碼，
@@ -26,6 +26,7 @@
 
 import json
 import logging
+import os
 import re
 import ssl
 from datetime import datetime, timedelta, timezone
@@ -41,8 +42,12 @@ logger = logging.getLogger(__name__)
 
 TZ = timezone(timedelta(hours=8))
 ROOT = Path(__file__).resolve().parents[2]
-POWER_DATA_PATH = ROOT / "public/data/taipower-outage.json"
-POWER_SOURCE_PATH = ROOT / "public/data/taipower-outage-source.json"
+# 映像只複製 backend/ 到 /app；容器的種子資料掛在 /app/public/data。
+POWER_SEED_DIR = ROOT / "public/data"
+if not POWER_SEED_DIR.exists():
+    POWER_SEED_DIR = Path(__file__).resolve().parents[1] / "public/data"
+POWER_DATA_PATH = POWER_SEED_DIR / "taipower-outage.json"
+POWER_SOURCE_PATH = POWER_SEED_DIR / "taipower-outage-source.json"
 
 WATER_API_URL = "https://web.water.gov.tw/wateroffapi/f/case/search"
 
@@ -140,7 +145,7 @@ async def fetch_real_water_outage(address: str):
 
 # ---------- 停電（讀本地 JSON + 地址比對） ----------------------------
 
-_power_cache = {"mtime": None, "records": [], "source": {}}
+_power_cache = {"path": None, "mtime": None, "source_mtime": None, "records": [], "source": {}}
 
 CITY_PATTERN = re.compile(r"^(.{2,3}?[市縣])")
 DISTRICT_PATTERN = re.compile(r"([\u4e00-\u9fa5]{1,4}[區鄉鎮市])")
@@ -158,21 +163,29 @@ def _normalize(text: str) -> str:
 
 
 def _load_power_data():
-    """讀本地資料，用 mtime 判斷要不要重讀，避免每次請求都解析整包 JSON。"""
-    if not POWER_DATA_PATH.exists():
+    """路徑或 mtime 改變才重讀，避免從種子切換到同步資料時沿用舊快取。"""
+    data_path, source_path = POWER_DATA_PATH, POWER_SOURCE_PATH
+    output_dir = os.getenv("OUTAGE_DATA_DIR")
+    if output_dir and (Path(output_dir) / "taipower-outage.json").exists():
+        data_path = Path(output_dir) / "taipower-outage.json"
+        source_path = Path(output_dir) / "taipower-outage-source.json"
+    if not data_path.exists():
         return [], {}
 
-    mtime = POWER_DATA_PATH.stat().st_mtime
-    if _power_cache["mtime"] != mtime:
-        raw = json.loads(POWER_DATA_PATH.read_text(encoding="utf-8"))
+    mtime = data_path.stat().st_mtime
+    source_mtime = source_path.stat().st_mtime if source_path.exists() else None
+    # 同步先替換資料、再替換 source；若剛好在兩次替換之間讀取，下一次仍須更新來源時間。
+    if ((_power_cache["path"], _power_cache["mtime"]) != (data_path, mtime)
+            or _power_cache.get("source_mtime") != source_mtime):
+        raw = json.loads(data_path.read_text(encoding="utf-8"))
         for record in raw:
             record["_scope"] = _normalize(record.get("scope"))
+        source = json.loads(source_path.read_text(encoding="utf-8")) if source_path.exists() else {}
         _power_cache["records"] = raw
+        _power_cache["path"] = data_path
         _power_cache["mtime"] = mtime
-        _power_cache["source"] = (
-            json.loads(POWER_SOURCE_PATH.read_text(encoding="utf-8"))
-            if POWER_SOURCE_PATH.exists() else {}
-        )
+        _power_cache["source_mtime"] = source_mtime
+        _power_cache["source"] = source
         logger.info("載入台電停電資料 %d 筆", len(raw))
 
     return _power_cache["records"], _power_cache["source"]
