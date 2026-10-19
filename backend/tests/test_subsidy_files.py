@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import io
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -23,6 +24,7 @@ from db import database
 from db.database import Base, get_db
 from db.models import AdminSession, InboxMessage, Rental, SubsidyFile, User, UserRole
 from db.schema_check import schema_problems
+from notifications import user_notify
 
 with patch.dict(os.environ, {'JWT_SECRET': os.getenv('JWT_SECRET') or 'subsidy-files-tests-secret-32-bytes'}):
     from auth.security import create_access_token
@@ -377,6 +379,20 @@ class SubsidyFileExpiryTests(SubsidyFileTestCase):
             subsidy_files.dispatch_expiry(self.expiry)
         self.assert_empty()
 
+    def test_notice_email_contains_computer_link_and_is_queued(self):
+        self.expiring_file()
+        queued = []
+        with patch.dict(os.environ, {'FRONTEND_URL': 'https://rentmate.example/'}), \
+                patch.object(user_notify, 'email_available', return_value=True), \
+                patch.object(user_notify, 'start_email_delivery', side_effect=queued.extend):
+            subsidy_files.dispatch_expiry(self.expiry)
+        with self.Session() as db:
+            notice = db.query(InboxMessage).one()
+            self.assertEqual(notice.email_state, 'pending')
+            self.assertIn('email', json.loads(notice.channels))
+            self.assertIn('請用電腦開啟：https://rentmate.example/app/subsidy', notice.body)
+            self.assertEqual(queued, [notice.batch_id])
+
     def test_late_and_missed_notices_grant_fourteen_days_and_only_extend_once(self):
         for delay in (timedelta(days=-7), timedelta(days=30)):
             with self.subTest(delay=delay):
@@ -456,7 +472,10 @@ class SubsidyFileExpiryTests(SubsidyFileTestCase):
 
     def test_notice_commit_failure_rolls_back_notice_and_expiry_extension(self):
         file = self.expiring_file()
-        with patch('sqlalchemy.orm.Session.commit', side_effect=RuntimeError('測試提交失敗')), \
+        queued = []
+        with patch.object(user_notify, 'email_available', return_value=True), \
+                patch.object(user_notify, 'start_email_delivery', side_effect=queued.extend), \
+                patch('sqlalchemy.orm.Session.commit', side_effect=RuntimeError('測試提交失敗')), \
                 self.assertLogs(subsidy_files.logger, level='WARNING'):
             subsidy_files.dispatch_expiry(self.expiry)
         with self.Session() as db:
@@ -465,6 +484,7 @@ class SubsidyFileExpiryTests(SubsidyFileTestCase):
             self.assertIsNone(row.expiry_notified_at)
             self.assertEqual(row.expires_at, self.expiry)
         self.assertTrue(self.stored_path(file['id']).exists())
+        self.assertEqual(queued, [])
 
     def test_failed_deletion_commit_keeps_bytes_and_continues_next_file(self):
         first = self.expiring_file(notified=self.expiry - timedelta(days=14))

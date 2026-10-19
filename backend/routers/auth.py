@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from admin import audit_service
 from admin import platform_settings
+from common.frontend_config import frontend_url as configured_frontend_url
 from db.database import get_db
 from notifications.email_service import (
     EmailConfigurationError,
@@ -220,12 +221,7 @@ def _google_config() -> tuple[str, str, str, str]:
         or str(file_env.get("GOOGLE_REDIRECT_URI") or "")
         or "http://localhost:8000/api/auth/google/callback"
     )
-    frontend_url = (
-        os.getenv("FRONTEND_URL")
-        or str(file_env.get("FRONTEND_URL") or "")
-        or "http://localhost:5173"
-    )
-    return client_id, client_secret, redirect_uri, frontend_url.rstrip("/")
+    return client_id, client_secret, redirect_uri, configured_frontend_url()
 
 
 def _safe_role(role: str) -> str:
