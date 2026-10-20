@@ -320,13 +320,6 @@ async function startCamera() {
     unavailable.value = reason
     return
   }
-  await nextTick()
-
-  // 若 Dialog 剛開啟動畫中尚未抓到 videoEl，再等一個 tick
-  if (!videoEl.value) {
-    await nextTick()
-  }
-
   try {
     const mediaStream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -337,16 +330,34 @@ async function startCamera() {
       audio: false,
     })
 
-    stream = mediaStream
-
-    if (videoEl.value) {
-      videoEl.value.srcObject = mediaStream
-      await videoEl.value.play()
-      isCameraReady.value = true
-
-      startAnalysisLoop()
-      if (!needsOrientationPermission) requestOrientationPermission()
+    // 等權限或鏡頭時使用者已經關掉視窗：不收下這個串流，否則鏡頭會一直開著
+    if (!props.open) {
+      mediaStream.getTracks().forEach((track) => track.stop())
+      return
     }
+    stream = mediaStream
+  } catch (error: any) {
+    console.error('相機啟動失敗:', error)
+    isCameraReady.value = false
+    cameraError.value = `無法開啟鏡頭：${error?.message || '請確認權限'}`
+    return
+  }
+
+  await attachStream()
+}
+
+// 元件剛建立就開啟時，相機在 Dialog 渲染出 <video> 之前就會啟動，
+// 所以串流和 video 元素誰後到都沒關係：兩者都在時才接上，由 videoEl 的 watch 補接。
+async function attachStream() {
+  const el = videoEl.value
+  if (!el || !stream || el.srcObject === stream) return
+
+  el.srcObject = stream
+  try {
+    await el.play()
+    isCameraReady.value = true
+    startAnalysisLoop()
+    if (!needsOrientationPermission) requestOrientationPermission()
   } catch (error: any) {
     console.error('相機啟動失敗:', error)
     isCameraReady.value = false
@@ -504,8 +515,14 @@ watch(
       stopCamera()
     }
   },
-  { flush: 'post' }, // 確保在 DOM 更新完成後才執行
+  // 父層用 v-if 掛載本元件，第一次開啟時是帶著 open=true 直接建立的；
+  // 沒有 immediate 的話這個 watch 不會觸發，相機永遠不啟動（畫面全黑，關掉重開才正常）。
+  { flush: 'post', immediate: true },
 )
+
+watch(videoEl, () => {
+  void attachStream()
+})
 
 onBeforeUnmount(() => {
   stopCamera()
