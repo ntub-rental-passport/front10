@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { ContractOcrResult } from './contract-ocr'
 
 const STORAGE_KEY = 'rentmate:contract-ocr-result'
@@ -119,7 +119,7 @@ function result(): ContractOcrResult {
 
 describe('契約 OCR 結果暫存', () => {
   let ocr: typeof import('./contract-ocr')
-  let storage: { getItem: ReturnType<typeof vi.fn>; setItem: ReturnType<typeof vi.fn>; removeItem: ReturnType<typeof vi.fn> }
+  let storage: { getItem: Mock<(key: string) => string | null>; setItem: Mock<(key: string, value: string) => void>; removeItem: Mock<(key: string) => void> }
 
   beforeEach(async () => {
     vi.resetModules()

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Route, Layers, LocateFixed } from 'lucide-vue-next'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   validPoint,
@@ -12,6 +13,9 @@ import {
 } from '@/src/utils/garbage'
 import { groupRoutes, routeSegments } from '@/src/utils/garbage-routes'
 import { stopStatus } from '@/src/utils/garbage-status'
+
+// maplibre-gl 6 預設從自身檔案旁邊找 worker，經 Vite 打包後找不到，要明確指定
+maplibregl.setWorkerUrl(maplibreWorkerUrl)
 const props = defineProps<{
   timestamp?: number
   scheduleDate?: string
